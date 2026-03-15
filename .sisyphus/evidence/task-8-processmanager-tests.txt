@@ -1,0 +1,27 @@
+Task: Implement ProcessManager for renderer process lifecycle management
+Date: 2026-03-15
+
+Files created:
+- controller/src/main/java/com/desktoppet/util/ProcessManager.java
+- controller/src/test/java/com/desktoppet/util/ProcessManagerTest.java
+
+Test results:
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0
+
+Test names:
+1. isRunning_falseWhenNotStarted
+2. startRenderer_buildsCorrectCommand
+3. stopRenderer_callsShutdownBeforeDestroy
+4. stopRenderer_doesNothingWhenNotRunning
+5. exitCallback_invokedOnProcessExit
+
+Command: mvn test -f controller/pom.xml -Dtest=ProcessManagerTest
+Result: BUILD SUCCESS
+
+Key design decisions:
+- ProcessBuilderFactory @FunctionalInterface for testability (avoids launching real process)
+- Working directory set to renderer binary's parent (Resources/ path resolution)
+- stderr merged into stdout via redirectErrorStream(true)
+- Background daemon thread drains stdout/stderr
+- stopRenderer: graceful shutdown (shutdownCommandSender) → 5s wait → destroyForcibly
+- doReturn() used instead of when().thenReturn() for re-stubbing mocks (avoids Mockito type confusion)

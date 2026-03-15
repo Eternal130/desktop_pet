@@ -85,6 +85,8 @@ target_sources(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LAppTextureManager.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LAppView.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LAppView.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/Protocol.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/Protocol.hpp
 )
 
 target_include_directories(${APP_NAME}
@@ -111,7 +113,11 @@ add_custom_command(
 
 enable_testing()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
-add_executable(renderer-tests tests/placeholder_test.cpp)
+add_executable(renderer-tests
+  tests/placeholder_test.cpp
+  tests/ProtocolTest.cpp
+  src/network/Protocol.cpp
+)
 target_link_libraries(renderer-tests PRIVATE GTest::gtest_main)
 target_include_directories(renderer-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 include(GoogleTest)

@@ -79,6 +79,12 @@
             <version>4.0.18</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>io.github.sebivenlo</groupId>
+            <artifactId>openjfx-monocle</artifactId>
+            <version>jdk-21.0.1</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -100,6 +106,24 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+                <configuration>
+                    <argLine>
+                        --add-opens javafx.graphics/com.sun.javafx.application=ALL-UNNAMED
+                        --add-opens javafx.graphics/com.sun.glass.ui=ALL-UNNAMED
+                        --add-opens javafx.graphics/com.sun.javafx.util=ALL-UNNAMED
+                        --add-opens javafx.graphics/com.sun.glass.ui.monocle=ALL-UNNAMED
+                        --add-opens javafx.graphics/com.sun.javafx.tk.quantum=ALL-UNNAMED
+                        --add-opens javafx.base/com.sun.javafx.logging=ALL-UNNAMED
+                        --add-exports javafx.graphics/com.sun.javafx.util=ALL-UNNAMED
+                        --add-exports javafx.graphics/com.sun.glass.ui.monocle=ALL-UNNAMED
+                        --add-exports javafx.base/com.sun.javafx.logging=ALL-UNNAMED
+                        -Dtestfx.robot=glass
+                        -Dglass.platform=Monocle
+                        -Dmonocle.platform=Headless
+                        -Djava.awt.headless=true
+                        -Dtestfx.headless=true
+                    </argLine>
+                </configuration>
             </plugin>
 
             <!-- JavaFX Maven Plugin -->

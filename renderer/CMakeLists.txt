@@ -48,6 +48,10 @@ target_link_libraries(Framework Live2DCubismCore glew_s)
 
 find_package(OpenGL REQUIRED)
 
+set(USE_TLS OFF CACHE BOOL "" FORCE)
+set(IXWEBSOCKET_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third_party/ixwebsocket ${CMAKE_CURRENT_BINARY_DIR}/ixwebsocket)
+
 add_executable(${APP_NAME})
 
 target_sources(${APP_NAME}
@@ -95,6 +99,7 @@ target_link_libraries(${APP_NAME}
   Framework
   glfw
   ${OPENGL_LIBRARIES}
+  ixwebsocket::ixwebsocket
 )
 
 add_custom_command(

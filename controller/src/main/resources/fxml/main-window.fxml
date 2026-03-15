@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<VBox xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.desktoppet.ui.MainWindowController"
+      spacing="10" style="-fx-padding: 15;">
+    
+    <Label text="Desktop Pet Controller" style="-fx-font-size: 16; -fx-font-weight: bold;"/>
+    
+    <Separator/>
+    
+    <VBox spacing="5">
+        <Label text="Status"/>
+        <Label fx:id="statusLabel" text="○ Disconnected" style="-fx-text-fill: red;"/>
+    </VBox>
+    
+    <VBox spacing="5">
+        <Label text="Current Model"/>
+        <Label fx:id="modelNameLabel" text="Model: None"/>
+    </VBox>
+    
+    <VBox spacing="5">
+        <Label text="Idle Behavior"/>
+        <Label fx:id="idleIntervalLabel" text="Idle: 10s"/>
+    </VBox>
+    
+    <Separator/>
+    
+    <HBox spacing="10">
+        <Button fx:id="settingsButton" text="Settings" onAction="#onSettingsButtonClicked"/>
+    </HBox>
+    
+</VBox>

@@ -7,6 +7,8 @@ module com.desktoppet {
     requires org.slf4j;
     exports com.desktoppet;
     exports com.desktoppet.core;
+    exports com.desktoppet.ui;
     opens com.desktoppet to javafx.fxml;
+    opens com.desktoppet.ui to javafx.fxml;
     opens com.desktoppet.model to com.google.gson;
 }

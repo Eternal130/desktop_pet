@@ -13,6 +13,7 @@ import javafx.application.Platform;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -126,6 +127,7 @@ public class AppOrchestrator {
                         log.info("Model loaded: {}", modelName);
                         lastSuccessfulStartTime = System.currentTimeMillis();
                         restartAttempts.set(0);
+                        loadModelConfig(modelName);
 
                         JsonObject posPayload = new JsonObject();
                         posPayload.addProperty("x", config.window().positionX());
@@ -238,6 +240,25 @@ public class AppOrchestrator {
         });
         scheduler.resume();
         log.info("Scheduler started: interval={}ms, motions={}", intervalMillis, finalIdleMotions);
+    }
+
+    private void loadModelConfig(String modelName) {
+        Path rendererDir = Path.of("../renderer/build/bin/desktop-pet-renderer");
+        Path modelConfigPath = rendererDir.resolve("Resources").resolve(modelName).resolve("model_config.json");
+
+        if (Files.exists(modelConfigPath)) {
+            try {
+                String json = Files.readString(modelConfigPath);
+                com.google.gson.Gson gson = new com.google.gson.Gson();
+                com.desktoppet.model.ModelConfig modelConfig = gson.fromJson(json, com.desktoppet.model.ModelConfig.class);
+                interactionHandler.setModelConfig(modelConfig);
+                log.info("Loaded model_config.json for model: {}", modelName);
+            } catch (Exception e) {
+                log.warn("Failed to load model_config.json for {}: {}", modelName, e.getMessage());
+            }
+        } else {
+            log.debug("No model_config.json found for {}, using default mappings", modelName);
+        }
     }
 
     private void sendOrCache(String action, String serializedEnvelope) {

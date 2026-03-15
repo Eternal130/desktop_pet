@@ -6,6 +6,10 @@ import javafx.scene.control.*;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -68,7 +72,29 @@ public class SettingsPanelController {
 
     @FXML
     private void onRefreshModels() {
-        log.info("Refresh models clicked");
+        Path resourcesDir = Path.of("../renderer/build/bin/desktop-pet-renderer/Resources");
+        List<String> models = new ArrayList<>();
+
+        if (Files.exists(resourcesDir)) {
+            try (var stream = Files.list(resourcesDir)) {
+                stream.filter(Files::isDirectory)
+                      .map(p -> p.getFileName().toString())
+                      .filter(name -> !name.startsWith("."))
+                      .sorted()
+                      .forEach(models::add);
+            } catch (IOException e) {
+                log.warn("Failed to scan models directory: {}", e.getMessage());
+            }
+        } else {
+            log.warn("Resources directory not found: {}", resourcesDir);
+        }
+
+        if (!models.isEmpty()) {
+            modelComboBox.getItems().setAll(models);
+            log.info("Found {} models: {}", models.size(), models);
+        } else {
+            log.info("No models found in Resources directory");
+        }
     }
 
     @FXML

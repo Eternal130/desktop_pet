@@ -15,7 +15,7 @@
 
 class LAppView;
 class LAppTextureManager;
-namespace Network { class WebSocketClient; class MessageHandler; }
+namespace Network { class WebSocketClient; class MessageHandler; class EventEmitter; }
 
 /**
 * @brief   アプリケーションクラス。
@@ -117,6 +117,7 @@ public:
     int GetWindowHeight() { return _windowHeight; }
 
     void SetWebSocketUrl(const std::string& url);
+    Network::EventEmitter* GetEventEmitter() { return _eventEmitter.get(); }
 private:
     bool IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const;
 
@@ -156,6 +157,7 @@ private:
     std::string _wsUrl;
     std::unique_ptr<Network::WebSocketClient> _wsClient;
     std::unique_ptr<Network::MessageHandler> _messageHandler;
+    std::unique_ptr<Network::EventEmitter> _eventEmitter;
     bool _wsReadySent;
 };
 

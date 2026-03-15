@@ -1,5 +1,6 @@
 #include "network/CommandHandlers.hpp"
 #include "network/Protocol.hpp"
+#include "network/EventEmitter.hpp"
 #include "LAppDelegate.hpp"
 #include "LAppLive2DManager.hpp"
 #include "LAppModel.hpp"
@@ -19,11 +20,19 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         std::string modelPath = cmd.payload.value("model_path", "");
         if (modelPath.empty()) {
             sendResponse(createResponse(cmd.id, "load_model", false, 1001, "model_path is required"));
+            auto* emitter = delegate->GetEventEmitter();
+            if (emitter) {
+                emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", "model_path is required"}});
+            }
             return;
         }
         LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
         manager->ChangeScene(modelPath.c_str());
         sendResponse(createResponse(cmd.id, "load_model", true));
+        auto* emitter = delegate->GetEventEmitter();
+        if (emitter) {
+            emitter->emit("model_loaded", {{"model_id", modelPath}});
+        }
     });
 
     handler.registerCommand("play_motion", [delegate](const Envelope& cmd, auto sendResponse) {
@@ -39,6 +48,10 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         LAppModel* model = manager->GetModel(0);
         if (!model) return;
         model->StartMotion(group.c_str(), index, priority);
+        auto* emitter = delegate->GetEventEmitter();
+        if (emitter) {
+            emitter->emit("motion_started", {{"group", group}, {"index", index}});
+        }
     });
 
     handler.registerCommand("stop_motion", [](const Envelope& cmd, auto sendResponse) {

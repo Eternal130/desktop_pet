@@ -1,0 +1,33 @@
+Task 9: Event Emitters - Build Evidence
+Date: 2026-03-15
+
+=== cmake --build renderer/build (tail -20) ===
+[ 26%] Built target ixwebsocket
+[ 28%] Built target glew_s
+[ 44%] Built target glfw
+[ 73%] Built target Framework
+[ 73%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/network/EventEmitter.cpp.o
+[ 74%] Linking CXX executable bin/desktop-pet-renderer/desktop-pet-renderer
+[ 88%] Built target desktop-pet-renderer
+[ 90%] Built target gtest
+[ 91%] Built target gtest_main
+[ 95%] Built target renderer-tests
+[ 96%] Built target glew
+[ 98%] Built target gmock
+[100%] Built target gmock_main
+
+Exit code: 0 (success)
+
+=== Events implemented ===
+- motion_started: emitted in CommandHandlers.cpp play_motion handler after StartMotion()
+  payload: {"group": <group>, "index": <index>}
+- model_loaded: emitted in CommandHandlers.cpp load_model handler after ChangeScene()
+  payload: {"model_id": <modelPath>}
+- model_load_failed: emitted in CommandHandlers.cpp load_model handler on empty model_path
+  payload: {"error_code": 1001, "error_message": "model_path is required"}
+- hit: emitted in LAppDelegate.cpp OnMouseCallBack when IsHitModel returns true
+  payload: {"x": <mouseX>, "y": <mouseY>, "button": <button>}
+- drag_start: emitted in LAppDelegate.cpp OnMouseCallBack when drag begins
+  payload: {"x": <mouseX>, "y": <mouseY>}
+- drag_end: emitted in LAppDelegate.cpp OnMouseCallBack on GLFW_RELEASE
+  payload: {"x": <mouseX>, "y": <mouseY>}

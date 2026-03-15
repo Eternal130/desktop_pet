@@ -20,6 +20,7 @@
 #include "network/MessageHandler.hpp"
 #include "network/Protocol.hpp"
 #include "network/CommandHandlers.hpp"
+#include "network/EventEmitter.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -130,6 +131,12 @@ bool LAppDelegate::Initialize()
         Network::RegisterCommandHandlers(*_messageHandler, this);
         _wsClient = std::make_unique<Network::WebSocketClient>();
         _wsClient->connect(_wsUrl);
+        _eventEmitter = std::make_unique<Network::EventEmitter>();
+        _eventEmitter->setSendCallback([this](const std::string& msg) {
+            if (_wsClient && _wsClient->isConnected()) {
+                _wsClient->send(msg);
+            }
+        });
     }
 
     return GL_TRUE;
@@ -138,6 +145,7 @@ bool LAppDelegate::Initialize()
 void LAppDelegate::Release()
 {
     if (_wsClient) {
+        _eventEmitter.reset();
         _wsClient->disconnect();
         _wsClient.reset();
         _messageHandler.reset();
@@ -286,12 +294,24 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
             _dragStartX = _mouseX;
             _dragStartY = _mouseY;
             glfwGetWindowPos(_window, &_windowStartX, &_windowStartY);
+            if (_eventEmitter) {
+                _eventEmitter->emit("drag_start", {{"x", _mouseX}, {"y", _mouseY}});
+            }
+        }
+        else
+        {
+            if (_eventEmitter) {
+                _eventEmitter->emit("hit", {{"x", _mouseX}, {"y", _mouseY}, {"button", button}});
+            }
         }
     }
     else if (GLFW_RELEASE == action)
     {
         const bool wasDragging = _isDragging;
         _isDragging = false;
+        if (_eventEmitter) {
+            _eventEmitter->emit("drag_end", {{"x", _mouseX}, {"y", _mouseY}});
+        }
         if (_captured)
         {
             _captured = false;

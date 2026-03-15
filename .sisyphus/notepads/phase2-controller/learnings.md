@@ -96,3 +96,15 @@
 - Evidence: .sisyphus/evidence/task-6-modelinfo-tests.txt
 - Key fix: `opens com.desktoppet.ui to javafx.fxml` in module-info.java caused runtime InvalidModuleDescriptorException because com.desktoppet.ui package is empty — removed that directive
 - Key insight: Java module system validates ALL packages listed in module-info.java exist at runtime (not just compile time); empty packages referenced in opens/exports cause boot layer failure
+
+## [2026-03-15] Task 8: ProcessManager
+- ProcessBuilderFactory @FunctionalInterface enables test injection without launching real process
+- doReturn(value).when(mock).method() must be used when re-stubbing mocks (avoids "wrong type of return value" Mockito error)
+- when(mock.method()).thenReturn() inside lambdas fails for checked-exception methods (ProcessBuilder.start() throws IOException) — use doReturn() instead
+- Working directory set to renderer binary's parent via new File(rendererPath).getParentFile()
+- stopRenderer: shutdownCommandSender → 100ms poll loop (5s max) → destroyForcibly
+- Test for shutdown: set isAlive()=false inside the shutdownCommandSender lambda so the wait loop exits immediately
+- 5 tests: isRunning_falseWhenNotStarted, startRenderer_buildsCorrectCommand, stopRenderer_callsShutdownBeforeDestroy, stopRenderer_doesNothingWhenNotRunning, exitCallback_invokedOnProcessExit
+- Tests run: 5, Failures: 0, BUILD SUCCESS
+- Commit: 0c1685b "feat(controller): add ProcessManager for renderer lifecycle"
+- Evidence: .sisyphus/evidence/task-8-processmanager-tests.txt

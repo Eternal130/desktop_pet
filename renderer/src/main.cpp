@@ -6,10 +6,34 @@
  */
 
 #include "LAppDelegate.hpp"
+#include <cstdio>
+#include <string>
 
 int main(int argc, char* argv[])
 {
-    // create the application instance
+    std::string wsUrl;
+    bool showHelp = false;
+    
+    for (int i = 1; i < argc; ++i) {
+        std::string arg(argv[i]);
+        if (arg == "--ws-url" && i + 1 < argc) {
+            wsUrl = argv[++i];
+        } else if (arg == "--help" || arg == "-h") {
+            showHelp = true;
+        }
+    }
+    
+    if (showHelp) {
+        printf("Usage: desktop-pet-renderer [--ws-url ws://host:port]\n");
+        printf("  --ws-url  WebSocket server URL to connect to (optional)\n");
+        printf("  --help    Show this help message\n");
+        return 0;
+    }
+    
+    if (!wsUrl.empty()) {
+        LAppDelegate::GetInstance()->SetWebSocketUrl(wsUrl);
+    }
+    
     if (LAppDelegate::GetInstance()->Initialize() == GL_FALSE)
     {
         return 1;

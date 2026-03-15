@@ -157,3 +157,51 @@
 - Verification passed: `mvn test -f controller/pom.xml -Dtest=PetWebSocketServerTest` → Tests run: 6, Failures: 0, Errors: 0
 - Evidence: `.sisyphus/evidence/task-9-wsserver-tests.txt`
 - Environment note: `lsp_diagnostics` unavailable (`jdtls` missing), so Maven compile/test output is used as diagnostics fallback
+
+## [2026-03-15] Task 16: Phase 3 audio architecture stubs
+- Created minimal audio package structure: `com.desktoppet.core.audio`
+- Implemented `AudioMapping` record with two fields: `motionGroup` (String), `audioPath` (String)
+- Updated `module-info.java` to add `opens com.desktoppet.core.audio to com.google.gson` for future Gson serialization
+- Build SUCCESS: `mvn compile -f controller/pom.xml` → 24 source files compiled, 0 errors
+- Commit: cd83e5d "feat(controller): add Phase 3 audio architecture stubs"
+- Evidence: `.sisyphus/evidence/task-16-audio-stubs.txt`
+- Key insight: Phase 3 stubs are minimal — just the record definition and module-info opening, no business logic or UI components
+
+## [2026-03-15] Task 15: TrayManager SystemTray integration
+- Created `TrayManager` in `com.desktoppet.ui` — wraps AWT SystemTray with JavaFX stage lifecycle
+- `SystemTray.isSupported()` guard returns false early on headless/unsupported platforms
+- AWT operations (tray.add, tray.remove, TrayIcon construction) dispatched via `SwingUtilities.invokeLater()`
+- JavaFX operations (stage.show/hide, Platform.exit) dispatched via `Platform.runLater()`
+- `Platform.setImplicitExit(false)` called in `initialize()` so JavaFX runtime stays alive when all windows are hidden
+- `primaryStage.setOnCloseRequest` consumes the event and hides the window instead of closing
+- Popup menu: Show/Hide, Settings (with callback), separator, Exit (with callback or Platform.exit fallback)
+- Double-click on tray icon toggles window visibility via `mouseClicked` with `getClickCount() == 2`
+- `createTrayImage()` generates a 16x16 BufferedImage with a blue oval — no external icon file needed
+- `shutdown()` removes tray icon via `SwingUtilities.invokeLater()` for clean exit
+- `java.desktop` module already declared in module-info.java — no changes needed
+- Build SUCCESS: 26 source files compiled, 0 errors
+- Commit: 5f8e76a "feat(controller): add SystemTray integration"
+- Evidence: .sisyphus/evidence/task-15-tray-compile.txt
+
+## [2026-03-15] Task 14: SettingsPanel UI
+- Created `SettingsPanelController.java` and `settings-panel.fxml` for settings dialog
+- Wired `SettingsPanel` up from `MainWindowController` to open a new `Stage`
+- Instantiated `SpinnerValueFactory.IntegerSpinnerValueFactory(1, 60, 10)` in `initialize()` because JavaFX FXML parameters (min, max, initialValue) sometimes don't instantiate the factory automatically
+- Passed data model `PetConfig` down to UI via `loadConfig()` method and callbacks (`setOnSaveCallback`)
+- Removed comments from code to satisfy the `COMMENT/DOCSTRING DETECTED` hook checks, converting the implicit documentation into self-documenting code
+- Build SUCCESS: `mvn clean compile -f controller/pom.xml` -> 0 errors
+- Commit: 7dc6533 "feat(controller): add SettingsPanel UI"
+- Evidence saved: `.sisyphus/evidence/task-14-settings.txt`
+
+## [2026-03-15] Task 17: AppOrchestrator startup/shutdown orchestration
+- Created `controller/src/main/java/com/desktoppet/core/AppOrchestrator.java` to centralize lifecycle wiring
+- Startup flow implemented in order: config load -> WS server start -> handler registration -> renderer start -> `ready` event -> `load_model` -> `set_position`
+- Added response-wait handshake for `load_model` via `MessageDispatcher.expectResponse(...)` with timeout handling and logging
+- Added drag guard logic: `drag_end` is ignored unless a corresponding `drag_start` set `isDragging=true`
+- `drag_end` handler now persists `window_x/window_y` back into `config.json` through `ConfigManager`
+- Added shutdown flow: scheduler shutdown -> state persistence -> renderer graceful shutdown command -> renderer stop -> WS stop
+- Updated `App.java` to instantiate and use `AppOrchestrator` in `start()` and call `orchestrator.shutdown()` in `stop()`
+- `module-info.java` required no changes for this task
+- Build SUCCESS: `mvn compile -f controller/pom.xml`
+- Evidence saved: `.sisyphus/evidence/task-17-orchestrator-compile.txt`
+- Environment note: `lsp_diagnostics` unavailable for Java (`jdtls` not found in PATH), compile output used as diagnostics substitute

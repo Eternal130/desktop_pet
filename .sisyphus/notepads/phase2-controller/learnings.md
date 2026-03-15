@@ -117,6 +117,15 @@
 - Evidence: `.sisyphus/evidence/task-7-petstatemanager-tests.txt`
 - Environment note: `lsp_diagnostics` for Java unavailable (`jdtls` not found in PATH), so build/test output used as verification signal
 
+## [2026-03-15] Task 12: Scheduler TDD
+- Added `SchedulerTest` with 6 deterministic tests for start callback timing, pause behavior, resume behavior, idle motion pool updates, shutdown state cleanup, and random selection across multiple motions
+- Implemented `Scheduler` using injected `ScheduledExecutorService` + `scheduleAtFixedRate` with millisecond interval control for fast tests
+- `Scheduler` supports `pause()`, `resume()`, `setIdleMotions()`, `updateInterval()`, `isRunning()`, and `shutdown()` with task cancellation + executor shutdown
+- Safety details: null/argument validation, callback exception guard with SLF4J logging, and daemon-thread default factory in `createDefault()`
+- Verification passed: `mvn test -f controller/pom.xml -Dtest=SchedulerTest` → Tests run: 6, Failures: 0, Errors: 0
+- Evidence: `.sisyphus/evidence/task-12-scheduler-tests.txt`
+- Environment note: `lsp_diagnostics` still unavailable for Java (`jdtls` missing), so Maven test success is used as diagnostics substitute
+
 ## [2026-03-15] Task 11: InteractionHandler TDD
 - Added `InteractionHandlerTest` with 5 tests covering model-config lookup, default fallback mappings (head/body), unknown area ignore, and null/empty area_id safety
 - Implemented `InteractionHandler` with injected `Consumer<String>` sender, default mappings (`head -> TapHead`, `body -> TapBody`), and model-config lookup supporting lowercase renderer keys and PascalCase config keys

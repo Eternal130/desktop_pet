@@ -143,3 +143,17 @@
 - Verification passed: `mvn test -f controller/pom.xml -Dtest=MessageDispatcherTest` → Tests run: 6, Failures: 0, Errors: 0
 - Module-system note: existing test visibility/runtime required adding `exports com.desktoppet.network` and `requires ch.qos.logback.{classic,core}` to `module-info.java`
 - Environment note: `lsp_diagnostics` remains unavailable in this environment (`jdtls` missing), so Maven test success is used as diagnostics substitute
+
+## [2026-03-15] Task 9: PetWebSocketServer TDD
+- Added `PetWebSocketServerTest` with 6 real-integration tests using actual Java-WebSocket server/client and random ports from `ServerSocket(0)`
+- Test coverage includes lifecycle (start/stop), connect/disconnect callbacks, server→client send, client→server receive callback, and single-connection replacement behavior
+- Implemented `PetWebSocketServer` extending `WebSocketServer` with:
+  - `activeConnection` tracking
+  - replacement of existing open connection in `onOpen`
+  - message forwarding via `setMessageCallback`
+  - connection status forwarding via `setConnectionCallback`
+  - guarded `sendMessage` and `hasActiveConnection`
+- Stability insight: starting the server asynchronously requires a brief readiness wait before client `connectBlocking` to avoid flakiness in local integration tests
+- Verification passed: `mvn test -f controller/pom.xml -Dtest=PetWebSocketServerTest` → Tests run: 6, Failures: 0, Errors: 0
+- Evidence: `.sisyphus/evidence/task-9-wsserver-tests.txt`
+- Environment note: `lsp_diagnostics` unavailable (`jdtls` missing), so Maven compile/test output is used as diagnostics fallback

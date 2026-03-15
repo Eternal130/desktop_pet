@@ -1,0 +1,25 @@
+[Task 9] PetWebSocketServer TDD evidence
+
+Command:
+mvn test -f controller/pom.xml -Dtest=PetWebSocketServerTest
+
+Result:
+- BUILD SUCCESS
+- Tests run: 6
+- Failures: 0
+- Errors: 0
+- Skipped: 0
+
+Key verifications from test suite:
+1) startAndStop_noCrash
+2) clientConnect_callsConnectionCallback
+3) clientDisconnect_callsConnectionCallback
+4) sendMessage_clientReceivesIt
+5) clientSends_messageCallbackInvoked
+6) singleConnectionPolicy_newConnectionReplacesOld
+
+Implementation notes validated by tests:
+- Real org.java_websocket.server.WebSocketServer instance used
+- Real org.java_websocket.client.WebSocketClient instance used
+- Random available port allocation via ServerSocket(0)
+- Single-connection policy enforced (new connection closes previous)

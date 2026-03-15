@@ -1,0 +1,20 @@
+Task 11 — InteractionHandler TDD Evidence
+Date: 2026-03-15
+
+Command:
+  mvn test -f controller/pom.xml -Dtest=InteractionHandlerTest
+
+Result (excerpt):
+  Tests run: 5, Failures: 0, Errors: 0, Skipped: 0
+  BUILD SUCCESS
+
+Validation notes:
+  - InteractionHandlerTest created with 5 tests:
+    1) hitHead_withModelConfig_sendsPlayMotion
+    2) hitBody_defaultMapping_sendsPlayMotion
+    3) hitHead_defaultMapping_sendsPlayMotion
+    4) unknownAreaId_noMessageSent
+    5) hitEventWithoutAreaId_noMessageSent
+  - InteractionHandler implemented and sends serialized play_motion command with:
+      group=<mapped motion>, index=0, priority=<mapped priority>
+  - LSP diagnostics check attempted for changed Java files, but jdtls is unavailable in PATH in this environment.

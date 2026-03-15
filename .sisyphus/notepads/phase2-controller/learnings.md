@@ -116,3 +116,10 @@
 - Verification passed: `mvn test -f controller/pom.xml -Dtest=PetStateManagerTest` → Tests run: 7, Failures: 0, Errors: 0
 - Evidence: `.sisyphus/evidence/task-7-petstatemanager-tests.txt`
 - Environment note: `lsp_diagnostics` for Java unavailable (`jdtls` not found in PATH), so build/test output used as verification signal
+
+## [2026-03-15] Task 11: InteractionHandler TDD
+- Added `InteractionHandlerTest` with 5 tests covering model-config lookup, default fallback mappings (head/body), unknown area ignore, and null/empty area_id safety
+- Implemented `InteractionHandler` with injected `Consumer<String>` sender, default mappings (`head -> TapHead`, `body -> TapBody`), and model-config lookup supporting lowercase renderer keys and PascalCase config keys
+- `handleHitEvent` now builds `play_motion` command payload (`group`, `index=0`, `priority`) via `Protocol.createCommand` and serializes with `Protocol.serialize`
+- Verification passed: `mvn test -f controller/pom.xml -Dtest=InteractionHandlerTest` → Tests run: 5, Failures: 0, Errors: 0
+- Environment note: `lsp_diagnostics` could not run because `jdtls` is unavailable in PATH; Maven test compile/run used as validation fallback

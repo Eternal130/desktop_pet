@@ -1,0 +1,283 @@
+[[1;34mINFO[m] Scanning for projects...
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m---------------< [0;36mcom.desktoppet:desktop-pet-controller[0;1m >----------------[m
+[[1;34mINFO[m] [1mBuilding Desktop Pet Controller 1.0.0-SNAPSHOT[m
+[[1;34mINFO[m] [1m--------------------------------[ jar ]---------------------------------[m
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-clean-plugin:2.5:clean[m [1m(default-clean)[m @ [36mdesktop-pet-controller[0;1m ---[m
+[[1;34mINFO[m] Deleting /opt/desktop_pet/controller/target
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-resources-plugin:2.6:resources[m [1m(default-resources)[m @ [36mdesktop-pet-controller[0;1m ---[m
+[[1;34mINFO[m] Using 'UTF-8' encoding to copy filtered resources.
+[[1;34mINFO[m] Copying 4 resources
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-compiler-plugin:3.13.0:compile[m [1m(default-compile)[m @ [36mdesktop-pet-controller[0;1m ---[m
+[[1;34mINFO[m] Recompiling the module because of [1mchanged source code[m.
+[[1;34mINFO[m] Compiling 27 source files with javac [debug target 21 module-path] to target/classes
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-resources-plugin:2.6:testResources[m [1m(default-testResources)[m @ [36mdesktop-pet-controller[0;1m ---[m
+[[1;34mINFO[m] Using 'UTF-8' encoding to copy filtered resources.
+[[1;34mINFO[m] Copying 1 resource
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-compiler-plugin:3.13.0:testCompile[m [1m(default-testCompile)[m @ [36mdesktop-pet-controller[0;1m ---[m
+[[1;34mINFO[m] Recompiling the module because of [1mchanged dependency[m.
+[[1;34mINFO[m] Compiling 12 source files with javac [debug target 21 module-path] to target/test-classes
+[[1;34mINFO[m] /opt/desktop_pet/controller/src/test/java/com/desktoppet/core/InteractionHandlerTest.java: /opt/desktop_pet/controller/src/test/java/com/desktoppet/core/InteractionHandlerTest.java使用了未经检查或不安全的操作。
+[[1;34mINFO[m] /opt/desktop_pet/controller/src/test/java/com/desktoppet/core/InteractionHandlerTest.java: 有关详细信息, 请使用 -Xlint:unchecked 重新编译。
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-surefire-plugin:3.5.2:test[m [1m(default-test)[m @ [36mdesktop-pet-controller[0;1m ---[m
+[[1;34mINFO[m] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[[1;34mINFO[m] 
+[[1;34mINFO[m] -------------------------------------------------------
+[[1;34mINFO[m]  T E S T S
+[[1;34mINFO[m] -------------------------------------------------------
+WARNING: package com.sun.glass.ui.monocle not in javafx.graphics
+WARNING: package com.sun.glass.ui.monocle not in javafx.graphics
+[[1;34mINFO[m] Running com.desktoppet.util.[1mProcessManagerTest[m
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build what is described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org/mockito/Mockito.html#0.3
+WARNING: A Java agent has been loaded dynamically (/root/.m2/repository/net/bytebuddy/byte-buddy-agent/1.15.4/byte-buddy-agent-1.15.4.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+18:11:21.876 [main] INFO  com.desktoppet.util.ProcessManager - Starting renderer: /fake/renderer --ws-url ws://localhost:9000
+18:11:21.911 [main] INFO  com.desktoppet.util.ProcessManager - Renderer started (pid=0)
+18:11:21.920 [main] DEBUG com.desktoppet.util.ProcessManager - stopRenderer called but renderer is not running
+18:11:21.927 [main] INFO  com.desktoppet.util.ProcessManager - Starting renderer: /fake/renderer --ws-url ws://localhost:9000
+18:11:21.928 [main] INFO  com.desktoppet.util.ProcessManager - Renderer started (pid=0)
+18:11:21.928 [main] INFO  com.desktoppet.util.ProcessManager - Sending graceful shutdown command to renderer
+18:11:21.929 [main] INFO  com.desktoppet.util.ProcessManager - Renderer exited gracefully (code=0)
+18:11:21.933 [main] INFO  com.desktoppet.util.ProcessManager - Starting renderer: /fake/renderer --ws-url ws://localhost:9000
+18:11:21.934 [main] INFO  com.desktoppet.util.ProcessManager - Renderer started (pid=0)
+18:11:21.934 [main] INFO  com.desktoppet.util.ProcessManager - Renderer exited with code 0
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m5[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.906 s -- in com.desktoppet.util.[1mProcessManagerTest[m
+[[1;34mINFO[m] Running com.desktoppet.integration.[1mE2ESmokeTest[m
+18:11:22.059 [WebSocketSelector-67] INFO  c.d.network.PetWebSocketServer - WebSocket server started on port 37449
+18:11:22.383 [WebSocketWorker-51] INFO  c.d.network.PetWebSocketServer - Renderer connected: /127.0.0.1:36928
+18:11:22.401 [WebSocketWorker-51] DEBUG c.desktoppet.core.InteractionHandler - play_motion sent for area_id=head, group=TapHead
+18:11:22.403 [WebSocketSelector-67] INFO  c.d.network.PetWebSocketServer - Renderer disconnected: code=1000, reason=, remote=true
+18:11:22.526 [WebSocketSelector-88] INFO  c.d.network.PetWebSocketServer - WebSocket server started on port 44449
+18:11:22.828 [WebSocketWorker-72] INFO  c.d.network.PetWebSocketServer - Renderer connected: /127.0.0.1:51518
+18:11:22.830 [WebSocketSelector-88] INFO  c.d.network.PetWebSocketServer - Renderer disconnected: code=1000, reason=, remote=true
+18:11:22.953 [WebSocketSelector-109] INFO  c.d.network.PetWebSocketServer - WebSocket server started on port 44617
+18:11:23.254 [WebSocketWorker-93] INFO  c.d.network.PetWebSocketServer - Renderer connected: /127.0.0.1:44374
+18:11:23.257 [WebSocketSelector-109] INFO  c.d.network.PetWebSocketServer - Renderer disconnected: code=1000, reason=, remote=true
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m3[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.337 s -- in com.desktoppet.integration.[1mE2ESmokeTest[m
+[[1;34mINFO[m] Running com.desktoppet.ui.[1mMainWindowTest[m
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m4[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.221 s -- in com.desktoppet.ui.[1mMainWindowTest[m
+[[1;34mINFO[m] Running com.desktoppet.ui.[1mSettingsPanelTest[m
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m4[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.138 s -- in com.desktoppet.ui.[1mSettingsPanelTest[m
+[[1;34mINFO[m] Running com.desktoppet.core.[1mSchedulerTest[m
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m6[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.011 s -- in com.desktoppet.core.[1mSchedulerTest[m
+[[1;34mINFO[m] Running com.desktoppet.core.[1mConfigManagerTest[m
+18:11:26.781 [main] WARN  com.desktoppet.core.ConfigManager - Failed to load config from /tmp/junit-17889591990696227388/desktop-pet/config.json, using defaults
+com.google.gson.JsonSyntaxException: com.google.gson.stream.MalformedJsonException: Use JsonReader.setStrictness(Strictness.LENIENT) to accept malformed JSON at line 1 column 6 path $
+See https://github.com/google/gson/blob/main/Troubleshooting.md#malformed-json
+	at com.google.gson@2.13.2/com.google.gson.JsonParser.parseReader(JsonParser.java:116)
+	at com.google.gson@2.13.2/com.google.gson.JsonParser.parseString(JsonParser.java:92)
+	at com.desktoppet@1.0.0-SNAPSHOT/com.desktoppet.core.ConfigManager.load(ConfigManager.java:44)
+	at com.desktoppet@1.0.0-SNAPSHOT/com.desktoppet.core.ConfigManagerTest.load_corruptJson_returnsDefaults(ConfigManagerTest.java:65)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:767)
+	at org.junit.jupiter.engine.execution.MethodInvocation.proceed(MethodInvocation.java:60)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed(InvocationInterceptorChain.java:131)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.intercept(TimeoutExtension.java:156)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod(TimeoutExtension.java:147)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestMethod(TimeoutExtension.java:86)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0(InterceptingExecutableInvoker.java:103)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0(InterceptingExecutableInvoker.java:93)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed(InvocationInterceptorChain.java:106)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed(InvocationInterceptorChain.java:64)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke(InvocationInterceptorChain.java:45)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke(InvocationInterceptorChain.java:37)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:92)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:86)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.lambda$invokeTestMethod$8(TestMethodTestDescriptor.java:217)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.invokeTestMethod(TestMethodTestDescriptor.java:213)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:138)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:68)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:156)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:160)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:160)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:35)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:57)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:54)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:198)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:169)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:93)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:58)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:141)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:57)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:103)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:85)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:47)
+	at org.apache.maven.surefire.junitplatform.LazyLauncher.execute(LazyLauncher.java:56)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:184)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:148)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:122)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+Caused by: com.google.gson.stream.MalformedJsonException: Use JsonReader.setStrictness(Strictness.LENIENT) to accept malformed JSON at line 1 column 6 path $
+See https://github.com/google/gson/blob/main/Troubleshooting.md#malformed-json
+	at com.google.gson@2.13.2/com.google.gson.stream.JsonReader.syntaxError(JsonReader.java:1817)
+	at com.google.gson@2.13.2/com.google.gson.stream.JsonReader.checkLenient(JsonReader.java:1613)
+	at com.google.gson@2.13.2/com.google.gson.stream.JsonReader.doPeek(JsonReader.java:672)
+	at com.google.gson@2.13.2/com.google.gson.stream.JsonReader.peek(JsonReader.java:547)
+	at com.google.gson@2.13.2/com.google.gson.JsonParser.parseReader(JsonParser.java:111)
+	... 72 common frames omitted
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m7[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.023 s -- in com.desktoppet.core.[1mConfigManagerTest[m
+[[1;34mINFO[m] Running com.desktoppet.core.[1mPetStateManagerTest[m
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m7[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.desktoppet.core.[1mPetStateManagerTest[m
+[[1;34mINFO[m] Running com.desktoppet.core.[1mInteractionHandlerTest[m
+18:11:26.834 [main] DEBUG c.desktoppet.core.InteractionHandler - play_motion sent for area_id=head, group=TapHead
+18:11:26.838 [main] DEBUG c.desktoppet.core.InteractionHandler - play_motion sent for area_id=head, group=TapHead
+18:11:26.839 [main] DEBUG c.desktoppet.core.InteractionHandler - play_motion sent for area_id=body, group=TapBody
+18:11:26.840 [main] DEBUG c.desktoppet.core.InteractionHandler - No hit action configured for area_id: unknown_area
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m5[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.033 s -- in com.desktoppet.core.[1mInteractionHandlerTest[m
+[[1;34mINFO[m] Running com.desktoppet.core.[1mModelInfoParserTest[m
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m6[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.desktoppet.core.[1mModelInfoParserTest[m
+[[1;34mINFO[m] Running com.desktoppet.network.[1mMessageDispatcherTest[m
+18:11:26.849 [main] ERROR c.d.network.MessageDispatcher - Error in event handler for model_loaded: boom
+java.lang.RuntimeException: boom
+	at com.desktoppet@1.0.0-SNAPSHOT/com.desktoppet.network.MessageDispatcherTest.lambda$handlerThrowsException_doesNotCrash$4(MessageDispatcherTest.java:91)
+	at com.desktoppet@1.0.0-SNAPSHOT/com.desktoppet.network.MessageDispatcher.dispatch(MessageDispatcher.java:52)
+	at com.desktoppet@1.0.0-SNAPSHOT/com.desktoppet.network.MessageDispatcherTest.lambda$handlerThrowsException_doesNotCrash$5(MessageDispatcherTest.java:96)
+	at org.junit.jupiter.api.AssertDoesNotThrow.assertDoesNotThrow(AssertDoesNotThrow.java:49)
+	at org.junit.jupiter.api.AssertDoesNotThrow.assertDoesNotThrow(AssertDoesNotThrow.java:36)
+	at org.junit.jupiter.api.Assertions.assertDoesNotThrow(Assertions.java:3199)
+	at com.desktoppet@1.0.0-SNAPSHOT/com.desktoppet.network.MessageDispatcherTest.handlerThrowsException_doesNotCrash(MessageDispatcherTest.java:96)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:767)
+	at org.junit.jupiter.engine.execution.MethodInvocation.proceed(MethodInvocation.java:60)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed(InvocationInterceptorChain.java:131)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.intercept(TimeoutExtension.java:156)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod(TimeoutExtension.java:147)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestMethod(TimeoutExtension.java:86)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0(InterceptingExecutableInvoker.java:103)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0(InterceptingExecutableInvoker.java:93)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed(InvocationInterceptorChain.java:106)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed(InvocationInterceptorChain.java:64)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke(InvocationInterceptorChain.java:45)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke(InvocationInterceptorChain.java:37)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:92)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:86)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.lambda$invokeTestMethod$8(TestMethodTestDescriptor.java:217)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.invokeTestMethod(TestMethodTestDescriptor.java:213)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:138)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:68)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:156)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:160)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:160)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:146)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:144)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:143)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:100)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:35)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:57)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:54)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:198)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:169)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:93)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:58)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:141)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:57)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:103)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:85)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:47)
+	at org.apache.maven.surefire.junitplatform.LazyLauncher.execute(LazyLauncher.java:56)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:184)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:148)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:122)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+18:11:26.850 [main] WARN  c.d.network.MessageDispatcher - No handler registered for event action: unknown_action
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m6[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.107 s -- in com.desktoppet.network.[1mMessageDispatcherTest[m
+[[1;34mINFO[m] Running com.desktoppet.network.[1mPetWebSocketServerTest[m
+18:11:26.954 [WebSocketSelector-157] INFO  c.d.network.PetWebSocketServer - WebSocket server started on port 33867
+18:11:27.006 [WebSocketWorker-141] INFO  c.d.network.PetWebSocketServer - Renderer connected: /127.0.0.1:35198
+18:11:27.007 [WebSocketSelector-157] INFO  c.d.network.PetWebSocketServer - Renderer disconnected: code=1000, reason=, remote=true
+18:11:27.030 [WebSocketSelector-178] INFO  c.d.network.PetWebSocketServer - WebSocket server started on port 36389
+18:11:27.080 [WebSocketWorker-162] INFO  c.d.network.PetWebSocketServer - Renderer connected: /127.0.0.1:46412
+18:11:27.081 [WebSocketSelector-178] INFO  c.d.network.PetWebSocketServer - Renderer disconnected: code=1000, reason=, remote=true
+18:11:27.103 [WebSocketSelector-199] INFO  c.d.network.PetWebSocketServer - WebSocket server started on port 38381
+18:11:27.104 [WebSocketSelector-217] INFO  c.d.network.PetWebSocketServer - WebSocket server started on port 39257
+18:11:27.155 [WebSocketWorker-201] INFO  c.d.network.PetWebSocketServer - Renderer connected: /127.0.0.1:54198
+18:11:27.156 [WebSocketSelector-217] INFO  c.d.network.PetWebSocketServer - Renderer disconnected: code=1000, reason=replaced by new connection, remote=false
+18:11:27.156 [WebSocketWorker-202] INFO  c.d.network.PetWebSocketServer - Renderer connected: /127.0.0.1:54214
+18:11:27.157 [WebSocketSelector-217] INFO  c.d.network.PetWebSocketServer - Renderer disconnected: code=1000, reason=, remote=true
+18:11:27.179 [WebSocketSelector-241] INFO  c.d.network.PetWebSocketServer - WebSocket server started on port 46807
+18:11:27.230 [WebSocketWorker-225] INFO  c.d.network.PetWebSocketServer - Renderer connected: /127.0.0.1:55744
+18:11:27.230 [WebSocketSelector-241] INFO  c.d.network.PetWebSocketServer - Renderer disconnected: code=1000, reason=, remote=true
+18:11:27.253 [WebSocketSelector-262] INFO  c.d.network.PetWebSocketServer - WebSocket server started on port 38711
+18:11:27.304 [WebSocketWorker-246] INFO  c.d.network.PetWebSocketServer - Renderer connected: /127.0.0.1:47878
+18:11:27.345 [WebSocketSelector-262] INFO  c.d.network.PetWebSocketServer - Renderer disconnected: code=1000, reason=, remote=true
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m6[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.413 s -- in com.desktoppet.network.[1mPetWebSocketServerTest[m
+[[1;34mINFO[m] Running com.desktoppet.network.[1mProtocolTest[m
+[[1;34mINFO[m] [1;32mTests run: [0;1;32m12[m, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.desktoppet.network.[1mProtocolTest[m
+[[1;34mINFO[m] 
+[[1;34mINFO[m] Results:
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1;32mTests run: 71, Failures: 0, Errors: 0, Skipped: 0[m
+[[1;34mINFO[m] 
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-jar-plugin:2.4:jar[m [1m(default-jar)[m @ [36mdesktop-pet-controller[0;1m ---[m
+[[1;34mINFO[m] Building jar: /opt/desktop_pet/controller/target/desktop-pet-controller-1.0.0-SNAPSHOT.jar
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;34mINFO[m] [1;32mBUILD SUCCESS[m
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;34mINFO[m] Total time:  8.278 s
+[[1;34mINFO[m] Finished at: 2026-03-15T18:11:27+08:00
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m

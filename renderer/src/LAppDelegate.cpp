@@ -317,8 +317,10 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
     {
         const bool wasDragging = _isDragging;
         _isDragging = false;
-        if (_eventEmitter) {
-            _eventEmitter->emit("drag_end", {{"x", _mouseX}, {"y", _mouseY}});
+        if (wasDragging && _eventEmitter) {
+            int wx, wy;
+            glfwGetWindowPos(_window, &wx, &wy);
+            _eventEmitter->emit("drag_end", {{"x", _mouseX}, {"y", _mouseY}, {"window_x", wx}, {"window_y", wy}});
         }
         if (_captured)
         {

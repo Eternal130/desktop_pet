@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<VBox xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.desktoppet.ui.SettingsPanelController"
+      spacing="12" style="-fx-padding: 15; -fx-min-width: 350;">
+
+    <Label text="Settings" style="-fx-font-size: 16; -fx-font-weight: bold;"/>
+    <Separator/>
+
+    <!-- Drag Mode -->
+    <VBox spacing="5">
+        <Label text="Drag Mode"/>
+        <HBox spacing="10">
+            <RadioButton fx:id="directModeRadio" text="Direct Follow" userData="direct"/>
+            <RadioButton fx:id="physicsModeRadio" text="Physics (preview)" userData="physics"/>
+        </HBox>
+        <Label text="Note: Physics mode is reserved for future implementation."
+               style="-fx-font-size: 10; -fx-text-fill: gray;"/>
+    </VBox>
+
+    <!-- Idle Interval -->
+    <VBox spacing="5">
+        <Label text="Idle Motion Interval (seconds)"/>
+        <HBox spacing="10" alignment="CENTER_LEFT">
+            <Spinner fx:id="idleIntervalSpinner" min="1" max="60" initialValue="10"
+                     editable="true" prefWidth="80"/>
+            <Label text="seconds"/>
+        </HBox>
+    </VBox>
+
+    <!-- Opacity -->
+    <VBox spacing="5">
+        <Label text="Window Opacity"/>
+        <HBox spacing="10" alignment="CENTER_LEFT">
+            <Slider fx:id="opacitySlider" min="0.1" max="1.0" value="1.0"
+                    showTickLabels="true" showTickMarks="true"
+                    majorTickUnit="0.25" prefWidth="200"/>
+            <Label fx:id="opacityValueLabel" text="1.00"/>
+        </HBox>
+    </VBox>
+
+    <!-- Model Selection -->
+    <VBox spacing="5">
+        <Label text="Model"/>
+        <HBox spacing="10" alignment="CENTER_LEFT">
+            <ComboBox fx:id="modelComboBox" prefWidth="200"/>
+            <Button text="Refresh" onAction="#onRefreshModels"/>
+        </HBox>
+    </VBox>
+
+    <Separator/>
+
+    <!-- Buttons -->
+    <HBox spacing="10" alignment="CENTER_RIGHT">
+        <Button text="Cancel" onAction="#onCancel"/>
+        <Button text="Save" onAction="#onSave" style="-fx-background-color: #4a90d9; -fx-text-fill: white;"/>
+    </HBox>
+</VBox>

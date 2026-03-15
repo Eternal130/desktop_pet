@@ -108,3 +108,11 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${RES_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/Resources
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${FRAMEWORK_SHADER_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/FrameworkShaders
 )
+
+enable_testing()
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+add_executable(renderer-tests tests/placeholder_test.cpp)
+target_link_libraries(renderer-tests PRIVATE GTest::gtest_main)
+target_include_directories(renderer-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+include(GoogleTest)
+gtest_discover_tests(renderer-tests)

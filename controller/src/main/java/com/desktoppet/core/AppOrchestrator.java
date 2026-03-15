@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class AppOrchestrator {
     private static final Logger log = LoggerFactory.getLogger(AppOrchestrator.class);
@@ -33,6 +34,16 @@ public class AppOrchestrator {
     private final Scheduler scheduler;
 
     private final AtomicBoolean isDragging = new AtomicBoolean(false);
+    private final AtomicInteger restartAttempts = new AtomicInteger(0);
+    private static final int MAX_RESTART_ATTEMPTS = 5;
+    private static final long[] BACKOFF_DELAYS_MS = {2000, 4000, 8000, 16000, 30000};
+    private volatile long lastSuccessfulStartTime = 0;
+    private static final long STABLE_THRESHOLD_MS = 60_000;
+    private final java.util.concurrent.ConcurrentLinkedQueue<String> pendingCriticalCommands
+            = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private static final java.util.Set<String> CRITICAL_ACTIONS = java.util.Set.of(
+            "load_model", "set_position", "set_opacity"
+    );
 
     private PetConfig config;
     private MainWindowController uiController;
@@ -43,7 +54,16 @@ public class AppOrchestrator {
         this.wsServer = new PetWebSocketServer(WS_PORT);
         this.dispatcher = new MessageDispatcher();
         this.processManager = new ProcessManager();
-        this.interactionHandler = new InteractionHandler(msg -> wsServer.sendMessage(msg));
+        this.interactionHandler = new InteractionHandler(msg -> {
+            Optional<Envelope> envelope = Protocol.deserialize(msg);
+            if (envelope.isPresent()) {
+                sendOrCache(envelope.get().action(), msg);
+            } else if (stateManager.getState().connected()) {
+                wsServer.sendMessage(msg);
+            } else {
+                log.debug("Discarded malformed command during disconnect");
+            }
+        });
         this.scheduler = Scheduler.createDefault();
     }
 
@@ -79,6 +99,10 @@ public class AppOrchestrator {
             stateManager.setModelLoaded(false);
             scheduler.pause();
             updateUiConnectionStatus(false);
+
+            if (exitCode != 0) {
+                scheduleRestart();
+            }
         });
 
         processManager.startRenderer();
@@ -100,11 +124,16 @@ public class AppOrchestrator {
                 .thenAccept(response -> {
                     if (Boolean.TRUE.equals(response.success())) {
                         log.info("Model loaded: {}", modelName);
+                        lastSuccessfulStartTime = System.currentTimeMillis();
+                        restartAttempts.set(0);
 
                         JsonObject posPayload = new JsonObject();
                         posPayload.addProperty("x", config.window().positionX());
                         posPayload.addProperty("y", config.window().positionY());
-                        wsServer.sendMessage(Protocol.serialize(Protocol.createCommand("set_position", posPayload)));
+                        sendOrCache(
+                                "set_position",
+                                Protocol.serialize(Protocol.createCommand("set_position", posPayload))
+                        );
 
                         startSchedulerForModel(modelName);
                         stateManager.updateModelName(modelName);
@@ -118,7 +147,8 @@ public class AppOrchestrator {
                     return null;
                 });
 
-            wsServer.sendMessage(Protocol.serialize(cmd));
+            sendOrCache("load_model", Protocol.serialize(cmd));
+            flushPendingCommands();
         });
 
         dispatcher.registerEventHandler("model_loaded", envelope -> {
@@ -199,11 +229,78 @@ public class AppOrchestrator {
                 payload.addProperty("group", motionGroup);
                 payload.addProperty("index", 0);
                 payload.addProperty("priority", 1);
-                wsServer.sendMessage(Protocol.serialize(Protocol.createCommand("play_motion", payload)));
+                sendOrCache(
+                        "play_motion",
+                        Protocol.serialize(Protocol.createCommand("play_motion", payload))
+                );
                 log.debug("Idle motion triggered: {}", motionGroup);
             }
         });
+        scheduler.resume();
         log.info("Scheduler started: interval={}ms, motions={}", intervalMillis, finalIdleMotions);
+    }
+
+    private void sendOrCache(String action, String serializedEnvelope) {
+        if (stateManager.getState().connected()) {
+            wsServer.sendMessage(serializedEnvelope);
+        } else if (CRITICAL_ACTIONS.contains(action)) {
+            pendingCriticalCommands.offer(serializedEnvelope);
+            log.debug("Cached critical command: {}", action);
+        } else {
+            log.debug("Discarded non-critical command during disconnect: {}", action);
+        }
+    }
+
+    private void flushPendingCommands() {
+        String cmd;
+        while ((cmd = pendingCriticalCommands.poll()) != null) {
+            wsServer.sendMessage(cmd);
+            log.debug("Resent cached command");
+        }
+    }
+
+    private void scheduleRestart() {
+        int attempts = restartAttempts.get();
+
+        if (lastSuccessfulStartTime > 0
+                && System.currentTimeMillis() - lastSuccessfulStartTime > STABLE_THRESHOLD_MS) {
+            restartAttempts.set(0);
+            attempts = 0;
+        }
+
+        if (attempts >= MAX_RESTART_ATTEMPTS) {
+            log.error("Renderer crashed {} times, giving up. Manual restart required.", attempts);
+            updateUiConnectionStatus(false);
+            return;
+        }
+
+        long delayMs = BACKOFF_DELAYS_MS[Math.min(attempts, BACKOFF_DELAYS_MS.length - 1)];
+        log.info(
+                "Scheduling renderer restart in {}ms (attempt {}/{})",
+                delayMs,
+                attempts + 1,
+                MAX_RESTART_ATTEMPTS
+        );
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                Thread.sleep(delayMs);
+                restartAttempts.incrementAndGet();
+                doRestartRenderer();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                log.error("Restart failed: {}", e.getMessage(), e);
+            }
+        });
+    }
+
+    private void doRestartRenderer() throws Exception {
+        log.info("Restarting renderer...");
+        stateManager.setConnected(false);
+        stateManager.setModelLoaded(false);
+        processManager.startRenderer();
+        log.info("Renderer restarted, waiting for ready event...");
     }
 
     public void shutdown() {

@@ -215,3 +215,21 @@
 - `directModeRadio` is NOT selected by default (no FXML `selected="true"` and `initialize()` doesn't select it) — must call `loadConfig()` first to set selection
 - `interact()` runs code on JavaFX Application Thread; `lookup("#id")` finds nodes by fx:id
 - Evidence: `.sisyphus/evidence/task-18-testfx.txt`
+
+## [2026-03-15] Task 19: AppOrchestrator crash recovery + disconnect handling
+- Added restart state in `AppOrchestrator`: `AtomicInteger restartAttempts`, max attempts=5, backoff sequence `{2000, 4000, 8000, 16000, 30000}` ms, stable reset threshold `60_000` ms
+- Exit callback now triggers `scheduleRestart()` only for non-zero exit code (crash path), while keeping graceful shutdown behavior for exit code 0
+- Implemented `scheduleRestart()` + `doRestartRenderer()` with async sleep-based exponential backoff and fail-fast guard after max retries
+- Stable recovery reset implemented in two places:
+  - Before scheduling restart: if last successful start is older than 60s, attempts counter resets
+  - On successful `load_model` response: update `lastSuccessfulStartTime` and reset attempts to 0
+- Added disconnected-send policy via `sendOrCache(action, serializedEnvelope)`:
+  - Connected: send immediately
+  - Disconnected + critical action (`load_model`, `set_position`, `set_opacity`): cache in `ConcurrentLinkedQueue`
+  - Disconnected + non-critical action (e.g. `play_motion`, `set_expression`): discard with debug log
+- Added `flushPendingCommands()` and invoked it in `ready` handler after sending `load_model` to replay cached critical commands after reconnect
+- Routed outbound command paths through `sendOrCache(...)` for `load_model`, `set_position`, scheduled `play_motion`, and `InteractionHandler` command sender integration
+- Scheduler reconnect behavior: `scheduler.resume()` now called after successful model setup (`startSchedulerForModel`) to mirror prior disconnect `pause()` behavior
+- Verification: `mvn test -f controller/pom.xml` → `Tests run: 68, Failures: 0, Errors: 0`, `BUILD SUCCESS`
+- Evidence: `.sisyphus/evidence/task-19-crash-recovery-tests.txt`
+- Environment note: Java LSP diagnostics unavailable (`jdtls` not found in PATH), so Maven test/build output used as diagnostics substitute

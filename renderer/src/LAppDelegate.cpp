@@ -301,7 +301,15 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
         else
         {
             if (_eventEmitter) {
-                _eventEmitter->emit("hit", {{"x", _mouseX}, {"y", _mouseY}, {"button", button}});
+                std::string areaId = "body";
+                LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
+                if (manager->GetModelNum() > 0) {
+                    LAppModel* model = manager->GetModel(0);
+                    if (model && model->HitTest(LAppDefine::HitAreaNameHead, x, y)) {
+                        areaId = "head";
+                    }
+                }
+                _eventEmitter->emit("hit", {{"area_id", areaId}, {"x", _mouseX}, {"y", _mouseY}, {"button", button}});
             }
         }
     }

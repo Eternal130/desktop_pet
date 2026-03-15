@@ -6,8 +6,27 @@
 #include "LAppModel.hpp"
 #include "LAppPal.hpp"
 #include <GLFW/glfw3.h>
+#include <sys/stat.h>
+#include <string>
 
 namespace Network {
+
+struct MotionFinishedCtx {
+    EventEmitter* emitter;
+    std::string group;
+    int index;
+};
+
+static void OnMotionFinishedStatic(Csm::ACubismMotion* motion) {
+    auto* ctx = static_cast<MotionFinishedCtx*>(motion->GetFinishedMotionCustomData());
+    if (ctx) {
+        if (ctx->emitter) {
+            ctx->emitter->emit("motion_finished", {{"group", ctx->group}, {"index", ctx->index}});
+        }
+        delete ctx;
+        motion->SetFinishedMotionCustomData(nullptr);
+    }
+}
 
 void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
 
@@ -26,12 +45,26 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             }
             return;
         }
+        struct stat st;
+        bool pathExists = (stat(modelPath.c_str(), &st) == 0);
+        if (!pathExists) {
+            sendResponse(createResponse(cmd.id, "load_model", false, 1001, "Model path not found: " + modelPath));
+            auto* emitter = delegate->GetEventEmitter();
+            if (emitter) {
+                emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", "Model path not found: " + modelPath}});
+            }
+            return;
+        }
         LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
         manager->ChangeScene(modelPath.c_str());
         sendResponse(createResponse(cmd.id, "load_model", true));
         auto* emitter = delegate->GetEventEmitter();
         if (emitter) {
-            emitter->emit("model_loaded", {{"model_id", modelPath}});
+            nlohmann::json modelPayload;
+            modelPayload["model_id"] = modelPath;
+            modelPayload["motions"] = nlohmann::json::array();
+            modelPayload["expressions"] = nlohmann::json::array();
+            emitter->emit("model_loaded", modelPayload);
         }
     });
 
@@ -47,8 +80,9 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         }
         LAppModel* model = manager->GetModel(0);
         if (!model) return;
-        model->StartMotion(group.c_str(), index, priority);
         auto* emitter = delegate->GetEventEmitter();
+        auto* ctx = new MotionFinishedCtx{emitter, group, index};
+        model->StartMotionWithCustomData(group.c_str(), index, priority, OnMotionFinishedStatic, ctx);
         if (emitter) {
             emitter->emit("motion_started", {{"group", group}, {"index", index}});
         }

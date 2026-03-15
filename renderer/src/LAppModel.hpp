@@ -69,6 +69,8 @@ public:
      */
     Csm::CubismMotionQueueEntryHandle StartMotion(const Csm::csmChar* group, Csm::csmInt32 no, Csm::csmInt32 priority, Csm::ACubismMotion::FinishedMotionCallback onFinishedMotionHandler = NULL, Csm::ACubismMotion::BeganMotionCallback onBeganMotionHandler = NULL);
 
+    Csm::CubismMotionQueueEntryHandle StartMotionWithCustomData(const Csm::csmChar* group, Csm::csmInt32 no, Csm::csmInt32 priority, Csm::ACubismMotion::FinishedMotionCallback onFinishedMotionHandler, void* customData);
+
     /**
      * @brief   ランダムに選ばれたモーションの再生を開始する。
      *

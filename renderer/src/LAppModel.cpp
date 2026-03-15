@@ -472,6 +472,21 @@ CubismMotionQueueEntryHandle LAppModel::StartMotion(const csmChar* group, csmInt
     return  _motionManager->StartMotionPriority(motion, autoDelete, priority);
 }
 
+CubismMotionQueueEntryHandle LAppModel::StartMotionWithCustomData(const csmChar* group, csmInt32 no, csmInt32 priority, ACubismMotion::FinishedMotionCallback onFinishedMotionHandler, void* customData)
+{
+    CubismMotionQueueEntryHandle handle = StartMotion(group, no, priority, onFinishedMotionHandler);
+    if (handle != InvalidMotionQueueEntryHandleValue) {
+        CubismMotionQueueEntry* entry = _motionManager->GetCubismMotionQueueEntry(handle);
+        if (entry) {
+            ACubismMotion* motion = entry->GetCubismMotion();
+            if (motion) {
+                motion->SetFinishedMotionCustomData(customData);
+            }
+        }
+    }
+    return handle;
+}
+
 CubismMotionQueueEntryHandle LAppModel::StartRandomMotion(const csmChar* group, csmInt32 priority, ACubismMotion::FinishedMotionCallback onFinishedMotionHandler, ACubismMotion::BeganMotionCallback onBeganMotionHandler)
 {
     if (_modelSetting->GetMotionCount(group) == 0)

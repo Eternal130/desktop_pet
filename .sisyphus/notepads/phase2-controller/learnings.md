@@ -108,3 +108,11 @@
 - Tests run: 5, Failures: 0, BUILD SUCCESS
 - Commit: 0c1685b "feat(controller): add ProcessManager for renderer lifecycle"
 - Evidence: .sisyphus/evidence/task-8-processmanager-tests.txt
+
+## [2026-03-15] Task 7: PetStateManager TDD
+- Created `PetStateManager` in `com.desktoppet.core` with mutable runtime fields and `ReentrantReadWriteLock` for thread-safe read/write access
+- `getState()` returns immutable `PetState` snapshot (new record instance) so previously obtained snapshots remain unchanged after subsequent updates
+- Added `PetStateManagerTest` with 7 tests covering defaults, each mutator, immutable snapshots, and concurrent updates from 10 threads
+- Verification passed: `mvn test -f controller/pom.xml -Dtest=PetStateManagerTest` → Tests run: 7, Failures: 0, Errors: 0
+- Evidence: `.sisyphus/evidence/task-7-petstatemanager-tests.txt`
+- Environment note: `lsp_diagnostics` for Java unavailable (`jdtls` not found in PATH), so build/test output used as verification signal

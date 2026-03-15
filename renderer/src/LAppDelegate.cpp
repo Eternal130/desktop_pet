@@ -6,8 +6,6 @@
  */
 
 #include "LAppDelegate.hpp"
-#include <iostream>
-#include <sstream>
 #include <unistd.h>
 #include <libgen.h>
 #include <GL/glew.h>
@@ -18,6 +16,9 @@
 #include "LAppLive2DManager.hpp"
 #include "LAppModel.hpp"
 #include "LAppTextureManager.hpp"
+#include "network/WebSocketClient.hpp"
+#include "network/MessageHandler.hpp"
+#include "network/Protocol.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -123,11 +124,23 @@ bool LAppDelegate::Initialize()
     //AppViewの初期化
     _view->Initialize(width, height);
 
+    if (!_wsUrl.empty()) {
+        _messageHandler = std::make_unique<Network::MessageHandler>();
+        _wsClient = std::make_unique<Network::WebSocketClient>();
+        _wsClient->connect(_wsUrl);
+    }
+
     return GL_TRUE;
 }
 
 void LAppDelegate::Release()
 {
+    if (_wsClient) {
+        _wsClient->disconnect();
+        _wsClient.reset();
+        _messageHandler.reset();
+    }
+
     // Windowの削除
     glfwDestroyWindow(_window);
 
@@ -175,6 +188,26 @@ void LAppDelegate::Run()
         glfwSwapBuffers(_window);
 
         glfwWaitEventsTimeout(1.0 / 30.0);
+
+        if (_wsClient) {
+            if (_wsClient->isConnected() && !_wsReadySent) {
+                _wsReadySent = true;
+                nlohmann::json readyPayload = {{"version", "1.0.0"}, {"capabilities", nlohmann::json::array({"live2d"})}};
+                auto readyEvent = Network::createEvent("ready", readyPayload);
+                _wsClient->send(Network::serialize(readyEvent));
+            }
+            auto messages = _wsClient->drainMessages();
+            int processed = 0;
+            for (const auto& raw : messages) {
+                if (processed >= 50) break;
+                auto env = Network::deserialize(raw);
+                if (env) {
+                    auto errorEvent = _messageHandler->dispatch(*env);
+                    if (errorEvent) { _wsClient->send(Network::serialize(*errorEvent)); }
+                }
+                processed++;
+            }
+        }
     }
 
     Release();
@@ -194,7 +227,9 @@ LAppDelegate::LAppDelegate():
     _dragStartX(0.0),
     _dragStartY(0.0),
     _windowStartX(0),
-    _windowStartY(0)
+    _windowStartY(0),
+    _wsUrl(""),
+    _wsReadySent(false)
 {
     _executeAbsolutePath = "";
     _view = new LAppView();
@@ -312,6 +347,8 @@ void LAppDelegate::SetExecuteAbsolutePath()
     this->_executeAbsolutePath = dirname(path);
     this->_executeAbsolutePath += "/";
 }
+
+void LAppDelegate::SetWebSocketUrl(const std::string& url) { _wsUrl = url; }
 
 bool LAppDelegate::IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const
 {

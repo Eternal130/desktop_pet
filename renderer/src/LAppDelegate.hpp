@@ -7,14 +7,15 @@
 
 #pragma once
 
+#include <memory>
 #include <string>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-#include "Type/csmVector.hpp"
 #include "LAppAllocator_Common.hpp"
 
 class LAppView;
 class LAppTextureManager;
+namespace Network { class WebSocketClient; class MessageHandler; }
 
 /**
 * @brief   アプリケーションクラス。
@@ -115,6 +116,7 @@ public:
      */
     int GetWindowHeight() { return _windowHeight; }
 
+    void SetWebSocketUrl(const std::string& url);
 private:
     bool IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const;
 
@@ -151,6 +153,10 @@ private:
     double _dragStartY;
     int _windowStartX;
     int _windowStartY;
+    std::string _wsUrl;
+    std::unique_ptr<Network::WebSocketClient> _wsClient;
+    std::unique_ptr<Network::MessageHandler> _messageHandler;
+    bool _wsReadySent;
 };
 
 class EventHandler

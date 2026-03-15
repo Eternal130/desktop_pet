@@ -207,3 +207,34 @@ Test project /opt/desktop_pet/renderer/build
 
 ### Evidence
 - `.sisyphus/evidence/task-4-protocol-tests.txt` contains build + ctest outputs.
+
+## [2026-03-15] Task 5: MessageHandler Command Routing (TDD)
+
+### TDD Execution
+- RED: Added `renderer/tests/MessageHandlerTest.cpp` first with 6 tests for command routing, unknown actions, exception safety, response filtering, and event callback behavior.
+- GREEN: Implemented `renderer/src/network/MessageHandler.hpp` and `renderer/src/network/MessageHandler.cpp` to satisfy all tests.
+- REFACTOR: Kept implementation pure C++17 with `Protocol` helpers only; no GLFW/OpenGL/Cubism dependencies.
+
+### MessageHandler Behavior Locked by Tests
+- `dispatch()` returns `std::nullopt` for `type == "response"` and does not invoke command handlers.
+- Registered action routes to its corresponding `CommandHandler` and receives original payload.
+- Unknown action returns `createEvent("error", {"error_code":5003, "error_message":"Unknown action: ..."})`.
+- Handler exceptions are caught and converted into error events (no crash propagation).
+- `setEventCallback()` is invoked when handler emits an outbound envelope of type `event` via `sendResponse`.
+
+### CMake Integration Pattern
+- Added `src/network/MessageHandler.cpp/.hpp` to `${APP_NAME}` sources.
+- Added `tests/MessageHandlerTest.cpp` and `src/network/MessageHandler.cpp` to `renderer-tests`.
+- After `CMakeLists.txt` changes, a reconfigure step (`cmake -S renderer -B renderer/build`) was required so `ctest` discovers newly added tests.
+
+### Verification Results
+- Build passed: `cmake --build renderer/build 2>&1`
+- Scoped tests passed: `ctest --test-dir renderer/build --output-on-failure -R "MessageHandler"` (6/6)
+- Full regression passed: `ctest --test-dir renderer/build --output-on-failure` (18/18)
+- LSP diagnostics clean for changed files:
+  - `renderer/src/network/MessageHandler.hpp`
+  - `renderer/src/network/MessageHandler.cpp`
+  - `renderer/tests/MessageHandlerTest.cpp`
+
+### Evidence
+- `.sisyphus/evidence/task-5-messagehandler-tests.txt` contains build + scoped/full ctest outputs.

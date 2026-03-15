@@ -87,6 +87,8 @@ target_sources(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LAppView.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/Protocol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/Protocol.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/MessageHandler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/MessageHandler.hpp
 )
 
 target_include_directories(${APP_NAME}
@@ -116,7 +118,9 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest ${CMAKE_CURR
 add_executable(renderer-tests
   tests/placeholder_test.cpp
   tests/ProtocolTest.cpp
+  tests/MessageHandlerTest.cpp
   src/network/Protocol.cpp
+  src/network/MessageHandler.cpp
 )
 target_link_libraries(renderer-tests PRIVATE GTest::gtest_main)
 target_include_directories(renderer-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party)

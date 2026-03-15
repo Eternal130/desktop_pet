@@ -1,0 +1,81 @@
+$ cmake --build renderer/build 2>&1
+[ 27%] Built target ixwebsocket
+[ 29%] Built target glew_s
+[ 46%] Built target glfw
+[ 76%] Built target Framework
+[ 77%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/network/MessageHandler.cpp.o
+[ 78%] Linking CXX executable bin/desktop-pet-renderer/desktop-pet-renderer
+[ 89%] Built target desktop-pet-renderer
+[ 91%] Built target gtest
+[ 92%] Built target gtest_main
+[ 93%] Building CXX object CMakeFiles/renderer-tests.dir/tests/MessageHandlerTest.cpp.o
+[ 94%] Building CXX object CMakeFiles/renderer-tests.dir/src/network/MessageHandler.cpp.o
+[ 95%] Linking CXX executable bin/desktop-pet-renderer/renderer-tests
+[ 96%] Built target renderer-tests
+[ 97%] Built target glew
+[ 98%] Built target gmock
+[100%] Built target gmock_main
+
+$ ctest --test-dir renderer/build --output-on-failure -R "MessageHandler"
+Internal ctest changing into directory: /opt/desktop_pet/renderer/build
+Test project /opt/desktop_pet/renderer/build
+    Start 13: MessageHandlerTest.DispatchRegisteredPlayMotionHandlerWithPayload
+1/6 Test #13: MessageHandlerTest.DispatchRegisteredPlayMotionHandlerWithPayload ..........   Passed    0.00 sec
+    Start 14: MessageHandlerTest.DispatchRoutesToMatchingHandlerWhenMultipleRegistered
+2/6 Test #14: MessageHandlerTest.DispatchRoutesToMatchingHandlerWhenMultipleRegistered ...   Passed    0.00 sec
+    Start 15: MessageHandlerTest.DispatchUnknownActionReturnsErrorEventWith5003
+3/6 Test #15: MessageHandlerTest.DispatchUnknownActionReturnsErrorEventWith5003 ..........   Passed    0.00 sec
+    Start 16: MessageHandlerTest.DispatchHandlerExceptionReturnsErrorEventWithoutCrash
+4/6 Test #16: MessageHandlerTest.DispatchHandlerExceptionReturnsErrorEventWithoutCrash ...   Passed    0.00 sec
+    Start 17: MessageHandlerTest.DispatchResponseMessageReturnsNullopt
+5/6 Test #17: MessageHandlerTest.DispatchResponseMessageReturnsNullopt ...................   Passed    0.00 sec
+    Start 18: MessageHandlerTest.EventCallbackIsCalledWhenHandlerEmitsEvent
+6/6 Test #18: MessageHandlerTest.EventCallbackIsCalledWhenHandlerEmitsEvent ..............   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 6
+
+Total Test time (real) =   0.01 sec
+
+$ ctest --test-dir renderer/build --output-on-failure
+Internal ctest changing into directory: /opt/desktop_pet/renderer/build
+Test project /opt/desktop_pet/renderer/build
+      Start  1: PlaceholderTest.AlwaysPasses
+ 1/18 Test  #1: PlaceholderTest.AlwaysPasses ...............................................   Passed    0.00 sec
+      Start  2: ProtocolTest.SerializeCommandEnvelopeHasRequiredFields
+ 2/18 Test  #2: ProtocolTest.SerializeCommandEnvelopeHasRequiredFields .....................   Passed    0.00 sec
+      Start  3: ProtocolTest.SerializeEventEnvelopeHasRequiredFields
+ 3/18 Test  #3: ProtocolTest.SerializeEventEnvelopeHasRequiredFields .......................   Passed    0.00 sec
+      Start  4: ProtocolTest.SerializeResponseEnvelopeIncludesResponseFields
+ 4/18 Test  #4: ProtocolTest.SerializeResponseEnvelopeIncludesResponseFields ...............   Passed    0.00 sec
+      Start  5: ProtocolTest.DeserializeValidJsonReturnsEnvelope
+ 5/18 Test  #5: ProtocolTest.DeserializeValidJsonReturnsEnvelope ...........................   Passed    0.00 sec
+      Start  6: ProtocolTest.DeserializeMissingRequiredFieldsReturnsNullopt
+ 6/18 Test  #6: ProtocolTest.DeserializeMissingRequiredFieldsReturnsNullopt ................   Passed    0.00 sec
+      Start  7: ProtocolTest.DeserializeNonJsonStringReturnsNullopt
+ 7/18 Test  #7: ProtocolTest.DeserializeNonJsonStringReturnsNullopt ........................   Passed    0.00 sec
+      Start  8: ProtocolTest.DeserializeEmptyStringReturnsNullopt
+ 8/18 Test  #8: ProtocolTest.DeserializeEmptyStringReturnsNullopt ..........................   Passed    0.00 sec
+      Start  9: ProtocolTest.GenerateIdReturnsUniqueNonEmptyValues
+ 9/18 Test  #9: ProtocolTest.GenerateIdReturnsUniqueNonEmptyValues .........................   Passed    0.00 sec
+      Start 10: ProtocolTest.CreateCommandCreatesCommandEnvelope
+10/18 Test #10: ProtocolTest.CreateCommandCreatesCommandEnvelope ...........................   Passed    0.00 sec
+      Start 11: ProtocolTest.CreateEventCreatesEventEnvelope
+11/18 Test #11: ProtocolTest.CreateEventCreatesEventEnvelope ...............................   Passed    0.00 sec
+      Start 12: ProtocolTest.CreateResponseCreatesResponseEnvelope
+12/18 Test #12: ProtocolTest.CreateResponseCreatesResponseEnvelope .........................   Passed    0.00 sec
+      Start 13: MessageHandlerTest.DispatchRegisteredPlayMotionHandlerWithPayload
+13/18 Test #13: MessageHandlerTest.DispatchRegisteredPlayMotionHandlerWithPayload ..........   Passed    0.00 sec
+      Start 14: MessageHandlerTest.DispatchRoutesToMatchingHandlerWhenMultipleRegistered
+14/18 Test #14: MessageHandlerTest.DispatchRoutesToMatchingHandlerWhenMultipleRegistered ...   Passed    0.00 sec
+      Start 15: MessageHandlerTest.DispatchUnknownActionReturnsErrorEventWith5003
+15/18 Test #15: MessageHandlerTest.DispatchUnknownActionReturnsErrorEventWith5003 ..........   Passed    0.00 sec
+      Start 16: MessageHandlerTest.DispatchHandlerExceptionReturnsErrorEventWithoutCrash
+16/18 Test #16: MessageHandlerTest.DispatchHandlerExceptionReturnsErrorEventWithoutCrash ...   Passed    0.00 sec
+      Start 17: MessageHandlerTest.DispatchResponseMessageReturnsNullopt
+17/18 Test #17: MessageHandlerTest.DispatchResponseMessageReturnsNullopt ...................   Passed    0.00 sec
+      Start 18: MessageHandlerTest.EventCallbackIsCalledWhenHandlerEmitsEvent
+18/18 Test #18: MessageHandlerTest.EventCallbackIsCalledWhenHandlerEmitsEvent ..............   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 18
+
+Total Test time (real) =   0.03 sec

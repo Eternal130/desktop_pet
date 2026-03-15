@@ -132,3 +132,14 @@
 - `handleHitEvent` now builds `play_motion` command payload (`group`, `index=0`, `priority`) via `Protocol.createCommand` and serializes with `Protocol.serialize`
 - Verification passed: `mvn test -f controller/pom.xml -Dtest=InteractionHandlerTest` → Tests run: 5, Failures: 0, Errors: 0
 - Environment note: `lsp_diagnostics` could not run because `jdtls` is unavailable in PATH; Maven test compile/run used as validation fallback
+
+## [2026-03-15] Task 10: MessageDispatcher TDD
+- Added `MessageDispatcherTest` with 6 tests covering event action routing, per-action handler isolation, unregistered-action safety + WARN logging, handler exception isolation + ERROR logging, response future completion by id, and timeout exceptional completion
+- Implemented `MessageDispatcher` with two concurrent maps: `eventHandlers` (`action -> Consumer<Envelope>`) and `pendingResponses` (`messageId -> CompletableFuture<Envelope>`)
+- `expectResponse` uses `CompletableFuture.orTimeout()` and `whenComplete` cleanup to avoid leaked pending futures
+- `dispatch` behavior:
+  - `response`: completes and removes pending future by matching `Envelope.id()`
+  - `event`: routes by `Envelope.action()`, WARNs when handler missing, catches handler exceptions and logs ERROR without propagating
+- Verification passed: `mvn test -f controller/pom.xml -Dtest=MessageDispatcherTest` → Tests run: 6, Failures: 0, Errors: 0
+- Module-system note: existing test visibility/runtime required adding `exports com.desktoppet.network` and `requires ch.qos.logback.{classic,core}` to `module-info.java`
+- Environment note: `lsp_diagnostics` remains unavailable in this environment (`jdtls` missing), so Maven test success is used as diagnostics substitute

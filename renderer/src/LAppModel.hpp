@@ -94,6 +94,12 @@ public:
     void SetRandomExpression();
 
     /**
+     * @brief   すべてのモーションを停止する
+     *
+     */
+    void StopAllMotions();
+
+    /**
     * @brief   イベントの発火を受け取る
     *
     */

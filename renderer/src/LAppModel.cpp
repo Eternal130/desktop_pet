@@ -567,6 +567,11 @@ void LAppModel::SetRandomExpression()
     }
 }
 
+void LAppModel::StopAllMotions()
+{
+    _motionManager->StopAllMotions();
+}
+
 void LAppModel::ReloadRenderer()
 {
     DeleteRenderer();

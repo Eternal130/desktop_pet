@@ -19,6 +19,7 @@
 #include "network/WebSocketClient.hpp"
 #include "network/MessageHandler.hpp"
 #include "network/Protocol.hpp"
+#include "network/CommandHandlers.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -126,6 +127,7 @@ bool LAppDelegate::Initialize()
 
     if (!_wsUrl.empty()) {
         _messageHandler = std::make_unique<Network::MessageHandler>();
+        Network::RegisterCommandHandlers(*_messageHandler, this);
         _wsClient = std::make_unique<Network::WebSocketClient>();
         _wsClient->connect(_wsUrl);
     }

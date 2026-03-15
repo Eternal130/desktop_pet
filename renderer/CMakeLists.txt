@@ -91,6 +91,8 @@ target_sources(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/MessageHandler.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/WebSocketClient.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/WebSocketClient.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/CommandHandlers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/CommandHandlers.hpp
 )
 
 target_include_directories(${APP_NAME}

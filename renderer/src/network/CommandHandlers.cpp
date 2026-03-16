@@ -5,6 +5,7 @@
 #include "LAppLive2DManager.hpp"
 #include "LAppModel.hpp"
 #include "LAppPal.hpp"
+#include "LAppDefine.hpp"
 #include <GLFW/glfw3.h>
 #include <sys/stat.h>
 #include <string>
@@ -36,37 +37,40 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
     });
 
     handler.registerCommand("load_model", [delegate](const Envelope& cmd, auto sendResponse) {
-        std::string modelPath = cmd.payload.value("model_path", "");
-        if (modelPath.empty()) {
-            sendResponse(createResponse(cmd.id, "load_model", false, 1001, "model_path is required"));
-            auto* emitter = delegate->GetEventEmitter();
-            if (emitter) {
-                emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", "model_path is required"}});
-            }
-            return;
-        }
-        struct stat st;
-        bool pathExists = (stat(modelPath.c_str(), &st) == 0);
-        if (!pathExists) {
-            sendResponse(createResponse(cmd.id, "load_model", false, 1001, "Model path not found: " + modelPath));
-            auto* emitter = delegate->GetEventEmitter();
-            if (emitter) {
-                emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", "Model path not found: " + modelPath}});
-            }
-            return;
-        }
-        LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
-        manager->ChangeScene(modelPath.c_str());
-        sendResponse(createResponse(cmd.id, "load_model", true));
-        auto* emitter = delegate->GetEventEmitter();
-        if (emitter) {
-            nlohmann::json modelPayload;
-            modelPayload["model_id"] = modelPath;
-            modelPayload["motions"] = nlohmann::json::array();
-            modelPayload["expressions"] = nlohmann::json::array();
-            emitter->emit("model_loaded", modelPayload);
-        }
-    });
+         std::string modelPath = cmd.payload.value("model_path", "");
+         if (modelPath.empty()) {
+             sendResponse(createResponse(cmd.id, "load_model", false, 1001, "model_path is required"));
+             auto* emitter = delegate->GetEventEmitter();
+             if (emitter) {
+                 emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", "model_path is required"}});
+             }
+             return;
+         }
+         // Build path matching LoadModel() internals:
+         std::string execPath = LAppDelegate::GetInstance()->GetExecuteAbsolutePath();
+         std::string fullModelJson = execPath + LAppDefine::ResourcesPath + modelPath + "/" + modelPath + ".model3.json";
+         struct stat st;
+         bool pathExists = (stat(fullModelJson.c_str(), &st) == 0);
+         if (!pathExists) {
+             sendResponse(createResponse(cmd.id, "load_model", false, 1001, "Model path not found: " + modelPath));
+             auto* emitter = delegate->GetEventEmitter();
+             if (emitter) {
+                 emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", "Model path not found: " + modelPath}});
+             }
+             return;
+         }
+         LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
+         manager->ChangeScene(modelPath.c_str());
+         sendResponse(createResponse(cmd.id, "load_model", true));
+         auto* emitter = delegate->GetEventEmitter();
+         if (emitter) {
+             nlohmann::json modelPayload;
+             modelPayload["model_id"] = modelPath;
+             modelPayload["motions"] = nlohmann::json::array();
+             modelPayload["expressions"] = nlohmann::json::array();
+             emitter->emit("model_loaded", modelPayload);
+         }
+     });
 
     handler.registerCommand("play_motion", [delegate](const Envelope& cmd, auto sendResponse) {
         std::string group = cmd.payload.value("group", "");

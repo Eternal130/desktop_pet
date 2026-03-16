@@ -216,6 +216,14 @@
 - `interact()` runs code on JavaFX Application Thread; `lookup("#id")` finds nodes by fx:id
 - Evidence: `.sisyphus/evidence/task-18-testfx.txt`
 
+## [2026-03-15] F1 audit compliance fixes (TrayManager, model scan, model_config)
+- Wired `TrayManager` in `App.java`: added field, instantiated after `primaryStage.show()`, set exit callback, called `initialize()`, added `shutdown()` in `stop()`
+- `SettingsPanelController.onRefreshModels()`: replaced stub log with real `Files.list()` scan of `../renderer/build/bin/desktop-pet-renderer/Resources/`, filters hidden dirs, sorts, updates `modelComboBox`
+- `AppOrchestrator.loadModelConfig(modelName)`: reads `Resources/<modelName>/model_config.json`, parses with Gson, calls `interactionHandler.setModelConfig()` — called after successful `load_model` response
+- `java.nio.file.Files` import was missing from `AppOrchestrator` (only `Path` was imported) — needed for `Files.exists()` and `Files.readString()`
+- All 71 tests still pass after changes: `Tests run: 71, Failures: 0, Errors: 0, BUILD SUCCESS`
+- Commit: e9712fb "fix(controller): wire TrayManager, implement model scan, load model_config"
+
 ## [2026-03-15] Task 19: AppOrchestrator crash recovery + disconnect handling
 - Added restart state in `AppOrchestrator`: `AtomicInteger restartAttempts`, max attempts=5, backoff sequence `{2000, 4000, 8000, 16000, 30000}` ms, stable reset threshold `60_000` ms
 - Exit callback now triggers `scheduleRestart()` only for non-zero exit code (crash path), while keeping graceful shutdown behavior for exit code 0

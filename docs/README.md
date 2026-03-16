@@ -5,24 +5,26 @@
 
 ---
 
-## 一、MVP 范围
+## 一、项目阶段与当前进度
 
-**MVP 目标：独立可运行的 C++ 渲染引擎**。不包含 Java 控制面板和 WebSocket 通信。
+本项目分为 4 个阶段，**MVP 和 Phase 1 已完成，Phase 2 已基本完成**：
 
 | 功能 | MVP | Phase 1 | Phase 2 | Phase 3 |
 |:---|:---:|:---:|:---:|:---:|
-| Live2D 模型加载与渲染 | ✓（硬编码模型路径） | — | 控制面板动态切换 | — |
-| 动画播放（动作/表情/眨眼/呼吸/物理演算） | ✓ | — | — | — |
-| 透明无边框置顶窗口 | ✓ | — | — | — |
-| 点击检测（HitArea → 即时动画反馈） | ✓ | — | 事件上报到控制面板 | — |
-| 窗口拖拽移动 | ✓ | — | 位置上报到控制面板 | — |
-| 自适应帧率 | ✓ | — | — | — |
-| WebSocket 通信 | ✗ | ✓（控制面板为 Server，渲染引擎为 Client） | — | — |
-| Java 控制面板 | ✗ | — | ✓ | — |
-| 音频播放 | ✗ | — | — | ✓（OpenAL，音频独立管理） |
-| 闲时随机动作 | ✓（渲染器内置定时触发） | — | 由控制面板调度 | — |
+| Live2D 模型加载与渲染 | ✅ 已完成 | — | ✅ 控制面板动态切换 | — |
+| 动画播放（动作/表情/眨眼/呼吸/物理演算） | ✅ 已完成 | — | — | — |
+| 透明无边框置顶窗口 | ✅ 已完成 | — | — | — |
+| 点击检测（HitArea → 即时动画反馈） | ✅ 已完成 | — | ✅ 事件上报到控制面板 | — |
+| 窗口拖拽移动 | ✅ 已完成 | — | ✅ 位置上报与持久化 | — |
+| 自适应帧率 | ✅ 已完成 | — | — | — |
+| WebSocket 通信 | ✗ | ✅ 已完成（端口 9000） | — | — |
+| Java 控制面板 | ✗ | — | ✅ 已基本完成 | — |
+| 音频播放 | ✗ | — | — | 待开发（OpenAL，音频独立管理） |
+| 闲时随机动作 | ✅ 已完成（渲染器内置） | — | ✅ 由控制面板 Scheduler 调度 | — |
 
 > **阶段说明**：Phase 1 = WebSocket 通信层，Phase 2 = Java 控制面板，Phase 3 = 音频模块。音频模块置于控制面板之后开发，以支持音频文件与模型文件分离管理、降低存储占用、实现音频跨模型复用。
+>
+> **当前状态**：MVP（渲染引擎独立运行）、Phase 1（WebSocket 通信）已完成。Phase 2（Java 控制面板）已基本完成，包括 UI、业务逻辑、进程管理、系统托盘、崩溃恢复等核心功能。Phase 3（音频模块）已完成架构预留（AudioMapping 记录），待后续实现。
 
 ---
 
@@ -94,7 +96,7 @@
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-> **Cubism SDK 说明**：SDK 由闭源 Core 库（C 接口，负责 .moc3 解析和顶点计算）与开源 Framework（C++ 框架，提供模型管理、动作播放、物理演算、OpenGL 渲染等高级功能）两层组成。本项目 Framework 编译为静态库链接，Core 使用 Linux x86_64 预编译静态库。SDK 详细集成架构见 [渲染引擎设计 - Cubism SDK 集成架构](./01-渲染引擎设计.md)，版本与许可详见 [工程化](./06-工程化.md)。
+> **Cubism SDK 说明**：SDK 由闭源 Core 库（C 接口，负责 .moc3 解析和顶点计算）与开源 Framework（C++ 框架，提供模型管理、动作播放、物理演算、OpenGL 渲染等高级功能）两层组成。本项目 Framework 编译为静态库链接，Core 使用 Linux x86_64 预编译静态库。渲染引擎源码基于 SDK 的 `LApp*` 示例代码风格开发（复用 Samples/Common 的基础实现）。SDK 详细集成架构见 [Cubism SDK 集成架构](./renderer/cubism-sdk.md)，版本与许可详见 [工程化](./engineering/README.md)。
 
 ---
 
@@ -102,14 +104,14 @@
 
 | 组件 | 语言 | 版本 | 关键依赖 | 阶段 |
 |:---|:---|:---|:---|:---|
-| 渲染引擎 | C++17 | GCC ≥ 11.4 / CMake ≥ 3.22 | Cubism Native SDK 5-r.5-beta.3.1（兼容 Cubism 5/5.3）、GLFW 3.4、GLEW 2.3.1、spdlog 1.17.0 | **MVP** |
-| 通信模块（渲染引擎端） | C++ | 同上 | IXWebSocket 11.4.6（Client） | **Phase 1** |
-| 控制面板 | Java 21 LTS | OpenJDK 21 / Maven ≥ 3.9 | JavaFX 25 (OpenJFX 25.0.2)、Java-WebSocket 1.6.0（Server）、Gson 2.13.2、SLF4J 2.0.17 + Logback 1.5.32 | **Phase 2** |
-| 音频模块 | C++ | 同上 | OpenAL Soft 1.25.1 | **Phase 3** |
-| 通信协议 | — | — | WebSocket + JSON Envelope | **Phase 1** |
-| 目标平台（MVP） | — | — | Ubuntu 22.04 LTS (X11)、OpenGL 3.3+ | **MVP** |
+| 渲染引擎 | C++17 | GCC ≥ 11.4 / CMake ≥ 3.16 | Cubism Native SDK 5-r.5-beta.3.1（兼容 Cubism 5/5.3）、GLFW 3.4、GLEW 2.3.1（均使用 SDK 内置版本） | ✅ MVP |
+| 通信模块（渲染引擎端） | C++ | 同上 | IXWebSocket 11.4.6（Client）、nlohmann/json 3.12.0 | ✅ Phase 1 |
+| 控制面板 | Java 21 LTS | OpenJDK 21 / Maven ≥ 3.9 | JavaFX 21 (OpenJFX 21.0.5)、Java-WebSocket 1.6.0（Server）、Gson 2.13.2、SLF4J 2.0.17 + Logback 1.5.32 | ✅ Phase 2 |
+| 音频模块 | C++ | 同上 | OpenAL Soft 1.25.1 | Phase 3 |
+| 通信协议 | — | — | WebSocket（端口 9000）+ JSON Envelope | ✅ Phase 1 |
+| 目标平台（MVP） | — | — | Ubuntu 22.04 LTS (X11)、OpenGL 3.3+ | ✅ MVP |
 
-> 完整版本与选型决策详见 [工程化](./06-工程化.md)。
+> 完整版本与选型决策详见 [工程化](./engineering/README.md)。
 
 ---
 
@@ -127,7 +129,7 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 ### 4.2 Phase 1：通信机制
 
 - 采用 WebSocket 作为进程间通信协议
-- 使用 JSON 格式的结构化消息，统一 Envelope 格式（详见 [通信协议](./03-通信协议.md)）
+- 使用 JSON 格式的结构化消息，统一 Envelope 格式（详见 [通信协议](./protocol/README.md)）
 - 支持指令（控制面板→渲染器）和事件（渲染器→控制面板）双向通信
 - 关键指令支持 request-response 回执确认
 
@@ -165,31 +167,51 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 
 ## 五、设计决策总结
 
-| 方面       | MVP 设计决策                    | 演进方向 | 阶段 |
+| 方面       | 设计决策                    | 当前状态 | 阶段 |
 | :------- | :---------------------- | :--- | :---: |
-| **通信**   | 无 | WebSocket + JSON 协议，Envelope 格式 | Phase 1 |
-| **整体架构** | C++ 渲染引擎独立运行 | Java 控制面板 + C++ 渲染引擎分离 | Phase 2 |
-| **模型加载** | 硬编码模型路径，启动即加载 | 控制面板动态切换，支持多模型管理 | Phase 2 |
-| **点击事件** | 渲染器检测并直接播放反馈动画 | 渲染器即时反馈 + 上报控制面板处理业务逻辑 | Phase 2 |
-| **拖拽行为** | 直接跟随/物理惯性可配置，释放后停留 | 位置上报到控制面板，支持持久化 | Phase 2 |
-| **闲时行为** | 渲染器内置定时器随机触发 | 控制面板调度，预留权重打分扩展 | Phase 2 |
-| **音频**   | 无 | 音频文件独立于模型管理，支持跨模型复用；渲染器播放（OpenAL），控制面板管理映射和音量 | Phase 3 |
-| **性能**   | 自适应帧率（15-60fps），闲时低占用 | — | MVP |
-| **平台**   | Ubuntu 22.04 / X11 | Windows、macOS、Wayland | 后期 |
-| **容错**   | 无（独立进程） | 崩溃自动重启恢复位置，断连缓存关键指令 | 后期 |
-| **配置**   | 硬编码 | JSON 格式，用户配置 + 模型行为映射 + 音频映射 | Phase 2-3 |
-| **分发**   | 单一 C++ 可执行文件 | 内嵌 JRE，安装包 + 免安装双形式 | 后期 |
-| **扩展预留** | — | Lua 脚本插件系统、养成状态系统 | 后期 |
+| **通信**   | WebSocket + JSON 协议，Envelope 格式，端口 9000 | ✅ 已实现 | Phase 1 |
+| **整体架构** | Java 控制面板（Server）+ C++ 渲染引擎（Client）分离 | ✅ 已实现 | Phase 2 |
+| **模型加载** | 控制面板通过 `load_model` 指令动态切换（模型短名称，如 "Hiyori"） | ✅ 已实现 | Phase 2 |
+| **点击事件** | 渲染器即时反馈 + 上报 `hit` 事件到控制面板处理业务逻辑 | ✅ 已实现 | Phase 2 |
+| **拖拽行为** | 直接跟随模式，`drag_end` 事件上报窗口位置（window_x, window_y），控制面板持久化 | ✅ 已实现 | Phase 2 |
+| **闲时行为** | 控制面板 Scheduler 定时触发，从闲时动作池随机选择，预留权重打分扩展 | ✅ 已实现 | Phase 2 |
+| **音频**   | 音频文件独立于模型管理，支持跨模型复用；渲染器播放（OpenAL），控制面板管理映射和音量 | 架构预留，待实现 | Phase 3 |
+| **性能**   | 自适应帧率（15-60fps），闲时低占用 | ✅ 已实现 | MVP |
+| **平台**   | Ubuntu 22.04 / X11 | ✅ 已实现 | MVP |
+| **容错**   | 崩溃自动重启（指数退避，最大 5 次），断连缓存关键指令 | ✅ 已实现 | Phase 2 |
+| **配置**   | JSON 格式（`~/.config/desktop-pet/config.json`），支持用户配置读写 | ✅ 已实现 | Phase 2 |
+| **分发**   | 单一 C++ 可执行文件 | 当前状态 | MVP |
+| **日志**   | C++ 端使用 `LAppPal::PrintLogLn`（SDK 内置），Java 端使用 SLF4J + Logback（文件轮转） | ✅ 已实现 | MVP/Phase 2 |
+| **扩展预留** | Lua 脚本插件系统、养成状态系统 | 架构预留 | 后期 |
 
 ---
 
 ## 六、文档索引
 
-| 文档 | 内容 | MVP 相关 |
+| 文档 | 内容 | 实现状态 |
 |:---|:---|:---:|
-| [渲染引擎设计](./01-渲染引擎设计.md) | C++ 渲染引擎模块详细设计、性能优化 | ✓ |
-| [控制面板设计](./02-控制面板设计.md) | Java 控制面板模块详细设计、技术选型、闲时行为策略 | 后期 |
-| [通信协议](./03-通信协议.md) | WebSocket 协议规范、消息格式、错误码体系 | 后期 |
-| [交互设计](./04-交互设计.md) | 点击事件处理流程、拖拽行为设计 | ✓ |
-| [系统设计](./05-系统设计.md) | 日志体系、启动流程、配置文件、容错恢复、扩展性预留 | 部分 |
-| [工程化](./06-工程化.md) | 开发语言与工具链、第三方库选型、构建分发、项目结构、代码规范、测试策略 | ✓ |
+| [渲染引擎设计](./renderer/README.md) | C++ 渲染引擎模块详细设计 | ✅ MVP + Phase 1 已实现 |
+| [Cubism SDK 集成](./renderer/cubism-sdk.md) | Cubism SDK 集成架构、关键 API | ✅ MVP 已实现 |
+| [音频播放架构](./renderer/audio.md) | 音频模块架构设计 | Phase 3 待实现 |
+| [性能设计](./renderer/performance.md) | 自适应帧率、资源优化策略 | ✅ MVP 已实现 |
+| [控制面板设计](./controller/README.md) | Java 控制面板模块详细设计、技术选型、闲时行为策略 | ✅ Phase 2 已基本实现 |
+| [通信协议](./protocol/README.md) | WebSocket 协议规范、消息格式 | ✅ Phase 1 已实现 |
+| [协议 - Commands](./protocol/commands.md) | 控制面板→渲染器指令定义 | ✅ Phase 1 已实现 |
+| [协议 - Events](./protocol/events.md) | 渲染器→控制面板事件定义 | ✅ Phase 1 已实现 |
+| [协议 - 握手流程](./protocol/handshake.md) | 连接建立与断连恢复流程 | ✅ Phase 1 已实现 |
+| [协议 - 错误码](./protocol/error-codes.md) | 错误码体系 | ✅ Phase 1 已实现 |
+| [协议 - 实现参考](./protocol/implementation.md) | 断连缓存策略、双端关键接口 | ✅ Phase 1/2 已实现 |
+| [交互设计](./interaction/README.md) | 点击事件处理流程、拖拽行为设计 | ✅ 已实现 |
+| [系统设计](./system/README.md) | 系统设计概述索引 | ✅ 核心已实现 |
+| [容错与错误处理](./system/fault-tolerance.md) | 崩溃恢复、断连处理 | ✅ Phase 2 已实现 |
+| [配置文件设计](./system/configuration.md) | config.json、model_config.json、audio_mapping.json | ✅ Phase 2 已实现 |
+| [日志体系](./system/logging.md) | 日志框架、级别、文件管理 | ✅ MVP/Phase 2 已实现 |
+| [启动流程](./system/startup.md) | MVP 和控制面板启动/关闭流程 | ✅ 已实现 |
+| [扩展性预留](./system/extensibility.md) | 插件系统、状态系统预留 | 架构预留 |
+| [工程化](./engineering/README.md) | 工程化概述索引 | ✅ 持续更新 |
+| [开发语言与工具链](./engineering/toolchain.md) | C++/Java 工具链选型 | ✅ 已确定 |
+| [第三方库选型](./engineering/dependencies.md) | C++/Java 端依赖库 | ✅ 已确定 |
+| [构建与分发](./engineering/build.md) | 构建命令、打包结构 | ✅ 已确定 |
+| [项目目录结构](./engineering/project-structure.md) | 渲染引擎/控制面板/完整目录结构 | ✅ 持续更新 |
+| [开发环境与代码规范](./engineering/coding-standards.md) | IDE、代码风格、Git 规范 | ✅ 已确定 |
+| [测试策略](./engineering/testing.md) | 单元测试、集成测试、端到端测试 | ✅ 持续更新 |

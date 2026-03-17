@@ -55,4 +55,15 @@
 | 5002 | 消息格式错误（JSON 解析失败，保留） | — |
 | 5003 | 未知 action | `"Unknown action: <action>"` |
 
-> **实际触发**：当前代码中 `MessageHandler::dispatch()` 在收到未注册的 action 时返回错误码 `5003`。
+> **实际触发**：渲染引擎收到未注册的 action 时，返回 **Response**（`type: "response"`，`id` 复用原始 Command 的 `id`，`success: false`，`error_code: 5003`）。控制面板可通过 `id` 匹配到对应的 pending request。
+
+---
+
+## 六、系统/通用（6000-6099）
+
+| 错误码 | 触发场景 |
+|:---:|:---|
+| 6001 | 内部处理异常（保留） |
+| 6002 | 消息序列化失败（保留） |
+
+> 该段为预留段，当前未启用。

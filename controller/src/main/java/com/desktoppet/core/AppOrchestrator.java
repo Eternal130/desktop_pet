@@ -13,9 +13,14 @@ import javafx.application.Platform;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.desktoppet.model.ModelInfo;
+import com.desktoppet.model.ModelSettingsConfig;
+
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -45,6 +50,7 @@ public class AppOrchestrator {
     private static final java.util.Set<String> CRITICAL_ACTIONS = java.util.Set.of(
             "load_model", "set_position", "set_opacity"
     );
+    private static final Path RENDERER_DIR = Path.of("../renderer/build/bin/desktop-pet-renderer");
 
     private PetConfig config;
     private MainWindowController uiController;
@@ -163,8 +169,25 @@ public class AppOrchestrator {
             stateManager.setModelLoaded(false);
         });
 
+        dispatcher.registerEventHandler("motion_started", envelope -> {
+            log.debug("motion_started: {}", envelope.payload());
+            String group = envelope.payload().has("group") ? envelope.payload().get("group").getAsString() : "?";
+            notifyActivity("动作开始: " + group);
+            notifyMessageLog("←", "event", "motion_started", group);
+        });
+
+        dispatcher.registerEventHandler("motion_finished", envelope -> {
+            log.debug("motion_finished: {}", envelope.payload());
+            String group = envelope.payload().has("group") ? envelope.payload().get("group").getAsString() : "?";
+            notifyActivity("动作结束: " + group);
+            notifyMessageLog("←", "event", "motion_finished", group);
+        });
+
         dispatcher.registerEventHandler("hit", envelope -> {
             log.debug("hit event: {}", envelope.payload());
+            String areaId = envelope.payload().has("area_id") ? envelope.payload().get("area_id").getAsString() : "?";
+            notifyActivity("点击命中: " + areaId);
+            notifyMessageLog("←", "event", "hit", areaId);
             interactionHandler.handleHitEvent(envelope);
         });
 
@@ -197,7 +220,10 @@ public class AppOrchestrator {
 
         wsServer.setMessageCallback(rawMsg -> {
             Optional<Envelope> envelope = Protocol.deserialize(rawMsg);
-            envelope.ifPresent(dispatcher::dispatch);
+            envelope.ifPresent(env -> {
+                notifyMessageLog("←", env.type(), env.action(), "");
+                dispatcher.dispatch(env);
+            });
         });
 
         wsServer.setConnectionCallback(connected -> {
@@ -360,6 +386,130 @@ public class AppOrchestrator {
         return scheduler;
     }
 
+    public String getConfigPath() {
+        return configManager.getConfigPath();
+    }
+
+    public void sendCommand(String action, JsonObject payload) {
+        Envelope cmd = Protocol.createCommand(action, payload);
+        String serialized = Protocol.serialize(cmd);
+        sendOrCache(action, serialized);
+        notifyMessageLog("→", "command", action, "");
+    }
+
+    public void restartRenderer() {
+        CompletableFuture.runAsync(() -> {
+            try {
+                processManager.setShutdownCommandSender(() ->
+                    wsServer.sendMessage(Protocol.serialize(
+                            Protocol.createCommand("shutdown", new JsonObject()))));
+                processManager.stopRenderer();
+                Thread.sleep(500);
+                restartAttempts.set(0);
+                stateManager.setConnected(false);
+                stateManager.setModelLoaded(false);
+                processManager.startRenderer();
+                log.info("Manual renderer restart initiated");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                log.error("Manual restart failed: {}", e.getMessage(), e);
+            }
+        });
+    }
+
+    public void stopRenderer() {
+        processManager.setShutdownCommandSender(() ->
+            wsServer.sendMessage(Protocol.serialize(
+                    Protocol.createCommand("shutdown", new JsonObject()))));
+        processManager.stopRenderer();
+    }
+
+    public void loadModel(String modelName) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("model_path", modelName);
+        sendCommand("load_model", payload);
+
+        var newModel = new ModelSettingsConfig(modelName, config.model().scale());
+        config = new PetConfig(config.window(), newModel, config.behavior(), config.system());
+        configManager.save(config);
+    }
+
+    public List<String> getAvailableModels() {
+        Path resourcesDir = RENDERER_DIR.resolve("Resources");
+        List<String> models = new ArrayList<>();
+        if (Files.exists(resourcesDir)) {
+            try (var stream = Files.list(resourcesDir)) {
+                stream.filter(Files::isDirectory)
+                      .map(p -> p.getFileName().toString())
+                      .filter(name -> !name.startsWith("."))
+                      .sorted()
+                      .forEach(models::add);
+            } catch (IOException e) {
+                log.warn("Failed to scan models: {}", e.getMessage());
+            }
+        }
+        return models;
+    }
+
+    public Optional<ModelInfo> getModelInfo(String modelName) {
+        Path model3Json = RENDERER_DIR.resolve("Resources")
+                .resolve(modelName).resolve(modelName + ".model3.json");
+        return ModelInfoParser.parse(model3Json);
+    }
+
+    public void applyConfig(PetConfig newConfig) {
+        PetConfig oldConfig = this.config;
+        this.config = newConfig;
+        configManager.save(newConfig);
+
+        if (oldConfig == null || oldConfig.window().opacity() != newConfig.window().opacity()) {
+            JsonObject payload = new JsonObject();
+            payload.addProperty("opacity", newConfig.window().opacity());
+            sendCommand("set_opacity", payload);
+        }
+
+        if (oldConfig == null
+                || oldConfig.behavior().idleIntervalSeconds() != newConfig.behavior().idleIntervalSeconds()) {
+            scheduler.updateInterval(Math.max(1, newConfig.behavior().idleIntervalSeconds()) * 1000);
+        }
+
+        if (uiController != null) {
+            Platform.runLater(() -> uiController.updateIdleInterval(newConfig.behavior().idleIntervalSeconds()));
+        }
+    }
+
+    public void reloadConfig() {
+        config = configManager.load();
+        if (uiController != null) {
+            Platform.runLater(() -> uiController.updateIdleInterval(config.behavior().idleIntervalSeconds()));
+        }
+    }
+
+    public void triggerRandomIdleMotion() {
+        scheduler.resume();
+    }
+
+    public void toggleSchedulerPause() {
+        if (scheduler.isPaused()) {
+            scheduler.resume();
+        } else {
+            scheduler.pause();
+        }
+    }
+
+    private void notifyActivity(String message) {
+        if (uiController != null) {
+            Platform.runLater(() -> uiController.addActivity(message));
+        }
+    }
+
+    private void notifyMessageLog(String direction, String type, String action, String summary) {
+        if (uiController != null) {
+            Platform.runLater(() -> uiController.addMessageLog(direction, type, action, summary));
+        }
+    }
+
     private void updateUiConnectionStatus(boolean connected) {
         if (uiController != null) {
             Platform.runLater(() -> uiController.updateConnectionStatus(connected));
@@ -368,7 +518,10 @@ public class AppOrchestrator {
 
     private void updateUiModelName(String name) {
         if (uiController != null) {
-            Platform.runLater(() -> uiController.updateModelName(name));
+            Platform.runLater(() -> {
+                uiController.updateModelName(name);
+                getModelInfo(name).ifPresent(info -> uiController.updateModelInfo(info));
+            });
         }
     }
 }

@@ -1,32 +1,43 @@
 package com.desktoppet.ui;
 
+import com.desktoppet.core.AppOrchestrator;
+import com.desktoppet.model.ModelInfo;
 import com.desktoppet.model.PetConfig;
-import javafx.application.Platform;
 import javafx.fxml.FXML;
-import javafx.fxml.FXMLLoader;
-import javafx.scene.Parent;
-import javafx.scene.Scene;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.stage.Stage;
+import javafx.scene.control.TabPane;
+import javafx.scene.layout.VBox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.function.Consumer;
 
 public class MainWindowController {
-    @FXML private Label statusLabel;
-    @FXML private Label modelNameLabel;
-    @FXML private Label idleIntervalLabel;
-    @FXML private Button settingsButton;
+    private static final Logger log = LoggerFactory.getLogger(MainWindowController.class);
 
+    @FXML private TabPane tabPane;
+
+    @FXML private VBox dashboard;
+    @FXML private DashboardTabController dashboardController;
+    @FXML private VBox actions;
+    @FXML private ActionsTabController actionsController;
+    @FXML private VBox settings;
+    @FXML private SettingsTabController settingsController;
+    @FXML private VBox advanced;
+    @FXML private AdvancedTabController advancedController;
+
+    private AppOrchestrator orchestrator;
     private Consumer<PetConfig> onSettingsSaveCallback;
 
     @FXML
     public void initialize() {
-        updateConnectionStatus(false);
-        updateModelName("None");
+    }
+
+    public void setOrchestrator(AppOrchestrator orchestrator) {
+        this.orchestrator = orchestrator;
+        dashboardController.init(orchestrator);
+        actionsController.init(orchestrator);
+        settingsController.init(orchestrator);
+        advancedController.init(orchestrator);
     }
 
     public void setOnSettingsSaveCallback(Consumer<PetConfig> callback) {
@@ -34,43 +45,29 @@ public class MainWindowController {
     }
 
     public void updateConnectionStatus(boolean connected) {
-        Platform.runLater(() -> {
-            statusLabel.setText(connected ? "● Connected" : "○ Disconnected");
-            statusLabel.setStyle(connected ? "-fx-text-fill: green;" : "-fx-text-fill: red;");
-        });
+        dashboardController.updateConnectionStatus(connected);
+        advancedController.updateRendererStatus(connected);
     }
 
     public void updateModelName(String name) {
-        Platform.runLater(() -> modelNameLabel.setText("Model: " + name));
+        dashboardController.updateModelName(name);
     }
 
     public void updateIdleInterval(int seconds) {
-        Platform.runLater(() -> idleIntervalLabel.setText("Idle: " + seconds + "s"));
+        dashboardController.refreshStatus();
+        settingsController.loadConfig();
     }
 
-    @FXML
-    private void onSettingsButtonClicked() {
-        openSettingsPanel();
+    public void updateModelInfo(ModelInfo info) {
+        dashboardController.updateModelInfo(info);
+        actionsController.updateForModel(info);
     }
 
-    private void openSettingsPanel() {
-        try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/settings-panel.fxml"));
-            Parent root = loader.load();
-            
-            SettingsPanelController controller = loader.getController();
-            if (onSettingsSaveCallback != null) {
-                controller.setOnSaveCallback(onSettingsSaveCallback);
-            }
-
-            Stage stage = new Stage();
-            stage.setTitle("Settings");
-            stage.setScene(new Scene(root));
-            stage.show();
-        } catch (IOException e) {
-            log.error("Failed to open settings panel", e);
-        }
+    public void addActivity(String message) {
+        dashboardController.addActivity(message);
     }
 
-    private static final Logger log = LoggerFactory.getLogger(MainWindowController.class);
+    public void addMessageLog(String direction, String type, String action, String summary) {
+        advancedController.addMessageLog(direction, type, action, summary);
+    }
 }

@@ -81,6 +81,10 @@ public class Scheduler {
         return running;
     }
 
+    public boolean isPaused() {
+        return paused;
+    }
+
     public synchronized void shutdown() {
         running = false;
         paused = true;

@@ -7,7 +7,7 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.BorderPane;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,24 +16,26 @@ public class App extends Application {
     private static final Logger log = LoggerFactory.getLogger(App.class);
     private AppOrchestrator orchestrator;
     private TrayManager trayManager;
-    
+
     @Override
     public void start(Stage primaryStage) throws Exception {
         orchestrator = new AppOrchestrator();
 
         FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/main-window.fxml"));
-        VBox root = loader.load();
+        BorderPane root = loader.load();
         MainWindowController controller = loader.getController();
 
+        controller.setOrchestrator(orchestrator);
         orchestrator.setUiController(controller);
         orchestrator.startup();
-        
-        Scene scene = new Scene(root, 400, 500);
+
+        Scene scene = new Scene(root, 500, 620);
         scene.getStylesheets().add(getClass().getResource("/css/style.css").toExternalForm());
-        
+
         primaryStage.setTitle("Desktop Pet Controller");
         primaryStage.setScene(scene);
-        primaryStage.setResizable(false);
+        primaryStage.setMinWidth(480);
+        primaryStage.setMinHeight(560);
         primaryStage.show();
 
         trayManager = new TrayManager(primaryStage);
@@ -41,6 +43,8 @@ public class App extends Application {
             orchestrator.shutdown();
             Platform.exit();
         });
+        trayManager.setOnRandomMotionCallback(() -> orchestrator.triggerRandomIdleMotion());
+        trayManager.setOnTogglePauseCallback(() -> orchestrator.toggleSchedulerPause());
         trayManager.initialize();
 
         log.info("Desktop Pet Controller started");
@@ -55,7 +59,7 @@ public class App extends Application {
             orchestrator.shutdown();
         }
     }
-    
+
     public static void main(String[] args) {
         launch(args);
     }

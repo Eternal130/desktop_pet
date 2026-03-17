@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<VBox xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.desktoppet.ui.ActionsTabController"
+      spacing="12">
+    <padding><Insets top="15" right="15" bottom="15" left="15"/></padding>
+
+    <!-- Motion Player -->
+    <VBox spacing="8" styleClass="card">
+        <Label text="播放动作" styleClass="section-title"/>
+        <HBox spacing="10" alignment="CENTER_LEFT">
+            <VBox spacing="3">
+                <Label text="动作组" styleClass="field-label"/>
+                <ComboBox fx:id="motionGroupCombo" prefWidth="140" onAction="#onMotionGroupChanged"/>
+            </VBox>
+            <VBox spacing="3">
+                <Label text="索引" styleClass="field-label"/>
+                <ComboBox fx:id="motionIndexCombo" prefWidth="70"/>
+            </VBox>
+            <VBox spacing="3">
+                <Label text="优先级" styleClass="field-label"/>
+                <ComboBox fx:id="priorityCombo" prefWidth="100"/>
+            </VBox>
+        </HBox>
+        <HBox spacing="10">
+            <Button text="▶ 播放" onAction="#onPlayMotion" styleClass="button-primary"/>
+            <Button text="⏹ 停止" onAction="#onStopMotion" styleClass="button-secondary"/>
+        </HBox>
+    </VBox>
+    <Separator/>
+
+    <!-- Quick Actions -->
+    <VBox spacing="8">
+        <Label text="快捷动作" styleClass="section-title"/>
+        <FlowPane fx:id="quickActionsPane" hgap="8" vgap="8"/>
+        <Label fx:id="noMotionsLabel" text="加载模型后显示可用动作" styleClass="hint-text"/>
+    </VBox>
+    <Separator/>
+
+    <!-- Expressions -->
+    <VBox spacing="8">
+        <Label text="表情切换" styleClass="section-title"/>
+        <FlowPane fx:id="expressionsPane" hgap="8" vgap="8"/>
+        <Label fx:id="noExpressionsLabel" text="加载模型后显示可用表情" styleClass="hint-text"/>
+        <Label fx:id="currentExpressionLabel" text="当前表情: —" styleClass="info-text"/>
+    </VBox>
+</VBox>

@@ -61,6 +61,10 @@ public class ConfigManager {
         }
     }
 
+    public String getConfigPath() {
+        return configPath.toString();
+    }
+
     public PetConfig getDefaults() {
         return PetConfig.defaults();
     }

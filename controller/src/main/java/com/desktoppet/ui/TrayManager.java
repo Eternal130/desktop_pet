@@ -14,9 +14,11 @@ public class TrayManager {
 
     private SystemTray tray;
     private TrayIcon trayIcon;
-    private Stage primaryStage;
+    private final Stage primaryStage;
     private Runnable onExitCallback;
     private Runnable onSettingsCallback;
+    private Runnable onRandomMotionCallback;
+    private Runnable onTogglePauseCallback;
 
     public TrayManager(Stage primaryStage) {
         this.primaryStage = primaryStage;
@@ -24,6 +26,8 @@ public class TrayManager {
 
     public void setOnExitCallback(Runnable callback) { this.onExitCallback = callback; }
     public void setOnSettingsCallback(Runnable callback) { this.onSettingsCallback = callback; }
+    public void setOnRandomMotionCallback(Runnable callback) { this.onRandomMotionCallback = callback; }
+    public void setOnTogglePauseCallback(Runnable callback) { this.onTogglePauseCallback = callback; }
 
     public boolean initialize() {
         if (!SystemTray.isSupported()) {
@@ -81,8 +85,25 @@ public class TrayManager {
             }
         });
 
+        MenuItem randomMotionItem = new MenuItem("Play Random Motion");
+        randomMotionItem.addActionListener(e -> {
+            if (onRandomMotionCallback != null) {
+                onRandomMotionCallback.run();
+            }
+        });
+
+        MenuItem togglePauseItem = new MenuItem("Toggle Idle Pause");
+        togglePauseItem.addActionListener(e -> {
+            if (onTogglePauseCallback != null) {
+                onTogglePauseCallback.run();
+            }
+        });
+
         popup.add(showHideItem);
         popup.add(settingsItem);
+        popup.addSeparator();
+        popup.add(randomMotionItem);
+        popup.add(togglePauseItem);
         popup.addSeparator();
 
         MenuItem exitItem = new MenuItem("Exit");

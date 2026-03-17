@@ -1,7 +1,12 @@
 # Build outputs
 build/
 renderer/build/
+controller/target/
 compile_commands.json
+
+# Caches
+.cache/
+renderer/.cache/
 
 # Downloaded third-party dependencies (use setup scripts to download)
 third_party/CubismSdkForNative/Samples/OpenGL/thirdParty/glew/

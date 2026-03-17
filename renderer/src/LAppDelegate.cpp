@@ -6,8 +6,7 @@
  */
 
 #include "LAppDelegate.hpp"
-#include <unistd.h>
-#include <libgen.h>
+#include <windows.h>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include "LAppView.hpp"
@@ -16,11 +15,6 @@
 #include "LAppLive2DManager.hpp"
 #include "LAppModel.hpp"
 #include "LAppTextureManager.hpp"
-#include "network/WebSocketClient.hpp"
-#include "network/MessageHandler.hpp"
-#include "network/Protocol.hpp"
-#include "network/CommandHandlers.hpp"
-#include "network/EventEmitter.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -67,6 +61,7 @@ bool LAppDelegate::Initialize()
         return GL_FALSE;
     }
 
+    // Desktop pet: transparent, borderless, always-on-top
     glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
     glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
     glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
@@ -115,7 +110,7 @@ bool LAppDelegate::Initialize()
     _windowHeight = height;
     glViewport(0, 0, _windowWidth, _windowHeight);
 
-    // Cubism3の初期化
+    // Cubismの初期化
     InitializeCubism();
 
     SetExecuteAbsolutePath();
@@ -126,31 +121,11 @@ bool LAppDelegate::Initialize()
     //AppViewの初期化
     _view->Initialize(width, height);
 
-    if (!_wsUrl.empty()) {
-        _messageHandler = std::make_unique<Network::MessageHandler>();
-        Network::RegisterCommandHandlers(*_messageHandler, this);
-        _wsClient = std::make_unique<Network::WebSocketClient>();
-        _wsClient->connect(_wsUrl);
-        _eventEmitter = std::make_unique<Network::EventEmitter>();
-        _eventEmitter->setSendCallback([this](const std::string& msg) {
-            if (_wsClient && _wsClient->isConnected()) {
-                _wsClient->send(msg);
-            }
-        });
-    }
-
     return GL_TRUE;
 }
 
 void LAppDelegate::Release()
 {
-    if (_wsClient) {
-        _eventEmitter.reset();
-        _wsClient->disconnect();
-        _wsClient.reset();
-        _messageHandler.reset();
-    }
-
     // Windowの削除
     glfwDestroyWindow(_window);
 
@@ -162,7 +137,7 @@ void LAppDelegate::Release()
     // リソースを解放
     LAppLive2DManager::ReleaseInstance();
 
-    //Cubism3の解放
+    //Cubismの解放
     CubismFramework::Dispose();
 }
 
@@ -186,7 +161,7 @@ void LAppDelegate::Run()
         // 時間更新
         LAppPal::UpdateTime();
 
-        // 画面の初期化
+        // 画面の初期化 (alpha=0 for transparency)
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glClearDepth(1.0);
@@ -198,26 +173,6 @@ void LAppDelegate::Run()
         glfwSwapBuffers(_window);
 
         glfwWaitEventsTimeout(1.0 / 30.0);
-
-        if (_wsClient) {
-            if (_wsClient->isConnected() && !_wsReadySent) {
-                _wsReadySent = true;
-                nlohmann::json readyPayload = {{"version", "1.0.0"}, {"capabilities", nlohmann::json::array({"live2d"})}};
-                auto readyEvent = Network::createEvent("ready", readyPayload);
-                _wsClient->send(Network::serialize(readyEvent));
-            }
-            auto messages = _wsClient->drainMessages();
-            int processed = 0;
-            for (const auto& raw : messages) {
-                if (processed >= 50) break;
-                auto env = Network::deserialize(raw);
-                if (env) {
-                    auto errorEvent = _messageHandler->dispatch(*env);
-                    if (errorEvent) { _wsClient->send(Network::serialize(*errorEvent)); }
-                }
-                processed++;
-            }
-        }
     }
 
     Release();
@@ -237,9 +192,7 @@ LAppDelegate::LAppDelegate():
     _dragStartX(0.0),
     _dragStartY(0.0),
     _windowStartX(0),
-    _windowStartY(0),
-    _wsUrl(""),
-    _wsReadySent(false)
+    _windowStartY(0)
 {
     _executeAbsolutePath = "";
     _view = new LAppView();
@@ -294,34 +247,12 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
             _dragStartX = _mouseX;
             _dragStartY = _mouseY;
             glfwGetWindowPos(_window, &_windowStartX, &_windowStartY);
-            if (_eventEmitter) {
-                _eventEmitter->emit("drag_start", {{"x", _mouseX}, {"y", _mouseY}});
-            }
-        }
-        else
-        {
-            if (_eventEmitter) {
-                std::string areaId = "body";
-                LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
-                if (manager->GetModelNum() > 0) {
-                    LAppModel* model = manager->GetModel(0);
-                    if (model && model->HitTest(LAppDefine::HitAreaNameHead, x, y)) {
-                        areaId = "head";
-                    }
-                }
-                _eventEmitter->emit("hit", {{"area_id", areaId}, {"x", _mouseX}, {"y", _mouseY}, {"button", button}});
-            }
         }
     }
     else if (GLFW_RELEASE == action)
     {
         const bool wasDragging = _isDragging;
         _isDragging = false;
-        if (wasDragging && _eventEmitter) {
-            int wx, wy;
-            glfwGetWindowPos(_window, &wx, &wy);
-            _eventEmitter->emit("drag_end", {{"x", _mouseX}, {"y", _mouseY}, {"window_x", wx}, {"window_y", wy}});
-        }
         if (_captured)
         {
             _captured = false;
@@ -368,19 +299,28 @@ void LAppDelegate::GetClientSize(int& rWidth, int& rHeight)
 
 void LAppDelegate::SetExecuteAbsolutePath()
 {
-    char path[1024];
-    ssize_t len = readlink("/proc/self/exe", path, 1024 - 1);
+    char path[MAX_PATH];
+    DWORD len = GetModuleFileNameA(NULL, path, MAX_PATH);
 
-    if (len != -1)
+    if (len > 0 && len < MAX_PATH)
     {
-        path[len] = '\0';
+        // Find the last backslash or forward slash
+        char* lastSep = nullptr;
+        for (DWORD i = 0; i < len; ++i)
+        {
+            if (path[i] == '\\' || path[i] == '/')
+            {
+                lastSep = &path[i];
+            }
+        }
+        if (lastSep)
+        {
+            *(lastSep + 1) = '\0';
+        }
     }
 
-    this->_executeAbsolutePath = dirname(path);
-    this->_executeAbsolutePath += "/";
+    this->_executeAbsolutePath = path;
 }
-
-void LAppDelegate::SetWebSocketUrl(const std::string& url) { _wsUrl = url; }
 
 bool LAppDelegate::IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const
 {

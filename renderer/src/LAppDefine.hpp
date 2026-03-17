@@ -59,6 +59,4 @@ namespace LAppDefine {
     extern const csmInt32 RenderTargetWidth;
     extern const csmInt32 RenderTargetHeight;
 
-    // WebSocket default port
-    const int DefaultWebSocketPort = 9000;
 }

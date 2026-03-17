@@ -6,41 +6,22 @@
  */
 
 #include "LAppDelegate.hpp"
-#include <cstdio>
-#include <string>
+#include <windows.h>
 
-int main(int argc, char* argv[])
+int main()
 {
-    std::string wsUrl;
-    bool showHelp = false;
-    
-    for (int i = 1; i < argc; ++i) {
-        std::string arg(argv[i]);
-        if (arg == "--ws-url" && i + 1 < argc) {
-            wsUrl = argv[++i];
-        } else if (arg == "--help" || arg == "-h") {
-            showHelp = true;
-        }
-    }
-    
-    if (showHelp) {
-        printf("Usage: desktop-pet-renderer [--ws-url ws://host:port]\n");
-        printf("  --ws-url  WebSocket server URL to connect to (optional)\n");
-        printf("  --help    Show this help message\n");
-        return 0;
-    }
-    
-    if (!wsUrl.empty()) {
-        LAppDelegate::GetInstance()->SetWebSocketUrl(wsUrl);
-    }
-    
+    UINT preConsoleOutputCP = GetConsoleOutputCP();
+    SetConsoleOutputCP(65001);
+
     if (LAppDelegate::GetInstance()->Initialize() == GL_FALSE)
     {
+        SetConsoleOutputCP(preConsoleOutputCP);
         return 1;
     }
 
     LAppDelegate::GetInstance()->Run();
 
+    SetConsoleOutputCP(preConsoleOutputCP);
+
     return 0;
 }
-

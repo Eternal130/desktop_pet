@@ -14,6 +14,7 @@
         <padding><Insets top="0" right="8" bottom="0" left="16"/></padding>
         <Label text="Live2D 桌面宠物控制面板 ✧" styleClass="title-bar-text"/>
         <Region HBox.hgrow="ALWAYS"/>
+        <ComboBox fx:id="themeCombo" styleClass="theme-combo" onAction="#onThemeChanged" prefWidth="120"/>
         <Button text="—" styleClass="title-btn" onAction="#onMinimize"/>
         <Button text="✕" styleClass="title-btn title-btn-close" onAction="#onCloseWindow"/>
     </HBox>

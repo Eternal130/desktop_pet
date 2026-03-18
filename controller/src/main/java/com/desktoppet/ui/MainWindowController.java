@@ -28,6 +28,8 @@ import javafx.scene.shape.Rectangle;
 import javafx.animation.TranslateTransition;
 import javafx.util.Duration;
 import javafx.stage.Stage;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 public class MainWindowController {
@@ -51,6 +53,18 @@ public class MainWindowController {
         NONE, N, S, E, W, NE, NW, SE, SW
     }
 
+    private static final Map<String, String> THEMES = new LinkedHashMap<>();
+    static {
+        THEMES.put("深紫梦幻", "/css/style.css");
+        THEMES.put("樱花浅粉", "/css/theme-sakura.css");
+        THEMES.put("赛博霓虹", "/css/theme-cyber.css");
+        THEMES.put("暖橘小窝", "/css/theme-warm.css");
+        THEMES.put("深海蔚蓝", "/css/theme-ocean.css");
+        THEMES.put("终端黑客", "/css/theme-terminal.css");
+        THEMES.put("云石浅灰", "/css/theme-stone.css");
+    }
+
+    @FXML private ComboBox<String> themeCombo;
     @FXML private HBox titleBar;
     @FXML private VBox instanceListBox;
     @FXML private Button addInstanceBtn;
@@ -78,6 +92,9 @@ public class MainWindowController {
 
     @FXML
     public void initialize() {
+        themeCombo.setItems(FXCollections.observableArrayList(THEMES.keySet()));
+        themeCombo.setValue("深紫梦幻");
+
         modelSelectCombo.setItems(FXCollections.observableArrayList("Hiyori", "Mao", "Natori", "Rice"));
 
         PetInstance inst1 = new PetInstance("主屏宠物", "Hiyori", "running", true);
@@ -421,6 +438,25 @@ public class MainWindowController {
         }
         currentInstance.addLog("↺ 正在重启引擎...");
         currentInstance.addLog("◇ 渲染引擎初始化完成");
+    }
+
+    @FXML
+    private void onThemeChanged() {
+        String selected = themeCombo.getValue();
+        if (selected == null) {
+            return;
+        }
+        String cssPath = THEMES.get(selected);
+        if (cssPath == null) {
+            return;
+        }
+        var scene = themeCombo.getScene();
+        if (scene == null) {
+            return;
+        }
+        String cssUrl = getClass().getResource(cssPath).toExternalForm();
+        scene.getStylesheets().clear();
+        scene.getStylesheets().add(cssUrl);
     }
 
     @FXML

@@ -2,72 +2,646 @@ package com.desktoppet.ui;
 
 import com.desktoppet.core.AppOrchestrator;
 import com.desktoppet.model.ModelInfo;
-import com.desktoppet.model.PetConfig;
+import com.desktoppet.model.PetInstance;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
-import javafx.scene.control.TabPane;
+import javafx.geometry.Pos;
+import javafx.application.Platform;
+import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListView;
+import javafx.scene.control.Slider;
+import javafx.scene.control.TextField;
+import javafx.scene.control.TextInputDialog;
+import javafx.scene.Cursor;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.function.Consumer;
+import javafx.scene.shape.Rectangle;
+import javafx.animation.TranslateTransition;
+import javafx.util.Duration;
+import javafx.stage.Stage;
+import java.util.Optional;
 
 public class MainWindowController {
-    private static final Logger log = LoggerFactory.getLogger(MainWindowController.class);
+    private final ObservableList<PetInstance> instances = FXCollections.observableArrayList();
+    private PetInstance currentInstance;
+    private boolean updatingUI;
+    private double dragOffsetX;
+    private double dragOffsetY;
 
-    @FXML private TabPane tabPane;
+    private static final int RESIZE_MARGIN = 6;
+    private boolean resizing;
+    private double resizeStartX;
+    private double resizeStartY;
+    private double resizeStartW;
+    private double resizeStartH;
+    private double resizeStartStageX;
+    private double resizeStartStageY;
+    private ResizeDirection resizeDir = ResizeDirection.NONE;
 
-    @FXML private VBox dashboard;
-    @FXML private DashboardTabController dashboardController;
-    @FXML private VBox actions;
-    @FXML private ActionsTabController actionsController;
-    @FXML private VBox settings;
-    @FXML private SettingsTabController settingsController;
-    @FXML private VBox advanced;
-    @FXML private AdvancedTabController advancedController;
+    private enum ResizeDirection {
+        NONE, N, S, E, W, NE, NW, SE, SW
+    }
 
-    private AppOrchestrator orchestrator;
-    private Consumer<PetConfig> onSettingsSaveCallback;
+    @FXML private HBox titleBar;
+    @FXML private VBox instanceListBox;
+    @FXML private Button addInstanceBtn;
+    @FXML private Label modelNameBig;
+    @FXML private Label instanceTagLabel;
+    @FXML private Label connectionBadge;
+    @FXML private Button toggleStatusBtn;
+    @FXML private Label avatarLabel;
+    @FXML private Label modelNameCard;
+    @FXML private ComboBox<String> modelSelectCombo;
+    @FXML private Label statsLabel;
+    @FXML private GridPane motionGrid;
+    @FXML private Label expressionTitle;
+    @FXML private HBox expressionRow;
+    @FXML private Slider opacitySlider;
+    @FXML private Label opacityValueLabel;
+    @FXML private Button dragDirectBtn;
+    @FXML private Button dragPhysicsBtn;
+    @FXML private Slider idleSlider;
+    @FXML private Label idleValueLabel;
+    @FXML private TextField posXField;
+    @FXML private TextField posYField;
+    @FXML private CheckBox autoStartCheck;
+    @FXML private ListView<String> logListView;
 
     @FXML
     public void initialize() {
+        modelSelectCombo.setItems(FXCollections.observableArrayList("Hiyori", "Mao", "Natori", "Rice"));
+
+        PetInstance inst1 = new PetInstance("主屏宠物", "Hiyori", "running", true);
+        inst1.addLog("✦ 模型加载完成: Hiyori");
+        inst1.addLog("◈ WebSocket 连接已建立");
+        inst1.addLog("◇ 调度器已启动");
+        inst1.addLog("◇ 配置文件加载成功");
+        inst1.addLog("◆ 实例「主屏宠物」已启动");
+
+        PetInstance inst2 = new PetInstance("副屏助手", "Mao", "running", true);
+        inst2.setOpacity(0.8);
+        inst2.setDragMode("physics");
+        inst2.setIdleInterval(15);
+        inst2.setPosX(-800);
+        inst2.setPosY(400);
+        inst2.setCurrentExpression("F02");
+        inst2.addLog("✦ 模型加载完成: Mao");
+        inst2.addLog("◈ WebSocket 连接已建立");
+        inst2.addLog("◆ 实例「副屏助手」已启动");
+
+        PetInstance inst3 = new PetInstance("待机", "Natori", "stopped", false);
+        inst3.setPosX(0);
+        inst3.setPosY(0);
+        inst3.addLog("◆ 实例「待机」已停止");
+        inst3.addLog("◇ 模型已卸载: Natori");
+
+        instances.setAll(inst1, inst2, inst3);
+
+        opacitySlider.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingUI || currentInstance == null) {
+                return;
+            }
+            double value = newValue.doubleValue();
+            currentInstance.setOpacity(value);
+            opacityValueLabel.setText(String.format("%.1f", value));
+        });
+
+        idleSlider.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingUI || currentInstance == null) {
+                return;
+            }
+            int seconds = (int) Math.round(newValue.doubleValue());
+            currentInstance.setIdleInterval(seconds);
+            idleValueLabel.setText(seconds + "s");
+        });
+
+        posXField.textProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingUI || currentInstance == null) {
+                return;
+            }
+            try {
+                currentInstance.setPosX(Integer.parseInt(newValue.trim()));
+            } catch (NumberFormatException ignored) {
+            }
+        });
+
+        posYField.textProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingUI || currentInstance == null) {
+                return;
+            }
+            try {
+                currentInstance.setPosY(Integer.parseInt(newValue.trim()));
+            } catch (NumberFormatException ignored) {
+            }
+        });
+
+        autoStartCheck.selectedProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingUI || currentInstance == null) {
+                return;
+            }
+            currentInstance.setAutoStart(newValue);
+        });
+
+        clipSliderToBounds(opacitySlider);
+        clipSliderToBounds(idleSlider);
+        setupToggleSwitch(autoStartCheck);
+
+        buildMotionGrid();
+        buildExpressionButtons();
+        selectInstance(instances.get(0));
     }
 
     public void setOrchestrator(AppOrchestrator orchestrator) {
-        this.orchestrator = orchestrator;
-        dashboardController.init(orchestrator);
-        actionsController.init(orchestrator);
-        settingsController.init(orchestrator);
-        advancedController.init(orchestrator);
     }
 
-    public void setOnSettingsSaveCallback(Consumer<PetConfig> callback) {
-        this.onSettingsSaveCallback = callback;
+    private void selectInstance(PetInstance instance) {
+        currentInstance = instance;
+        renderSidebar();
+        renderDetail();
+    }
+
+    private void renderSidebar() {
+        instanceListBox.getChildren().clear();
+
+        for (PetInstance inst : instances) {
+            VBox card = new VBox(10);
+            card.getStyleClass().add("instance-card");
+            if (inst == currentInstance) {
+                card.getStyleClass().add("instance-card-active");
+            }
+
+            HBox top = new HBox(8);
+            top.setAlignment(Pos.CENTER_LEFT);
+
+            Label modelLabel = new Label(inst.getModel());
+            modelLabel.getStyleClass().add("instance-model-name");
+
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+
+            Region statusDot = new Region();
+            statusDot.getStyleClass().add(inst.isRunning() ? "status-dot-running" : "status-dot-stopped");
+
+            top.getChildren().addAll(modelLabel, spacer, statusDot);
+
+            HBox bottom = new HBox(8);
+            bottom.setAlignment(Pos.CENTER_LEFT);
+
+            Label tag = new Label(inst.getLabel());
+            tag.getStyleClass().add("instance-tag");
+
+            Region bottomSpacer = new Region();
+            HBox.setHgrow(bottomSpacer, Priority.ALWAYS);
+
+            Label statusText = new Label(inst.isRunning() ? "运行中" : "已停止");
+            statusText.getStyleClass().add("setting-label");
+
+            bottom.getChildren().addAll(tag, bottomSpacer, statusText);
+
+            card.getChildren().addAll(top, bottom);
+            card.setOnMouseClicked(event -> selectInstance(inst));
+            instanceListBox.getChildren().add(card);
+        }
+    }
+
+    private void renderDetail() {
+        if (currentInstance == null) {
+            return;
+        }
+
+        updatingUI = true;
+        try {
+            modelNameBig.setText(currentInstance.getModel());
+            instanceTagLabel.setText("✎ " + currentInstance.getLabel());
+
+            connectionBadge.getStyleClass().removeAll("connection-badge-connected", "connection-badge-disconnected");
+            if (currentInstance.isConnected()) {
+                connectionBadge.getStyleClass().add("connection-badge-connected");
+                connectionBadge.setText("● 已连接");
+            } else {
+                connectionBadge.getStyleClass().add("connection-badge-disconnected");
+                connectionBadge.setText("● 已断开");
+            }
+
+            toggleStatusBtn.getStyleClass().removeAll("btn-danger-outline", "btn-success-outline");
+            if (currentInstance.isRunning()) {
+                toggleStatusBtn.setText("停止运行");
+                toggleStatusBtn.getStyleClass().add("btn-danger-outline");
+            } else {
+                toggleStatusBtn.setText("启动运行");
+                toggleStatusBtn.getStyleClass().add("btn-success-outline");
+            }
+
+            String model = currentInstance.getModel();
+            avatarLabel.setText(model.isEmpty() ? "?" : String.valueOf(model.charAt(0)));
+            modelNameCard.setText(model);
+            modelSelectCombo.setValue(model);
+            statsLabel.setText("4 动作组 · 4 表情 · 2 触控区");
+            expressionTitle.setText("✦ 表情控制 当前: " + currentInstance.getCurrentExpression());
+            updateExpressionActiveStyles();
+
+            opacitySlider.setValue(currentInstance.getOpacity());
+            opacityValueLabel.setText(String.format("%.1f", currentInstance.getOpacity()));
+
+            dragDirectBtn.getStyleClass().remove("seg-btn-active");
+            dragPhysicsBtn.getStyleClass().remove("seg-btn-active");
+            if ("physics".equals(currentInstance.getDragMode())) {
+                dragPhysicsBtn.getStyleClass().add("seg-btn-active");
+            } else {
+                dragDirectBtn.getStyleClass().add("seg-btn-active");
+            }
+
+            idleSlider.setValue(currentInstance.getIdleInterval());
+            idleValueLabel.setText(currentInstance.getIdleInterval() + "s");
+            posXField.setText(String.valueOf(currentInstance.getPosX()));
+            posYField.setText(String.valueOf(currentInstance.getPosY()));
+            autoStartCheck.setSelected(currentInstance.isAutoStart());
+            logListView.setItems(currentInstance.getLogs());
+        } finally {
+            updatingUI = false;
+        }
+    }
+
+    private void buildMotionGrid() {
+        motionGrid.getChildren().clear();
+
+        String[][] data = {
+                {"Idle", "✨", "×3"},
+                {"TapBody", "戳", "×2"},
+                {"TapHead", "摸", "×2"},
+                {"Flick", "💨", "×1"}
+        };
+
+        for (int i = 0; i < data.length; i++) {
+            String name = data[i][0];
+            String icon = data[i][1];
+            String count = data[i][2];
+
+            VBox btn = new VBox(6);
+            btn.getStyleClass().add("motion-btn");
+            btn.setAlignment(Pos.CENTER);
+
+            Label iconLabel = new Label(icon);
+            iconLabel.getStyleClass().add("motion-icon");
+
+            Label nameLabel = new Label(name);
+            nameLabel.getStyleClass().add("motion-name");
+
+            Label countLabel = new Label(count);
+            countLabel.getStyleClass().add("motion-count");
+
+            btn.getChildren().addAll(iconLabel, nameLabel, countLabel);
+            btn.setOnMouseClicked(event -> onMotionTriggered(name));
+
+            int row = i / 2;
+            int col = i % 2;
+            motionGrid.add(btn, col, row);
+        }
+    }
+
+    private void buildExpressionButtons() {
+        expressionRow.getChildren().clear();
+        for (int i = 1; i <= 4; i++) {
+            String exp = "F0" + i;
+            Button button = new Button(exp);
+            button.getStyleClass().add("exp-btn");
+            button.setOnAction(event -> onExpressionClicked(exp));
+            expressionRow.getChildren().add(button);
+        }
+        updateExpressionActiveStyles();
+    }
+
+    private void updateExpressionActiveStyles() {
+        if (currentInstance == null) {
+            return;
+        }
+        for (javafx.scene.Node node : expressionRow.getChildren()) {
+            if (!(node instanceof Button)) {
+                continue;
+            }
+            Button button = (Button) node;
+            button.getStyleClass().remove("exp-btn-active");
+            if (button.getText().equals(currentInstance.getCurrentExpression())) {
+                button.getStyleClass().add("exp-btn-active");
+            }
+        }
+    }
+
+    private void onExpressionClicked(String expName) {
+        if (currentInstance == null) {
+            return;
+        }
+        currentInstance.setCurrentExpression(expName);
+        currentInstance.addLog("✦ 切换表情: " + expName);
+        renderDetail();
+    }
+
+    private void onMotionTriggered(String groupName) {
+        if (currentInstance == null) {
+            return;
+        }
+        currentInstance.addLog("✦ 触发动作组: " + groupName);
     }
 
     public void updateConnectionStatus(boolean connected) {
-        dashboardController.updateConnectionStatus(connected);
-        advancedController.updateRendererStatus(connected);
     }
 
     public void updateModelName(String name) {
-        dashboardController.updateModelName(name);
     }
 
     public void updateIdleInterval(int seconds) {
-        dashboardController.refreshStatus();
-        settingsController.loadConfig();
     }
 
     public void updateModelInfo(ModelInfo info) {
-        dashboardController.updateModelInfo(info);
-        actionsController.updateForModel(info);
     }
 
     public void addActivity(String message) {
-        dashboardController.addActivity(message);
     }
 
     public void addMessageLog(String direction, String type, String action, String summary) {
-        advancedController.addMessageLog(direction, type, action, summary);
+    }
+
+    @FXML
+    private void onAddInstance() {
+        PetInstance created = new PetInstance("新实例", "Hiyori", "stopped", false);
+        created.addLog("◆ 创建实例「新实例」");
+        instances.add(created);
+        selectInstance(created);
+    }
+
+    @FXML
+    private void onEditTag() {
+        if (currentInstance == null) {
+            return;
+        }
+        TextInputDialog dialog = new TextInputDialog(currentInstance.getLabel());
+        dialog.setTitle("编辑标签");
+        dialog.setHeaderText("修改实例标签");
+        dialog.setContentText("标签:");
+        Optional<String> result = dialog.showAndWait();
+        result.map(String::trim).filter(s -> !s.isEmpty()).ifPresent(newTag -> {
+            currentInstance.setLabel(newTag);
+            currentInstance.addLog("◇ 标签更新为: " + newTag);
+            renderSidebar();
+            renderDetail();
+        });
+    }
+
+    @FXML
+    private void onToggleStatus() {
+        if (currentInstance == null) {
+            return;
+        }
+        if (currentInstance.isRunning()) {
+            currentInstance.setStatus("stopped");
+            currentInstance.setConnected(false);
+            currentInstance.addLog("◆ 实例「" + currentInstance.getLabel() + "」已停止");
+        } else {
+            currentInstance.setStatus("running");
+            currentInstance.setConnected(true);
+            currentInstance.addLog("◆ 实例「" + currentInstance.getLabel() + "」已启动");
+        }
+        renderSidebar();
+        renderDetail();
+    }
+
+    @FXML
+    private void onRestartEngine() {
+        if (currentInstance == null) {
+            return;
+        }
+        currentInstance.addLog("↺ 正在重启引擎...");
+        currentInstance.addLog("◇ 渲染引擎初始化完成");
+    }
+
+    @FXML
+    private void onModelChanged() {
+        if (currentInstance == null) {
+            return;
+        }
+        String selected = modelSelectCombo.getValue();
+        if (selected == null || selected.isBlank() || selected.equals(currentInstance.getModel())) {
+            return;
+        }
+        currentInstance.setModel(selected);
+        currentInstance.addLog("✦ 模型切换为: " + selected);
+        renderSidebar();
+        renderDetail();
+    }
+
+    @FXML
+    private void onDragDirect() {
+        if (currentInstance == null) {
+            return;
+        }
+        currentInstance.setDragMode("direct");
+        renderDetail();
+    }
+
+    @FXML
+    private void onDragPhysics() {
+        if (currentInstance == null) {
+            return;
+        }
+        currentInstance.setDragMode("physics");
+        renderDetail();
+    }
+
+    @FXML
+    private void onClearLog() {
+        if (currentInstance == null) {
+            return;
+        }
+        currentInstance.getLogs().clear();
+    }
+
+    private void setupToggleSwitch(CheckBox checkBox) {
+        StackPane track = new StackPane();
+        track.getStyleClass().add("toggle-track");
+
+        Region thumb = new Region();
+        thumb.getStyleClass().add("toggle-thumb");
+        StackPane.setAlignment(thumb, Pos.CENTER_LEFT);
+        track.getChildren().add(thumb);
+
+        double offX = 3;
+        double onX = 21;
+
+        checkBox.selectedProperty().addListener((obs, old, selected) -> {
+            TranslateTransition tt = new TranslateTransition(Duration.millis(120), thumb);
+            tt.setToX(selected ? onX : offX);
+            tt.play();
+            track.getStyleClass().remove("toggle-track-on");
+            if (selected) {
+                track.getStyleClass().add("toggle-track-on");
+            }
+        });
+
+        thumb.setTranslateX(checkBox.isSelected() ? onX : offX);
+        if (checkBox.isSelected()) {
+            track.getStyleClass().add("toggle-track-on");
+        }
+
+        checkBox.setGraphic(track);
+    }
+
+    private void clipSliderToBounds(Slider slider) {
+        Rectangle clip = new Rectangle();
+        clip.widthProperty().bind(slider.widthProperty());
+        clip.heightProperty().bind(slider.heightProperty());
+        slider.setClip(clip);
+    }
+
+    @FXML
+    private void onTitleBarPressed(MouseEvent event) {
+        Stage stage = (Stage) titleBar.getScene().getWindow();
+        dragOffsetX = event.getScreenX() - stage.getX();
+        dragOffsetY = event.getScreenY() - stage.getY();
+    }
+
+    @FXML
+    private void onTitleBarDragged(MouseEvent event) {
+        Stage stage = (Stage) titleBar.getScene().getWindow();
+        stage.setX(event.getScreenX() - dragOffsetX);
+        stage.setY(event.getScreenY() - dragOffsetY);
+    }
+
+    @FXML
+    private void onMinimize() {
+        Stage stage = (Stage) titleBar.getScene().getWindow();
+        stage.setIconified(true);
+    }
+
+    @FXML
+    private void onCloseWindow() {
+        Platform.exit();
+    }
+
+    public void enableWindowResize(Stage stage) {
+        var scene = stage.getScene();
+
+        scene.addEventFilter(MouseEvent.MOUSE_MOVED, e -> {
+            if (resizing) return;
+            ResizeDirection dir = detectEdge(e, stage);
+            scene.setCursor(cursorFor(dir));
+        });
+
+        scene.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
+            ResizeDirection dir = detectEdge(e, stage);
+            if (dir != ResizeDirection.NONE) {
+                resizing = true;
+                resizeDir = dir;
+                resizeStartX = e.getScreenX();
+                resizeStartY = e.getScreenY();
+                resizeStartW = stage.getWidth();
+                resizeStartH = stage.getHeight();
+                resizeStartStageX = stage.getX();
+                resizeStartStageY = stage.getY();
+                e.consume();
+            }
+        });
+
+        scene.addEventFilter(MouseEvent.MOUSE_DRAGGED, e -> {
+            if (!resizing) return;
+            double dx = e.getScreenX() - resizeStartX;
+            double dy = e.getScreenY() - resizeStartY;
+            double minW = stage.getMinWidth();
+            double minH = stage.getMinHeight();
+
+            switch (resizeDir) {
+                case E -> stage.setWidth(Math.max(minW, resizeStartW + dx));
+                case S -> stage.setHeight(Math.max(minH, resizeStartH + dy));
+                case SE -> {
+                    stage.setWidth(Math.max(minW, resizeStartW + dx));
+                    stage.setHeight(Math.max(minH, resizeStartH + dy));
+                }
+                case W -> {
+                    double newW = Math.max(minW, resizeStartW - dx);
+                    stage.setX(resizeStartStageX + resizeStartW - newW);
+                    stage.setWidth(newW);
+                }
+                case N -> {
+                    double newH = Math.max(minH, resizeStartH - dy);
+                    stage.setY(resizeStartStageY + resizeStartH - newH);
+                    stage.setHeight(newH);
+                }
+                case NW -> {
+                    double newW = Math.max(minW, resizeStartW - dx);
+                    double newH = Math.max(minH, resizeStartH - dy);
+                    stage.setX(resizeStartStageX + resizeStartW - newW);
+                    stage.setY(resizeStartStageY + resizeStartH - newH);
+                    stage.setWidth(newW);
+                    stage.setHeight(newH);
+                }
+                case NE -> {
+                    stage.setWidth(Math.max(minW, resizeStartW + dx));
+                    double newH = Math.max(minH, resizeStartH - dy);
+                    stage.setY(resizeStartStageY + resizeStartH - newH);
+                    stage.setHeight(newH);
+                }
+                case SW -> {
+                    double newW = Math.max(minW, resizeStartW - dx);
+                    stage.setX(resizeStartStageX + resizeStartW - newW);
+                    stage.setWidth(newW);
+                    stage.setHeight(Math.max(minH, resizeStartH + dy));
+                }
+                default -> {}
+            }
+            e.consume();
+        });
+
+        scene.addEventFilter(MouseEvent.MOUSE_RELEASED, e -> {
+            if (resizing) {
+                resizing = false;
+                resizeDir = ResizeDirection.NONE;
+                scene.setCursor(Cursor.DEFAULT);
+                e.consume();
+            }
+        });
+    }
+
+    private ResizeDirection detectEdge(MouseEvent e, Stage stage) {
+        double x = e.getSceneX();
+        double y = e.getSceneY();
+        double w = stage.getWidth();
+        double h = stage.getHeight();
+
+        boolean top = y < RESIZE_MARGIN;
+        boolean bottom = y > h - RESIZE_MARGIN;
+        boolean left = x < RESIZE_MARGIN;
+        boolean right = x > w - RESIZE_MARGIN;
+
+        if (top && left) return ResizeDirection.NW;
+        if (top && right) return ResizeDirection.NE;
+        if (bottom && left) return ResizeDirection.SW;
+        if (bottom && right) return ResizeDirection.SE;
+        if (top) return ResizeDirection.N;
+        if (bottom) return ResizeDirection.S;
+        if (left) return ResizeDirection.W;
+        if (right) return ResizeDirection.E;
+        return ResizeDirection.NONE;
+    }
+
+    private Cursor cursorFor(ResizeDirection dir) {
+        return switch (dir) {
+            case N -> Cursor.N_RESIZE;
+            case S -> Cursor.S_RESIZE;
+            case E -> Cursor.E_RESIZE;
+            case W -> Cursor.W_RESIZE;
+            case NE -> Cursor.NE_RESIZE;
+            case NW -> Cursor.NW_RESIZE;
+            case SE -> Cursor.SE_RESIZE;
+            case SW -> Cursor.SW_RESIZE;
+            default -> Cursor.DEFAULT;
+        };
     }
 }

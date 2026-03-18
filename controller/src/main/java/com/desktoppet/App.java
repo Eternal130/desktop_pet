@@ -7,8 +7,9 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
-import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,21 +23,24 @@ public class App extends Application {
         orchestrator = new AppOrchestrator();
 
         FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/main-window.fxml"));
-        BorderPane root = loader.load();
+        VBox root = loader.load();
         MainWindowController controller = loader.getController();
 
         controller.setOrchestrator(orchestrator);
         orchestrator.setUiController(controller);
         orchestrator.startup();
 
-        Scene scene = new Scene(root, 500, 620);
+        Scene scene = new Scene(root, 1200, 760);
         scene.getStylesheets().add(getClass().getResource("/css/style.css").toExternalForm());
 
-        primaryStage.setTitle("Desktop Pet Controller");
+        primaryStage.initStyle(StageStyle.UNDECORATED);
+        primaryStage.setTitle("Live2D 桌面宠物控制面板");
         primaryStage.setScene(scene);
-        primaryStage.setMinWidth(480);
-        primaryStage.setMinHeight(560);
+        primaryStage.setMinWidth(900);
+        primaryStage.setMinHeight(600);
         primaryStage.show();
+
+        controller.enableWindowResize(primaryStage);
 
         trayManager = new TrayManager(primaryStage);
         trayManager.setOnExitCallback(() -> {

@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live2D 控制面板 ✦</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Outfit:wght@300;400;500;600;700&family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --sakura: #FFB7C5;
+            --sakura-deep: #E8879B;
+            --lavender: #C4B7FF;
+            --lavender-deep: #A594FF;
+            --sky: #87CEEB;
+            --sky-deep: #5BB5D5;
+            --mint: #98E8C1;
+            --coral: #FF8A80;
+            --bg-main: #1C1B2E;
+            --bg-card: #252440;
+            --bg-card-alt: #2D2B4E;
+            --bg-hover: #34325A;
+            --text-bright: #FFFFFF;
+            --text-soft: #B8B5D0;
+            --text-dim: #6E6B8A;
+            --gradient-primary: linear-gradient(135deg, var(--sakura), var(--lavender));
+            --gradient-secondary: linear-gradient(135deg, var(--lavender), var(--sky));
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-bright);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Sparkles Background */
+        .sparkles-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+        .sparkle {
+            position: absolute;
+            color: var(--sakura);
+            font-size: 14px;
+            opacity: 0;
+            animation: float-sparkle 6s infinite ease-in-out;
+        }
+        .sparkle:nth-child(2) { color: var(--lavender); left: 20%; top: 80%; animation-delay: 1s; animation-duration: 7s; font-size: 20px; }
+        .sparkle:nth-child(3) { color: var(--sky); left: 80%; top: 30%; animation-delay: 2s; animation-duration: 5s; }
+        .sparkle:nth-child(4) { color: var(--sakura); left: 60%; top: 70%; animation-delay: 3s; font-size: 10px; }
+        .sparkle:nth-child(5) { color: var(--lavender); left: 30%; top: 20%; animation-delay: 0.5s; font-size: 16px; }
+
+        @keyframes float-sparkle {
+            0% { transform: translateY(0) scale(0.8) rotate(0deg); opacity: 0; }
+            20% { opacity: 0.6; }
+            50% { transform: translateY(-40px) scale(1.2) rotate(180deg); opacity: 0.8; }
+            80% { opacity: 0.6; }
+            100% { transform: translateY(-80px) scale(0.8) rotate(360deg); opacity: 0; }
+        }
+
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 0 0 rgba(255, 183, 197, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 183, 197, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 183, 197, 0); }
+        }
+
+        @keyframes slide-in-right {
+            from { transform: translateX(20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+        h1, h2, h3, .zcool { font-family: 'ZCOOL KuaiLe', cursive; font-weight: normal; }
+        .outfit { font-family: 'Outfit', sans-serif; }
+
+        /* App Container */
+        .app-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* --- Sidebar --- */
+        .sidebar {
+            width: 260px;
+            background: var(--bg-card);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 16px;
+            gap: 16px;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.2);
+            z-index: 10;
+        }
+
+        .sidebar-header {
+            padding: 0 8px 12px;
+            border-bottom: 1px dashed var(--text-dim);
+            margin-bottom: 8px;
+        }
+        .sidebar-title {
+            font-size: 22px;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .instance-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow-y: auto;
+            flex: 1;
+            padding-right: 4px;
+        }
+
+        .instance-card {
+            background: var(--bg-card-alt);
+            border-radius: 16px;
+            padding: 14px 16px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            position: relative;
+            border: 1px solid transparent;
+            overflow: hidden;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .instance-card:hover {
+            transform: translateY(-2px);
+            background: var(--bg-hover);
+            box-shadow: 0 6px 15px rgba(0,0,0,0.2);
+        }
+        .instance-card.active {
+            border-color: rgba(255, 183, 197, 0.5);
+            background: var(--bg-hover);
+            box-shadow: 0 4px 20px rgba(255, 183, 197, 0.15);
+        }
+        .instance-card.active::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0; width: 4px;
+            background: var(--gradient-primary);
+            border-radius: 4px 0 0 4px;
+        }
+
+        .instance-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .instance-model {
+            font-weight: 700;
+            font-size: 16px;
+            color: var(--text-bright);
+        }
+        .status-dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.running { background-color: var(--mint); box-shadow: 0 0 8px var(--mint); }
+        .status-dot.stopped { background-color: var(--coral); box-shadow: 0 0 8px var(--coral); }
+
+        .instance-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+        }
+        .instance-tag {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-soft);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+        .instance-status-text {
+            color: var(--text-dim);
+        }
+
+        .btn-add-instance {
+            background: transparent;
+            border: 1px dashed var(--text-dim);
+            color: var(--text-soft);
+            border-radius: 16px;
+            padding: 14px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            font-family: inherit;
+        }
+        .btn-add-instance:hover {
+            border-color: var(--sakura);
+            color: var(--sakura);
+            background: rgba(255, 183, 197, 0.05);
+        }
+
+        /* --- Main Content --- */
+        .main-content {
+            flex: 1;
+            padding: 32px 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            overflow-y: auto;
+        }
+
+        /* Top Header */
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .header-title-area {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .main-model-name {
+            font-size: 42px;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            line-height: 1;
+            text-shadow: 0 4px 20px rgba(255, 183, 197, 0.2);
+        }
+        .main-tag {
+            background: var(--bg-hover);
+            border: 1px solid rgba(196, 183, 255, 0.3);
+            color: var(--lavender);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .main-tag:hover {
+            background: rgba(196, 183, 255, 0.15);
+        }
+        .connection-badge {
+            font-size: 13px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .connection-badge.connected { background: rgba(152, 232, 193, 0.1); color: var(--mint); }
+        .connection-badge.disconnected { background: rgba(255, 138, 128, 0.1); color: var(--coral); }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            font-family: inherit;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn:active { transform: scale(0.96); }
+        .btn-primary {
+            background: var(--gradient-primary);
+            color: var(--bg-main);
+            box-shadow: 0 4px 15px rgba(255, 183, 197, 0.3);
+        }
+        .btn-primary:hover {
+            box-shadow: 0 6px 20px rgba(255, 183, 197, 0.5);
+            filter: brightness(1.1);
+        }
+        .btn-danger-outline {
+            background: transparent;
+            border: 1px solid var(--coral);
+            color: var(--coral);
+        }
+        .btn-danger-outline:hover {
+            background: rgba(255, 138, 128, 0.1);
+        }
+        .btn-success-outline {
+            background: transparent;
+            border: 1px solid var(--mint);
+            color: var(--mint);
+        }
+        .btn-success-outline:hover {
+            background: rgba(152, 232, 193, 0.1);
+        }
+
+        /* Dashboard Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 24px;
+        }
+
+        /* Gacha Card */
+        .model-card {
+            background: var(--bg-card);
+            border-radius: 24px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-top: 1px solid rgba(255, 183, 197, 0.2);
+        }
+        .model-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 120px;
+            background: var(--gradient-primary);
+            opacity: 0.15;
+            mask-image: linear-gradient(to bottom, black, transparent);
+            -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+        }
+        .avatar-circle {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: var(--bg-hover);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 48px;
+            color: var(--sakura);
+            margin-bottom: 16px;
+            border: 3px solid transparent;
+            background-clip: padding-box;
+            position: relative;
+            box-shadow: 0 8px 24px rgba(255, 183, 197, 0.2);
+            z-index: 1;
+        }
+        .avatar-circle::before {
+            content: '';
+            position: absolute;
+            top: -3px; left: -3px; right: -3px; bottom: -3px;
+            border-radius: 50%;
+            background: var(--gradient-primary);
+            z-index: -1;
+        }
+        .card-model-name {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            z-index: 1;
+        }
+        .model-select {
+            width: 100%;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-bright);
+            padding: 10px 16px;
+            border-radius: 12px;
+            font-family: inherit;
+            font-size: 14px;
+            outline: none;
+            margin-bottom: 20px;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23B8B5D0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            background-size: 16px;
+            z-index: 1;
+        }
+        .model-select:focus { border-color: var(--sakura); }
+        .model-select option { background: var(--bg-card); }
+        .stats-row {
+            font-size: 13px;
+            color: var(--text-soft);
+            background: rgba(255,255,255,0.05);
+            padding: 8px 16px;
+            border-radius: 20px;
+            z-index: 1;
+        }
+
+        /* Quick Controls */
+        .controls-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .section-title {
+            font-size: 16px;
+            color: var(--text-soft);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .section-title::before {
+            content: '✦';
+            color: var(--sakura);
+            font-size: 14px;
+        }
+
+        .motion-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+        .motion-btn {
+            background: var(--bg-card);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+            position: relative;
+            overflow: hidden;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .motion-btn:hover {
+            background: var(--bg-hover);
+            transform: translateY(-2px);
+            border-color: rgba(196, 183, 255, 0.3);
+            box-shadow: 0 6px 15px rgba(0,0,0,0.2);
+        }
+        .motion-btn:active { transform: scale(0.95); }
+        .motion-icon { font-size: 24px; }
+        .motion-name { font-size: 14px; font-weight: 500; color: var(--text-bright); }
+        .motion-count {
+            background: rgba(0,0,0,0.3);
+            color: var(--text-dim);
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .expression-row {
+            display: flex;
+            gap: 12px;
+            background: var(--bg-card);
+            padding: 16px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .exp-btn {
+            flex: 1;
+            background: var(--bg-card-alt);
+            border: 1px solid transparent;
+            color: var(--text-soft);
+            padding: 10px 0;
+            border-radius: 12px;
+            font-weight: 600;
+            font-family: 'Outfit', sans-serif;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .exp-btn:hover { background: var(--bg-hover); color: var(--text-bright); }
+        .exp-btn.active {
+            background: rgba(255, 183, 197, 0.15);
+            border-color: var(--sakura);
+            color: var(--sakura);
+            box-shadow: 0 0 15px rgba(255, 183, 197, 0.2);
+            animation: pulse-glow 2s infinite;
+        }
+
+        /* Settings Panel */
+        .settings-panel {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 20px 24px;
+            border: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 24px;
+            align-items: center;
+        }
+        .setting-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .setting-label {
+            font-size: 14px;
+            color: var(--text-soft);
+            white-space: nowrap;
+        }
+        
+        /* Sliders */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 120px;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px; width: 16px;
+            border-radius: 50%;
+            background: var(--sakura);
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(255, 183, 197, 0.5);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px;
+            cursor: pointer;
+            background: var(--bg-card-alt);
+            border-radius: 2px;
+        }
+        .value-display { font-family: 'Outfit', sans-serif; font-size: 13px; color: var(--sakura); width: 32px; }
+
+        /* Segmented Toggle */
+        .segmented-control {
+            display: flex;
+            background: var(--bg-card-alt);
+            border-radius: 8px;
+            padding: 2px;
+        }
+        .seg-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            padding: 4px 12px;
+            font-size: 13px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .seg-btn.active { background: var(--bg-hover); color: var(--text-bright); box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+
+        /* Small Inputs */
+        .coord-input {
+            width: 60px;
+            background: var(--bg-card-alt);
+            border: 1px solid transparent;
+            color: var(--text-bright);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 13px;
+            text-align: center;
+            outline: none;
+        }
+        .coord-input:focus { border-color: var(--lavender); }
+
+        /* Switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px; height: 24px;
+        }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: var(--bg-card-alt);
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px; width: 16px;
+            left: 4px; bottom: 4px;
+            background-color: var(--text-dim);
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider { background-color: rgba(196, 183, 255, 0.3); }
+        input:checked + .slider:before {
+            transform: translateX(20px);
+            background-color: var(--lavender);
+            box-shadow: 0 0 10px rgba(196, 183, 255, 0.5);
+        }
+
+        /* Activity Log */
+        .log-panel {
+            background: var(--bg-card);
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 200px;
+            overflow: hidden;
+        }
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            background: rgba(0,0,0,0.1);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .log-title { font-weight: 600; font-size: 15px; color: var(--lavender); }
+        .btn-clear {
+            background: transparent; border: none;
+            color: var(--text-dim); font-size: 13px;
+            cursor: pointer; transition: color 0.2s;
+        }
+        .btn-clear:hover { color: var(--text-bright); }
+        
+        .log-content {
+            padding: 16px 24px;
+            overflow-y: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-family: 'Outfit', 'Noto Sans SC', monospace;
+            font-size: 13px;
+        }
+        .log-entry {
+            display: flex;
+            gap: 16px;
+            animation: slide-in-right 0.3s ease-out forwards;
+        }
+        .log-time { color: var(--text-dim); min-width: 65px; }
+        .log-msg { color: var(--text-soft); }
+        .log-msg.sakura { color: var(--sakura); font-weight: 500; }
+        .log-msg.lavender { color: var(--lavender); }
+        .log-msg.mint { color: var(--mint); }
+        .log-msg.coral { color: var(--coral); }
+
+        /* Ripple Effect */
+        .ripple {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            transform: scale(0);
+            animation: ripple-anim 0.6s linear;
+            pointer-events: none;
+        }
+        @keyframes ripple-anim {
+            to { transform: scale(4); opacity: 0; }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="sparkles-container">
+        <div class="sparkle">✦</div>
+        <div class="sparkle">✧</div>
+        <div class="sparkle">⋆</div>
+        <div class="sparkle">✦</div>
+        <div class="sparkle">✧</div>
+    </div>
+
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title zcool">Live2D Console ✧</div>
+            </div>
+            <div class="instance-list" id="instanceList">
+                <!-- Instances populated by JS -->
+            </div>
+            <button class="btn-add-instance" onclick="addInstance()">
+                <span>+ 添加实例</span>
+            </button>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content" id="mainContent">
+            <!-- Header -->
+            <div class="detail-header">
+                <div class="header-title-area">
+                    <div class="main-model-name zcool" id="uiModelNameBig">Hiyori</div>
+                    <div class="main-tag" id="uiTag" onclick="editTag()">✎ 主屏宠物</div>
+                    <div class="connection-badge connected" id="uiConnection">● 已连接</div>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-danger-outline" id="uiToggleBtn" onclick="toggleStatus()">停止运行</button>
+                    <button class="btn btn-primary" onclick="restartEngine()">重启引擎 ↺</button>
+                </div>
+            </div>
+
+            <div class="dashboard-grid">
+                <!-- Gacha Card -->
+                <div class="model-card">
+                    <div class="avatar-circle zcool" id="uiAvatar">H</div>
+                    <div class="card-model-name" id="uiModelNameCard">Hiyori</div>
+                    <select class="model-select" id="uiModelSelect" onchange="changeModel(this.value)">
+                        <option value="Hiyori">Hiyori (默认)</option>
+                        <option value="Mao">Mao (猫娘)</option>
+                        <option value="Natori">Natori (名取)</option>
+                        <option value="Rice">Rice (米)</option>
+                    </select>
+                    <div class="stats-row">4 动作组 · 4 表情 · 2 触控区</div>
+                </div>
+
+                <!-- Quick Controls -->
+                <div class="controls-panel">
+                    <div>
+                        <div class="section-title">快捷动作触发</div>
+                        <div class="motion-grid">
+                            <div class="motion-btn" onclick="triggerMotion('Idle', this)">
+                                <div class="motion-icon">✨</div>
+                                <div class="motion-name">Idle (待机)</div>
+                                <div class="motion-count">×3</div>
+                            </div>
+                            <div class="motion-btn" onclick="triggerMotion('TapBody', this)">
+                                <div class="motion-icon">戳</div>
+                                <div class="motion-name">TapBody (点身体)</div>
+                                <div class="motion-count">×2</div>
+                            </div>
+                            <div class="motion-btn" onclick="triggerMotion('TapHead', this)">
+                                <div class="motion-icon">摸</div>
+                                <div class="motion-name">TapHead (摸头)</div>
+                                <div class="motion-count">×2</div>
+                            </div>
+                            <div class="motion-btn" onclick="triggerMotion('Flick', this)">
+                                <div class="motion-icon">💨</div>
+                                <div class="motion-name">Flick (滑动)</div>
+                                <div class="motion-count">×1</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="section-title" id="uiExpressionTitle">表情控制 当前: F01</div>
+                        <div class="expression-row" id="uiExpressionRow">
+                            <button class="exp-btn active" onclick="setExpression('F01')">F01</button>
+                            <button class="exp-btn" onclick="setExpression('F02')">F02</button>
+                            <button class="exp-btn" onclick="setExpression('F03')">F03</button>
+                            <button class="exp-btn" onclick="setExpression('F04')">F04</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Panel -->
+            <div class="settings-panel">
+                <div class="setting-item">
+                    <span class="setting-label">窗口透明度</span>
+                    <input type="range" id="uiOpacity" min="0.1" max="1.0" step="0.1" value="1.0" oninput="updateSetting('opacity', this.value)">
+                    <span class="value-display" id="uiOpacityVal">1.0</span>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">拖拽模式</span>
+                    <div class="segmented-control">
+                        <button class="seg-btn active" id="dragDirect" onclick="setDragMode('direct')">直接</button>
+                        <button class="seg-btn" id="dragPhysics" onclick="setDragMode('physics')">物理</button>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">闲置间隔</span>
+                    <input type="range" id="uiIdle" min="5" max="60" step="5" value="10" oninput="updateSetting('idleInterval', this.value)">
+                    <span class="value-display" id="uiIdleVal">10s</span>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">坐标 (X,Y)</span>
+                    <input type="text" class="coord-input" id="uiPosX" value="1200" onchange="updateSetting('posX', this.value)">
+                    <input type="text" class="coord-input" id="uiPosY" value="600" onchange="updateSetting('posY', this.value)">
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">开机自启</span>
+                    <label class="switch">
+                        <input type="checkbox" id="uiAutoStart" checked onchange="updateSetting('autoStart', this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Activity Log -->
+            <div class="log-panel">
+                <div class="log-header">
+                    <div class="log-title">活动日志 ✦</div>
+                    <button class="btn-clear" onclick="clearLogs()">清空</button>
+                </div>
+                <div class="log-content" id="uiLogContent">
+                    <!-- Logs populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Data & State ---
+        let instances = [
+            {
+                id: 1,
+                label: "主屏宠物",
+                model: "Hiyori",
+                status: "running",
+                connected: true,
+                opacity: 1.0,
+                dragMode: "direct",
+                idleInterval: 10,
+                posX: 1200, posY: 600,
+                autoStart: true,
+                currentExpression: "F01",
+                logs: [
+                    { time: "14:32:15", text: "✦ 模型加载完成: Hiyori", type: "sakura" },
+                    { time: "14:32:10", text: "◈ WebSocket 连接已建立", type: "mint" },
+                    { time: "14:31:58", text: "◇ 调度器已启动", type: "normal" },
+                    { time: "14:31:55", text: "◇ 配置文件加载成功", type: "normal" },
+                    { time: "14:31:52", text: "◇ 渲染引擎初始化完成", type: "lavender" },
+                    { time: "14:31:50", text: "◆ 实例「主屏宠物」已启动", type: "mint" }
+                ]
+            },
+            {
+                id: 2,
+                label: "副屏助手",
+                model: "Mao",
+                status: "running",
+                connected: true,
+                opacity: 0.8,
+                dragMode: "physics",
+                idleInterval: 15,
+                posX: -800, posY: 400,
+                autoStart: false,
+                currentExpression: "F02",
+                logs: [
+                    { time: "14:33:20", text: "✦ 模型加载完成: Mao", type: "sakura" },
+                    { time: "14:33:18", text: "◈ WebSocket 连接已建立", type: "mint" },
+                    { time: "14:33:15", text: "◇ 实例「副屏助手」已启动", type: "mint" }
+                ]
+            },
+            {
+                id: 3,
+                label: "待机",
+                model: "Natori",
+                status: "stopped",
+                connected: false,
+                opacity: 1.0,
+                dragMode: "direct",
+                idleInterval: 10,
+                posX: 0, posY: 0,
+                autoStart: false,
+                currentExpression: "F01",
+                logs: [
+                    { time: "14:30:00", text: "◆ 实例「待机」已停止", type: "coral" },
+                    { time: "14:29:55", text: "◇ 模型已卸载: Natori", type: "normal" }
+                ]
+            }
+        ];
+
+        let currentInstanceId = 1;
+        let nextId = 4;
+
+        // --- Core Functions ---
+        
+        function getCur() {
+            return instances.find(i => i.id === currentInstanceId);
+        }
+
+        function getTime() {
+            const now = new Date();
+            return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+        }
+
+        function addLog(text, type = "normal") {
+            const cur = getCur();
+            cur.logs.unshift({ time: getTime(), text, type });
+            if (cur.logs.length > 50) cur.logs.pop(); // Keep limit
+            renderLogs();
+        }
+
+        function clearLogs() {
+            getCur().logs = [];
+            renderLogs();
+        }
+
+        // --- Rendering ---
+
+        function renderSidebar() {
+            const list = document.getElementById('instanceList');
+            list.innerHTML = instances.map(inst => `
+                <div class="instance-card ${inst.id === currentInstanceId ? 'active' : ''}" onclick="selectInstance(${inst.id})">
+                    <div class="instance-header">
+                        <span class="instance-model">${inst.model}</span>
+                        <span class="status-dot ${inst.status}"></span>
+                    </div>
+                    <div class="instance-meta">
+                        <span class="instance-tag">${inst.label}</span>
+                        <span class="instance-status-text">${inst.status === 'running' ? '运行中' : '已停止'}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderMainContent() {
+            const cur = getCur();
+            if(!cur) return;
+
+            // Header
+            document.getElementById('uiModelNameBig').textContent = cur.model;
+            document.getElementById('uiTag').textContent = `✎ ${cur.label}`;
+            
+            const conn = document.getElementById('uiConnection');
+            if(cur.connected) {
+                conn.className = 'connection-badge connected';
+                conn.textContent = '● 已连接';
+            } else {
+                conn.className = 'connection-badge disconnected';
+                conn.textContent = '○ 未连接';
+            }
+
+            const toggleBtn = document.getElementById('uiToggleBtn');
+            if(cur.status === 'running') {
+                toggleBtn.className = 'btn btn-danger-outline';
+                toggleBtn.textContent = '停止运行';
+            } else {
+                toggleBtn.className = 'btn btn-success-outline';
+                toggleBtn.textContent = '启动实例 ▶';
+            }
+
+            // Card
+            document.getElementById('uiAvatar').textContent = cur.model.charAt(0);
+            document.getElementById('uiModelNameCard').textContent = cur.model;
+            document.getElementById('uiModelSelect').value = cur.model;
+
+            // Expressions
+            document.getElementById('uiExpressionTitle').textContent = `表情控制 当前: ${cur.currentExpression}`;
+            const expBtns = document.querySelectorAll('.exp-btn');
+            expBtns.forEach(btn => {
+                if(btn.textContent === cur.currentExpression) btn.classList.add('active');
+                else btn.classList.remove('active');
+            });
+
+            // Settings
+            document.getElementById('uiOpacity').value = cur.opacity;
+            document.getElementById('uiOpacityVal').textContent = Number(cur.opacity).toFixed(1);
+            
+            document.getElementById('dragDirect').classList.toggle('active', cur.dragMode === 'direct');
+            document.getElementById('dragPhysics').classList.toggle('active', cur.dragMode === 'physics');
+
+            document.getElementById('uiIdle').value = cur.idleInterval;
+            document.getElementById('uiIdleVal').textContent = cur.idleInterval + 's';
+
+            document.getElementById('uiPosX').value = cur.posX;
+            document.getElementById('uiPosY').value = cur.posY;
+            document.getElementById('uiAutoStart').checked = cur.autoStart;
+
+            renderLogs();
+        }
+
+        function renderLogs() {
+            const cur = getCur();
+            const logContainer = document.getElementById('uiLogContent');
+            logContainer.innerHTML = cur.logs.map(log => `
+                <div class="log-entry">
+                    <span class="log-time">${log.time}</span>
+                    <span class="log-msg ${log.type}">${log.text}</span>
+                </div>
+            `).join('');
+        }
+
+        // --- Interactions ---
+
+        function selectInstance(id) {
+            currentInstanceId = id;
+            renderSidebar();
+            renderMainContent();
+        }
+
+        function addInstance() {
+            const newInst = {
+                id: nextId++,
+                label: "新实例",
+                model: "Hiyori",
+                status: "stopped",
+                connected: false,
+                opacity: 1.0,
+                dragMode: "direct",
+                idleInterval: 10,
+                posX: 100, posY: 100,
+                autoStart: false,
+                currentExpression: "F01",
+                logs: [{ time: getTime(), text: "◇ 实例已创建", type: "lavender" }]
+            };
+            instances.push(newInst);
+            selectInstance(newInst.id);
+        }
+
+        function changeModel(newModel) {
+            const cur = getCur();
+            cur.model = newModel;
+            addLog(`✦ 模型切换为: ${newModel}`, "sakura");
+            renderSidebar();
+            renderMainContent();
+        }
+
+        function editTag() {
+            const cur = getCur();
+            const newTag = prompt("输入新的标签名称:", cur.label);
+            if(newTag && newTag.trim() !== "") {
+                cur.label = newTag.trim();
+                addLog(`标签修改为: ${cur.label}`);
+                renderSidebar();
+                renderMainContent();
+            }
+        }
+
+        function toggleStatus() {
+            const cur = getCur();
+            if(cur.status === 'running') {
+                cur.status = 'stopped';
+                cur.connected = false;
+                addLog("◆ 实例已停止", "coral");
+            } else {
+                cur.status = 'running';
+                cur.connected = true;
+                addLog("◆ 实例已启动", "mint");
+                addLog("◈ WebSocket 连接已建立", "mint");
+            }
+            renderSidebar();
+            renderMainContent();
+        }
+
+        function restartEngine() {
+            addLog("↺ 正在重启引擎...", "lavender");
+            setTimeout(() => addLog("◇ 渲染引擎初始化完成", "normal"), 500);
+            setTimeout(() => addLog("✦ 模型加载完成: " + getCur().model, "sakura"), 1000);
+        }
+
+        function triggerMotion(motion, btnElem) {
+            addLog(`▶ 触发动作: ${motion}`, "lavender");
+            createRipple(btnElem);
+        }
+
+        function setExpression(exp) {
+            const cur = getCur();
+            cur.currentExpression = exp;
+            addLog(`✨ 切换表情: ${exp}`, "sakura");
+            renderMainContent();
+        }
+
+        function updateSetting(key, val) {
+            const cur = getCur();
+            if(key === 'opacity') {
+                cur.opacity = val;
+                document.getElementById('uiOpacityVal').textContent = Number(val).toFixed(1);
+            } else if (key === 'idleInterval') {
+                cur.idleInterval = val;
+                document.getElementById('uiIdleVal').textContent = val + 's';
+            } else {
+                cur[key] = val;
+            }
+            addLog(`参数更新: ${key} = ${val}`);
+        }
+
+        function setDragMode(mode) {
+            const cur = getCur();
+            cur.dragMode = mode;
+            addLog(`拖拽模式切换为: ${mode === 'direct' ? '直接' : '物理'}`);
+            renderMainContent();
+        }
+
+        // Ripple Effect
+        function createRipple(element) {
+            const circle = document.createElement("span");
+            const diameter = Math.max(element.clientWidth, element.clientHeight);
+            const radius = diameter / 2;
+            circle.style.width = circle.style.height = `${diameter}px`;
+            circle.style.left = `calc(50% - ${radius}px)`;
+            circle.style.top = `calc(50% - ${radius}px)`;
+            circle.classList.add("ripple");
+            
+            const existing = element.querySelector('.ripple');
+            if(existing) existing.remove();
+            
+            element.appendChild(circle);
+        }
+
+        // Init
+        window.onload = () => {
+            renderSidebar();
+            renderMainContent();
+        };
+
+    </script>
+</body>
+</html>

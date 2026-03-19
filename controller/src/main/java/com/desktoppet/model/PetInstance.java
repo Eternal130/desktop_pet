@@ -26,9 +26,10 @@ public class PetInstance {
     private final IntegerProperty posY;
     private final BooleanProperty autoStart;
     private final StringProperty currentExpression;
+    private final StringProperty rendererPath;
     private final ObservableList<String> logs;
 
-    public PetInstance(String label, String model, String status, boolean connected) {
+    public PetInstance(String label, String model, String status, boolean connected, String rendererPath) {
         this.id = ID_GEN.getAndIncrement();
         this.label = new SimpleStringProperty(label);
         this.model = new SimpleStringProperty(model);
@@ -41,7 +42,12 @@ public class PetInstance {
         this.posY = new SimpleIntegerProperty(600);
         this.autoStart = new SimpleBooleanProperty(false);
         this.currentExpression = new SimpleStringProperty("F01");
+        this.rendererPath = new SimpleStringProperty(rendererPath);
         this.logs = FXCollections.observableArrayList();
+    }
+
+    public PetInstance(String label, String model, String status, boolean connected) {
+        this(label, model, status, connected, "");
     }
 
     public void addLog(String message) {
@@ -110,6 +116,10 @@ public class PetInstance {
     public void setCurrentExpression(String v) { currentExpression.set(v); }
     public StringProperty currentExpressionProperty() { return currentExpression; }
 
+
+    public String getRendererPath() { return rendererPath.get(); }
+    public void setRendererPath(String v) { rendererPath.set(v); }
+    public StringProperty rendererPathProperty() { return rendererPath; }
 
     public ObservableList<String> getLogs() { return logs; }
 }

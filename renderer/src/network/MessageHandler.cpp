@@ -24,7 +24,7 @@ std::optional<Envelope> MessageHandler::dispatch(const Envelope& msg) {
 
     try {
         it->second(msg, [this](const Envelope& outbound) {
-            if (outbound.type == "event" && _eventCallback) {
+            if (_eventCallback) {
                 _eventCallback(outbound);
             }
         });

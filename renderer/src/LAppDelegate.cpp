@@ -15,6 +15,11 @@
 #include "LAppLive2DManager.hpp"
 #include "LAppModel.hpp"
 #include "LAppTextureManager.hpp"
+#include "network/WebSocketClient.hpp"
+#include "network/MessageHandler.hpp"
+#include "network/EventEmitter.hpp"
+#include "network/CommandHandlers.hpp"
+#include "network/Protocol.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -121,12 +126,18 @@ bool LAppDelegate::Initialize()
     //AppViewの初期化
     _view->Initialize(width, height);
 
+    InitializeNetwork();
+
     return GL_TRUE;
 }
 
 void LAppDelegate::Release()
 {
-    // Windowの削除
+    if (_wsClient) { _wsClient->disconnect(); }
+    delete _eventEmitter; _eventEmitter = nullptr;
+    delete _messageHandler; _messageHandler = nullptr;
+    delete _wsClient; _wsClient = nullptr;
+
     glfwDestroyWindow(_window);
 
     glfwTerminate();
@@ -134,10 +145,8 @@ void LAppDelegate::Release()
     delete _textureManager;
     delete _view;
 
-    // リソースを解放
     LAppLive2DManager::ReleaseInstance();
 
-    //Cubismの解放
     CubismFramework::Dispose();
 }
 
@@ -172,6 +181,8 @@ void LAppDelegate::Run()
         // バッファの入れ替え
         glfwSwapBuffers(_window);
 
+        PollNetworkMessages();
+
         glfwWaitEventsTimeout(1.0 / 30.0);
     }
 
@@ -192,7 +203,11 @@ LAppDelegate::LAppDelegate():
     _dragStartX(0.0),
     _dragStartY(0.0),
     _windowStartX(0),
-    _windowStartY(0)
+    _windowStartY(0),
+    _wsClient(nullptr),
+    _messageHandler(nullptr),
+    _eventEmitter(nullptr),
+    _networkReady(false)
 {
     _executeAbsolutePath = "";
     _view = new LAppView();
@@ -247,12 +262,25 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
             _dragStartX = _mouseX;
             _dragStartY = _mouseY;
             glfwGetWindowPos(_window, &_windowStartX, &_windowStartY);
+
+            if (_eventEmitter && _eventEmitter->isActive())
+            {
+                _eventEmitter->emit("drag_start", {});
+            }
         }
     }
     else if (GLFW_RELEASE == action)
     {
         const bool wasDragging = _isDragging;
         _isDragging = false;
+
+        if (wasDragging && _eventEmitter && _eventEmitter->isActive())
+        {
+            int wx, wy;
+            glfwGetWindowPos(_window, &wx, &wy);
+            _eventEmitter->emit("drag_end", {{"window_x", wx}, {"window_y", wy}});
+        }
+
         if (_captured)
         {
             _captured = false;
@@ -342,4 +370,58 @@ bool LAppDelegate::IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const
     }
 
     return false;
+}
+
+void LAppDelegate::InitializeNetwork()
+{
+    _wsClient = new Network::WebSocketClient();
+    _messageHandler = new Network::MessageHandler();
+    _eventEmitter = new Network::EventEmitter();
+
+    _eventEmitter->setSendCallback([this](const std::string& msg) {
+        _wsClient->send(msg);
+    });
+
+    _messageHandler->setEventCallback([this](const Network::Envelope& env) {
+        _wsClient->send(Network::serialize(env));
+    });
+
+    Network::RegisterCommandHandlers(*_messageHandler, this);
+
+    _wsClient->connect("ws://localhost:9000");
+    LAppPal::PrintLogLn("[Network] Connecting to controller at ws://localhost:9000");
+}
+
+void LAppDelegate::PollNetworkMessages()
+{
+    if (!_wsClient) return;
+
+    bool connected = _wsClient->isConnected();
+    if (connected && !_networkReady)
+    {
+        _networkReady = true;
+        if (_eventEmitter)
+        {
+            _eventEmitter->emit("ready", {{"version", "1.0"}});
+        }
+        LAppPal::PrintLogLn("[Network] Sent ready event to controller");
+    }
+    else if (!connected && _networkReady)
+    {
+        _networkReady = false;
+    }
+
+    auto messages = _wsClient->drainMessages();
+    for (const auto& msg : messages)
+    {
+        auto env = Network::deserialize(msg);
+        if (env)
+        {
+            auto response = _messageHandler->dispatch(*env);
+            if (response)
+            {
+                _wsClient->send(Network::serialize(*response));
+            }
+        }
+    }
 }

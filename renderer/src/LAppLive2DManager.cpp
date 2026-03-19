@@ -14,6 +14,7 @@
 #include "LAppDefine.hpp"
 #include "LAppDelegate.hpp"
 #include "LAppModel.hpp"
+#include "network/EventEmitter.hpp"
 
 using namespace Csm;
 using namespace LAppDefine;
@@ -130,13 +131,23 @@ void LAppLive2DManager::OnTap(csmFloat32 x, csmFloat32 y)
 
     for (csmUint32 i = 0; i < _models.GetSize(); i++)
     {
+        auto* emitter = LAppDelegate::GetInstance()->GetEventEmitter();
+        bool networkActive = emitter && emitter->isActive();
+
         if (_models[i]->HitTest(HitAreaNameHead, x, y))
         {
             if (DebugLogEnable)
             {
                 LAppPal::PrintLogLn("[APP]hit area: [%s]", HitAreaNameHead);
             }
-            _models[i]->SetRandomExpression();
+            if (networkActive)
+            {
+                emitter->emit("hit", {{"area_id", std::string(HitAreaNameHead)}});
+            }
+            else
+            {
+                _models[i]->SetRandomExpression();
+            }
         }
         else if (_models[i]->HitTest(HitAreaNameBody, x, y))
         {
@@ -144,7 +155,14 @@ void LAppLive2DManager::OnTap(csmFloat32 x, csmFloat32 y)
             {
                 LAppPal::PrintLogLn("[APP]hit area: [%s]", HitAreaNameBody);
             }
-            _models[i]->StartRandomMotion(MotionGroupTapBody, PriorityNormal, FinishedMotion, BeganMotion);
+            if (networkActive)
+            {
+                emitter->emit("hit", {{"area_id", std::string(HitAreaNameBody)}});
+            }
+            else
+            {
+                _models[i]->StartRandomMotion(MotionGroupTapBody, PriorityNormal, FinishedMotion, BeganMotion);
+            }
         }
     }
 }

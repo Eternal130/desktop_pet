@@ -28,6 +28,19 @@ set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
 set(BUILD_UTILS OFF CACHE BOOL "" FORCE)
 
+# === IXWebSocket (via FetchContent) ===
+include(FetchContent)
+set(USE_TLS OFF CACHE BOOL "" FORCE)
+set(IXWEBSOCKET_INSTALL OFF CACHE BOOL "" FORCE)
+set(USE_ZLIB OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  ixwebsocket
+  GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
+  GIT_TAG v11.4.5
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(ixwebsocket)
+
 # === Compiler settings ===
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -96,6 +109,16 @@ target_sources(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LAppTextureManager.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LAppView.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LAppView.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/Protocol.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/Protocol.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/WebSocketClient.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/WebSocketClient.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/MessageHandler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/MessageHandler.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/EventEmitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/EventEmitter.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/CommandHandlers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/CommandHandlers.hpp
 )
 
 target_include_directories(${APP_NAME}
@@ -103,12 +126,14 @@ target_include_directories(${APP_NAME}
     ${STB_PATH}
     ${COMMON_SRC_PATH}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )
 
 target_link_libraries(${APP_NAME}
   Framework
   glfw
   ${OPENGL_LIBRARIES}
+  ixwebsocket::ixwebsocket
 )
 
 # === Post-build: copy resources, shaders, and DLL ===

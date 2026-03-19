@@ -15,6 +15,12 @@
 class LAppView;
 class LAppTextureManager;
 
+namespace Network {
+    class WebSocketClient;
+    class MessageHandler;
+    class EventEmitter;
+}
+
 /**
 * @brief   アプリケーションクラス。
 *   Cubismの管理を行う。
@@ -41,6 +47,7 @@ public:
     LAppTextureManager* GetTextureManager() { return _textureManager; }
     int GetWindowWidth() { return _windowWidth; }
     int GetWindowHeight() { return _windowHeight; }
+    Network::EventEmitter* GetEventEmitter() { return _eventEmitter; }
 
 private:
     bool IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const;
@@ -49,6 +56,8 @@ private:
     ~LAppDelegate();
 
     void InitializeCubism();
+    void InitializeNetwork();
+    void PollNetworkMessages();
 
     LAppAllocator_Common _cubismAllocator;
     Csm::CubismFramework::Option _cubismOption;
@@ -68,6 +77,11 @@ private:
     double _dragStartY;
     int _windowStartX;
     int _windowStartY;
+
+    Network::WebSocketClient* _wsClient;
+    Network::MessageHandler* _messageHandler;
+    Network::EventEmitter* _eventEmitter;
+    bool _networkReady;
 };
 
 class EventHandler

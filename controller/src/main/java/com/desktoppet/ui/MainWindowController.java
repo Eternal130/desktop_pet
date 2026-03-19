@@ -49,18 +49,23 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MainWindowController {
     private static final Logger log = LoggerFactory.getLogger(MainWindowController.class);
-    private static final int BASE_WS_PORT = 9001;
+    private static final int WS_PORT = 9001;
+    private static final int MAX_RESTART_ATTEMPTS = 5;
+    private static final long[] RESTART_BACKOFF_MS = {2000, 4000, 8000, 16000, 30000};
 
     private final ObservableList<PetInstance> instances = FXCollections.observableArrayList();
     private final Map<Integer, ProcessManager> processManagers = new ConcurrentHashMap<>();
-    private final Map<Integer, PetWebSocketServer> wsServers = new ConcurrentHashMap<>();
     private final Map<Integer, MessageDispatcher> dispatchers = new ConcurrentHashMap<>();
     private final Map<Integer, Scheduler> schedulers = new ConcurrentHashMap<>();
+    private final Map<Integer, Integer> restartAttempts = new ConcurrentHashMap<>();
+    private final java.util.Set<Integer> manuallyStopping = ConcurrentHashMap.newKeySet();
     private final InstanceConfigManager instanceConfigManager = new InstanceConfigManager();
+    private PetWebSocketServer wsServer;
 
     private static final Map<String, String> MOTION_ICONS = Map.ofEntries(
             Map.entry("idle", "✨"),
@@ -135,6 +140,8 @@ public class MainWindowController {
     public void initialize() {
         themeCombo.setItems(FXCollections.observableArrayList(THEMES.keySet()));
         themeCombo.setValue("深紫梦幻");
+
+        initSharedWebSocketServer();
 
         opacitySlider.valueProperty().addListener((obs, oldValue, newValue) -> {
             if (updatingUI || currentInstance == null) {
@@ -502,6 +509,50 @@ public class MainWindowController {
     public void addMessageLog(String direction, String type, String action, String summary) {
     }
 
+    private void initSharedWebSocketServer() {
+        wsServer = new PetWebSocketServer(WS_PORT);
+        wsServer.setReuseAddr(true);
+
+        wsServer.setConnectionCallback((instanceId, connected) -> Platform.runLater(() -> {
+            PetInstance instance = findInstanceById(instanceId);
+            if (instance == null) return;
+
+            instance.setConnected(connected);
+            if (connected) {
+                instance.addLog("◇ 渲染引擎已连接");
+                restartAttempts.put(instanceId, 0);
+            } else {
+                instance.addLog("◇ 渲染引擎已断开");
+                Scheduler sch = schedulers.get(instanceId);
+                if (sch != null) sch.pause();
+            }
+            renderSidebar();
+            if (currentInstance == instance) renderDetail();
+        }));
+
+        wsServer.setMessageCallback((instanceId, rawMsg) ->
+            Protocol.deserialize(rawMsg).ifPresent(envelope -> {
+                PetInstance instance = findInstanceById(instanceId);
+                if (instance != null) {
+                    Platform.runLater(() ->
+                        instance.addLog("← " + envelope.type() + "/" + envelope.action()));
+                }
+                MessageDispatcher dispatcher = dispatchers.get(instanceId);
+                if (dispatcher != null) dispatcher.dispatch(envelope);
+            })
+        );
+
+        wsServer.start();
+        log.info("Shared WebSocket server started on port {}", WS_PORT);
+    }
+
+    private PetInstance findInstanceById(int instanceId) {
+        return instances.stream()
+                .filter(i -> i.getId() == instanceId)
+                .findFirst()
+                .orElse(null);
+    }
+
     private String findRendererExecutable() {
         Path currentDir = Path.of(".").toAbsolutePath().normalize();
         try (var stream = Files.walk(currentDir, 2)) {
@@ -604,71 +655,46 @@ public class MainWindowController {
             return;
         }
 
-        int wsPort = BASE_WS_PORT + instance.getId();
-
-        PetWebSocketServer wsServer = new PetWebSocketServer(wsPort);
-        wsServer.setReuseAddr(true);
-        wsServer.setConnectionCallback(connected -> Platform.runLater(() -> {
-            instance.setConnected(connected);
-            if (connected) {
-                instance.addLog("◇ 渲染引擎已连接");
-            } else {
-                instance.addLog("◇ 渲染引擎已断开");
-                Scheduler sch = schedulers.get(instance.getId());
-                if (sch != null) sch.pause();
-            }
-            renderSidebar();
-            if (currentInstance == instance) {
-                renderDetail();
-            }
-        }));
-
         MessageDispatcher dispatcher = new MessageDispatcher();
         dispatchers.put(instance.getId(), dispatcher);
 
-        wsServer.setMessageCallback(rawMsg ->
-            Protocol.deserialize(rawMsg).ifPresent(envelope -> {
-                Platform.runLater(() ->
-                    instance.addLog("← " + envelope.type() + "/" + envelope.action()));
-                dispatcher.dispatch(envelope);
-            })
-        );
+        registerInstanceEventHandlers(instance, dispatcher);
 
-        registerInstanceEventHandlers(instance, dispatcher, wsServer);
-
-        wsServer.start();
-        wsServers.put(instance.getId(), wsServer);
-
-        ProcessManager pm = new ProcessManager(rendererPath, wsPort);
+        ProcessManager pm = new ProcessManager(rendererPath, WS_PORT);
 
         pm.setShutdownCommandSender(() ->
-            wsServer.sendMessage(Protocol.serialize(Protocol.createCommand("shutdown", new JsonObject())))
+            wsServer.sendToInstance(instance.getId(),
+                    Protocol.serialize(Protocol.createCommand("shutdown", new JsonObject())))
         );
 
         pm.setExitCallback(exitCode -> Platform.runLater(() -> {
             instance.setStatus("stopped");
             instance.setConnected(false);
             instance.addLog("◆ 渲染引擎退出 (code=" + exitCode + ")");
-            stopWsServer(instance.getId());
+            wsServer.closeInstance(instance.getId());
             renderSidebar();
             if (currentInstance == instance) {
                 renderDetail();
             }
+
+            if (!manuallyStopping.remove(instance.getId())) {
+                scheduleRestart(instance);
+            }
         }));
 
         try {
-            pm.startRenderer();
+            pm.startRenderer(instance.getId());
             processManagers.put(instance.getId(), pm);
             instance.setStatus("running");
             instance.setConnected(false);
+            restartAttempts.put(instance.getId(), 0);
             instance.addLog("◆ 实例「" + instance.getLabel() + "」已启动");
             instance.addLog("◇ 渲染引擎 PID: " + pm.getProcess().map(p -> String.valueOf(p.pid())).orElse("?"));
-            instance.addLog("◇ WebSocket 端口: " + wsPort);
-            log.info("Instance {} started: renderer={}, port={}", instance.getId(), rendererPath, wsPort);
+            instance.addLog("◇ WebSocket 端口: " + WS_PORT);
+            log.info("Instance {} started: renderer={}, port={}", instance.getId(), rendererPath, WS_PORT);
         } catch (IOException e) {
             instance.addLog("✖ 启动失败: " + e.getMessage());
             log.error("Failed to start instance {}: {}", instance.getId(), e.getMessage(), e);
-            stopWsServer(instance.getId());
         }
 
         renderSidebar();
@@ -677,26 +703,58 @@ public class MainWindowController {
         }
     }
 
+    private void scheduleRestart(PetInstance instance) {
+        int attempts = restartAttempts.getOrDefault(instance.getId(), 0);
+        if (attempts >= MAX_RESTART_ATTEMPTS) {
+            instance.addLog("✖ 渲染引擎重启次数已达上限 (" + MAX_RESTART_ATTEMPTS + ")，请手动重启");
+            log.error("Instance {} exceeded max restart attempts", instance.getId());
+            return;
+        }
+
+        long delayMs = RESTART_BACKOFF_MS[Math.min(attempts, RESTART_BACKOFF_MS.length - 1)];
+        restartAttempts.put(instance.getId(), attempts + 1);
+        instance.addLog("↺ 将在 " + delayMs / 1000 + "s 后重启 (第" + (attempts + 1) + "次)");
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                Thread.sleep(delayMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            Platform.runLater(() -> {
+                if (!"running".equals(instance.getStatus())) {
+                    startInstance(instance);
+                }
+            });
+        });
+    }
+
     private void stopInstance(PetInstance instance) {
-        Scheduler scheduler = schedulers.remove(instance.getId());
+        int id = instance.getId();
+        manuallyStopping.add(id);
+
+        Scheduler scheduler = schedulers.remove(id);
         if (scheduler != null) scheduler.shutdown();
 
-        dispatchers.remove(instance.getId());
+        dispatchers.remove(id);
 
-        ProcessManager pm = processManagers.remove(instance.getId());
+        ProcessManager pm = processManagers.remove(id);
         if (pm != null && pm.isRunning()) {
             pm.stopRenderer();
             instance.addLog("◆ 实例「" + instance.getLabel() + "」已停止");
         }
-        stopWsServer(instance.getId());
+        wsServer.closeInstance(id);
         instance.setStatus("stopped");
         instance.setConnected(false);
-        log.info("Instance {} stopped", instance.getId());
+        restartAttempts.remove(id);
+        log.info("Instance {} stopped", id);
     }
 
     private void registerInstanceEventHandlers(PetInstance instance,
-                                                  MessageDispatcher dispatcher,
-                                                  PetWebSocketServer wsServer) {
+                                                   MessageDispatcher dispatcher) {
+        int id = instance.getId();
+
         dispatcher.registerEventHandler("ready", envelope -> Platform.runLater(() -> {
             instance.addLog("◇ 渲染引擎就绪");
 
@@ -705,19 +763,19 @@ public class MainWindowController {
                 JsonObject payload = new JsonObject();
                 payload.addProperty("model_path", modelName);
                 Envelope cmd = Protocol.createCommand("load_model", payload);
-                wsServer.sendMessage(Protocol.serialize(cmd));
+                wsServer.sendToInstance(id, Protocol.serialize(cmd));
                 instance.addLog("→ 加载模型: " + modelName);
             }
 
             JsonObject posPayload = new JsonObject();
             posPayload.addProperty("x", instance.getPosX());
             posPayload.addProperty("y", instance.getPosY());
-            wsServer.sendMessage(Protocol.serialize(
+            wsServer.sendToInstance(id, Protocol.serialize(
                     Protocol.createCommand("set_position", posPayload)));
 
             JsonObject opacityPayload = new JsonObject();
             opacityPayload.addProperty("opacity", instance.getOpacity());
-            wsServer.sendMessage(Protocol.serialize(
+            wsServer.sendToInstance(id, Protocol.serialize(
                     Protocol.createCommand("set_opacity", opacityPayload)));
 
             renderSidebar();
@@ -726,7 +784,7 @@ public class MainWindowController {
 
         dispatcher.registerEventHandler("model_loaded", envelope -> Platform.runLater(() -> {
             instance.addLog("◇ 模型加载完成");
-            startInstanceScheduler(instance, wsServer);
+            startInstanceScheduler(instance);
             renderSidebar();
             if (currentInstance == instance) renderDetail();
         }));
@@ -771,7 +829,7 @@ public class MainWindowController {
                 instance.addLog("⚠ 渲染引擎错误: " + envelope.payload())));
     }
 
-    private void startInstanceScheduler(PetInstance instance, PetWebSocketServer wsServer) {
+    private void startInstanceScheduler(PetInstance instance) {
         Scheduler existing = schedulers.remove(instance.getId());
         if (existing != null) existing.shutdown();
 
@@ -788,40 +846,29 @@ public class MainWindowController {
         int intervalMillis = Math.max(1, instance.getIdleInterval()) * 1000;
         final List<String> finalIdleMotions = idleMotions;
 
+        int id = instance.getId();
         scheduler.start(intervalMillis, finalIdleMotions, motionGroup -> {
             if (instance.isConnected()) {
                 JsonObject payload = new JsonObject();
                 payload.addProperty("group", motionGroup);
                 payload.addProperty("index", 0);
                 payload.addProperty("priority", 1);
-                wsServer.sendMessage(Protocol.serialize(
+                wsServer.sendToInstance(id, Protocol.serialize(
                         Protocol.createCommand("play_motion", payload)));
             }
         });
         scheduler.resume();
 
-        schedulers.put(instance.getId(), scheduler);
+        schedulers.put(id, scheduler);
         instance.addLog("◇ 调度器已启动: 间隔=" + instance.getIdleInterval() + "s");
     }
 
     private void sendInstanceCommand(PetInstance instance, String action, JsonObject payload) {
-        PetWebSocketServer ws = wsServers.get(instance.getId());
-        if (ws != null && ws.hasActiveConnection()) {
+        int id = instance.getId();
+        if (wsServer != null && wsServer.hasActiveConnection(id)) {
             Envelope cmd = Protocol.createCommand(action, payload);
-            ws.sendMessage(Protocol.serialize(cmd));
+            wsServer.sendToInstance(id, Protocol.serialize(cmd));
             instance.addLog("→ " + action);
-        }
-    }
-
-    private void stopWsServer(int instanceId) {
-        PetWebSocketServer server = wsServers.remove(instanceId);
-        if (server != null) {
-            try {
-                server.stop(1000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.warn("Interrupted while stopping WS server for instance {}", instanceId);
-            }
         }
     }
 
@@ -966,8 +1013,12 @@ public class MainWindowController {
         schedulers.values().forEach(Scheduler::shutdown);
         schedulers.clear();
         dispatchers.clear();
-        for (int id : wsServers.keySet()) {
-            stopWsServer(id);
+        if (wsServer != null) {
+            try {
+                wsServer.stop(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
         Platform.exit();
     }

@@ -65,12 +65,7 @@ public class ProcessManager {
         this.exitCallback = callback;
     }
 
-    /**
-     * Starts the renderer process with the configured path and WebSocket URL.
-     * Working directory is set to the renderer binary's parent directory so that
-     * relative Resources/ paths resolve correctly.
-     */
-    public void startRenderer() throws IOException {
+    public void startRenderer(int instanceId) throws IOException {
         if (isRunning()) {
             log.warn("Renderer is already running (pid={})", process.pid());
             return;
@@ -79,7 +74,9 @@ public class ProcessManager {
         List<String> command = List.of(
                 rendererPath,
                 "--port",
-                String.valueOf(wsPort)
+                String.valueOf(wsPort),
+                "--instance-id",
+                String.valueOf(instanceId)
         );
 
         log.info("Starting renderer: {}", String.join(" ", command));

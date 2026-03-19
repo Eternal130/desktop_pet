@@ -26,10 +26,6 @@ public class App extends Application {
         VBox root = loader.load();
         MainWindowController controller = loader.getController();
 
-        controller.setOrchestrator(orchestrator);
-        orchestrator.setUiController(controller);
-        orchestrator.startup();
-
         Scene scene = new Scene(root, 1200, 760);
         scene.getStylesheets().add(getClass().getResource("/css/style.css").toExternalForm());
 

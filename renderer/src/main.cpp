@@ -17,6 +17,7 @@ int main(int argc, char* argv[])
     SetConsoleOutputCP(65001);
 
     int wsPort = 9000;
+    int instanceId = 0;
 
     for (int i = 1; i < argc; i++)
     {
@@ -25,9 +26,15 @@ int main(int argc, char* argv[])
             wsPort = std::atoi(argv[i + 1]);
             i++;
         }
+        else if (std::strcmp(argv[i], "--instance-id") == 0 && i + 1 < argc)
+        {
+            instanceId = std::atoi(argv[i + 1]);
+            i++;
+        }
     }
 
-    std::string wsUrl = "ws://localhost:" + std::to_string(wsPort);
+    std::string wsUrl = "ws://localhost:" + std::to_string(wsPort)
+                      + "/?instance_id=" + std::to_string(instanceId);
     LAppDelegate::GetInstance()->SetWsUrl(wsUrl);
 
     if (LAppDelegate::GetInstance()->Initialize() == GL_FALSE)

@@ -52,13 +52,15 @@ class ProcessManagerTest {
         };
 
         ProcessManager pm = new ProcessManager("/fake/renderer", 9000, capturingFactory);
-        pm.startRenderer();
+        pm.startRenderer(1);
 
         List<String> cmd = capturedCommand.get();
         assertNotNull(cmd);
         assertEquals("/fake/renderer", cmd.get(0));
-        assertEquals("--ws-url", cmd.get(1));
-        assertEquals("ws://localhost:9000", cmd.get(2));
+        assertEquals("--port", cmd.get(1));
+        assertEquals("9000", cmd.get(2));
+        assertEquals("--instance-id", cmd.get(3));
+        assertEquals("1", cmd.get(4));
     }
 
     @Test
@@ -79,7 +81,7 @@ class ProcessManagerTest {
             shutdownCalled.set(true);
             doReturn(false).when(mockProcess).isAlive();
         });
-        pm.startRenderer();
+        pm.startRenderer(1);
 
         pm.stopRenderer();
 
@@ -118,7 +120,7 @@ class ProcessManagerTest {
 
         ProcessManager pm = new ProcessManager("/fake/renderer", 9000, factory);
         pm.setExitCallback(capturedExitCode::set);
-        pm.startRenderer();
+        pm.startRenderer(1);
 
         exitFuture.complete(mockProcess);
         Thread.sleep(100);

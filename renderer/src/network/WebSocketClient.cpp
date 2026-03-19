@@ -12,7 +12,6 @@ WebSocketClient::~WebSocketClient() {
 
 bool WebSocketClient::connect(const std::string& url) {
     _ws.setUrl(url);
-    _ws.disableAutomaticReconnection();
 
     _ws.setOnMessageCallback([this, url](const ix::WebSocketMessagePtr& msg) {
         if (msg->type == ix::WebSocketMessageType::Message) {

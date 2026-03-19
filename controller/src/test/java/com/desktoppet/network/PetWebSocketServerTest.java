@@ -6,6 +6,7 @@ import java.net.ServerSocket;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ class PetWebSocketServerTest {
         int port = findFreePort();
         PetWebSocketServer server = new PetWebSocketServer(port);
         CountDownLatch connectedLatch = new CountDownLatch(1);
-        server.setConnectionCallback(connected -> {
+        server.setConnectionCallback((instanceId, connected) -> {
             if (connected) {
                 connectedLatch.countDown();
             }
@@ -53,7 +54,7 @@ class PetWebSocketServerTest {
         int port = findFreePort();
         PetWebSocketServer server = new PetWebSocketServer(port);
         CountDownLatch disconnectedLatch = new CountDownLatch(1);
-        server.setConnectionCallback(connected -> {
+        server.setConnectionCallback((instanceId, connected) -> {
             if (!connected) {
                 disconnectedLatch.countDown();
             }
@@ -78,7 +79,7 @@ class PetWebSocketServerTest {
         int port = findFreePort();
         PetWebSocketServer server = new PetWebSocketServer(port);
         CountDownLatch connectedLatch = new CountDownLatch(1);
-        server.setConnectionCallback(connected -> {
+        server.setConnectionCallback((instanceId, connected) -> {
             if (connected) {
                 connectedLatch.countDown();
             }
@@ -92,7 +93,7 @@ class PetWebSocketServerTest {
             assertTrue(connectedLatch.await(2, TimeUnit.SECONDS));
             assertTrue(awaitActiveConnection(server, 2, TimeUnit.SECONDS));
 
-            server.sendMessage("{\"type\":\"event\",\"action\":\"ready\"}");
+            server.sendToInstance(1, "{\"type\":\"event\",\"action\":\"ready\"}");
 
             assertTrue(client.messageLatch.await(2, TimeUnit.SECONDS));
             assertEquals("{\"type\":\"event\",\"action\":\"ready\"}", client.lastMessage.get());
@@ -108,7 +109,7 @@ class PetWebSocketServerTest {
         PetWebSocketServer server = new PetWebSocketServer(port);
         AtomicReference<String> captured = new AtomicReference<>();
         CountDownLatch messageLatch = new CountDownLatch(1);
-        server.setMessageCallback(message -> {
+        server.setMessageCallback((instanceId, message) -> {
             captured.set(message);
             messageLatch.countDown();
         });
@@ -147,10 +148,10 @@ class PetWebSocketServerTest {
             assertTrue(client2.connectBlocking(2, TimeUnit.SECONDS));
 
             assertTrue(client1.closeLatch.await(2, TimeUnit.SECONDS));
-            assertTrue(server.hasActiveConnection());
+            assertTrue(server.hasActiveConnection(1));
             assertTrue(client2.isOpen());
 
-            server.sendMessage("second-client-only");
+            server.sendToInstance(1, "second-client-only");
             assertTrue(client2.messageLatch.await(2, TimeUnit.SECONDS));
             assertEquals("second-client-only", client2.lastMessage.get());
         } finally {
@@ -193,12 +194,12 @@ class PetWebSocketServerTest {
         throws InterruptedException {
         long deadline = System.nanoTime() + unit.toNanos(timeout);
         while (System.nanoTime() < deadline) {
-            if (server.hasActiveConnection()) {
+            if (server.hasActiveConnection(1)) {
                 return true;
             }
             Thread.sleep(10);
         }
-        return server.hasActiveConnection();
+        return server.hasActiveConnection(1);
     }
 
     private static final class TestWebSocketClient extends WebSocketClient {
@@ -207,7 +208,7 @@ class PetWebSocketServerTest {
         private final AtomicReference<String> lastMessage = new AtomicReference<>();
 
         private TestWebSocketClient(int port) throws URISyntaxException {
-            super(new URI("ws://127.0.0.1:" + port));
+            super(new URI("ws://127.0.0.1:" + port + "/?instance_id=1"));
         }
 
         @Override

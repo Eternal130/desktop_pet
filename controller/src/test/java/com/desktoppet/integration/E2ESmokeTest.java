@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,7 +43,7 @@ public class E2ESmokeTest {
         // Start WebSocket server
         server = new PetWebSocketServer(port);
         dispatcher = new MessageDispatcher();
-        server.setMessageCallback(msg -> {
+        server.setMessageCallback((instanceId, msg) -> {
             Protocol.deserialize(msg).ifPresent(dispatcher::dispatch);
         });
         server.setReuseAddr(true);
@@ -70,7 +71,7 @@ public class E2ESmokeTest {
 
         // Connect test client (simulating renderer)
         rendererClient = new TestRendererClient(
-            new URI("ws://localhost:" + port),
+            new URI("ws://localhost:" + port + "/?instance_id=1"),
             msg -> {
                 receivedCommands.add(msg);
                 Protocol.deserialize(msg).ifPresent(env -> {
@@ -91,7 +92,7 @@ public class E2ESmokeTest {
             JsonObject payload = new JsonObject();
             payload.addProperty("model_path", "Hiyori");
             var cmd = Protocol.createCommand("load_model", payload);
-            server.sendMessage(Protocol.serialize(cmd));
+            server.sendToInstance(1, Protocol.serialize(cmd));
         });
 
         // Simulate renderer sending ready event
@@ -119,7 +120,7 @@ public class E2ESmokeTest {
         CountDownLatch playMotionLatch = new CountDownLatch(1);
 
         rendererClient = new TestRendererClient(
-            new URI("ws://localhost:" + port),
+            new URI("ws://localhost:" + port + "/?instance_id=1"),
             msg -> {
                 receivedCommands.add(msg);
                 Protocol.deserialize(msg).ifPresent(env -> {
@@ -133,7 +134,7 @@ public class E2ESmokeTest {
         assertTrue(rendererClient.isOpen(), "Client should be connected");
 
         // Set up InteractionHandler on server side (simulating AppOrchestrator)
-        InteractionHandler handler = new InteractionHandler(msg -> server.sendMessage(msg));
+        InteractionHandler handler = new InteractionHandler(msg -> server.sendToInstance(1, msg));
         dispatcher.registerEventHandler("hit", handler::handleHitEvent);
 
         // Simulate renderer sending hit event on "head" area
@@ -164,7 +165,7 @@ public class E2ESmokeTest {
         CountDownLatch setPositionLatch = new CountDownLatch(1);
 
         rendererClient = new TestRendererClient(
-            new URI("ws://localhost:" + port),
+            new URI("ws://localhost:" + port + "/?instance_id=1"),
             msg -> {
                 receivedCommands.add(msg);
                 Protocol.deserialize(msg).ifPresent(env -> {
@@ -192,11 +193,11 @@ public class E2ESmokeTest {
                         JsonObject posPayload = new JsonObject();
                         posPayload.addProperty("x", 100);
                         posPayload.addProperty("y", 200);
-                        server.sendMessage(Protocol.serialize(Protocol.createCommand("set_position", posPayload)));
+                        server.sendToInstance(1, Protocol.serialize(Protocol.createCommand("set_position", posPayload)));
                     }
                 });
 
-            server.sendMessage(Protocol.serialize(cmd));
+            server.sendToInstance(1, Protocol.serialize(cmd));
         });
 
         // Simulate renderer sending ready event

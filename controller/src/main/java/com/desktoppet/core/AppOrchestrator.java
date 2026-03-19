@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AppOrchestrator {
     private static final Logger log = LoggerFactory.getLogger(AppOrchestrator.class);
     private static final int WS_PORT = 9000;
+    private static final int LEGACY_INSTANCE_ID = 0;
 
     private final ConfigManager configManager;
     private final PetStateManager stateManager;
@@ -66,7 +67,7 @@ public class AppOrchestrator {
             if (envelope.isPresent()) {
                 sendOrCache(envelope.get().action(), msg);
             } else if (stateManager.getState().connected()) {
-                wsServer.sendMessage(msg);
+                wsServer.sendToInstance(LEGACY_INSTANCE_ID, msg);
             } else {
                 log.debug("Discarded malformed command during disconnect");
             }
@@ -112,7 +113,7 @@ public class AppOrchestrator {
             }
         });
 
-        processManager.startRenderer();
+        processManager.startRenderer(LEGACY_INSTANCE_ID);
         log.info("Renderer process started");
     }
 
@@ -218,7 +219,7 @@ public class AppOrchestrator {
             log.warn("Renderer error event: {}", envelope.payload());
         });
 
-        wsServer.setMessageCallback(rawMsg -> {
+        wsServer.setMessageCallback((instanceId, rawMsg) -> {
             Optional<Envelope> envelope = Protocol.deserialize(rawMsg);
             envelope.ifPresent(env -> {
                 notifyMessageLog("←", env.type(), env.action(), "");
@@ -226,7 +227,7 @@ public class AppOrchestrator {
             });
         });
 
-        wsServer.setConnectionCallback(connected -> {
+        wsServer.setConnectionCallback((instanceId, connected) -> {
             stateManager.setConnected(connected);
             updateUiConnectionStatus(connected);
             if (!connected) {
@@ -289,7 +290,7 @@ public class AppOrchestrator {
 
     private void sendOrCache(String action, String serializedEnvelope) {
         if (stateManager.getState().connected()) {
-            wsServer.sendMessage(serializedEnvelope);
+            wsServer.sendToInstance(LEGACY_INSTANCE_ID, serializedEnvelope);
         } else if (CRITICAL_ACTIONS.contains(action)) {
             pendingCriticalCommands.offer(serializedEnvelope);
             log.debug("Cached critical command: {}", action);
@@ -301,7 +302,7 @@ public class AppOrchestrator {
     private void flushPendingCommands() {
         String cmd;
         while ((cmd = pendingCriticalCommands.poll()) != null) {
-            wsServer.sendMessage(cmd);
+            wsServer.sendToInstance(LEGACY_INSTANCE_ID, cmd);
             log.debug("Resent cached command");
         }
     }
@@ -346,7 +347,7 @@ public class AppOrchestrator {
         log.info("Restarting renderer...");
         stateManager.setConnected(false);
         stateManager.setModelLoaded(false);
-        processManager.startRenderer();
+        processManager.startRenderer(LEGACY_INSTANCE_ID);
         log.info("Renderer restarted, waiting for ready event...");
     }
 
@@ -361,7 +362,7 @@ public class AppOrchestrator {
         }
 
         processManager.setShutdownCommandSender(() ->
-            wsServer.sendMessage(Protocol.serialize(Protocol.createCommand("shutdown", new JsonObject())))
+            wsServer.sendToInstance(LEGACY_INSTANCE_ID, Protocol.serialize(Protocol.createCommand("shutdown", new JsonObject())))
         );
         processManager.stopRenderer();
 
@@ -401,14 +402,14 @@ public class AppOrchestrator {
         CompletableFuture.runAsync(() -> {
             try {
                 processManager.setShutdownCommandSender(() ->
-                    wsServer.sendMessage(Protocol.serialize(
+                    wsServer.sendToInstance(LEGACY_INSTANCE_ID, Protocol.serialize(
                             Protocol.createCommand("shutdown", new JsonObject()))));
                 processManager.stopRenderer();
                 Thread.sleep(500);
                 restartAttempts.set(0);
                 stateManager.setConnected(false);
                 stateManager.setModelLoaded(false);
-                processManager.startRenderer();
+                processManager.startRenderer(LEGACY_INSTANCE_ID);
                 log.info("Manual renderer restart initiated");
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -420,7 +421,7 @@ public class AppOrchestrator {
 
     public void stopRenderer() {
         processManager.setShutdownCommandSender(() ->
-            wsServer.sendMessage(Protocol.serialize(
+            wsServer.sendToInstance(LEGACY_INSTANCE_ID, Protocol.serialize(
                     Protocol.createCommand("shutdown", new JsonObject()))));
         processManager.stopRenderer();
     }

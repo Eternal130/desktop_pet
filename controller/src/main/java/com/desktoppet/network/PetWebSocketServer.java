@@ -1,20 +1,28 @@
 package com.desktoppet.network;
 
 import java.net.InetSocketAddress;
-import java.util.function.Consumer;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Shared WebSocket server for multiple renderer instances.
+ * Renderers connect via: {@code ws://host:port/?instance_id=N}
+ */
 public class PetWebSocketServer extends WebSocketServer {
 
     private static final Logger log = LoggerFactory.getLogger(PetWebSocketServer.class);
 
-    private volatile WebSocket activeConnection;
-    private volatile Consumer<String> messageCallback;
-    private volatile Consumer<Boolean> connectionCallback;
+    private final Map<Integer, WebSocket> instanceConnections = new ConcurrentHashMap<>();
+    private final Map<WebSocket, Integer> connectionInstances = new ConcurrentHashMap<>();
+
+    private volatile BiConsumer<Integer, Boolean> connectionCallback;
+    private volatile BiConsumer<Integer, String> messageCallback;
 
     public PetWebSocketServer(int port) {
         super(new InetSocketAddress(port));
@@ -22,43 +30,56 @@ public class PetWebSocketServer extends WebSocketServer {
 
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
-        WebSocket previous = activeConnection;
+        Integer instanceId = parseInstanceId(handshake.getResourceDescriptor());
+        if (instanceId == null) {
+            log.warn("Renderer connected without instance_id, closing: {}", conn.getRemoteSocketAddress());
+            conn.close(4000, "missing instance_id query parameter");
+            return;
+        }
+
+            WebSocket previous = instanceConnections.get(instanceId);
         if (previous != null && previous.isOpen() && previous != conn) {
+            connectionInstances.remove(previous);
             previous.close(1000, "replaced by new connection");
         }
 
-        activeConnection = conn;
-        log.info("Renderer connected: {}", conn.getRemoteSocketAddress());
+        instanceConnections.put(instanceId, conn);
+        connectionInstances.put(conn, instanceId);
+        log.info("Renderer connected: instance={}, remote={}", instanceId, conn.getRemoteSocketAddress());
 
-        Consumer<Boolean> callback = connectionCallback;
-        if (callback != null) {
-            callback.accept(true);
+        BiConsumer<Integer, Boolean> cb = connectionCallback;
+        if (cb != null) {
+            cb.accept(instanceId, true);
         }
     }
 
     @Override
     public void onMessage(WebSocket conn, String message) {
-        Consumer<String> callback = messageCallback;
-        if (callback != null) {
-            callback.accept(message);
+        Integer instanceId = connectionInstances.get(conn);
+        BiConsumer<Integer, String> cb = messageCallback;
+        if (instanceId != null && cb != null) {
+            cb.accept(instanceId, message);
         }
     }
 
     @Override
     public void onClose(WebSocket conn, int code, String reason, boolean remote) {
-        if (conn == activeConnection) {
-            activeConnection = null;
-            Consumer<Boolean> callback = connectionCallback;
-            if (callback != null) {
-                callback.accept(false);
+        Integer instanceId = connectionInstances.remove(conn);
+        if (instanceId != null) {
+            instanceConnections.remove(instanceId, conn);
+            BiConsumer<Integer, Boolean> cb = connectionCallback;
+            if (cb != null) {
+                cb.accept(instanceId, false);
             }
         }
-        log.info("Renderer disconnected: code={}, reason={}, remote={}", code, reason, remote);
+        log.info("Renderer disconnected: instance={}, code={}, reason={}, remote={}",
+                instanceId, code, reason, remote);
     }
 
     @Override
     public void onError(WebSocket conn, Exception ex) {
-        log.error("WebSocket error: {}", ex.getMessage(), ex);
+        Integer instanceId = conn != null ? connectionInstances.get(conn) : null;
+        log.error("WebSocket error (instance={}): {}", instanceId, ex.getMessage(), ex);
     }
 
     @Override
@@ -66,23 +87,55 @@ public class PetWebSocketServer extends WebSocketServer {
         log.info("WebSocket server started on port {}", getPort());
     }
 
-    public void sendMessage(String message) {
-        WebSocket conn = activeConnection;
+    public void sendToInstance(int instanceId, String message) {
+        WebSocket conn = instanceConnections.get(instanceId);
         if (conn != null && conn.isOpen()) {
             conn.send(message);
         }
     }
 
-    public boolean hasActiveConnection() {
-        WebSocket conn = activeConnection;
+    public boolean hasActiveConnection(int instanceId) {
+        WebSocket conn = instanceConnections.get(instanceId);
         return conn != null && conn.isOpen();
     }
 
-    public void setMessageCallback(Consumer<String> callback) {
+    public void closeInstance(int instanceId) {
+        WebSocket conn = instanceConnections.remove(instanceId);
+        if (conn != null) {
+            connectionInstances.remove(conn);
+            if (conn.isOpen()) {
+                conn.close(1000, "instance stopped");
+            }
+        }
+    }
+
+    public void setMessageCallback(BiConsumer<Integer, String> callback) {
         this.messageCallback = callback;
     }
 
-    public void setConnectionCallback(Consumer<Boolean> callback) {
+    public void setConnectionCallback(BiConsumer<Integer, Boolean> callback) {
         this.connectionCallback = callback;
+    }
+
+    static Integer parseInstanceId(String resourceDescriptor) {
+        if (resourceDescriptor == null) {
+            return null;
+        }
+        int queryStart = resourceDescriptor.indexOf('?');
+        if (queryStart < 0) {
+            return null;
+        }
+        String query = resourceDescriptor.substring(queryStart + 1);
+        for (String param : query.split("&")) {
+            String[] kv = param.split("=", 2);
+            if (kv.length == 2 && "instance_id".equals(kv[0])) {
+                try {
+                    return Integer.parseInt(kv[1]);
+                } catch (NumberFormatException e) {
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 }

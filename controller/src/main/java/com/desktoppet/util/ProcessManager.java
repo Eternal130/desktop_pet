@@ -78,8 +78,8 @@ public class ProcessManager {
 
         List<String> command = List.of(
                 rendererPath,
-                "--ws-url",
-                "ws://localhost:" + wsPort
+                "--port",
+                String.valueOf(wsPort)
         );
 
         log.info("Starting renderer: {}", String.join(" ", command));

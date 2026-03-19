@@ -5,18 +5,19 @@ import com.desktoppet.core.InstanceConfigManager;
 import com.desktoppet.core.ModelScanner;
 import com.desktoppet.model.ModelInfo;
 import com.desktoppet.model.PetInstance;
+import com.desktoppet.network.PetWebSocketServer;
+import com.desktoppet.network.Protocol;
 import com.desktoppet.util.ProcessManager;
+import com.google.gson.JsonObject;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.application.Platform;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
-import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Slider;
@@ -32,7 +33,6 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 import javafx.animation.TranslateTransition;
-import javafx.stage.FileChooser;
 import javafx.util.Duration;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
@@ -40,6 +40,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +54,7 @@ public class MainWindowController {
 
     private final ObservableList<PetInstance> instances = FXCollections.observableArrayList();
     private final Map<Integer, ProcessManager> processManagers = new ConcurrentHashMap<>();
+    private final Map<Integer, PetWebSocketServer> wsServers = new ConcurrentHashMap<>();
     private final InstanceConfigManager instanceConfigManager = new InstanceConfigManager();
 
     private static final Map<String, String> MOTION_ICONS = Map.ofEntries(
@@ -469,71 +472,44 @@ public class MainWindowController {
     public void addMessageLog(String direction, String type, String action, String summary) {
     }
 
+    private String findRendererExecutable() {
+        Path currentDir = Path.of(".").toAbsolutePath().normalize();
+        try (var stream = Files.walk(currentDir, 2)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(p -> {
+                        String name = p.getFileName().toString().toLowerCase();
+                        return name.endsWith(".exe") && name.contains("renderer");
+                    })
+                    .findFirst()
+                    .map(p -> p.toAbsolutePath().toString())
+                    .orElse(null);
+        } catch (IOException e) {
+            log.warn("Failed to scan for renderer executable: {}", e.getMessage());
+            return null;
+        }
+    }
+
     @FXML
     private void onAddInstance() {
-        Dialog<PetInstance> dialog = new Dialog<>();
+        String rendererPath = findRendererExecutable();
+        if (rendererPath == null) {
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("错误");
+            alert.setHeaderText("未找到渲染引擎");
+            alert.setContentText("在当前目录下未找到渲染引擎可执行文件（*renderer*.exe），请确保渲染引擎位于当前工作目录中。");
+            alert.showAndWait();
+            return;
+        }
+
+        TextInputDialog dialog = new TextInputDialog("新实例");
         dialog.setTitle("添加实例");
         dialog.setHeaderText("创建新的桌面宠物实例");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.setContentText("实例名称:");
 
-        GridPane grid = new GridPane();
-        grid.setHgap(12);
-        grid.setVgap(12);
-        grid.setPadding(new Insets(16));
+        dialog.showAndWait().map(String::trim).filter(s -> !s.isEmpty()).ifPresent(label -> {
+            PetInstance instance = new PetInstance(label, "", "stopped", false, rendererPath);
 
-        TextField labelField = new TextField("新实例");
-        labelField.setPromptText("实例名称");
-        labelField.setPrefWidth(300);
-
-        TextField rendererPathField = new TextField();
-        rendererPathField.setPromptText("选择渲染引擎可执行文件");
-        rendererPathField.setEditable(false);
-        rendererPathField.setPrefWidth(300);
-
-        Button browseBtn = new Button("浏览...");
-        browseBtn.setOnAction(e -> {
-            FileChooser fileChooser = new FileChooser();
-            fileChooser.setTitle("选择渲染引擎程序");
-            fileChooser.getExtensionFilters().addAll(
-                    new FileChooser.ExtensionFilter("可执行文件", "*.exe"),
-                    new FileChooser.ExtensionFilter("所有文件", "*.*")
-            );
-            File selected = fileChooser.showOpenDialog(dialog.getOwner());
-            if (selected != null) {
-                rendererPathField.setText(selected.getAbsolutePath());
-            }
-        });
-
-        HBox rendererRow = new HBox(8, rendererPathField, browseBtn);
-        rendererRow.setAlignment(Pos.CENTER_LEFT);
-        HBox.setHgrow(rendererPathField, Priority.ALWAYS);
-
-        grid.add(new Label("实例名称:"), 0, 0);
-        grid.add(labelField, 1, 0);
-        grid.add(new Label("渲染引擎:"), 0, 1);
-        grid.add(rendererRow, 1, 1);
-
-        dialog.getDialogPane().setContent(grid);
-
-        Button okBtn = (Button) dialog.getDialogPane().lookupButton(ButtonType.OK);
-        okBtn.setDisable(true);
-        rendererPathField.textProperty().addListener((obs, oldVal, newVal) ->
-                okBtn.setDisable(newVal == null || newVal.isBlank()));
-
-        dialog.setResultConverter(buttonType -> {
-            if (buttonType == ButtonType.OK) {
-                String label = labelField.getText().trim();
-                if (label.isEmpty()) {
-                    label = "新实例";
-                }
-                String rendererPath = rendererPathField.getText().trim();
-                PetInstance instance = new PetInstance(label, "", "stopped", false, rendererPath);
-                return instance;
-            }
-            return null;
-        });
-
-        dialog.showAndWait().ifPresent(instance -> {
             List<String> scannedModels = ModelScanner.scanAvailableModels(instance.getRendererPath());
             if (!scannedModels.isEmpty()) {
                 instance.setModel(scannedModels.getFirst());
@@ -599,12 +575,35 @@ public class MainWindowController {
         }
 
         int wsPort = BASE_WS_PORT + instance.getId();
+
+        PetWebSocketServer wsServer = new PetWebSocketServer(wsPort);
+        wsServer.setReuseAddr(true);
+        wsServer.setConnectionCallback(connected -> Platform.runLater(() -> {
+            instance.setConnected(connected);
+            if (connected) {
+                instance.addLog("◇ 渲染引擎已连接");
+            } else {
+                instance.addLog("◇ 渲染引擎已断开");
+            }
+            renderSidebar();
+            if (currentInstance == instance) {
+                renderDetail();
+            }
+        }));
+        wsServer.start();
+        wsServers.put(instance.getId(), wsServer);
+
         ProcessManager pm = new ProcessManager(rendererPath, wsPort);
+
+        pm.setShutdownCommandSender(() ->
+            wsServer.sendMessage(Protocol.serialize(Protocol.createCommand("shutdown", new JsonObject())))
+        );
 
         pm.setExitCallback(exitCode -> Platform.runLater(() -> {
             instance.setStatus("stopped");
             instance.setConnected(false);
             instance.addLog("◆ 渲染引擎退出 (code=" + exitCode + ")");
+            stopWsServer(instance.getId());
             renderSidebar();
             if (currentInstance == instance) {
                 renderDetail();
@@ -623,6 +622,7 @@ public class MainWindowController {
         } catch (IOException e) {
             instance.addLog("✖ 启动失败: " + e.getMessage());
             log.error("Failed to start instance {}: {}", instance.getId(), e.getMessage(), e);
+            stopWsServer(instance.getId());
         }
 
         renderSidebar();
@@ -637,9 +637,22 @@ public class MainWindowController {
             pm.stopRenderer();
             instance.addLog("◆ 实例「" + instance.getLabel() + "」已停止");
         }
+        stopWsServer(instance.getId());
         instance.setStatus("stopped");
         instance.setConnected(false);
         log.info("Instance {} stopped", instance.getId());
+    }
+
+    private void stopWsServer(int instanceId) {
+        PetWebSocketServer server = wsServers.remove(instanceId);
+        if (server != null) {
+            try {
+                server.stop(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Interrupted while stopping WS server for instance {}", instanceId);
+            }
+        }
     }
 
     @FXML
@@ -776,6 +789,9 @@ public class MainWindowController {
             if (instance.isRunning()) {
                 stopInstance(instance);
             }
+        }
+        for (int id : wsServers.keySet()) {
+            stopWsServer(id);
         }
         Platform.exit();
     }

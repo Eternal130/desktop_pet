@@ -12,9 +12,7 @@ WebSocketClient::~WebSocketClient() {
 
 bool WebSocketClient::connect(const std::string& url) {
     _ws.setUrl(url);
-    _ws.enableAutomaticReconnection();
-    _ws.setPingInterval(45);
-    _ws.setMaxWaitBetweenReconnectionRetries(30000);
+    _ws.disableAutomaticReconnection();
 
     _ws.setOnMessageCallback([this, url](const ix::WebSocketMessagePtr& msg) {
         if (msg->type == ix::WebSocketMessageType::Message) {

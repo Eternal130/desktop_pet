@@ -8,6 +8,7 @@
 #pragma once
 
 #include <string>
+#include <chrono>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include "LAppAllocator_Common.hpp"
@@ -48,6 +49,7 @@ public:
     int GetWindowWidth() { return _windowWidth; }
     int GetWindowHeight() { return _windowHeight; }
     Network::EventEmitter* GetEventEmitter() { return _eventEmitter; }
+    void SetWsUrl(const std::string& url) { _wsUrl = url; }
 
 private:
     bool IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const;
@@ -82,6 +84,10 @@ private:
     Network::MessageHandler* _messageHandler;
     Network::EventEmitter* _eventEmitter;
     bool _networkReady;
+
+    std::string _wsUrl;
+    bool _wasEverConnected;
+    std::chrono::steady_clock::time_point _connectionStartTime;
 };
 
 class EventHandler

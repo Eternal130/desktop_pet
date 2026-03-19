@@ -7,11 +7,28 @@
 
 #include "LAppDelegate.hpp"
 #include <windows.h>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 
-int main()
+int main(int argc, char* argv[])
 {
     UINT preConsoleOutputCP = GetConsoleOutputCP();
     SetConsoleOutputCP(65001);
+
+    int wsPort = 9000;
+
+    for (int i = 1; i < argc; i++)
+    {
+        if (std::strcmp(argv[i], "--port") == 0 && i + 1 < argc)
+        {
+            wsPort = std::atoi(argv[i + 1]);
+            i++;
+        }
+    }
+
+    std::string wsUrl = "ws://localhost:" + std::to_string(wsPort);
+    LAppDelegate::GetInstance()->SetWsUrl(wsUrl);
 
     if (LAppDelegate::GetInstance()->Initialize() == GL_FALSE)
     {

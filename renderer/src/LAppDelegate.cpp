@@ -207,7 +207,10 @@ LAppDelegate::LAppDelegate():
     _wsClient(nullptr),
     _messageHandler(nullptr),
     _eventEmitter(nullptr),
-    _networkReady(false)
+    _networkReady(false),
+    _wsUrl("ws://localhost:9000"),
+    _wasEverConnected(false),
+    _connectionStartTime(std::chrono::steady_clock::now())
 {
     _executeAbsolutePath = "";
     _view = new LAppView();
@@ -388,8 +391,9 @@ void LAppDelegate::InitializeNetwork()
 
     Network::RegisterCommandHandlers(*_messageHandler, this);
 
-    _wsClient->connect("ws://localhost:9000");
-    LAppPal::PrintLogLn("[Network] Connecting to controller at ws://localhost:9000");
+    _connectionStartTime = std::chrono::steady_clock::now();
+    _wsClient->connect(_wsUrl);
+    LAppPal::PrintLogLn("[Network] Connecting to controller at %s", _wsUrl.c_str());
 }
 
 void LAppDelegate::PollNetworkMessages()
@@ -397,18 +401,43 @@ void LAppDelegate::PollNetworkMessages()
     if (!_wsClient) return;
 
     bool connected = _wsClient->isConnected();
-    if (connected && !_networkReady)
+
+    if (connected)
     {
-        _networkReady = true;
-        if (_eventEmitter)
+        _wasEverConnected = true;
+
+        if (!_networkReady)
         {
-            _eventEmitter->emit("ready", {{"version", "1.0"}});
+            _networkReady = true;
+            if (_eventEmitter)
+            {
+                _eventEmitter->emit("ready", {{"version", "1.0"}});
+            }
+            LAppPal::PrintLogLn("[Network] Sent ready event to controller");
         }
-        LAppPal::PrintLogLn("[Network] Sent ready event to controller");
     }
-    else if (!connected && _networkReady)
+    else
     {
-        _networkReady = false;
+        if (_networkReady)
+        {
+            _networkReady = false;
+        }
+
+        if (_wasEverConnected)
+        {
+            LAppPal::PrintLogLn("[Network] Connection lost, exiting...");
+            glfwSetWindowShouldClose(_window, GLFW_TRUE);
+            return;
+        }
+
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - _connectionStartTime).count();
+        if (elapsed > 10)
+        {
+            LAppPal::PrintLogLn("[Network] Connection timeout (%llds), exiting...", elapsed);
+            glfwSetWindowShouldClose(_window, GLFW_TRUE);
+            return;
+        }
     }
 
     auto messages = _wsClient->drainMessages();

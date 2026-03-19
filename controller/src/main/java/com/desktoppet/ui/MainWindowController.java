@@ -2,6 +2,7 @@ package com.desktoppet.ui;
 
 import com.desktoppet.core.AppOrchestrator;
 import com.desktoppet.core.InstanceConfigManager;
+import com.desktoppet.core.ModelScanner;
 import com.desktoppet.model.ModelInfo;
 import com.desktoppet.model.PetInstance;
 import com.desktoppet.util.ProcessManager;
@@ -40,6 +41,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -52,7 +54,20 @@ public class MainWindowController {
     private final Map<Integer, ProcessManager> processManagers = new ConcurrentHashMap<>();
     private final InstanceConfigManager instanceConfigManager = new InstanceConfigManager();
 
+    private static final Map<String, String> MOTION_ICONS = Map.ofEntries(
+            Map.entry("idle", "✨"),
+            Map.entry("tapbody", "👆"),
+            Map.entry("taphead", "🤚"),
+            Map.entry("flick", "💨"),
+            Map.entry("shake", "🔄"),
+            Map.entry("touch", "✋"),
+            Map.entry("special", "⭐"),
+            Map.entry("pinch", "🤏")
+    );
+    private static final String DEFAULT_MOTION_ICON = "▶";
+
     private PetInstance currentInstance;
+    private ModelInfo currentModelInfo;
     private boolean updatingUI;
     private double dragOffsetX;
     private double dragOffsetY;
@@ -113,8 +128,6 @@ public class MainWindowController {
         themeCombo.setItems(FXCollections.observableArrayList(THEMES.keySet()));
         themeCombo.setValue("深紫梦幻");
 
-        modelSelectCombo.setItems(FXCollections.observableArrayList("Hiyori", "Mao", "Natori", "Rice"));
-
         opacitySlider.valueProperty().addListener((obs, oldValue, newValue) -> {
             if (updatingUI || currentInstance == null) {
                 return;
@@ -164,8 +177,8 @@ public class MainWindowController {
         clipSliderToBounds(idleSlider);
         setupToggleSwitch(autoStartCheck);
 
-        buildMotionGrid();
-        buildExpressionButtons();
+        buildMotionGrid(null);
+        buildExpressionButtons(null);
         renderSidebar();
     }
 
@@ -174,8 +187,61 @@ public class MainWindowController {
 
     private void selectInstance(PetInstance instance) {
         currentInstance = instance;
+        refreshModelList();
         renderSidebar();
         renderDetail();
+    }
+
+    private void refreshModelList() {
+        currentModelInfo = null;
+
+        if (currentInstance == null) {
+            modelSelectCombo.getItems().clear();
+            return;
+        }
+
+        String rendererPath = currentInstance.getRendererPath();
+        List<String> models = ModelScanner.scanAvailableModels(rendererPath);
+
+        updatingUI = true;
+        try {
+            modelSelectCombo.getItems().setAll(models);
+
+            String currentModel = currentInstance.getModel();
+            if (currentModel != null && !currentModel.isEmpty() && models.contains(currentModel)) {
+                modelSelectCombo.setValue(currentModel);
+            } else if (!models.isEmpty()) {
+                modelSelectCombo.setValue(models.getFirst());
+                currentInstance.setModel(models.getFirst());
+            }
+        } finally {
+            updatingUI = false;
+        }
+
+        refreshModelInfo();
+    }
+
+    private void refreshModelInfo() {
+        currentModelInfo = null;
+
+        if (currentInstance == null) {
+            return;
+        }
+
+        String modelName = currentInstance.getModel();
+        String rendererPath = currentInstance.getRendererPath();
+        if (modelName == null || modelName.isEmpty()) {
+            return;
+        }
+
+        ModelScanner.getModelInfo(rendererPath, modelName).ifPresent(info -> {
+            currentModelInfo = info;
+            log.info("Model info loaded for {}: {} motion groups, {} expressions, {} hit areas",
+                    modelName,
+                    info.motionGroups().size(),
+                    info.expressions().size(),
+                    info.hitAreas().size());
+        });
     }
 
     private void renderSidebar() {
@@ -253,9 +319,24 @@ public class MainWindowController {
             String model = currentInstance.getModel();
             avatarLabel.setText(model.isEmpty() ? "?" : String.valueOf(model.charAt(0)));
             modelNameCard.setText(model);
-            modelSelectCombo.setValue(model);
-            statsLabel.setText("4 动作组 · 4 表情 · 2 触控区");
+
+            if (modelSelectCombo.getItems().contains(model)) {
+                modelSelectCombo.setValue(model);
+            }
+
+            if (currentModelInfo != null) {
+                int motionCount = currentModelInfo.motionGroups().size();
+                int exprCount = currentModelInfo.expressions().size();
+                int hitCount = currentModelInfo.hitAreas().size();
+                statsLabel.setText(motionCount + " 动作组 · " + exprCount + " 表情 · " + hitCount + " 触控区");
+            } else {
+                statsLabel.setText("— 动作组 · — 表情 · — 触控区");
+            }
+
             expressionTitle.setText("✦ 表情控制 当前: " + currentInstance.getCurrentExpression());
+
+            buildMotionGrid(currentModelInfo);
+            buildExpressionButtons(currentModelInfo);
             updateExpressionActiveStyles();
 
             opacitySlider.setValue(currentInstance.getOpacity());
@@ -280,20 +361,21 @@ public class MainWindowController {
         }
     }
 
-    private void buildMotionGrid() {
+    private void buildMotionGrid(ModelInfo info) {
         motionGrid.getChildren().clear();
 
-        String[][] data = {
-                {"Idle", "✨", "×3"},
-                {"TapBody", "戳", "×2"},
-                {"TapHead", "摸", "×2"},
-                {"Flick", "💨", "×1"}
-        };
+        if (info == null || info.motionGroups().isEmpty()) {
+            Label placeholder = new Label("未检测到动作组");
+            placeholder.getStyleClass().add("setting-label");
+            motionGrid.add(placeholder, 0, 0);
+            return;
+        }
 
-        for (int i = 0; i < data.length; i++) {
-            String name = data[i][0];
-            String icon = data[i][1];
-            String count = data[i][2];
+        int i = 0;
+        for (var entry : info.motionGroups().entrySet()) {
+            String name = entry.getKey();
+            int count = entry.getValue();
+            String icon = MOTION_ICONS.getOrDefault(name.toLowerCase(), DEFAULT_MOTION_ICON);
 
             VBox btn = new VBox(6);
             btn.getStyleClass().add("motion-btn");
@@ -305,7 +387,7 @@ public class MainWindowController {
             Label nameLabel = new Label(name);
             nameLabel.getStyleClass().add("motion-name");
 
-            Label countLabel = new Label(count);
+            Label countLabel = new Label("×" + count);
             countLabel.getStyleClass().add("motion-count");
 
             btn.getChildren().addAll(iconLabel, nameLabel, countLabel);
@@ -314,13 +396,21 @@ public class MainWindowController {
             int row = i / 2;
             int col = i % 2;
             motionGrid.add(btn, col, row);
+            i++;
         }
     }
 
-    private void buildExpressionButtons() {
+    private void buildExpressionButtons(ModelInfo info) {
         expressionRow.getChildren().clear();
-        for (int i = 1; i <= 4; i++) {
-            String exp = "F0" + i;
+
+        if (info == null || info.expressions().isEmpty()) {
+            Label placeholder = new Label("无表情数据");
+            placeholder.getStyleClass().add("setting-label");
+            expressionRow.getChildren().add(placeholder);
+            return;
+        }
+
+        for (String exp : info.expressions()) {
             Button button = new Button(exp);
             button.getStyleClass().add("exp-btn");
             button.setOnAction(event -> onExpressionClicked(exp));
@@ -444,10 +534,16 @@ public class MainWindowController {
         });
 
         dialog.showAndWait().ifPresent(instance -> {
+            List<String> scannedModels = ModelScanner.scanAvailableModels(instance.getRendererPath());
+            if (!scannedModels.isEmpty()) {
+                instance.setModel(scannedModels.getFirst());
+            }
+
             instanceConfigManager.createConfig(instance.getId(), instance.getLabel(), instance.getRendererPath());
             instance.addLog("◆ 创建实例「" + instance.getLabel() + "」");
             instance.addLog("◇ 配置文件已创建: " + instanceConfigManager.getConfigPath(instance.getId()));
             instance.addLog("◇ 渲染引擎: " + instance.getRendererPath());
+            instance.addLog("◇ 扫描到 " + scannedModels.size() + " 个模型: " + String.join(", ", scannedModels));
             instances.add(instance);
             selectInstance(instance);
 
@@ -577,7 +673,7 @@ public class MainWindowController {
 
     @FXML
     private void onModelChanged() {
-        if (currentInstance == null) {
+        if (updatingUI || currentInstance == null) {
             return;
         }
         String selected = modelSelectCombo.getValue();
@@ -586,6 +682,7 @@ public class MainWindowController {
         }
         currentInstance.setModel(selected);
         currentInstance.addLog("✦ 模型切换为: " + selected);
+        refreshModelInfo();
         renderSidebar();
         renderDetail();
     }

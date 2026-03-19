@@ -3,8 +3,11 @@ package com.desktoppet.ui;
 import com.desktoppet.core.AppOrchestrator;
 import com.desktoppet.core.InstanceConfigManager;
 import com.desktoppet.core.ModelScanner;
+import com.desktoppet.core.Scheduler;
+import com.desktoppet.model.Envelope;
 import com.desktoppet.model.ModelInfo;
 import com.desktoppet.model.PetInstance;
+import com.desktoppet.network.MessageDispatcher;
 import com.desktoppet.network.PetWebSocketServer;
 import com.desktoppet.network.Protocol;
 import com.desktoppet.util.ProcessManager;
@@ -55,6 +58,8 @@ public class MainWindowController {
     private final ObservableList<PetInstance> instances = FXCollections.observableArrayList();
     private final Map<Integer, ProcessManager> processManagers = new ConcurrentHashMap<>();
     private final Map<Integer, PetWebSocketServer> wsServers = new ConcurrentHashMap<>();
+    private final Map<Integer, MessageDispatcher> dispatchers = new ConcurrentHashMap<>();
+    private final Map<Integer, Scheduler> schedulers = new ConcurrentHashMap<>();
     private final InstanceConfigManager instanceConfigManager = new InstanceConfigManager();
 
     private static final Map<String, String> MOTION_ICONS = Map.ofEntries(
@@ -138,6 +143,9 @@ public class MainWindowController {
             double value = newValue.doubleValue();
             currentInstance.setOpacity(value);
             opacityValueLabel.setText(String.format("%.1f", value));
+            JsonObject payload = new JsonObject();
+            payload.addProperty("opacity", value);
+            sendInstanceCommand(currentInstance, "set_opacity", payload);
         });
 
         idleSlider.valueProperty().addListener((obs, oldValue, newValue) -> {
@@ -147,6 +155,10 @@ public class MainWindowController {
             int seconds = (int) Math.round(newValue.doubleValue());
             currentInstance.setIdleInterval(seconds);
             idleValueLabel.setText(seconds + "s");
+            Scheduler scheduler = schedulers.get(currentInstance.getId());
+            if (scheduler != null) {
+                scheduler.updateInterval(Math.max(1, seconds) * 1000);
+            }
         });
 
         posXField.textProperty().addListener((obs, oldValue, newValue) -> {
@@ -154,7 +166,12 @@ public class MainWindowController {
                 return;
             }
             try {
-                currentInstance.setPosX(Integer.parseInt(newValue.trim()));
+                int x = Integer.parseInt(newValue.trim());
+                currentInstance.setPosX(x);
+                JsonObject payload = new JsonObject();
+                payload.addProperty("x", x);
+                payload.addProperty("y", currentInstance.getPosY());
+                sendInstanceCommand(currentInstance, "set_position", payload);
             } catch (NumberFormatException ignored) {
             }
         });
@@ -164,7 +181,12 @@ public class MainWindowController {
                 return;
             }
             try {
-                currentInstance.setPosY(Integer.parseInt(newValue.trim()));
+                int y = Integer.parseInt(newValue.trim());
+                currentInstance.setPosY(y);
+                JsonObject payload = new JsonObject();
+                payload.addProperty("x", currentInstance.getPosX());
+                payload.addProperty("y", y);
+                sendInstanceCommand(currentInstance, "set_position", payload);
             } catch (NumberFormatException ignored) {
             }
         });
@@ -443,6 +465,9 @@ public class MainWindowController {
             return;
         }
         currentInstance.setCurrentExpression(expName);
+        JsonObject payload = new JsonObject();
+        payload.addProperty("expression", expName);
+        sendInstanceCommand(currentInstance, "set_expression", payload);
         currentInstance.addLog("✦ 切换表情: " + expName);
         renderDetail();
     }
@@ -451,6 +476,11 @@ public class MainWindowController {
         if (currentInstance == null) {
             return;
         }
+        JsonObject payload = new JsonObject();
+        payload.addProperty("group", groupName);
+        payload.addProperty("index", 0);
+        payload.addProperty("priority", 2);
+        sendInstanceCommand(currentInstance, "play_motion", payload);
         currentInstance.addLog("✦ 触发动作组: " + groupName);
     }
 
@@ -584,12 +614,28 @@ public class MainWindowController {
                 instance.addLog("◇ 渲染引擎已连接");
             } else {
                 instance.addLog("◇ 渲染引擎已断开");
+                Scheduler sch = schedulers.get(instance.getId());
+                if (sch != null) sch.pause();
             }
             renderSidebar();
             if (currentInstance == instance) {
                 renderDetail();
             }
         }));
+
+        MessageDispatcher dispatcher = new MessageDispatcher();
+        dispatchers.put(instance.getId(), dispatcher);
+
+        wsServer.setMessageCallback(rawMsg ->
+            Protocol.deserialize(rawMsg).ifPresent(envelope -> {
+                Platform.runLater(() ->
+                    instance.addLog("← " + envelope.type() + "/" + envelope.action()));
+                dispatcher.dispatch(envelope);
+            })
+        );
+
+        registerInstanceEventHandlers(instance, dispatcher, wsServer);
+
         wsServer.start();
         wsServers.put(instance.getId(), wsServer);
 
@@ -632,6 +678,11 @@ public class MainWindowController {
     }
 
     private void stopInstance(PetInstance instance) {
+        Scheduler scheduler = schedulers.remove(instance.getId());
+        if (scheduler != null) scheduler.shutdown();
+
+        dispatchers.remove(instance.getId());
+
         ProcessManager pm = processManagers.remove(instance.getId());
         if (pm != null && pm.isRunning()) {
             pm.stopRenderer();
@@ -641,6 +692,125 @@ public class MainWindowController {
         instance.setStatus("stopped");
         instance.setConnected(false);
         log.info("Instance {} stopped", instance.getId());
+    }
+
+    private void registerInstanceEventHandlers(PetInstance instance,
+                                                  MessageDispatcher dispatcher,
+                                                  PetWebSocketServer wsServer) {
+        dispatcher.registerEventHandler("ready", envelope -> Platform.runLater(() -> {
+            instance.addLog("◇ 渲染引擎就绪");
+
+            String modelName = instance.getModel();
+            if (modelName != null && !modelName.isEmpty()) {
+                JsonObject payload = new JsonObject();
+                payload.addProperty("model_path", modelName);
+                Envelope cmd = Protocol.createCommand("load_model", payload);
+                wsServer.sendMessage(Protocol.serialize(cmd));
+                instance.addLog("→ 加载模型: " + modelName);
+            }
+
+            JsonObject posPayload = new JsonObject();
+            posPayload.addProperty("x", instance.getPosX());
+            posPayload.addProperty("y", instance.getPosY());
+            wsServer.sendMessage(Protocol.serialize(
+                    Protocol.createCommand("set_position", posPayload)));
+
+            JsonObject opacityPayload = new JsonObject();
+            opacityPayload.addProperty("opacity", instance.getOpacity());
+            wsServer.sendMessage(Protocol.serialize(
+                    Protocol.createCommand("set_opacity", opacityPayload)));
+
+            renderSidebar();
+            if (currentInstance == instance) renderDetail();
+        }));
+
+        dispatcher.registerEventHandler("model_loaded", envelope -> Platform.runLater(() -> {
+            instance.addLog("◇ 模型加载完成");
+            startInstanceScheduler(instance, wsServer);
+            renderSidebar();
+            if (currentInstance == instance) renderDetail();
+        }));
+
+        dispatcher.registerEventHandler("model_load_failed", envelope -> Platform.runLater(() -> {
+            instance.addLog("✖ 模型加载失败: " + envelope.payload());
+        }));
+
+        dispatcher.registerEventHandler("motion_started", envelope -> Platform.runLater(() -> {
+            String group = envelope.payload().has("group")
+                    ? envelope.payload().get("group").getAsString() : "?";
+            instance.addLog("▶ 动作开始: " + group);
+        }));
+
+        dispatcher.registerEventHandler("motion_finished", envelope -> Platform.runLater(() -> {
+            String group = envelope.payload().has("group")
+                    ? envelope.payload().get("group").getAsString() : "?";
+            instance.addLog("■ 动作结束: " + group);
+        }));
+
+        dispatcher.registerEventHandler("hit", envelope -> Platform.runLater(() -> {
+            String areaId = envelope.payload().has("area_id")
+                    ? envelope.payload().get("area_id").getAsString() : "?";
+            instance.addLog("👆 点击命中: " + areaId);
+        }));
+
+        dispatcher.registerEventHandler("drag_start", envelope ->
+                Platform.runLater(() -> instance.addLog("↕ 拖拽开始")));
+
+        dispatcher.registerEventHandler("drag_end", envelope -> Platform.runLater(() -> {
+            if (envelope.payload().has("window_x") && envelope.payload().has("window_y")) {
+                int wx = envelope.payload().get("window_x").getAsInt();
+                int wy = envelope.payload().get("window_y").getAsInt();
+                instance.setPosX(wx);
+                instance.setPosY(wy);
+                instance.addLog("↕ 拖拽结束: (" + wx + ", " + wy + ")");
+                if (currentInstance == instance) renderDetail();
+            }
+        }));
+
+        dispatcher.registerEventHandler("error", envelope -> Platform.runLater(() ->
+                instance.addLog("⚠ 渲染引擎错误: " + envelope.payload())));
+    }
+
+    private void startInstanceScheduler(PetInstance instance, PetWebSocketServer wsServer) {
+        Scheduler existing = schedulers.remove(instance.getId());
+        if (existing != null) existing.shutdown();
+
+        String modelName = instance.getModel();
+        String rendererPath = instance.getRendererPath();
+
+        List<String> idleMotions = List.of("Idle");
+        var modelInfo = ModelScanner.getModelInfo(rendererPath, modelName);
+        if (modelInfo.isPresent() && !modelInfo.get().motionGroups().isEmpty()) {
+            idleMotions = List.copyOf(modelInfo.get().motionGroups().keySet());
+        }
+
+        Scheduler scheduler = Scheduler.createDefault();
+        int intervalMillis = Math.max(1, instance.getIdleInterval()) * 1000;
+        final List<String> finalIdleMotions = idleMotions;
+
+        scheduler.start(intervalMillis, finalIdleMotions, motionGroup -> {
+            if (instance.isConnected()) {
+                JsonObject payload = new JsonObject();
+                payload.addProperty("group", motionGroup);
+                payload.addProperty("index", 0);
+                payload.addProperty("priority", 1);
+                wsServer.sendMessage(Protocol.serialize(
+                        Protocol.createCommand("play_motion", payload)));
+            }
+        });
+        scheduler.resume();
+
+        schedulers.put(instance.getId(), scheduler);
+        instance.addLog("◇ 调度器已启动: 间隔=" + instance.getIdleInterval() + "s");
+    }
+
+    private void sendInstanceCommand(PetInstance instance, String action, JsonObject payload) {
+        PetWebSocketServer ws = wsServers.get(instance.getId());
+        if (ws != null && ws.hasActiveConnection()) {
+            Envelope cmd = Protocol.createCommand(action, payload);
+            ws.sendMessage(Protocol.serialize(cmd));
+            instance.addLog("→ " + action);
+        }
     }
 
     private void stopWsServer(int instanceId) {
@@ -695,6 +865,9 @@ public class MainWindowController {
         }
         currentInstance.setModel(selected);
         currentInstance.addLog("✦ 模型切换为: " + selected);
+        JsonObject payload = new JsonObject();
+        payload.addProperty("model_path", selected);
+        sendInstanceCommand(currentInstance, "load_model", payload);
         refreshModelInfo();
         renderSidebar();
         renderDetail();
@@ -790,6 +963,9 @@ public class MainWindowController {
                 stopInstance(instance);
             }
         }
+        schedulers.values().forEach(Scheduler::shutdown);
+        schedulers.clear();
+        dispatchers.clear();
         for (int id : wsServers.keySet()) {
             stopWsServer(id);
         }

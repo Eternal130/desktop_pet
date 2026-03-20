@@ -6,6 +6,7 @@
  */
 
 #include "LAppDelegate.hpp"
+#include <ixwebsocket/IXNetSystem.h>
 #include <windows.h>
 #include <cstdlib>
 #include <cstring>
@@ -15,6 +16,8 @@ int main(int argc, char* argv[])
 {
     UINT preConsoleOutputCP = GetConsoleOutputCP();
     SetConsoleOutputCP(65001);
+
+    ix::initNetSystem();
 
     int wsPort = 9000;
     int instanceId = 0;
@@ -45,6 +48,7 @@ int main(int argc, char* argv[])
 
     LAppDelegate::GetInstance()->Run();
 
+    ix::uninitNetSystem();
     SetConsoleOutputCP(preConsoleOutputCP);
 
     return 0;

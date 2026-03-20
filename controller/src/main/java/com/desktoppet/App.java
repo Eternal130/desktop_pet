@@ -1,6 +1,8 @@
 package com.desktoppet;
 
 import com.desktoppet.core.AppOrchestrator;
+import com.desktoppet.core.PanelStateManager;
+import com.desktoppet.model.PanelState;
 import com.desktoppet.ui.MainWindowController;
 import com.desktoppet.ui.TrayManager;
 import javafx.application.Application;
@@ -16,17 +18,24 @@ import org.slf4j.LoggerFactory;
 public class App extends Application {
     private static final Logger log = LoggerFactory.getLogger(App.class);
     private AppOrchestrator orchestrator;
+    private PanelStateManager panelStateManager;
     private TrayManager trayManager;
 
     @Override
     public void start(Stage primaryStage) throws Exception {
         orchestrator = new AppOrchestrator();
+        panelStateManager = new PanelStateManager();
+        PanelState savedState = panelStateManager.load();
 
         FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/main-window.fxml"));
         VBox root = loader.load();
         MainWindowController controller = loader.getController();
+        controller.setPanelStateManager(panelStateManager);
 
-        Scene scene = new Scene(root, 1200, 760);
+        double width = Math.max(900, savedState.panelWidth());
+        double height = Math.max(600, savedState.panelHeight());
+
+        Scene scene = new Scene(root, width, height);
         scene.getStylesheets().add(getClass().getResource("/css/style.css").toExternalForm());
 
         primaryStage.initStyle(StageStyle.UNDECORATED);
@@ -36,7 +45,13 @@ public class App extends Application {
         primaryStage.setMinHeight(600);
         primaryStage.show();
 
+        if (savedState.panelX() >= 0 && savedState.panelY() >= 0) {
+            primaryStage.setX(savedState.panelX());
+            primaryStage.setY(savedState.panelY());
+        }
+
         controller.enableWindowResize(primaryStage);
+        controller.restoreState();
 
         trayManager = new TrayManager(primaryStage);
         trayManager.setOnExitCallback(() -> {

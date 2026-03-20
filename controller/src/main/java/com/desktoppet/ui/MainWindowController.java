@@ -3,9 +3,12 @@ package com.desktoppet.ui;
 import com.desktoppet.core.AppOrchestrator;
 import com.desktoppet.core.InstanceConfigManager;
 import com.desktoppet.core.ModelScanner;
+import com.desktoppet.core.PanelStateManager;
 import com.desktoppet.core.Scheduler;
 import com.desktoppet.model.Envelope;
+import com.desktoppet.model.InstanceState;
 import com.desktoppet.model.ModelInfo;
+import com.desktoppet.model.PanelState;
 import com.desktoppet.model.PetInstance;
 import com.desktoppet.network.MessageDispatcher;
 import com.desktoppet.network.PetWebSocketServer;
@@ -45,6 +48,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +69,7 @@ public class MainWindowController {
     private final Map<Integer, Integer> restartAttempts = new ConcurrentHashMap<>();
     private final java.util.Set<Integer> manuallyStopping = ConcurrentHashMap.newKeySet();
     private final InstanceConfigManager instanceConfigManager = new InstanceConfigManager();
+    private PanelStateManager panelStateManager;
     private PetWebSocketServer wsServer;
 
     private static final Map<String, String> MOTION_ICONS = Map.ofEntries(
@@ -215,6 +220,81 @@ public class MainWindowController {
     }
 
     public void setOrchestrator(AppOrchestrator orchestrator) {
+    }
+
+    public void setPanelStateManager(PanelStateManager manager) {
+        this.panelStateManager = manager;
+    }
+
+    public void restoreState() {
+        if (panelStateManager == null) {
+            return;
+        }
+
+        PanelState state = panelStateManager.load();
+
+        if (state.theme() != null && THEMES.containsKey(state.theme())) {
+            themeCombo.setValue(state.theme());
+            onThemeChanged();
+        }
+
+        for (InstanceState instState : state.instances()) {
+            String rendererPath = instState.rendererPath();
+            if (rendererPath == null || rendererPath.isBlank()) {
+                rendererPath = findRendererExecutable();
+            }
+            if (rendererPath == null) {
+                log.warn("Skipping restored instance '{}': no renderer available", instState.label());
+                continue;
+            }
+
+            PetInstance instance = PetInstance.fromInstanceState(instState);
+            if (!instance.getRendererPath().equals(rendererPath)) {
+                instance.setRendererPath(rendererPath);
+            }
+
+            instanceConfigManager.createConfig(instance.getId(), instance.getLabel(), instance.getRendererPath());
+            instance.addLog("◆ 恢复实例「" + instance.getLabel() + "」");
+            instances.add(instance);
+        }
+
+        if (!instances.isEmpty()) {
+            selectInstance(instances.getFirst());
+
+            for (PetInstance instance : instances) {
+                if (instance.isAutoStart()) {
+                    startInstance(instance);
+                }
+            }
+        }
+
+        renderSidebar();
+        log.info("Restored {} instances from panel state", state.instances().size());
+    }
+
+    public PanelState buildCurrentState() {
+        Stage stage = titleBar.getScene() != null
+                ? (Stage) titleBar.getScene().getWindow() : null;
+
+        double panelX = stage != null ? stage.getX() : -1;
+        double panelY = stage != null ? stage.getY() : -1;
+        double panelW = stage != null ? stage.getWidth() : 1200;
+        double panelH = stage != null ? stage.getHeight() : 760;
+        String theme = themeCombo.getValue() != null ? themeCombo.getValue() : "深紫梦幻";
+
+        List<InstanceState> instStates = new ArrayList<>();
+        for (PetInstance inst : instances) {
+            instStates.add(inst.toInstanceState());
+        }
+
+        return new PanelState(panelX, panelY, panelW, panelH, theme, instStates);
+    }
+
+    private void saveState() {
+        if (panelStateManager == null) {
+            return;
+        }
+        panelStateManager.save(buildCurrentState());
     }
 
     private void selectInstance(PetInstance instance) {
@@ -1005,6 +1085,8 @@ public class MainWindowController {
 
     @FXML
     private void onCloseWindow() {
+        saveState();
+
         for (PetInstance instance : instances) {
             if (instance.isRunning()) {
                 stopInstance(instance);

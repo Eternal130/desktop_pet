@@ -50,6 +50,27 @@ public class PetInstance {
         this(label, model, status, connected, "");
     }
 
+    public static PetInstance fromInstanceState(InstanceState state) {
+        PetInstance instance = new PetInstance(
+                state.label(), state.model(), "stopped", false, state.rendererPath());
+        instance.setOpacity(state.opacity());
+        instance.setDragMode(state.dragMode());
+        instance.setIdleInterval(state.idleInterval());
+        instance.setPosX(state.posX());
+        instance.setPosY(state.posY());
+        instance.setAutoStart(state.autoStart());
+        instance.setCurrentExpression(state.currentExpression());
+        return instance;
+    }
+
+    public InstanceState toInstanceState() {
+        return new InstanceState(
+                getLabel(), getModel(), getRendererPath(),
+                getOpacity(), getDragMode(), getIdleInterval(),
+                getPosX(), getPosY(), isAutoStart(), getCurrentExpression()
+        );
+    }
+
     public void addLog(String message) {
         String entry = LocalTime.now().format(TIME_FMT) + "  " + message;
         logs.addFirst(entry);

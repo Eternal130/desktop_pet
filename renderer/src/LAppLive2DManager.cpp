@@ -7,6 +7,9 @@
 
 #include "LAppLive2DManager.hpp"
 
+#include <algorithm>
+#include <string>
+
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
@@ -131,7 +134,8 @@ void LAppLive2DManager::OnTap(csmFloat32 x, csmFloat32 y)
 
     for (csmUint32 i = 0; i < _models.GetSize(); i++)
     {
-        auto* emitter = LAppDelegate::GetInstance()->GetEventEmitter();
+        auto* delegate = LAppDelegate::GetInstance();
+        auto* emitter = delegate->GetEventEmitter();
         bool networkActive = emitter && emitter->isActive();
 
         if (_models[i]->HitTest(HitAreaNameHead, x, y))
@@ -142,7 +146,9 @@ void LAppLive2DManager::OnTap(csmFloat32 x, csmFloat32 y)
             }
             if (networkActive)
             {
-                emitter->emit("hit", {{"area_id", std::string(HitAreaNameHead)}});
+                std::string areaId(HitAreaNameHead);
+                std::transform(areaId.begin(), areaId.end(), areaId.begin(), ::tolower);
+                emitter->emit("hit", {{"area_id", areaId}, {"x", delegate->GetMouseX()}, {"y", delegate->GetMouseY()}, {"button", 0}});
             }
             else
             {
@@ -157,7 +163,9 @@ void LAppLive2DManager::OnTap(csmFloat32 x, csmFloat32 y)
             }
             if (networkActive)
             {
-                emitter->emit("hit", {{"area_id", std::string(HitAreaNameBody)}});
+                std::string areaId(HitAreaNameBody);
+                std::transform(areaId.begin(), areaId.end(), areaId.begin(), ::tolower);
+                emitter->emit("hit", {{"area_id", areaId}, {"x", delegate->GetMouseX()}, {"y", delegate->GetMouseY()}, {"button", 0}});
             }
             else
             {

@@ -19,7 +19,7 @@ std::optional<Envelope> MessageHandler::dispatch(const Envelope& msg) {
 
     const auto it = _handlers.find(msg.action);
     if (it == _handlers.end()) {
-        return createEvent("error", {{"error_code", 5003}, {"error_message", "Unknown action: " + msg.action}});
+        return createResponse(msg.id, msg.action, false, 5003, "Unknown action: " + msg.action);
     }
 
     try {
@@ -30,9 +30,9 @@ std::optional<Envelope> MessageHandler::dispatch(const Envelope& msg) {
         });
         return std::nullopt;
     } catch (const std::exception& ex) {
-        return createEvent("error", {{"error_code", 5003}, {"error_message", std::string("Handler exception for action ") + msg.action + ": " + ex.what()}});
+        return createResponse(msg.id, msg.action, false, 5003, std::string("Handler exception for action ") + msg.action + ": " + ex.what());
     } catch (...) {
-        return createEvent("error", {{"error_code", 5003}, {"error_message", "Handler exception for action " + msg.action}});
+        return createResponse(msg.id, msg.action, false, 5003, "Handler exception for action " + msg.action);
     }
 }
 

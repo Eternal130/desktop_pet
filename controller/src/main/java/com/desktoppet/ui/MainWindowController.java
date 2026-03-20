@@ -473,7 +473,7 @@ public class MainWindowController {
         }
         currentInstance.setCurrentExpression(expName);
         JsonObject payload = new JsonObject();
-        payload.addProperty("expression", expName);
+        payload.addProperty("expression_id", expName);
         sendInstanceCommand(currentInstance, "set_expression", payload);
         currentInstance.addLog("✦ 切换表情: " + expName);
         renderDetail();

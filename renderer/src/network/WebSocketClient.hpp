@@ -16,7 +16,7 @@ public:
     void disconnect();
     void send(const std::string& message);
     bool isConnected() const;
-    std::vector<std::string> drainMessages();
+    std::vector<std::string> drainMessages(size_t maxCount = kMaxQueueSize);
 
 private:
     ix::WebSocket _ws;

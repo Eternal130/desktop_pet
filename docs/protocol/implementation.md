@@ -38,10 +38,10 @@
 | `Network::createEvent()` | `Protocol.cpp` | 工厂方法，type="event" |
 | `Network::createResponse()` | `Protocol.cpp` | 工厂方法，type="response"，`id` 复用原始 Command 的 id，payload 固定为 `{}` |
 | `Network::generateId()` | `Protocol.cpp` | `mt19937_64` + `uniform_int_distribution<uint64_t>` 生成数字字符串 |
-| `Network::MessageHandler` | `MessageHandler.hpp` | 按 action 注册 `CommandHandler`，dispatch 时过滤 response（返回 nullopt），未知 action 返回 5003 |
+| `Network::MessageHandler` | `MessageHandler.hpp` | 按 action 注册 `CommandHandler`，dispatch 时过滤 response（返回 nullopt），未知 action 返回 Response（error_code 5003） |
 | `Network::EventEmitter` | `EventEmitter.hpp` | 封装 `createEvent()` + `serialize()` + 发送回调 |
-| `Network::WebSocketClient` | `WebSocketClient.hpp` | IXWebSocket 封装，线程安全消息队列，`drainMessages()` 批量取出 |
-| `Network::RegisterCommandHandlers()` | `CommandHandlers.cpp` | 注册所有 command handler（load_model, play_motion, ...） |
+| `Network::WebSocketClient` | `WebSocketClient.hpp` | IXWebSocket 封装，线程安全消息队列（上限 1000 条），`drainMessages(maxCount)` 批量取出（默认全部，渲染主循环传入 50 实现每帧上限），45 秒 Ping 间隔，断连自动重连（指数退避，上限 30 秒） |
+| `Network::RegisterCommandHandlers()` | `CommandHandlers.cpp` | 注册所有 command handler（load_model, play_motion, stop_motion, set_expression, set_position, set_scale, set_opacity, hello, shutdown） |
 
 ---
 

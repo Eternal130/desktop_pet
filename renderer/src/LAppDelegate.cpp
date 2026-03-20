@@ -268,7 +268,7 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
 
             if (_eventEmitter && _eventEmitter->isActive())
             {
-                _eventEmitter->emit("drag_start", {});
+                _eventEmitter->emit("drag_start", {{"x", static_cast<float>(_mouseX)}, {"y", static_cast<float>(_mouseY)}});
             }
         }
     }
@@ -281,7 +281,7 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
         {
             int wx, wy;
             glfwGetWindowPos(_window, &wx, &wy);
-            _eventEmitter->emit("drag_end", {{"window_x", wx}, {"window_y", wy}});
+            _eventEmitter->emit("drag_end", {{"x", static_cast<float>(_mouseX)}, {"y", static_cast<float>(_mouseY)}, {"window_x", wx}, {"window_y", wy}});
         }
 
         if (_captured)
@@ -411,7 +411,7 @@ void LAppDelegate::PollNetworkMessages()
             _networkReady = true;
             if (_eventEmitter)
             {
-                _eventEmitter->emit("ready", {{"version", "1.0"}});
+                _eventEmitter->emit("ready", {{"version", "1.0.0"}, {"capabilities", nlohmann::json::array({"live2d"})}});
             }
             LAppPal::PrintLogLn("[Network] Sent ready event to controller");
         }
@@ -421,26 +421,23 @@ void LAppDelegate::PollNetworkMessages()
         if (_networkReady)
         {
             _networkReady = false;
+            LAppPal::PrintLogLn("[Network] Connection lost, waiting for reconnection...");
         }
 
-        if (_wasEverConnected)
+        if (!_wasEverConnected)
         {
-            LAppPal::PrintLogLn("[Network] Connection lost, exiting...");
-            glfwSetWindowShouldClose(_window, GLFW_TRUE);
-            return;
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - _connectionStartTime).count();
+            if (elapsed > 10)
+            {
+                LAppPal::PrintLogLn("[Network] Connection timeout (%llds), exiting...", elapsed);
+                glfwSetWindowShouldClose(_window, GLFW_TRUE);
+            }
         }
-
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - _connectionStartTime).count();
-        if (elapsed > 10)
-        {
-            LAppPal::PrintLogLn("[Network] Connection timeout (%llds), exiting...", elapsed);
-            glfwSetWindowShouldClose(_window, GLFW_TRUE);
-            return;
-        }
+        return;
     }
 
-    auto messages = _wsClient->drainMessages();
+    auto messages = _wsClient->drainMessages(50);
     for (const auto& msg : messages)
     {
         auto env = Network::deserialize(msg);

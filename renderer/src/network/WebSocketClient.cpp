@@ -31,6 +31,10 @@ bool WebSocketClient::connect(const std::string& url) {
         }
     });
 
+    _ws.setPingInterval(45);
+    _ws.enableAutomaticReconnection();
+    _ws.setMaxWaitBetweenReconnectionRetries(30000);
+
     _ws.start();
     return true;
 }
@@ -47,12 +51,14 @@ bool WebSocketClient::isConnected() const {
     return _ws.getReadyState() == ix::ReadyState::Open;
 }
 
-std::vector<std::string> WebSocketClient::drainMessages() {
+std::vector<std::string> WebSocketClient::drainMessages(size_t maxCount) {
     std::vector<std::string> messages;
     std::lock_guard<std::mutex> lock(_queueMutex);
-    while (!_messageQueue.empty()) {
+    size_t count = 0;
+    while (!_messageQueue.empty() && count < maxCount) {
         messages.push_back(std::move(_messageQueue.front()));
         _messageQueue.pop();
+        ++count;
     }
     return messages;
 }

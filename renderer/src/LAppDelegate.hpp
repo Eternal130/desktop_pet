@@ -50,6 +50,8 @@ public:
     int GetWindowHeight() { return _windowHeight; }
     Network::EventEmitter* GetEventEmitter() { return _eventEmitter; }
     void SetWsUrl(const std::string& url) { _wsUrl = url; }
+    float GetMouseX() const { return _mouseX; }
+    float GetMouseY() const { return _mouseY; }
 
 private:
     bool IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const;

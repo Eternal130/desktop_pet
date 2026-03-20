@@ -399,15 +399,42 @@
 .seg-btn {
     -fx-background-color: transparent;
     -fx-background-radius: 6;
+    -fx-background-insets: 0;
     -fx-text-fill: #7A6B55;
     -fx-padding: 6 10;
     -fx-cursor: hand;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
 }
 
-.seg-btn-active {
+.seg-btn:hover {
+    -fx-background-color: rgba(53, 44, 31, 0.5);
+    -fx-text-fill: #9A8B75;
+}
+
+.seg-btn:focused {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-text-fill: #7A6B55;
+}
+
+.seg-btn:seg-active {
     -fx-background-color: #352C1F;
+    -fx-background-insets: 0;
     -fx-text-fill: #F5E6D3;
     -fx-effect: dropshadow(three-pass-box, rgba(255, 179, 71, 0.22), 8, 0.2, 0, 1);
+}
+
+.seg-btn:seg-active:hover {
+    -fx-background-color: #3F3628;
+}
+
+.seg-btn:seg-active:focused {
+    -fx-background-color: #352C1F;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-text-fill: #F5E6D3;
 }
 
 .coord-input {

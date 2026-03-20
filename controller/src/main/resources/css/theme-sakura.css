@@ -403,15 +403,42 @@
 .seg-btn {
     -fx-background-color: transparent;
     -fx-background-radius: 6;
+    -fx-background-insets: 0;
     -fx-text-fill: #A08090;
     -fx-padding: 6 10;
     -fx-cursor: hand;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
 }
 
-.seg-btn-active {
+.seg-btn:hover {
+    -fx-background-color: rgba(160, 128, 144, 0.15);
+    -fx-text-fill: #806070;
+}
+
+.seg-btn:focused {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-text-fill: #A08090;
+}
+
+.seg-btn:seg-active {
     -fx-background-color: #FFFFFF;
+    -fx-background-insets: 0;
     -fx-text-fill: #4A3040;
     -fx-effect: dropshadow(three-pass-box, rgba(233, 30, 99, 0.15), 8, 0.2, 0, 1);
+}
+
+.seg-btn:seg-active:hover {
+    -fx-background-color: #FFF5F8;
+}
+
+.seg-btn:seg-active:focused {
+    -fx-background-color: #FFFFFF;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-text-fill: #4A3040;
 }
 
 .coord-input {

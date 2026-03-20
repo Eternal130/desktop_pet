@@ -82,7 +82,7 @@
                         <VBox spacing="8">
                             <Label text="拖拽模式" styleClass="setting-label"/>
                             <HBox spacing="0" styleClass="seg-control">
-                                <Button fx:id="dragDirectBtn" text="直接" styleClass="seg-btn seg-btn-active" onAction="#onDragDirect"/>
+                                <Button fx:id="dragDirectBtn" text="直接" styleClass="seg-btn" onAction="#onDragDirect"/>
                                 <Button fx:id="dragPhysicsBtn" text="物理" styleClass="seg-btn" onAction="#onDragPhysics"/>
                             </HBox>
                         </VBox>

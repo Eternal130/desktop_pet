@@ -29,6 +29,7 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
+import javafx.css.PseudoClass;
 import javafx.scene.Cursor;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
@@ -83,6 +84,7 @@ public class MainWindowController {
             Map.entry("pinch", "🤏")
     );
     private static final String DEFAULT_MOTION_ICON = "▶";
+    private static final PseudoClass SEG_ACTIVE = PseudoClass.getPseudoClass("seg-active");
 
     private PetInstance currentInstance;
     private ModelInfo currentModelInfo;
@@ -213,6 +215,9 @@ public class MainWindowController {
         clipSliderToBounds(opacitySlider);
         clipSliderToBounds(idleSlider);
         setupToggleSwitch(autoStartCheck);
+
+        dragDirectBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
+        dragPhysicsBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
 
         buildMotionGrid(null);
         buildExpressionButtons(null);
@@ -454,13 +459,9 @@ public class MainWindowController {
             opacitySlider.setValue(currentInstance.getOpacity());
             opacityValueLabel.setText(String.format("%.1f", currentInstance.getOpacity()));
 
-            dragDirectBtn.getStyleClass().remove("seg-btn-active");
-            dragPhysicsBtn.getStyleClass().remove("seg-btn-active");
-            if ("physics".equals(currentInstance.getDragMode())) {
-                dragPhysicsBtn.getStyleClass().add("seg-btn-active");
-            } else {
-                dragDirectBtn.getStyleClass().add("seg-btn-active");
-            }
+            boolean isDirect = !"physics".equals(currentInstance.getDragMode());
+            dragDirectBtn.pseudoClassStateChanged(SEG_ACTIVE, isDirect);
+            dragPhysicsBtn.pseudoClassStateChanged(SEG_ACTIVE, !isDirect);
 
             idleSlider.setValue(currentInstance.getIdleInterval());
             idleValueLabel.setText(currentInstance.getIdleInterval() + "s");

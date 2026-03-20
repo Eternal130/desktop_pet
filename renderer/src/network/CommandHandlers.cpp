@@ -68,6 +68,14 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
              modelPayload["model_id"] = modelPath;
              modelPayload["motions"] = nlohmann::json::array();
              modelPayload["expressions"] = nlohmann::json::array();
+
+             const auto& hitAreaNames = manager->GetHitAreaNames();
+             nlohmann::json hitAreasArray = nlohmann::json::array();
+             for (const auto& name : hitAreaNames) {
+                 hitAreasArray.push_back(name);
+             }
+             modelPayload["hit_areas"] = hitAreasArray;
+
              emitter->emit("model_loaded", modelPayload);
          }
      });
@@ -123,6 +131,24 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
     handler.registerCommand("set_opacity", [delegate](const Envelope& cmd, auto sendResponse) {
         float opacity = cmd.payload.value("opacity", 1.0f);
         glfwSetWindowOpacity(delegate->GetWindow(), opacity);
+    });
+
+    handler.registerCommand("set_hit_areas", [](const Envelope& cmd, auto sendResponse) {
+        if (!cmd.payload.contains("hit_areas") || !cmd.payload["hit_areas"].is_array()) {
+            sendResponse(createResponse(cmd.id, "set_hit_areas", false, 4001, "hit_areas array is required"));
+            return;
+        }
+
+        std::vector<std::string> hitAreaNames;
+        for (const auto& item : cmd.payload["hit_areas"]) {
+            if (item.is_string()) {
+                hitAreaNames.push_back(item.get<std::string>());
+            }
+        }
+
+        LAppLive2DManager::GetInstance()->SetHitAreaNames(hitAreaNames);
+        LAppPal::PrintLogLn("[CommandHandlers] set_hit_areas: %d areas configured", static_cast<int>(hitAreaNames.size()));
+        sendResponse(createResponse(cmd.id, "set_hit_areas", true));
     });
 
     handler.registerCommand("shutdown", [delegate](const Envelope& cmd, auto sendResponse) {

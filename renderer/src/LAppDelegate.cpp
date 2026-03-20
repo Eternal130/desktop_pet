@@ -356,6 +356,7 @@ void LAppDelegate::SetExecuteAbsolutePath()
 bool LAppDelegate::IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const
 {
     LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
+    const auto& hitAreaNames = manager->GetHitAreaNames();
     const Csm::csmUint32 modelCount = manager->GetModelNum();
     for (Csm::csmUint32 i = 0; i < modelCount; ++i)
     {
@@ -365,10 +366,12 @@ bool LAppDelegate::IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const
             continue;
         }
 
-        if (model->HitTest(LAppDefine::HitAreaNameHead, x, y)
-            || model->HitTest(LAppDefine::HitAreaNameBody, x, y))
+        for (const auto& areaName : hitAreaNames)
         {
-            return true;
+            if (model->HitTest(areaName.c_str(), x, y))
+            {
+                return true;
+            }
         }
     }
 

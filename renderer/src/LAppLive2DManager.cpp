@@ -83,6 +83,12 @@ void LAppLive2DManager::LoadModel(const csmChar* modelName)
 
     _models.PushBack(new LAppModel());
     _models[0]->LoadAssets(modelPath.GetRawString(), modelJsonName.GetRawString());
+
+    _hitAreaNames = _models[0]->GetHitAreaNames();
+    if (DebugLogEnable)
+    {
+        LAppPal::PrintLogLn("[APP]auto-populated %d hit areas from model", static_cast<int>(_hitAreaNames.size()));
+    }
 }
 
 void LAppLive2DManager::ReleaseAllModel()
@@ -138,41 +144,38 @@ void LAppLive2DManager::OnTap(csmFloat32 x, csmFloat32 y)
         auto* emitter = delegate->GetEventEmitter();
         bool networkActive = emitter && emitter->isActive();
 
-        if (_models[i]->HitTest(HitAreaNameHead, x, y))
+        for (const auto& areaName : _hitAreaNames)
         {
-            if (DebugLogEnable)
+            if (_models[i]->HitTest(areaName.c_str(), x, y))
             {
-                LAppPal::PrintLogLn("[APP]hit area: [%s]", HitAreaNameHead);
-            }
-            if (networkActive)
-            {
-                std::string areaId(HitAreaNameHead);
-                std::transform(areaId.begin(), areaId.end(), areaId.begin(), ::tolower);
-                emitter->emit("hit", {{"area_id", areaId}, {"x", delegate->GetMouseX()}, {"y", delegate->GetMouseY()}, {"button", 0}});
-            }
-            else
-            {
-                _models[i]->SetRandomExpression();
-            }
-        }
-        else if (_models[i]->HitTest(HitAreaNameBody, x, y))
-        {
-            if (DebugLogEnable)
-            {
-                LAppPal::PrintLogLn("[APP]hit area: [%s]", HitAreaNameBody);
-            }
-            if (networkActive)
-            {
-                std::string areaId(HitAreaNameBody);
-                std::transform(areaId.begin(), areaId.end(), areaId.begin(), ::tolower);
-                emitter->emit("hit", {{"area_id", areaId}, {"x", delegate->GetMouseX()}, {"y", delegate->GetMouseY()}, {"button", 0}});
-            }
-            else
-            {
-                _models[i]->StartRandomMotion(MotionGroupTapBody, PriorityNormal, FinishedMotion, BeganMotion);
+                if (DebugLogEnable)
+                {
+                    LAppPal::PrintLogLn("[APP]hit area: [%s]", areaName.c_str());
+                }
+                if (networkActive)
+                {
+                    std::string areaId(areaName);
+                    std::transform(areaId.begin(), areaId.end(), areaId.begin(), ::tolower);
+                    emitter->emit("hit", {{"area_id", areaId}, {"x", delegate->GetMouseX()}, {"y", delegate->GetMouseY()}, {"button", 0}});
+                }
+                else
+                {
+                    _models[i]->SetRandomExpression();
+                }
+                break;
             }
         }
     }
+}
+
+void LAppLive2DManager::SetHitAreaNames(const std::vector<std::string>& names)
+{
+    _hitAreaNames = names;
+}
+
+const std::vector<std::string>& LAppLive2DManager::GetHitAreaNames() const
+{
+    return _hitAreaNames;
 }
 
 void LAppLive2DManager::OnUpdate() const

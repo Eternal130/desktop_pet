@@ -33,6 +33,7 @@ public class AppOrchestrator {
     private static final int LEGACY_INSTANCE_ID = 0;
 
     private final ConfigManager configManager;
+    private final HitAreaCacheManager hitAreaCacheManager;
     private final PetStateManager stateManager;
     private final PetWebSocketServer wsServer;
     private final MessageDispatcher dispatcher;
@@ -58,6 +59,7 @@ public class AppOrchestrator {
 
     public AppOrchestrator() {
         this.configManager = new ConfigManager();
+        this.hitAreaCacheManager = new HitAreaCacheManager();
         this.stateManager = new PetStateManager();
         this.wsServer = new PetWebSocketServer(WS_PORT);
         this.dispatcher = new MessageDispatcher();
@@ -163,6 +165,25 @@ public class AppOrchestrator {
         dispatcher.registerEventHandler("model_loaded", envelope -> {
             stateManager.setModelLoaded(true);
             log.debug("model_loaded event received for: {}", envelope.payload());
+
+            if (envelope.payload().has("model_id")) {
+                String modelId = envelope.payload().get("model_id").getAsString();
+
+                if (envelope.payload().has("hit_areas") && envelope.payload().get("hit_areas").isJsonArray()) {
+                    List<String> hitAreas = new ArrayList<>();
+                    for (com.google.gson.JsonElement item : envelope.payload().getAsJsonArray("hit_areas")) {
+                        if (item.isJsonPrimitive()) {
+                            hitAreas.add(item.getAsString());
+                        }
+                    }
+                    if (!hitAreas.isEmpty()) {
+                        hitAreaCacheManager.updateHitAreas(modelId, hitAreas);
+                        log.info("Cached {} hit areas for model {} from renderer", hitAreas.size(), modelId);
+                    }
+                }
+
+                sendHitAreasToRenderer(modelId);
+            }
         });
 
         dispatcher.registerEventHandler("model_load_failed", envelope -> {
@@ -285,6 +306,31 @@ public class AppOrchestrator {
             }
         } else {
             log.debug("No model_config.json found for {}, using default mappings", modelName);
+        }
+    }
+
+    private void sendHitAreasToRenderer(String modelName) {
+        List<String> hitAreas = hitAreaCacheManager.getHitAreas(modelName);
+
+        if (hitAreas.isEmpty()) {
+            Optional<ModelInfo> modelInfo = getModelInfo(modelName);
+            if (modelInfo.isPresent() && !modelInfo.get().hitAreas().isEmpty()) {
+                hitAreas = modelInfo.get().hitAreas();
+                hitAreaCacheManager.updateHitAreas(modelName, hitAreas);
+            }
+        }
+
+        if (!hitAreas.isEmpty()) {
+            JsonObject payload = new JsonObject();
+            com.google.gson.JsonArray areasArray = new com.google.gson.JsonArray();
+            for (String area : hitAreas) {
+                areasArray.add(area);
+            }
+            payload.add("hit_areas", areasArray);
+            sendCommand("set_hit_areas", payload);
+            log.info("Sent hit areas for model {}: {}", modelName, hitAreas);
+        } else {
+            log.warn("No hit areas found for model {} (neither from renderer event nor cache)", modelName);
         }
     }
 

@@ -542,6 +542,20 @@ csmBool LAppModel::HitTest(const csmChar* hitAreaName, csmFloat32 x, csmFloat32 
     return false; // 存在しない場合はfalse
 }
 
+std::vector<std::string> LAppModel::GetHitAreaNames() const
+{
+    std::vector<std::string> names;
+    if (_modelSetting)
+    {
+        const csmInt32 count = _modelSetting->GetHitAreasCount();
+        for (csmInt32 i = 0; i < count; i++)
+        {
+            names.push_back(_modelSetting->GetHitAreaName(i));
+        }
+    }
+    return names;
+}
+
 void LAppModel::SetExpression(const csmChar* expressionID)
 {
     ACubismMotion* motion = _expressions[expressionID];

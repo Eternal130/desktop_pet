@@ -13,6 +13,9 @@
 #include "LAppWavFileHandler_Common.hpp"
 #include "LAppModel_Common.hpp"
 
+#include <string>
+#include <vector>
+
 /**
  * @brief ユーザーが実際に使用するモデルの実装クラス<br>
  *         モデル生成、機能コンポーネント生成、更新処理とレンダリングの呼び出しを行う。
@@ -116,6 +119,8 @@ public:
      * @param[in]   y               判定を行うY座標
      */
     virtual Csm::csmBool HitTest(const Csm::csmChar* hitAreaName, Csm::csmFloat32 x, Csm::csmFloat32 y);
+
+    std::vector<std::string> GetHitAreaNames() const;
 
 protected:
     /**

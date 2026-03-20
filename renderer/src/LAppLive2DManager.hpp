@@ -10,6 +10,9 @@
 #include <Math/CubismMatrix44.hpp>
 #include <Type/csmVector.hpp>
 
+#include <string>
+#include <vector>
+
 class LAppModel;
 
 /**
@@ -92,9 +95,23 @@ public:
     Csm::csmUint32 GetModelNum() const;
 
     /**
-     * @brief   viewMatrixをセットする
-     */
+      * @brief   viewMatrixをセットする
+      */
     void SetViewMatrix(Live2D::Cubism::Framework::CubismMatrix44* m);
+
+    /**
+     * @brief   当たり判定対象のエリア名リストを設定する
+     *
+     * @param[in]   names   エリア名のリスト（コントローラーから渡される）
+     */
+    void SetHitAreaNames(const std::vector<std::string>& names);
+
+    /**
+     * @brief   当たり判定対象のエリア名リストを取得する
+     *
+     * @return  エリア名のリスト
+     */
+    const std::vector<std::string>& GetHitAreaNames() const;
 
 private:
     void LoadModel(const Csm::csmChar* modelName);
@@ -111,4 +128,5 @@ private:
 
     Csm::CubismMatrix44* _viewMatrix; ///< モデル描画に用いるView行列
     Csm::csmVector<LAppModel*> _models; ///< モデルインスタンスのコンテナ
+    std::vector<std::string> _hitAreaNames; ///< 当たり判定対象のエリア名リスト
 };

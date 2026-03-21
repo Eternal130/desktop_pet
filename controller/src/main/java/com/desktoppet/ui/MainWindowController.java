@@ -3,13 +3,22 @@ package com.desktoppet.ui;
 import com.desktoppet.core.AppOrchestrator;
 import com.desktoppet.core.InstanceConfigManager;
 import com.desktoppet.core.ModelScanner;
+import com.desktoppet.core.MountConfigManager;
 import com.desktoppet.core.PanelStateManager;
 import com.desktoppet.core.Scheduler;
+import com.desktoppet.core.HitAreaCacheManager;
+import com.desktoppet.core.InteractionHandler;
+import com.desktoppet.core.MetaMkoParser;
+import com.desktoppet.core.MountedBehaviorEngine;
+import com.desktoppet.core.VoicePackScanner;
 import com.desktoppet.model.Envelope;
 import com.desktoppet.model.InstanceState;
 import com.desktoppet.model.ModelInfo;
+import com.desktoppet.model.ModelConfig;
+import com.desktoppet.model.MountConfig;
 import com.desktoppet.model.PanelState;
 import com.desktoppet.model.PetInstance;
+import com.desktoppet.model.VoicePackInfo;
 import com.desktoppet.network.MessageDispatcher;
 import com.desktoppet.network.PetWebSocketServer;
 import com.desktoppet.network.Protocol;
@@ -70,6 +79,10 @@ public class MainWindowController {
     private final Map<Integer, Integer> restartAttempts = new ConcurrentHashMap<>();
     private final java.util.Set<Integer> manuallyStopping = ConcurrentHashMap.newKeySet();
     private final InstanceConfigManager instanceConfigManager = new InstanceConfigManager();
+    private final MountConfigManager mountConfigManager = new MountConfigManager();
+    private final HitAreaCacheManager hitAreaCacheManager = new HitAreaCacheManager();
+    private final Map<Integer, MountedBehaviorEngine> mountedEngines = new ConcurrentHashMap<>();
+    private final Map<Integer, InteractionHandler> interactionHandlers = new ConcurrentHashMap<>();
     private PanelStateManager panelStateManager;
     private PetWebSocketServer wsServer;
 
@@ -141,6 +154,7 @@ public class MainWindowController {
     @FXML private TextField posXField;
     @FXML private TextField posYField;
     @FXML private CheckBox autoStartCheck;
+    @FXML private ComboBox<String> voicePackCombo;
     @FXML private ListView<String> logListView;
 
     @FXML
@@ -305,6 +319,7 @@ public class MainWindowController {
     private void selectInstance(PetInstance instance) {
         currentInstance = instance;
         refreshModelList();
+        refreshVoicePackList();
         renderSidebar();
         renderDetail();
     }
@@ -359,6 +374,53 @@ public class MainWindowController {
                     info.expressions().size(),
                     info.hitAreas().size());
         });
+    }
+
+    private void refreshVoicePackList() {
+        if (currentInstance == null) {
+            voicePackCombo.getItems().clear();
+            return;
+        }
+
+        Path resourcesDir = ModelScanner.resolveResourcesDir(currentInstance.getRendererPath());
+        List<String> voicePacks = VoicePackScanner.scanAvailableVoicePacks(resourcesDir);
+
+        updatingUI = true;
+        try {
+            voicePackCombo.getItems().clear();
+            voicePackCombo.getItems().add("(无)");
+            voicePackCombo.getItems().addAll(voicePacks);
+
+            String model = currentInstance.getModel();
+            if (model != null && !model.isEmpty()) {
+                MountConfig mc = mountConfigManager.loadForModel(model);
+                voicePackCombo.setValue(mc.voicePackName() != null ? mc.voicePackName() : "(无)");
+            } else {
+                voicePackCombo.setValue("(无)");
+            }
+        } finally {
+            updatingUI = false;
+        }
+    }
+
+    @FXML
+    private void onVoicePackChanged() {
+        if (updatingUI || currentInstance == null) {
+            return;
+        }
+        String model = currentInstance.getModel();
+        if (model == null || model.isEmpty()) {
+            return;
+        }
+        String selected = voicePackCombo.getValue();
+        if (selected == null || "(无)".equals(selected)) {
+            mountConfigManager.saveForModel(new MountConfig(model, null));
+            currentInstance.addLog("✦ 卸载语音包");
+        } else {
+            mountConfigManager.saveForModel(new MountConfig(model, selected));
+            currentInstance.addLog("✦ 挂载语音包: " + selected);
+        }
+        initMountedEngine(currentInstance);
     }
 
     private void renderSidebar() {
@@ -468,6 +530,15 @@ public class MainWindowController {
             posXField.setText(String.valueOf(currentInstance.getPosX()));
             posYField.setText(String.valueOf(currentInstance.getPosY()));
             autoStartCheck.setSelected(currentInstance.isAutoStart());
+
+            String vpModel = currentInstance.getModel();
+            if (vpModel != null && !vpModel.isEmpty()) {
+                MountConfig mc = mountConfigManager.loadForModel(vpModel);
+                voicePackCombo.setValue(mc.voicePackName() != null ? mc.voicePackName() : "(无)");
+            } else {
+                voicePackCombo.setValue("(无)");
+            }
+
             logListView.setItems(currentInstance.getLogs());
         } finally {
             updatingUI = false;
@@ -615,8 +686,15 @@ public class MainWindowController {
             Protocol.deserialize(rawMsg).ifPresent(envelope -> {
                 PetInstance instance = findInstanceById(instanceId);
                 if (instance != null) {
-                    Platform.runLater(() ->
-                        instance.addLog("← " + envelope.type() + "/" + envelope.action()));
+                    Platform.runLater(() -> {
+                        if ("response".equals(envelope.type()) && Boolean.FALSE.equals(envelope.success())) {
+                            String errMsg = envelope.errorMessage() != null && !envelope.errorMessage().isEmpty()
+                                    ? envelope.errorMessage() : "code=" + envelope.errorCode();
+                            instance.addLog("✖ ← response/" + envelope.action() + ": " + errMsg);
+                        } else {
+                            instance.addLog("← " + envelope.type() + "/" + envelope.action());
+                        }
+                    });
                 }
                 MessageDispatcher dispatcher = dispatchers.get(instanceId);
                 if (dispatcher != null) dispatcher.dispatch(envelope);
@@ -632,6 +710,18 @@ public class MainWindowController {
                 .filter(i -> i.getId() == instanceId)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private static String resolveMotionLabel(Envelope envelope) {
+        if (envelope.payload().has("group")) {
+            return envelope.payload().get("group").getAsString();
+        }
+        if (envelope.payload().has("motion_path")) {
+            String path = envelope.payload().get("motion_path").getAsString();
+            int sep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+            return sep >= 0 ? path.substring(sep + 1) : path;
+        }
+        return "?";
     }
 
     private String findRendererExecutable() {
@@ -829,12 +919,21 @@ public class MainWindowController {
         instance.setStatus("stopped");
         instance.setConnected(false);
         restartAttempts.remove(id);
+        mountedEngines.remove(id);
+        interactionHandlers.remove(id);
         log.info("Instance {} stopped", id);
     }
 
     private void registerInstanceEventHandlers(PetInstance instance,
                                                    MessageDispatcher dispatcher) {
         int id = instance.getId();
+
+        InteractionHandler interactionHandler = new InteractionHandler(msg -> {
+            if (wsServer != null && wsServer.hasActiveConnection(id)) {
+                wsServer.sendToInstance(id, msg);
+            }
+        });
+        interactionHandlers.put(id, interactionHandler);
 
         dispatcher.registerEventHandler("ready", envelope -> Platform.runLater(() -> {
             instance.addLog("◇ 渲染引擎就绪");
@@ -865,6 +964,29 @@ public class MainWindowController {
 
         dispatcher.registerEventHandler("model_loaded", envelope -> Platform.runLater(() -> {
             instance.addLog("◇ 模型加载完成");
+
+            if (envelope.payload().has("model_id")) {
+                String modelId = envelope.payload().get("model_id").getAsString();
+
+                if (envelope.payload().has("hit_areas")
+                        && envelope.payload().get("hit_areas").isJsonArray()) {
+                    List<String> hitAreas = new ArrayList<>();
+                    for (com.google.gson.JsonElement item
+                            : envelope.payload().getAsJsonArray("hit_areas")) {
+                        if (item.isJsonPrimitive()) {
+                            hitAreas.add(item.getAsString());
+                        }
+                    }
+                    if (!hitAreas.isEmpty()) {
+                        hitAreaCacheManager.updateHitAreas(modelId, hitAreas);
+                    }
+                }
+
+                sendHitAreasToRenderer(instance, modelId);
+            }
+
+            loadModelConfig(instance);
+            initMountedEngine(instance);
             startInstanceScheduler(instance);
             renderSidebar();
             if (currentInstance == instance) renderDetail();
@@ -875,21 +997,34 @@ public class MainWindowController {
         }));
 
         dispatcher.registerEventHandler("motion_started", envelope -> Platform.runLater(() -> {
-            String group = envelope.payload().has("group")
-                    ? envelope.payload().get("group").getAsString() : "?";
-            instance.addLog("▶ 动作开始: " + group);
+            String label = resolveMotionLabel(envelope);
+            instance.addLog("▶ 动作开始: " + label);
         }));
 
         dispatcher.registerEventHandler("motion_finished", envelope -> Platform.runLater(() -> {
-            String group = envelope.payload().has("group")
-                    ? envelope.payload().get("group").getAsString() : "?";
-            instance.addLog("■ 动作结束: " + group);
+            String label = resolveMotionLabel(envelope);
+            instance.addLog("■ 动作结束: " + label);
         }));
 
         dispatcher.registerEventHandler("hit", envelope -> Platform.runLater(() -> {
             String areaId = envelope.payload().has("area_id")
                     ? envelope.payload().get("area_id").getAsString() : "?";
             instance.addLog("👆 点击命中: " + areaId);
+
+            MountedBehaviorEngine engine = mountedEngines.get(id);
+            if (engine != null && engine.hasGroupForArea(areaId)) {
+                String cmd = engine.buildMotionCommand(areaId);
+                if (cmd != null) {
+                    wsServer.sendToInstance(id, cmd);
+                    instance.addLog("▶ 语音包动作: " + areaId);
+                    return;
+                }
+            }
+
+            InteractionHandler handler = interactionHandlers.get(id);
+            if (handler != null) {
+                handler.handleHitEvent(envelope);
+            }
         }));
 
         dispatcher.registerEventHandler("drag_start", envelope ->
@@ -942,6 +1077,93 @@ public class MainWindowController {
 
         schedulers.put(id, scheduler);
         instance.addLog("◇ 调度器已启动: 间隔=" + instance.getIdleInterval() + "s");
+    }
+
+    private void initMountedEngine(PetInstance instance) {
+        int id = instance.getId();
+        String model = instance.getModel();
+        if (model == null || model.isEmpty()) {
+            mountedEngines.remove(id);
+            return;
+        }
+
+        MountConfig mc = mountConfigManager.loadForModel(model);
+        if (mc.voicePackName() != null) {
+            VoicePackInfo info = resolveVoicePackInfo(instance.getRendererPath(), mc.voicePackName());
+            if (info != null) {
+                mountedEngines.put(id, new MountedBehaviorEngine(info));
+                log.info("Mounted voice pack '{}' on instance {} model '{}'",
+                        mc.voicePackName(), id, model);
+                return;
+            }
+            log.warn("Voice pack '{}' not found for instance {} model '{}'",
+                    mc.voicePackName(), id, model);
+        }
+        mountedEngines.remove(id);
+    }
+
+    private VoicePackInfo resolveVoicePackInfo(String rendererPath, String voicePackName) {
+        Path resourcesDir = ModelScanner.resolveResourcesDir(rendererPath);
+        if (resourcesDir == null || voicePackName == null) {
+            return null;
+        }
+        Path vpDir = resourcesDir.resolve(voicePackName);
+        if (!Files.isDirectory(vpDir)) {
+            return null;
+        }
+        return MetaMkoParser.parse(vpDir);
+    }
+
+    private void sendHitAreasToRenderer(PetInstance instance, String modelName) {
+        List<String> hitAreas = hitAreaCacheManager.getHitAreas(modelName);
+
+        if (hitAreas.isEmpty()) {
+            ModelScanner.getModelInfo(instance.getRendererPath(), modelName).ifPresent(info -> {
+                if (!info.hitAreas().isEmpty()) {
+                    hitAreaCacheManager.updateHitAreas(modelName, info.hitAreas());
+                }
+            });
+            hitAreas = hitAreaCacheManager.getHitAreas(modelName);
+        }
+
+        if (!hitAreas.isEmpty()) {
+            JsonObject payload = new JsonObject();
+            com.google.gson.JsonArray areasArray = new com.google.gson.JsonArray();
+            for (String area : hitAreas) {
+                areasArray.add(area);
+            }
+            payload.add("hit_areas", areasArray);
+            sendInstanceCommand(instance, "set_hit_areas", payload);
+            log.info("Sent hit areas for instance {} model {}: {}",
+                    instance.getId(), modelName, hitAreas);
+        }
+    }
+
+    private void loadModelConfig(PetInstance instance) {
+        String modelName = instance.getModel();
+        if (modelName == null || modelName.isEmpty()) {
+            return;
+        }
+        Path resourcesDir = ModelScanner.resolveResourcesDir(instance.getRendererPath());
+        if (resourcesDir == null) {
+            return;
+        }
+        InteractionHandler handler = interactionHandlers.get(instance.getId());
+        if (handler == null) {
+            return;
+        }
+        Path modelConfigPath = resourcesDir.resolve(modelName).resolve("model_config.json");
+        if (Files.exists(modelConfigPath)) {
+            try {
+                String json = Files.readString(modelConfigPath);
+                ModelConfig modelConfig = new com.google.gson.Gson().fromJson(json, ModelConfig.class);
+                handler.setModelConfig(modelConfig);
+                log.info("Loaded model_config.json for instance {} model: {}",
+                        instance.getId(), modelName);
+            } catch (Exception e) {
+                log.warn("Failed to load model_config.json for {}: {}", modelName, e.getMessage());
+            }
+        }
     }
 
     private void sendInstanceCommand(PetInstance instance, String action, JsonObject payload) {
@@ -997,6 +1219,7 @@ public class MainWindowController {
         payload.addProperty("model_path", selected);
         sendInstanceCommand(currentInstance, "load_model", payload);
         refreshModelInfo();
+        refreshVoicePackList();
         renderSidebar();
         renderDetail();
     }

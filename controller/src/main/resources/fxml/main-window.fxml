@@ -54,6 +54,8 @@
                         <Label fx:id="modelNameCard" text="Hiyori" styleClass="card-model-name"/>
                         <ComboBox fx:id="modelSelectCombo" styleClass="model-select" maxWidth="1.7976931348623157E308" onAction="#onModelChanged"/>
                         <Label fx:id="statsLabel" text="4 动作组 · 4 表情 · 2 触控区" styleClass="stats-row"/>
+                        <Label text="语音包" styleClass="setting-label"/>
+                        <ComboBox fx:id="voicePackCombo" styleClass="model-select" maxWidth="1.7976931348623157E308" onAction="#onVoicePackChanged"/>
                     </VBox>
 
                     <VBox spacing="20" HBox.hgrow="ALWAYS">

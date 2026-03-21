@@ -15,13 +15,18 @@ import org.slf4j.LoggerFactory;
 
 import com.desktoppet.model.ModelInfo;
 import com.desktoppet.model.ModelSettingsConfig;
+import com.desktoppet.model.MountConfig;
+import com.desktoppet.model.VoicePackInfo;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -53,6 +58,11 @@ public class AppOrchestrator {
             "load_model", "set_position", "set_opacity"
     );
     private static final Path RENDERER_DIR = Path.of("../renderer/build/bin/desktop-pet-renderer");
+
+    private MountConfigManager mountConfigManager;
+    private volatile MountedBehaviorEngine mountedEngine;
+    private final Map<String, VoicePackInfo> voicePackInfoCache = new LinkedHashMap<>();
+    private final List<String> availableVoicePacks = new ArrayList<>();
 
     private PetConfig config;
     private MainWindowController uiController;
@@ -96,6 +106,20 @@ public class AppOrchestrator {
 
         config = configManager.load();
         log.info("Config loaded: model={}, port={}", config.model().currentModelName(), WS_PORT);
+
+        this.mountConfigManager = new MountConfigManager();
+        Path resourcesDir = RENDERER_DIR.resolve("Resources");
+        List<String> vpNames = VoicePackScanner.scanAvailableVoicePacks(resourcesDir);
+        for (String vpName : vpNames) {
+            Path vpDir = resourcesDir.resolve(vpName);
+            VoicePackInfo info = MetaMkoParser.parse(vpDir);
+            if (info != null) {
+                voicePackInfoCache.put(vpName, info);
+            }
+        }
+        availableVoicePacks.clear();
+        availableVoicePacks.addAll(voicePackInfoCache.keySet());
+        log.info("Discovered {} voice packs: {}", availableVoicePacks.size(), availableVoicePacks);
 
         wsServer.setReuseAddr(true);
         wsServer.start();
@@ -183,6 +207,7 @@ public class AppOrchestrator {
                 }
 
                 sendHitAreasToRenderer(modelId);
+                initMountedEngine(modelId);
             }
         });
 
@@ -210,6 +235,15 @@ public class AppOrchestrator {
             String areaId = envelope.payload().has("area_id") ? envelope.payload().get("area_id").getAsString() : "?";
             notifyActivity("点击命中: " + areaId);
             notifyMessageLog("←", "event", "hit", areaId);
+
+            MountedBehaviorEngine engine = mountedEngine;
+            if (engine != null && engine.hasGroupForArea(areaId)) {
+                String cmd = engine.buildMotionCommand(areaId);
+                if (cmd != null) {
+                    sendOrCache("play_motion_ext", cmd);
+                    return;
+                }
+            }
             interactionHandler.handleHitEvent(envelope);
         });
 
@@ -331,6 +365,20 @@ public class AppOrchestrator {
             log.info("Sent hit areas for model {}: {}", modelName, hitAreas);
         } else {
             log.warn("No hit areas found for model {} (neither from renderer event nor cache)", modelName);
+        }
+    }
+
+    private void initMountedEngine(String modelName) {
+        MountConfig mc = mountConfigManager.loadForModel(modelName);
+        if (mc.voicePackName() != null && voicePackInfoCache.containsKey(mc.voicePackName())) {
+            VoicePackInfo info = voicePackInfoCache.get(mc.voicePackName());
+            mountedEngine = new MountedBehaviorEngine(info);
+            log.info("Mounted voice pack '{}' on model '{}'", mc.voicePackName(), modelName);
+        } else {
+            mountedEngine = null;
+            if (mc.voicePackName() != null) {
+                log.warn("Voice pack '{}' not found in cache for model '{}'", mc.voicePackName(), modelName);
+            }
         }
     }
 
@@ -503,6 +551,29 @@ public class AppOrchestrator {
         Path model3Json = RENDERER_DIR.resolve("Resources")
                 .resolve(modelName).resolve(modelName + ".model3.json");
         return ModelInfoParser.parse(model3Json);
+    }
+
+    public List<String> getAvailableVoicePacks() {
+        return Collections.unmodifiableList(availableVoicePacks);
+    }
+
+    public String getCurrentVoicePackForModel(String modelName) {
+        return mountConfigManager != null
+            ? mountConfigManager.loadForModel(modelName).voicePackName()
+            : null;
+    }
+
+    public void mountVoicePack(String modelName, String voicePackName) {
+        if (mountConfigManager == null) return;
+        mountConfigManager.saveForModel(new MountConfig(modelName, voicePackName));
+        String currentModel = stateManager.getState().currentModelName();
+        if (modelName.equals(currentModel)) {
+            initMountedEngine(modelName);
+        }
+    }
+
+    public void unmountVoicePack(String modelName) {
+        mountVoicePack(modelName, null);
     }
 
     public void applyConfig(PetConfig newConfig) {

@@ -170,6 +170,25 @@ void LAppDelegate::Run()
         // 時間更新
         LAppPal::UpdateTime();
 
+        // Global cursor eye tracking — use Win32 GetCursorPos to track beyond GLFW window bounds
+        if (!_isDragging)
+        {
+            POINT cursorPos;
+            if (GetCursorPos(&cursorPos))
+            {
+                int windowX, windowY;
+                glfwGetWindowPos(_window, &windowX, &windowY);
+
+                float localX = static_cast<float>(cursorPos.x - windowX);
+                float localY = static_cast<float>(cursorPos.y - windowY);
+
+                float viewX = _view->TransformViewX(localX);
+                float viewY = _view->TransformViewY(localY);
+
+                LAppLive2DManager::GetInstance()->OnDrag(viewX, viewY);
+            }
+        }
+
         // 画面の初期化 (alpha=0 for transparency)
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

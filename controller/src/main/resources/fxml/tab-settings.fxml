@@ -37,6 +37,16 @@
     </VBox>
     <Separator/>
 
+    <!-- Voice Pack -->
+    <VBox spacing="8">
+        <Label text="语音包" styleClass="section-title"/>
+        <HBox spacing="10" alignment="CENTER_LEFT">
+            <Label text="挂载语音包" prefWidth="80"/>
+            <ComboBox fx:id="voicePackComboBox" prefWidth="200" onAction="#onVoicePackChanged"/>
+        </HBox>
+    </VBox>
+    <Separator/>
+
     <!-- Hit Action Mapping -->
     <VBox spacing="5">
         <Label text="点击交互映射" styleClass="section-title"/>

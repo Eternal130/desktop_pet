@@ -12,6 +12,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.RadioButton;
 import javafx.scene.control.Slider;
@@ -23,6 +24,7 @@ import javafx.scene.control.ToggleGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Map;
 
 public class SettingsTabController {
@@ -38,6 +40,7 @@ public class SettingsTabController {
     @FXML private TableColumn<HitMappingRow, String> motionGroupColumn;
     @FXML private TableColumn<HitMappingRow, Number> priorityColumn;
     @FXML private CheckBox autoStartCheckBox;
+    @FXML private ComboBox<String> voicePackComboBox;
 
     private ToggleGroup dragModeGroup;
     private AppOrchestrator orchestrator;
@@ -62,6 +65,37 @@ public class SettingsTabController {
     public void init(AppOrchestrator orchestrator) {
         this.orchestrator = orchestrator;
         loadConfig();
+        refreshVoicePacks();
+    }
+
+    private void refreshVoicePacks() {
+        if (orchestrator == null || voicePackComboBox == null) return;
+        String currentModel = orchestrator.getConfig() != null
+            ? orchestrator.getConfig().model().currentModelName() : null;
+        
+        List<String> voicePacks = orchestrator.getAvailableVoicePacks();
+        
+        voicePackComboBox.getItems().clear();
+        voicePackComboBox.getItems().add("(无)");
+        voicePackComboBox.getItems().addAll(voicePacks);
+        
+        String current = currentModel != null ? orchestrator.getCurrentVoicePackForModel(currentModel) : null;
+        voicePackComboBox.setValue(current != null ? current : "(无)");
+    }
+
+    @FXML
+    private void onVoicePackChanged() {
+        if (orchestrator == null || voicePackComboBox == null) return;
+        String currentModel = orchestrator.getConfig() != null
+            ? orchestrator.getConfig().model().currentModelName() : null;
+        if (currentModel == null) return;
+        
+        String selected = voicePackComboBox.getValue();
+        if (selected == null || selected.equals("(无)")) {
+            orchestrator.unmountVoicePack(currentModel);
+        } else {
+            orchestrator.mountVoicePack(currentModel, selected);
+        }
     }
 
     public void loadConfig() {

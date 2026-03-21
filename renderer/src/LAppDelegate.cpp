@@ -288,6 +288,44 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
     {
         return;
     }
+
+    if (GLFW_MOUSE_BUTTON_MIDDLE == button)
+    {
+        if (GLFW_PRESS == action)
+        {
+            float x = _view->TransformScreenX(_mouseX);
+            float y = _view->TransformScreenY(_mouseY);
+
+            if (IsHitModel(x, y))
+            {
+                _isDragging = true;
+                _dragStartX = _mouseX;
+                _dragStartY = _mouseY;
+                glfwGetWindowPos(_window, &_windowStartX, &_windowStartY);
+
+                if (_eventEmitter && _eventEmitter->isActive())
+                {
+                    _eventEmitter->emit("drag_start", {{"x", static_cast<float>(_mouseX)}, {"y", static_cast<float>(_mouseY)}});
+                }
+            }
+        }
+        else if (GLFW_RELEASE == action)
+        {
+            if (_isDragging)
+            {
+                _isDragging = false;
+
+                if (_eventEmitter && _eventEmitter->isActive())
+                {
+                    int wx, wy;
+                    glfwGetWindowPos(_window, &wx, &wy);
+                    _eventEmitter->emit("drag_end", {{"x", static_cast<float>(_mouseX)}, {"y", static_cast<float>(_mouseY)}, {"window_x", wx}, {"window_y", wy}});
+                }
+            }
+        }
+        return;
+    }
+
     if (GLFW_MOUSE_BUTTON_LEFT != button)
     {
         return;
@@ -297,42 +335,13 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
     {
         _captured = true;
         _view->OnTouchesBegan(_mouseX, _mouseY);
-
-        float x = _view->TransformScreenX(_mouseX);
-        float y = _view->TransformScreenY(_mouseY);
-
-        if (!IsHitModel(x, y))
-        {
-            _isDragging = true;
-            _dragStartX = _mouseX;
-            _dragStartY = _mouseY;
-            glfwGetWindowPos(_window, &_windowStartX, &_windowStartY);
-
-            if (_eventEmitter && _eventEmitter->isActive())
-            {
-                _eventEmitter->emit("drag_start", {{"x", static_cast<float>(_mouseX)}, {"y", static_cast<float>(_mouseY)}});
-            }
-        }
     }
     else if (GLFW_RELEASE == action)
     {
-        const bool wasDragging = _isDragging;
-        _isDragging = false;
-
-        if (wasDragging && _eventEmitter && _eventEmitter->isActive())
-        {
-            int wx, wy;
-            glfwGetWindowPos(_window, &wx, &wy);
-            _eventEmitter->emit("drag_end", {{"x", static_cast<float>(_mouseX)}, {"y", static_cast<float>(_mouseY)}, {"window_x", wx}, {"window_y", wy}});
-        }
-
         if (_captured)
         {
             _captured = false;
-            if (!wasDragging)
-            {
-                _view->OnTouchesEnded(_mouseX, _mouseY);
-            }
+            _view->OnTouchesEnded(_mouseX, _mouseY);
         }
     }
 }

@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 
+namespace Network { class EventEmitter; }
+
 /**
  * @brief ユーザーが実際に使用するモデルの実装クラス<br>
  *         モデル生成、機能コンポーネント生成、更新処理とレンダリングの呼び出しを行う。
@@ -73,6 +75,9 @@ public:
     Csm::CubismMotionQueueEntryHandle StartMotion(const Csm::csmChar* group, Csm::csmInt32 no, Csm::csmInt32 priority, Csm::ACubismMotion::FinishedMotionCallback onFinishedMotionHandler = NULL, Csm::ACubismMotion::BeganMotionCallback onBeganMotionHandler = NULL);
 
     Csm::CubismMotionQueueEntryHandle StartMotionWithCustomData(const Csm::csmChar* group, Csm::csmInt32 no, Csm::csmInt32 priority, Csm::ACubismMotion::FinishedMotionCallback onFinishedMotionHandler, void* customData);
+
+    void StartMotionFromFile(const std::string& filePath, int priority,
+                             float fadeIn, float fadeOut, Network::EventEmitter* emitter);
 
     /**
      * @brief   ランダムに選ばれたモーションの再生を開始する。

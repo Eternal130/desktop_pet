@@ -20,6 +20,7 @@
 #include "LAppPal.hpp"
 #include "LAppTextureManager.hpp"
 #include "LAppDelegate.hpp"
+#include "network/EventEmitter.hpp"
 
 using namespace Live2D::Cubism::Framework;
 using namespace Live2D::Cubism::Framework::DefaultParameterId;
@@ -642,4 +643,55 @@ void LAppModel::SetupTextures()
 void LAppModel::MotionEventFired(const csmString& eventValue)
 {
     CubismLogInfo("%s is fired on LAppModel!!", eventValue.GetRawString());
+}
+
+namespace {
+
+struct ExtMotionCtx {
+    Network::EventEmitter* emitter;
+    std::string filePath;
+};
+
+static void OnExtMotionFinishedStatic(Csm::ACubismMotion* motion) {
+    auto* ctx = static_cast<ExtMotionCtx*>(motion->GetFinishedMotionCustomData());
+    if (ctx) {
+        if (ctx->emitter) {
+            ctx->emitter->emit("motion_finished", {{"motion_path", ctx->filePath}});
+        }
+        delete ctx;
+        motion->SetFinishedMotionCustomData(nullptr);
+    }
+}
+
+}
+
+void LAppModel::StartMotionFromFile(const std::string& filePath, int priority,
+                                     float fadeIn, float fadeOut, Network::EventEmitter* emitter)
+{
+    csmByte* buffer;
+    csmSizeInt size;
+    buffer = CreateBuffer(filePath.c_str(), &size);
+    if (!buffer || size == 0) {
+        LAppPal::PrintLogLn("[LAppModel] StartMotionFromFile: failed to read file: %s", filePath.c_str());
+        if (buffer) { DeleteBuffer(buffer, filePath.c_str()); }
+        return;
+    }
+
+    CubismMotion* motion = static_cast<CubismMotion*>(LoadMotion(buffer, size, NULL, NULL, NULL));
+    DeleteBuffer(buffer, filePath.c_str());
+
+    if (!motion) {
+        LAppPal::PrintLogLn("[LAppModel] StartMotionFromFile: failed to create motion from: %s", filePath.c_str());
+        return;
+    }
+
+    motion->SetFadeInTime(fadeIn);
+    motion->SetFadeOutTime(fadeOut);
+    motion->SetEffectIds(_eyeBlinkIds, _lipSyncIds);
+
+    auto* ctx = new ExtMotionCtx{emitter, filePath};
+    motion->SetFinishedMotionHandler(OnExtMotionFinishedStatic);
+    motion->SetFinishedMotionCustomData(ctx);
+
+    _motionManager->StartMotionPriority(motion, true, priority);
 }

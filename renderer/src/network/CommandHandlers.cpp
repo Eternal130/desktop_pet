@@ -100,6 +100,39 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         }
     });
 
+    handler.registerCommand("play_motion_ext", [delegate](const Envelope& cmd, auto sendResponse) {
+        std::string motionPath = cmd.payload.value("motion_path", "");
+        if (motionPath.empty()) {
+            sendResponse(createResponse(cmd.id, "play_motion_ext", false, 3001, "motion_path is required"));
+            return;
+        }
+        struct stat st;
+        if (stat(motionPath.c_str(), &st) != 0) {
+            sendResponse(createResponse(cmd.id, "play_motion_ext", false, 3002, "motion file not found: " + motionPath));
+            return;
+        }
+        int priority = cmd.payload.value("priority", 2);
+        float fadeIn = cmd.payload.value("fade_in", 1.0f);
+        float fadeOut = cmd.payload.value("fade_out", 1.0f);
+
+        LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
+        if (manager->GetModelNum() == 0) {
+            sendResponse(createResponse(cmd.id, "play_motion_ext", false, 2001, "No model loaded"));
+            return;
+        }
+        LAppModel* model = manager->GetModel(0);
+        if (!model) {
+            sendResponse(createResponse(cmd.id, "play_motion_ext", false, 2001, "No model loaded"));
+            return;
+        }
+        auto* emitter = delegate->GetEventEmitter();
+        model->StartMotionFromFile(motionPath, priority, fadeIn, fadeOut, emitter);
+        if (emitter) {
+            emitter->emit("motion_started", {{"motion_path", motionPath}});
+        }
+        sendResponse(createResponse(cmd.id, "play_motion_ext", true));
+    });
+
     handler.registerCommand("stop_motion", [](const Envelope& cmd, auto sendResponse) {
         LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
         if (manager->GetModelNum() > 0) {

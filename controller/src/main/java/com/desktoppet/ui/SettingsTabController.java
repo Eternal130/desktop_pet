@@ -35,6 +35,9 @@ public class SettingsTabController {
     @FXML private RadioButton directModeRadio;
     @FXML private RadioButton physicsModeRadio;
     @FXML private Spinner<Integer> idleIntervalSpinner;
+    @FXML private RadioButton adaptiveFpsRadio;
+    @FXML private RadioButton fixedFpsRadio;
+    @FXML private Spinner<Integer> fpsSpinner;
     @FXML private TableView<HitMappingRow> hitMappingTable;
     @FXML private TableColumn<HitMappingRow, String> hitAreaColumn;
     @FXML private TableColumn<HitMappingRow, String> motionGroupColumn;
@@ -43,6 +46,7 @@ public class SettingsTabController {
     @FXML private ComboBox<String> voicePackComboBox;
 
     private ToggleGroup dragModeGroup;
+    private ToggleGroup fpsModeGroup;
     private AppOrchestrator orchestrator;
 
     @FXML
@@ -53,6 +57,21 @@ public class SettingsTabController {
 
         idleIntervalSpinner.setValueFactory(
                 new SpinnerValueFactory.IntegerSpinnerValueFactory(1, 60, 10));
+
+        fpsModeGroup = new ToggleGroup();
+        adaptiveFpsRadio.setToggleGroup(fpsModeGroup);
+        fixedFpsRadio.setToggleGroup(fpsModeGroup);
+
+        fpsSpinner.setValueFactory(
+                new SpinnerValueFactory.IntegerSpinnerValueFactory(15, 120, 30));
+        fpsSpinner.setDisable(true);
+
+        fpsModeGroup.selectedToggleProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                boolean fixed = "fixed".equals(((RadioButton) newVal).getUserData());
+                fpsSpinner.setDisable(!fixed);
+            }
+        });
 
         opacitySlider.valueProperty().addListener((obs, oldVal, newVal) ->
                 opacityValueLabel.setText(String.format("%.2f", newVal.doubleValue())));
@@ -110,6 +129,16 @@ public class SettingsTabController {
         }
 
         idleIntervalSpinner.getValueFactory().setValue(config.behavior().idleIntervalSeconds());
+
+        int targetFps = config.behavior().targetFps();
+        if (targetFps > 0) {
+            fixedFpsRadio.setSelected(true);
+            fpsSpinner.getValueFactory().setValue(targetFps);
+        } else {
+            adaptiveFpsRadio.setSelected(true);
+            fpsSpinner.getValueFactory().setValue(30);
+        }
+
         opacitySlider.setValue(config.window().opacity());
         opacityValueLabel.setText(String.format("%.2f", config.window().opacity()));
         autoStartCheckBox.setSelected(config.system().autoStart());
@@ -144,8 +173,12 @@ public class SettingsTabController {
         double opacity = opacitySlider.getValue();
         boolean autoStart = autoStartCheckBox.isSelected();
 
+        RadioButton fpsSelected = (RadioButton) fpsModeGroup.getSelectedToggle();
+        boolean fixedFps = fpsSelected != null && "fixed".equals(fpsSelected.getUserData());
+        int targetFps = fixedFps ? fpsSpinner.getValue() : 0;
+
         PetConfig current = orchestrator.getConfig();
-        var newBehavior = new BehaviorConfig(dragMode, idleInterval);
+        var newBehavior = new BehaviorConfig(dragMode, idleInterval, targetFps);
         var newWindow = new WindowConfig(
                 current.window().positionX(),
                 current.window().positionY(),
@@ -170,6 +203,8 @@ public class SettingsTabController {
         PetConfig defaults = PetConfig.defaults();
         directModeRadio.setSelected(true);
         idleIntervalSpinner.getValueFactory().setValue(defaults.behavior().idleIntervalSeconds());
+        adaptiveFpsRadio.setSelected(true);
+        fpsSpinner.getValueFactory().setValue(30);
         opacitySlider.setValue(defaults.window().opacity());
         autoStartCheckBox.setSelected(defaults.system().autoStart());
         onResetMappings();

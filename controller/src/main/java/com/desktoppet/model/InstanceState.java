@@ -10,11 +10,12 @@ public record InstanceState(
     int posX,
     int posY,
     boolean autoStart,
-    String currentExpression
+    String currentExpression,
+    int targetFps
 ) {
     public static InstanceState defaults() {
         return new InstanceState(
-            "新实例", "", "", 1.0, "direct", 10, 1200, 600, false, "F01"
+            "新实例", "", "", 1.0, "direct", 10, 1200, 600, false, "F01", 0
         );
     }
 }

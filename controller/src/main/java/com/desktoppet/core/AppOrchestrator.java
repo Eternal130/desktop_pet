@@ -170,6 +170,11 @@ public class AppOrchestrator {
                                 Protocol.serialize(Protocol.createCommand("set_position", posPayload))
                         );
 
+                        JsonObject fpsPayload = new JsonObject();
+                        fpsPayload.addProperty("fps", config.behavior().targetFps());
+                        sendOrCache("set_fps",
+                                Protocol.serialize(Protocol.createCommand("set_fps", fpsPayload)));
+
                         startSchedulerForModel(modelName);
                         stateManager.updateModelName(modelName);
                         updateUiModelName(modelName);
@@ -590,6 +595,13 @@ public class AppOrchestrator {
         if (oldConfig == null
                 || oldConfig.behavior().idleIntervalSeconds() != newConfig.behavior().idleIntervalSeconds()) {
             scheduler.updateInterval(Math.max(1, newConfig.behavior().idleIntervalSeconds()) * 1000);
+        }
+
+        if (oldConfig == null
+                || oldConfig.behavior().targetFps() != newConfig.behavior().targetFps()) {
+            JsonObject fpsPayload = new JsonObject();
+            fpsPayload.addProperty("fps", newConfig.behavior().targetFps());
+            sendCommand("set_fps", fpsPayload);
         }
 
         if (uiController != null) {

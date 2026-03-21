@@ -25,6 +25,7 @@ public class PetInstance {
     private final IntegerProperty posX;
     private final IntegerProperty posY;
     private final BooleanProperty autoStart;
+    private final IntegerProperty targetFps;
     private final StringProperty currentExpression;
     private final StringProperty rendererPath;
     private final ObservableList<String> logs;
@@ -41,6 +42,7 @@ public class PetInstance {
         this.posX = new SimpleIntegerProperty(1200);
         this.posY = new SimpleIntegerProperty(600);
         this.autoStart = new SimpleBooleanProperty(false);
+        this.targetFps = new SimpleIntegerProperty(0);
         this.currentExpression = new SimpleStringProperty("F01");
         this.rendererPath = new SimpleStringProperty(rendererPath);
         this.logs = FXCollections.observableArrayList();
@@ -59,6 +61,7 @@ public class PetInstance {
         instance.setPosX(state.posX());
         instance.setPosY(state.posY());
         instance.setAutoStart(state.autoStart());
+        instance.setTargetFps(state.targetFps());
         instance.setCurrentExpression(state.currentExpression());
         return instance;
     }
@@ -67,7 +70,8 @@ public class PetInstance {
         return new InstanceState(
                 getLabel(), getModel(), getRendererPath(),
                 getOpacity(), getDragMode(), getIdleInterval(),
-                getPosX(), getPosY(), isAutoStart(), getCurrentExpression()
+                getPosX(), getPosY(), isAutoStart(), getCurrentExpression(),
+                getTargetFps()
         );
     }
 
@@ -132,6 +136,10 @@ public class PetInstance {
     public void setAutoStart(boolean v) { autoStart.set(v); }
     public BooleanProperty autoStartProperty() { return autoStart; }
 
+
+    public int getTargetFps() { return targetFps.get(); }
+    public void setTargetFps(int v) { targetFps.set(v); }
+    public IntegerProperty targetFpsProperty() { return targetFps; }
 
     public String getCurrentExpression() { return currentExpression.get(); }
     public void setCurrentExpression(String v) { currentExpression.set(v); }

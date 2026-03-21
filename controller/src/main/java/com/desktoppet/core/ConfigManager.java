@@ -88,7 +88,8 @@ public class ConfigManager {
 
         BehaviorConfig behavior = new BehaviorConfig(
             getString(behaviorObj, "drag_mode", defaults.behavior().dragMode()),
-            getInt(behaviorObj, "idle_interval_seconds", defaults.behavior().idleIntervalSeconds())
+            getInt(behaviorObj, "idle_interval_seconds", defaults.behavior().idleIntervalSeconds()),
+            getInt(behaviorObj, "target_fps", defaults.behavior().targetFps())
         );
 
         SystemConfig system = new SystemConfig(
@@ -115,6 +116,7 @@ public class ConfigManager {
         JsonObject behavior = new JsonObject();
         behavior.addProperty("drag_mode", config.behavior().dragMode());
         behavior.addProperty("idle_interval_seconds", config.behavior().idleIntervalSeconds());
+        behavior.addProperty("target_fps", config.behavior().targetFps());
         root.add("behavior", behavior);
 
         JsonObject system = new JsonObject();

@@ -91,7 +91,8 @@ public class PanelStateManager {
                     getInt(obj, "pos_x", instDefaults.posX()),
                     getInt(obj, "pos_y", instDefaults.posY()),
                     getBoolean(obj, "auto_start", instDefaults.autoStart()),
-                    getString(obj, "current_expression", instDefaults.currentExpression())
+                    getString(obj, "current_expression", instDefaults.currentExpression()),
+                    getInt(obj, "target_fps", instDefaults.targetFps())
                 ));
             }
         }
@@ -123,6 +124,7 @@ public class PanelStateManager {
             obj.addProperty("pos_y", inst.posY());
             obj.addProperty("auto_start", inst.autoStart());
             obj.addProperty("current_expression", inst.currentExpression());
+            obj.addProperty("target_fps", inst.targetFps());
             instances.add(obj);
         }
         root.add("instances", instances);

@@ -151,6 +151,10 @@ public class MainWindowController {
     @FXML private Button dragPhysicsBtn;
     @FXML private Slider idleSlider;
     @FXML private Label idleValueLabel;
+    @FXML private Button fpsAdaptiveBtn;
+    @FXML private Button fpsFixedBtn;
+    @FXML private Slider fpsSlider;
+    @FXML private Label fpsValueLabel;
     @FXML private TextField posXField;
     @FXML private TextField posYField;
     @FXML private CheckBox autoStartCheck;
@@ -188,6 +192,22 @@ public class MainWindowController {
                 scheduler.updateInterval(Math.max(1, seconds) * 1000);
             }
         });
+
+        fpsSlider.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingUI || currentInstance == null) {
+                return;
+            }
+            int fps = (int) Math.round(newValue.doubleValue());
+            fpsValueLabel.setText(String.valueOf(fps));
+            if (currentInstance.getTargetFps() > 0) {
+                currentInstance.setTargetFps(fps);
+                sendFpsCommand(currentInstance, fps);
+            }
+        });
+
+        fpsAdaptiveBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
+        fpsFixedBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
+        fpsSlider.setDisable(true);
 
         posXField.textProperty().addListener((obs, oldValue, newValue) -> {
             if (updatingUI || currentInstance == null) {
@@ -228,6 +248,7 @@ public class MainWindowController {
 
         clipSliderToBounds(opacitySlider);
         clipSliderToBounds(idleSlider);
+        clipSliderToBounds(fpsSlider);
         setupToggleSwitch(autoStartCheck);
 
         dragDirectBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
@@ -527,6 +548,15 @@ public class MainWindowController {
 
             idleSlider.setValue(currentInstance.getIdleInterval());
             idleValueLabel.setText(currentInstance.getIdleInterval() + "s");
+
+            int targetFps = currentInstance.getTargetFps();
+            boolean isAdaptive = targetFps <= 0;
+            fpsAdaptiveBtn.pseudoClassStateChanged(SEG_ACTIVE, isAdaptive);
+            fpsFixedBtn.pseudoClassStateChanged(SEG_ACTIVE, !isAdaptive);
+            fpsSlider.setDisable(isAdaptive);
+            fpsSlider.setValue(isAdaptive ? 30 : targetFps);
+            fpsValueLabel.setText(isAdaptive ? "30" : String.valueOf(targetFps));
+
             posXField.setText(String.valueOf(currentInstance.getPosX()));
             posYField.setText(String.valueOf(currentInstance.getPosY()));
             autoStartCheck.setSelected(currentInstance.isAutoStart());
@@ -958,6 +988,11 @@ public class MainWindowController {
             wsServer.sendToInstance(id, Protocol.serialize(
                     Protocol.createCommand("set_opacity", opacityPayload)));
 
+            JsonObject fpsPayload = new JsonObject();
+            fpsPayload.addProperty("fps", instance.getTargetFps());
+            wsServer.sendToInstance(id, Protocol.serialize(
+                    Protocol.createCommand("set_fps", fpsPayload)));
+
             renderSidebar();
             if (currentInstance == instance) renderDetail();
         }));
@@ -1240,6 +1275,37 @@ public class MainWindowController {
         }
         currentInstance.setDragMode("physics");
         renderDetail();
+    }
+
+    @FXML
+    private void onFpsAdaptive() {
+        if (currentInstance == null) {
+            return;
+        }
+        currentInstance.setTargetFps(0);
+        fpsSlider.setDisable(true);
+        fpsAdaptiveBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
+        fpsFixedBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
+        sendFpsCommand(currentInstance, 0);
+    }
+
+    @FXML
+    private void onFpsFixed() {
+        if (currentInstance == null) {
+            return;
+        }
+        int fps = (int) Math.round(fpsSlider.getValue());
+        currentInstance.setTargetFps(fps);
+        fpsSlider.setDisable(false);
+        fpsAdaptiveBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
+        fpsFixedBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
+        sendFpsCommand(currentInstance, fps);
+    }
+
+    private void sendFpsCommand(PetInstance instance, int fps) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("fps", fps);
+        sendInstanceCommand(instance, "set_fps", payload);
     }
 
     @FXML

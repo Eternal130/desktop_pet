@@ -107,7 +107,7 @@ class ConfigManagerTest {
         PetConfig input = new PetConfig(
             new WindowConfig(321, 654, 0.66),
             new ModelSettingsConfig("Shizuku", 1.33),
-            new BehaviorConfig("physics", 17),
+            new BehaviorConfig("physics", 17, 60),
             new SystemConfig(true)
         );
 

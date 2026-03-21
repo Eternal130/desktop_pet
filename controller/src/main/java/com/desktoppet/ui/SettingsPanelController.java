@@ -109,7 +109,8 @@ public class SettingsPanelController {
         double opacity = opacitySlider.getValue();
         String selectedModel = modelComboBox.getValue();
 
-        var newBehavior = new com.desktoppet.model.BehaviorConfig(dragMode, idleInterval);
+        int currentFps = currentConfig != null ? currentConfig.behavior().targetFps() : 0;
+        var newBehavior = new com.desktoppet.model.BehaviorConfig(dragMode, idleInterval, currentFps);
         var newWindow = new com.desktoppet.model.WindowConfig(
             currentConfig.window().positionX(),
             currentConfig.window().positionY(),

@@ -202,7 +202,14 @@ void LAppDelegate::Run()
 
         PollNetworkMessages();
 
-        glfwWaitEventsTimeout(1.0 / 30.0);
+        if (_targetFps > 0.0)
+        {
+            glfwWaitEventsTimeout(1.0 / _targetFps);
+        }
+        else
+        {
+            glfwWaitEventsTimeout(1.0 / 60.0);
+        }
     }
 
     Release();
@@ -227,6 +234,7 @@ LAppDelegate::LAppDelegate():
     _messageHandler(nullptr),
     _eventEmitter(nullptr),
     _networkReady(false),
+    _targetFps(0.0),
     _wsUrl("ws://localhost:9000"),
     _wasEverConnected(false),
     _connectionStartTime(std::chrono::steady_clock::now())
@@ -239,6 +247,21 @@ LAppDelegate::LAppDelegate():
 LAppDelegate::~LAppDelegate()
 {
 
+}
+
+void LAppDelegate::SetTargetFps(double fps)
+{
+    _targetFps = fps;
+    if (fps <= 0.0)
+    {
+        glfwSwapInterval(1);
+        LAppPal::PrintLogLn("[LAppDelegate] FPS mode: adaptive (VSync)");
+    }
+    else
+    {
+        glfwSwapInterval(0);
+        LAppPal::PrintLogLn("[LAppDelegate] FPS mode: fixed %.0f", fps);
+    }
 }
 
 void LAppDelegate::InitializeCubism()

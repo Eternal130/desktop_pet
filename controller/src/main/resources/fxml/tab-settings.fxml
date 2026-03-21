@@ -34,6 +34,13 @@
             <Spinner fx:id="idleIntervalSpinner" prefWidth="80" editable="true"/>
             <Label text="秒"/>
         </HBox>
+        <HBox spacing="10" alignment="CENTER_LEFT">
+            <Label text="渲染帧率" prefWidth="80"/>
+            <RadioButton fx:id="adaptiveFpsRadio" text="自适应" userData="adaptive"/>
+            <RadioButton fx:id="fixedFpsRadio" text="指定帧率" userData="fixed"/>
+            <Spinner fx:id="fpsSpinner" prefWidth="80" editable="true"/>
+            <Label text="FPS"/>
+        </HBox>
     </VBox>
     <Separator/>
 

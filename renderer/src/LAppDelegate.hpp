@@ -50,6 +50,8 @@ public:
     int GetWindowHeight() { return _windowHeight; }
     Network::EventEmitter* GetEventEmitter() { return _eventEmitter; }
     void SetWsUrl(const std::string& url) { _wsUrl = url; }
+    void SetTargetFps(double fps);
+    double GetTargetFps() const { return _targetFps; }
     float GetMouseX() const { return _mouseX; }
     float GetMouseY() const { return _mouseY; }
 
@@ -86,6 +88,8 @@ private:
     Network::MessageHandler* _messageHandler;
     Network::EventEmitter* _eventEmitter;
     bool _networkReady;
+
+    double _targetFps;
 
     std::string _wsUrl;
     bool _wasEverConnected;

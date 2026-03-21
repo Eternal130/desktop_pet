@@ -101,6 +101,25 @@
 
                     <HBox spacing="32" alignment="CENTER_LEFT">
                         <VBox spacing="8">
+                            <Label text="渲染帧率" styleClass="setting-label"/>
+                            <HBox spacing="0" styleClass="seg-control">
+                                <Button fx:id="fpsAdaptiveBtn" text="自适应" styleClass="seg-btn" onAction="#onFpsAdaptive"/>
+                                <Button fx:id="fpsFixedBtn" text="指定" styleClass="seg-btn" onAction="#onFpsFixed"/>
+                            </HBox>
+                        </VBox>
+
+                        <VBox spacing="8" HBox.hgrow="ALWAYS">
+                            <Label text="目标帧率" styleClass="setting-label"/>
+                            <HBox spacing="12" alignment="CENTER_LEFT">
+                                <Slider fx:id="fpsSlider" min="15" max="120" value="30"
+                                        blockIncrement="15" HBox.hgrow="ALWAYS" minWidth="80"/>
+                                <Label fx:id="fpsValueLabel" text="30" styleClass="value-display" minWidth="36"/>
+                            </HBox>
+                        </VBox>
+                    </HBox>
+
+                    <HBox spacing="32" alignment="CENTER_LEFT">
+                        <VBox spacing="8">
                             <Label text="坐标 (X, Y)" styleClass="setting-label"/>
                             <HBox spacing="8" alignment="CENTER_LEFT">
                                 <TextField fx:id="posXField" text="1200" styleClass="coord-input" prefWidth="70"/>

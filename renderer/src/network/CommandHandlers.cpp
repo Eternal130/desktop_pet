@@ -181,6 +181,16 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         sendResponse(createResponse(cmd.id, "set_hit_areas", true));
     });
 
+    handler.registerCommand("set_fps", [delegate](const Envelope& cmd, auto sendResponse) {
+        double fps = cmd.payload.value("fps", 0.0);
+        if (fps < 0.0 || (fps > 0.0 && fps < 1.0) || fps > 120.0) {
+            sendResponse(createResponse(cmd.id, "set_fps", false, 5001, "fps must be 0 (adaptive) or 1-120"));
+            return;
+        }
+        delegate->SetTargetFps(fps);
+        sendResponse(createResponse(cmd.id, "set_fps", true));
+    });
+
     handler.registerCommand("shutdown", [delegate](const Envelope& cmd, auto sendResponse) {
         sendResponse(createResponse(cmd.id, "shutdown", true));
         glfwSetWindowShouldClose(delegate->GetWindow(), GLFW_TRUE);

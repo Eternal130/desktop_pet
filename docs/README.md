@@ -208,6 +208,7 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | [日志体系](./system/logging.md) | 日志框架、级别、文件管理 | ✅ MVP/Phase 2 已实现 |
 | [启动流程](./system/startup.md) | MVP 和控制面板启动/关闭流程 | ✅ 已实现 |
 | [扩展性预留](./system/extensibility.md) | 插件系统、状态系统预留 | 架构预留 |
+| [外置语音包挂载](./system/voice-pack-mounting.md) | 语音包与模型解耦挂载设计、事件映射、口型同步 | Phase 3 待实现 |
 | [工程化](./engineering/README.md) | 工程化概述索引 | ✅ 持续更新 |
 | [开发语言与工具链](./engineering/toolchain.md) | C++/Java 工具链选型 | ✅ 已确定 |
 | [第三方库选型](./engineering/dependencies.md) | C++/Java 端依赖库 | ✅ 已确定 |

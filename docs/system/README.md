@@ -16,3 +16,4 @@
 | [日志体系](./logging.md) | 日志框架、级别定义、文件管理、关键日志点 |
 | [启动流程](./startup.md) | MVP 启动、控制面板启动编排、关闭流程 |
 | [扩展性预留](./extensibility.md) | Lua 脚本插件系统、养成状态系统 |
+| [外置语音包挂载](./voice-pack-mounting.md) | 语音包与模型解耦挂载设计（Phase 3） |

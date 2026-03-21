@@ -17,6 +17,20 @@
 #include <Model/CubismMoc.hpp>
 #include "LAppDefine.hpp"
 
+#ifdef _WIN32
+#include <Windows.h>
+
+static std::wstring Utf8ToWide(const std::string& utf8)
+{
+    if (utf8.empty()) return {};
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()), nullptr, 0);
+    if (wlen <= 0) return {};
+    std::wstring wide(wlen, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()), &wide[0], wlen);
+    return wide;
+}
+#endif
+
 using std::endl;
 using namespace Csm;
 using namespace std;
@@ -28,12 +42,18 @@ double LAppPal::s_deltaTime = 0.0;
 
 csmByte* LAppPal::LoadFileAsBytes(const string filePath, csmSizeInt* outSize)
 {
-    //filePath;//
     const char* path = filePath.c_str();
 
     int size = 0;
+
+#ifdef _WIN32
+    std::wstring widePath = Utf8ToWide(filePath);
+    struct _stat statBuf;
+    if (_wstat(widePath.c_str(), &statBuf) == 0)
+#else
     struct stat statBuf;
     if (stat(path, &statBuf) == 0)
+#endif
     {
         size = statBuf.st_size;
 
@@ -56,7 +76,11 @@ csmByte* LAppPal::LoadFileAsBytes(const string filePath, csmSizeInt* outSize)
     }
 
     std::fstream file;
+#ifdef _WIN32
+    file.open(widePath.c_str(), std::ios::in | std::ios::binary);
+#else
     file.open(path, std::ios::in | std::ios::binary);
+#endif
     if (!file.is_open())
     {
         if (DebugLogEnable)
@@ -119,4 +143,16 @@ void LAppPal::PrintMessage(const csmChar* message)
 void LAppPal::PrintMessageLn(const csmChar* message)
 {
     PrintLogLn("%s", message);
+}
+
+bool LAppPal::FileExists(const std::string& path)
+{
+#ifdef _WIN32
+    std::wstring widePath = Utf8ToWide(path);
+    struct _stat st;
+    return _wstat(widePath.c_str(), &st) == 0;
+#else
+    struct stat st;
+    return stat(path.c_str(), &st) == 0;
+#endif
 }

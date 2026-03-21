@@ -93,6 +93,14 @@ public:
     */
     static void PrintMessageLn(const Csm::csmChar* message);
 
+    /**
+    * @brief Check if a file exists (UTF-8 path safe on Windows)
+    *
+    * @param[in]   path    UTF-8 encoded file path
+    * @return              true if the file exists
+    */
+    static bool FileExists(const std::string& path);
+
 private:
     static double s_currentFrame;
     static double s_lastFrame;

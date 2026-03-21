@@ -7,7 +7,6 @@
 #include "LAppPal.hpp"
 #include "LAppDefine.hpp"
 #include <GLFW/glfw3.h>
-#include <sys/stat.h>
 #include <string>
 
 namespace Network {
@@ -49,8 +48,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
          // Build path matching LoadModel() internals:
          std::string execPath = LAppDelegate::GetInstance()->GetExecuteAbsolutePath();
          std::string fullModelJson = execPath + LAppDefine::ResourcesPath + modelPath + "/" + modelPath + ".model3.json";
-         struct stat st;
-         bool pathExists = (stat(fullModelJson.c_str(), &st) == 0);
+         bool pathExists = LAppPal::FileExists(fullModelJson);
          if (!pathExists) {
              sendResponse(createResponse(cmd.id, "load_model", false, 1001, "Model path not found: " + modelPath));
              auto* emitter = delegate->GetEventEmitter();
@@ -106,8 +104,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             sendResponse(createResponse(cmd.id, "play_motion_ext", false, 3001, "motion_path is required"));
             return;
         }
-        struct stat st;
-        if (stat(motionPath.c_str(), &st) != 0) {
+        if (!LAppPal::FileExists(motionPath)) {
             sendResponse(createResponse(cmd.id, "play_motion_ext", false, 3002, "motion file not found: " + motionPath));
             return;
         }

@@ -1,0 +1,7 @@
+Task 9 Evidence:
+- Created voicePackComboBox in tab-settings.fxml.
+- Implemented logic in SettingsTabController.java (refreshVoicePacks, onVoicePackChanged).
+- Added test in SettingsTabTest.java using TestFX to assert the node exists and can be looked up.
+- Ran tests via `mvn test`. Resulted in 105 total tests run.
+- My new test `com.desktoppet.ui.SettingsTabTest` passed successfully.
+- 3 existing failures in `MainWindowTest` remained untouched. No new failures introduced.

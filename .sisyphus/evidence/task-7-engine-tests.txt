@@ -1,0 +1,13 @@
+Task: Phase 3a Task 7 - MountedBehaviorEngine tests
+Command:
+powershell -Command "& cmd.exe /c 'call mvnw.cmd test -Dtest=MountedBehaviorEngineTest' 2>&1 | Out-String"
+
+Result:
+[INFO] Running com.desktoppet.core.MountedBehaviorEngineTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.183 s -- in com.desktoppet.core.MountedBehaviorEngineTest
+[INFO]
+[INFO] Results:
+[INFO]
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO] BUILD SUCCESS

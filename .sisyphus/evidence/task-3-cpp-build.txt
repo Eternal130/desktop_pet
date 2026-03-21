@@ -1,0 +1,45 @@
+Task 3 — play_motion_ext C++ renderer build evidence
+Date: 2026-03-21
+
+Build command:
+  powershell -ExecutionPolicy Bypass -Command "\$env:PATH = 'C:\Users\Eternal130\Desktop\libs\mingw64\bin;' + \$env:PATH; Get-ChildItem 'build\renderer_mingw\CMakeFiles\desktop-pet-renderer.dir' -Recurse -Include '*.obj','*.d' | Remove-Item -Force; & mingw32-make -C 'build\renderer_mingw' -j8 2>&1 | Out-String"
+
+Build output:
+mingw32-make: Entering directory 'C:/Users/Eternal130/Desktop/projects/java/desktop_pet/build/renderer_mingw'
+[  2%] Built target glew_s
+[  4%] Built target glew
+[ 21%] Built target glfw
+[ 50%] Built target ixwebsocket
+[ 83%] Built target Framework
+[ 83%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/.../LAppAllocator_Common.cpp.obj
+[ 84%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/.../LAppModel_Common.cpp.obj
+[ 85%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/.../LAppTextureManager_Common.cpp.obj
+[ 86%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/.../LAppView_Common.cpp.obj
+[ 86%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/.../LAppSprite_Common.cpp.obj
+[ 87%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/.../LAppWavFileHandler_Common.cpp.obj
+[ 88%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/.../TouchManager_Common.cpp.obj
+[ 89%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/main.cpp.obj
+[ 90%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/LAppDefine.cpp.obj
+[ 90%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/LAppDelegate.cpp.obj
+[ 91%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/LAppLive2DManager.cpp.obj
+[ 92%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/LAppModel.cpp.obj
+[ 93%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/LAppPal.cpp.obj
+[ 93%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/LAppTextureManager.cpp.obj
+[ 94%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/LAppView.cpp.obj
+[ 95%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/network/Protocol.cpp.obj
+[ 96%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/network/WebSocketClient.cpp.obj
+[ 96%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/network/MessageHandler.cpp.obj
+[ 97%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/network/EventEmitter.cpp.obj
+[ 98%] Building CXX object CMakeFiles/desktop-pet-renderer.dir/src/network/CommandHandlers.cpp.obj
+[100%] Linking CXX executable C:\Users\Eternal130\Desktop\projects\java\desktop_pet\build\bin\desktop-pet-renderer.exe
+[100%] Built target desktop-pet-renderer
+mingw32-make: Leaving directory 'C:/Users/Eternal130/Desktop/projects/java/desktop_pet/build/renderer_mingw'
+
+Result: SUCCESS
+Artifact: build/bin/desktop-pet-renderer.exe
+
+Files changed:
+  - renderer/src/network/CommandHandlers.cpp: added play_motion_ext command handler
+  - renderer/src/LAppModel.hpp: added StartMotionFromFile declaration + Network::EventEmitter forward decl
+  - renderer/src/LAppModel.cpp: added #include network/EventEmitter.hpp, ExtMotionCtx struct,
+    OnExtMotionFinishedStatic callback, StartMotionFromFile implementation

@@ -1,0 +1,38 @@
+Task 8: AppOrchestrator Voice Pack Wiring — Regression Test Results
+Timestamp: 2026-03-21 18:09 UTC+8
+
+Command: mvnw.cmd test
+Workdir: controller/
+
+=== SUMMARY ===
+Tests run: 102, Failures: 1, Errors: 2, Skipped: 0
+Build time: 14.256 s
+
+Pre-existing failures (MainWindowTest UI redesign issue — NOT caused by T8):
+  FAILURE  MainWindowTest.settingsButton_exists:45 expected: not <null>
+  ERROR    MainWindowTest.statusLabel_showsDisconnectedByDefault:31 » EmptyNodeQuery (#statusLabel not found)
+  ERROR    MainWindowTest.updateConnectionStatus_changesLabel:39 » EmptyNodeQuery (#statusLabel not found)
+
+New failures introduced by T8: NONE
+
+=== PER-CLASS RESULTS ===
+ConfigManagerTest         : 7/7  PASS
+InteractionHandlerTest    : 5/5  PASS
+MetaMkoParserTest         : 5/5  PASS
+ModelInfoParserTest       : 6/6  PASS
+ModelScannerTest          : 12/12 PASS
+MountConfigManagerTest    : 4/4  PASS
+MountedBehaviorEngineTest : 5/5  PASS
+PetStateManagerTest       : 7/7  PASS
+SchedulerTest             : 6/6  PASS
+VoicePackScannerTest      : 5/5  PASS
+E2ESmokeTest              : 3/3  PASS
+MessageDispatcherTest     : 6/6  PASS
+PetWebSocketServerTest    : 6/6  PASS
+ProtocolTest              : 12/12 PASS
+MainWindowTest            : 4/4  1 FAILURE + 2 ERRORS (pre-existing)
+SettingsPanelTest         : 4/4  PASS
+ProcessManagerTest        : 5/5  PASS
+
+=== VERDICT ===
+PASS — No regressions. 3 pre-existing MainWindowTest failures unchanged.

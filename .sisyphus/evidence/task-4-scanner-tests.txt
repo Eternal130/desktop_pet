@@ -1,0 +1,66 @@
+VoicePackScanner and VoicePackScannerTest - Build and Test Results
+===================================================================
+
+Test Execution: mvn test -Dtest=VoicePackScannerTest
+Working Directory: controller/
+
+BUILD SUCCESS
+=============
+
+Test Results:
+- Tests run: 5
+- Failures: 0
+- Errors: 0
+- Skipped: 0
+- Time elapsed: 0.150 s
+
+Test Cases Executed:
+1. scanWithVoicePackDir_returnsVoicePackName() ✅ PASS
+   - Creates temp dir with subdirectory containing meta.mko
+   - Verifies scanner returns that directory name
+
+2. scanWithModelDir_excludesModelDir() ✅ PASS
+   - Creates temp dir with subdirectory containing only name.model3.json
+   - Verifies scanner returns empty list (excludes model dirs)
+
+3. scanEmptyResourcesDir_returnsEmptyList() ✅ PASS
+   - Empty temp directory
+   - Verifies scanner returns empty list
+
+4. scanNonExistentDir_returnsEmptyList() ✅ PASS
+   - Non-existent path
+   - Verifies scanner returns empty list without throwing exception
+
+5. scanHiddenDir_skipsHiddenDir() ✅ PASS
+   - Temp dir with .hidden/meta.mko
+   - Verifies scanner skips hidden directories (starting with '.')
+
+Implementation Details:
+=======================
+
+VoicePackScanner.java:
+- Package: com.desktoppet.core
+- Static method: scanAvailableVoicePacks(Path resourcesDir)
+- Returns: List<String> of voice pack directory names
+- Behavior:
+  * Returns empty list if resourcesDir is null or not a directory
+  * Scans subdirectories for meta.mko file
+  * Skips hidden directories (starting with '.')
+  * Returns sorted list of matching directory names
+  * Logs warnings on IOException
+
+VoicePackScannerTest.java:
+- Package: com.desktoppet.core
+- Uses JUnit 5 @TempDir for test isolation
+- 5 comprehensive test cases covering:
+  * Valid voice pack detection
+  * Model directory exclusion
+  * Empty directory handling
+  * Non-existent path handling
+  * Hidden directory skipping
+
+Build Output Summary:
+- Compilation: SUCCESS
+- Test Compilation: SUCCESS
+- Test Execution: SUCCESS
+- Total time: 3.815 s

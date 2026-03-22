@@ -941,6 +941,7 @@ public class MainWindowController {
 
         ProcessManager pm = processManagers.remove(id);
         if (pm != null && pm.isRunning()) {
+            pm.setExitCallback(null);
             pm.stopRenderer();
             instance.addLog("◆ 实例「" + instance.getLabel() + "」已停止");
         }
@@ -1279,6 +1280,7 @@ public class MainWindowController {
         currentInstance.addLog("↺ 正在重启引擎...");
         stopInstance(currentInstance);
         startInstance(currentInstance);
+        manuallyStopping.remove(currentInstance.getId());
     }
 
     @FXML

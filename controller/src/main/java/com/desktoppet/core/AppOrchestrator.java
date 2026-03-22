@@ -248,6 +248,7 @@ public class AppOrchestrator {
             String group = envelope.payload().has("group") ? envelope.payload().get("group").getAsString() : "?";
             notifyActivity("动作结束: " + group);
             notifyMessageLog("←", "event", "motion_finished", group);
+            scheduler.resume();
         });
 
         dispatcher.registerEventHandler("hit", envelope -> {
@@ -255,6 +256,8 @@ public class AppOrchestrator {
             String areaId = envelope.payload().has("area_id") ? envelope.payload().get("area_id").getAsString() : "?";
             notifyActivity("点击命中: " + areaId);
             notifyMessageLog("←", "event", "hit", areaId);
+
+            scheduler.pause();
 
             MountedBehaviorEngine engine = mountedEngine;
             if (engine != null && engine.hasGroupForArea(areaId)) {

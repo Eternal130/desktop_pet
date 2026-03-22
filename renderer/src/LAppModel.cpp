@@ -663,6 +663,20 @@ static void OnExtMotionFinishedStatic(Csm::ACubismMotion* motion) {
 void LAppModel::StartMotionFromFile(const std::string& filePath, int priority,
                                      float fadeIn, float fadeOut, Network::EventEmitter* emitter)
 {
+    // Priority guard — same logic as StartMotion()
+    if (priority == PriorityForce)
+    {
+        _motionManager->SetReservePriority(priority);
+    }
+    else if (!_motionManager->ReserveMotion(priority))
+    {
+        if (_debugMode)
+        {
+            LAppPal::PrintLogLn("[APP]StartMotionFromFile: can't start motion (priority too low): %s", filePath.c_str());
+        }
+        return;
+    }
+
     csmByte* buffer;
     csmSizeInt size;
     buffer = CreateBuffer(filePath.c_str(), &size);

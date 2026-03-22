@@ -114,6 +114,8 @@ public class SettingsPanelController {
         var newWindow = new com.desktoppet.model.WindowConfig(
             currentConfig.window().positionX(),
             currentConfig.window().positionY(),
+            currentConfig.window().width(),
+            currentConfig.window().height(),
             opacity
         );
         var newModel = selectedModel != null && !selectedModel.isEmpty()

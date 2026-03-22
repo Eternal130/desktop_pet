@@ -2,13 +2,15 @@ package com.desktoppet.model;
 
 /** Runtime state snapshot (immutable). Not persisted directly. */
 public record PetState(
-    String currentModelName,  // Short name like "Hiyori"
+    String currentModelName,
     int windowX,
     int windowY,
+    int windowWidth,
+    int windowHeight,
     boolean connected,
     boolean modelLoaded
 ) {
     public static PetState initial() {
-        return new PetState("", 0, 0, false, false);
+        return new PetState("", 0, 0, 400, 500, false, false);
     }
 }

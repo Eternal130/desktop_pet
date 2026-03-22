@@ -9,6 +9,8 @@ public class PetStateManager {
     private String currentModelName = "";
     private int windowX = 0;
     private int windowY = 0;
+    private int windowWidth = 400;
+    private int windowHeight = 500;
     private boolean connected = false;
     private boolean modelLoaded = false;
 
@@ -17,7 +19,7 @@ public class PetStateManager {
     public PetState getState() {
         lock.readLock().lock();
         try {
-            return new PetState(currentModelName, windowX, windowY, connected, modelLoaded);
+            return new PetState(currentModelName, windowX, windowY, windowWidth, windowHeight, connected, modelLoaded);
         } finally {
             lock.readLock().unlock();
         }
@@ -37,6 +39,16 @@ public class PetStateManager {
         try {
             this.windowX = x;
             this.windowY = y;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public void updateWindowSize(int width, int height) {
+        lock.writeLock().lock();
+        try {
+            this.windowWidth = width;
+            this.windowHeight = height;
         } finally {
             lock.writeLock().unlock();
         }

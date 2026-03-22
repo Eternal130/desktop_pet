@@ -38,6 +38,7 @@ public:
 
     void OnMouseCallBack(GLFWwindow* window, int button, int action, int modify);
     void OnMouseCallBack(GLFWwindow* window, double x, double y);
+    void OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
     static void GetClientSize(int& rWidth, int& rHeight);
 
@@ -52,6 +53,7 @@ public:
     void SetWsUrl(const std::string& url) { _wsUrl = url; }
     void SetStartupModel(const std::string& m) { _startupModel = m; }
     void SetStartupPosition(int x, int y) { _startupX = x; _startupY = y; _hasStartupPos = true; }
+    void SetStartupSize(int w, int h) { _startupWidth = w; _startupHeight = h; _hasStartupSize = true; }
     const std::string& GetStartupModel() const { return _startupModel; }
     void ShowWindowIfHidden();
     void SetTargetFps(double fps);
@@ -101,6 +103,9 @@ private:
     int _startupX;
     int _startupY;
     bool _hasStartupPos;
+    int _startupWidth;
+    int _startupHeight;
+    bool _hasStartupSize;
     bool _windowShown;
 
     GLuint _pbo;
@@ -118,5 +123,10 @@ public:
     static void OnMouseCallBack(GLFWwindow* window, double x, double y)
     {
          LAppDelegate::GetInstance()->OnMouseCallBack(window, x, y);
+    }
+
+    static void OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+    {
+        LAppDelegate::GetInstance()->OnScrollCallback(window, xoffset, yoffset);
     }
 };

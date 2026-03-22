@@ -90,6 +90,8 @@ public class PanelStateManager {
                     getInt(obj, "idle_interval", instDefaults.idleInterval()),
                     getInt(obj, "pos_x", instDefaults.posX()),
                     getInt(obj, "pos_y", instDefaults.posY()),
+                    getInt(obj, "window_width", instDefaults.windowWidth()),
+                    getInt(obj, "window_height", instDefaults.windowHeight()),
                     getBoolean(obj, "auto_start", instDefaults.autoStart()),
                     getString(obj, "current_expression", instDefaults.currentExpression()),
                     getInt(obj, "target_fps", instDefaults.targetFps())
@@ -122,6 +124,8 @@ public class PanelStateManager {
             obj.addProperty("idle_interval", inst.idleInterval());
             obj.addProperty("pos_x", inst.posX());
             obj.addProperty("pos_y", inst.posY());
+            obj.addProperty("window_width", inst.windowWidth());
+            obj.addProperty("window_height", inst.windowHeight());
             obj.addProperty("auto_start", inst.autoStart());
             obj.addProperty("current_expression", inst.currentExpression());
             obj.addProperty("target_fps", inst.targetFps());

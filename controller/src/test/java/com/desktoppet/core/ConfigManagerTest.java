@@ -105,7 +105,7 @@ class ConfigManagerTest {
         Path configPath = tempDir.resolve("desktop-pet/config.json");
         ConfigManager manager = new ConfigManager(configPath);
         PetConfig input = new PetConfig(
-            new WindowConfig(321, 654, 0.66),
+            new WindowConfig(321, 654, 500, 600, 0.66),
             new ModelSettingsConfig("Shizuku", 1.33),
             new BehaviorConfig("physics", 17, 60),
             new SystemConfig(true)
@@ -126,6 +126,8 @@ class ConfigManagerTest {
         assertNotNull(defaults);
         assertEquals(1200, defaults.window().positionX());
         assertEquals(600, defaults.window().positionY());
+        assertEquals(400, defaults.window().width());
+        assertEquals(500, defaults.window().height());
         assertEquals(1.0, defaults.window().opacity());
         assertEquals("Hiyori", defaults.model().currentModelName());
         assertEquals(1.0, defaults.model().scale());

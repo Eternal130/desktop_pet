@@ -78,6 +78,8 @@ public class ConfigManager {
         WindowConfig window = new WindowConfig(
             getInt(windowObj, "position_x", defaults.window().positionX()),
             getInt(windowObj, "position_y", defaults.window().positionY()),
+            getInt(windowObj, "window_width", defaults.window().width()),
+            getInt(windowObj, "window_height", defaults.window().height()),
             getDouble(windowObj, "opacity", defaults.window().opacity())
         );
 
@@ -105,6 +107,8 @@ public class ConfigManager {
         JsonObject window = new JsonObject();
         window.addProperty("position_x", config.window().positionX());
         window.addProperty("position_y", config.window().positionY());
+        window.addProperty("window_width", config.window().width());
+        window.addProperty("window_height", config.window().height());
         window.addProperty("opacity", config.window().opacity());
         root.add("window", window);
 

@@ -182,6 +182,8 @@ public class SettingsTabController {
         var newWindow = new WindowConfig(
                 current.window().positionX(),
                 current.window().positionY(),
+                current.window().width(),
+                current.window().height(),
                 opacity);
         var newSystem = new SystemConfig(autoStart);
         var newConfig = new PetConfig(newWindow, current.model(), newBehavior, newSystem);

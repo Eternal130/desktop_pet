@@ -985,6 +985,12 @@ public class MainWindowController {
             wsServer.sendToInstance(id, Protocol.serialize(
                     Protocol.createCommand("set_position", posPayload)));
 
+            JsonObject sizePayload = new JsonObject();
+            sizePayload.addProperty("width", instance.getWindowWidth());
+            sizePayload.addProperty("height", instance.getWindowHeight());
+            wsServer.sendToInstance(id, Protocol.serialize(
+                    Protocol.createCommand("set_size", sizePayload)));
+
             JsonObject opacityPayload = new JsonObject();
             opacityPayload.addProperty("opacity", instance.getOpacity());
             wsServer.sendToInstance(id, Protocol.serialize(
@@ -1090,6 +1096,22 @@ public class MainWindowController {
                 instance.setPosX(wx);
                 instance.setPosY(wy);
                 instance.addLog("↕ 拖拽结束: (" + wx + ", " + wy + ")");
+                if (currentInstance == instance) renderDetail();
+            }
+        }));
+
+        dispatcher.registerEventHandler("window_resized", envelope -> Platform.runLater(() -> {
+            if (envelope.payload().has("window_width") && envelope.payload().has("window_height")) {
+                int w = envelope.payload().get("window_width").getAsInt();
+                int h = envelope.payload().get("window_height").getAsInt();
+                instance.setWindowWidth(w);
+                instance.setWindowHeight(h);
+                if (envelope.payload().has("window_x") && envelope.payload().has("window_y")) {
+                    instance.setPosX(envelope.payload().get("window_x").getAsInt());
+                    instance.setPosY(envelope.payload().get("window_y").getAsInt());
+                }
+                instance.addLog("⇲ 窗口缩放: " + w + "×" + h);
+                saveState();
                 if (currentInstance == instance) renderDetail();
             }
         }));

@@ -7,6 +7,7 @@
 #include "LAppPal.hpp"
 #include "LAppDefine.hpp"
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <string>
 
 namespace Network {
@@ -157,6 +158,32 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
     handler.registerCommand("set_scale", [](const Envelope& cmd, auto sendResponse) {
         float scale = cmd.payload.value("scale", 1.0f);
         LAppPal::PrintLogLn("[CommandHandlers] set_scale: %f (not fully implemented)", scale);
+    });
+
+    handler.registerCommand("set_size", [delegate](const Envelope& cmd, auto sendResponse) {
+        int width = cmd.payload.value("width", 0);
+        int height = cmd.payload.value("height", 0);
+        if (width <= 0 || height <= 0) {
+            sendResponse(createResponse(cmd.id, "set_size", false, 6001, "width and height must be positive"));
+            return;
+        }
+        width = std::max(100, std::min(width, 2000));
+        height = std::max(100, std::min(height, 2000));
+
+        GLFWwindow* window = delegate->GetWindow();
+        int oldW = delegate->GetWindowWidth();
+        int oldH = delegate->GetWindowHeight();
+        int posX, posY;
+        glfwGetWindowPos(window, &posX, &posY);
+
+        int centerX = posX + oldW / 2;
+        int centerY = posY + oldH / 2;
+        int newPosX = centerX - width / 2;
+        int newPosY = centerY - height / 2;
+
+        glfwSetWindowSize(window, width, height);
+        glfwSetWindowPos(window, newPosX, newPosY);
+        sendResponse(createResponse(cmd.id, "set_size", true));
     });
 
     handler.registerCommand("set_opacity", [delegate](const Envelope& cmd, auto sendResponse) {

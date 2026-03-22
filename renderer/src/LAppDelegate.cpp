@@ -73,7 +73,9 @@ bool LAppDelegate::Initialize()
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
     // Windowの生成_
-    _window = glfwCreateWindow(RenderTargetWidth, RenderTargetHeight, "desktop-pet-renderer", NULL, NULL);
+    int initWidth = _hasStartupSize ? _startupWidth : RenderTargetWidth;
+    int initHeight = _hasStartupSize ? _startupHeight : RenderTargetHeight;
+    _window = glfwCreateWindow(initWidth, initHeight, "desktop-pet-renderer", NULL, NULL);
     if (_window == NULL)
     {
         if (DebugLogEnable)
@@ -119,6 +121,7 @@ bool LAppDelegate::Initialize()
     //コールバック関数の登録
     glfwSetMouseButtonCallback(_window, EventHandler::OnMouseCallBack);
     glfwSetCursorPosCallback(_window, EventHandler::OnMouseCallBack);
+    glfwSetScrollCallback(_window, EventHandler::OnScrollCallback);
 
     // ウィンドウサイズ記憶
     int width, height;
@@ -310,6 +313,9 @@ LAppDelegate::LAppDelegate():
     _startupX(0),
     _startupY(0),
     _hasStartupPos(false),
+    _startupWidth(0),
+    _startupHeight(0),
+    _hasStartupSize(false),
     _windowShown(false),
     _pbo(0),
     _isClickThrough(false)
@@ -446,6 +452,64 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
     if (_view == NULL)
     {
         return;
+    }
+}
+
+void LAppDelegate::OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+{
+    // Ctrl + scroll = window resize
+    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) != GLFW_PRESS &&
+        glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) != GLFW_PRESS)
+    {
+        return;
+    }
+
+    int currentWidth = _windowWidth;
+    int currentHeight = _windowHeight;
+    if (currentWidth <= 0 || currentHeight <= 0)
+    {
+        return;
+    }
+
+    // 5% per scroll tick
+    float scaleFactor = 1.0f + static_cast<float>(yoffset) * 0.05f;
+
+    int newWidth = static_cast<int>(currentWidth * scaleFactor);
+    int newHeight = static_cast<int>(currentHeight * scaleFactor);
+
+    const int minDim = 100;
+    const int maxDim = 2000;
+    newWidth = max(minDim, min(newWidth, maxDim));
+    newHeight = max(minDim, min(newHeight, maxDim));
+
+    if (newWidth == currentWidth && newHeight == currentHeight)
+    {
+        return;
+    }
+
+    int posX, posY;
+    glfwGetWindowPos(window, &posX, &posY);
+
+    // Center-pivot: keep window center stable across resize
+    int centerX = posX + currentWidth / 2;
+    int centerY = posY + currentHeight / 2;
+    int newPosX = centerX - newWidth / 2;
+    int newPosY = centerY - newHeight / 2;
+
+    glfwSetWindowSize(window, newWidth, newHeight);
+    glfwSetWindowPos(window, newPosX, newPosY);
+
+    LAppPal::PrintLogLn("[LAppDelegate] Window resized: %dx%d -> %dx%d, pos: (%d,%d)",
+        currentWidth, currentHeight, newWidth, newHeight, newPosX, newPosY);
+
+    if (_eventEmitter && _eventEmitter->isActive())
+    {
+        _eventEmitter->emit("window_resized", {
+            {"window_width", newWidth},
+            {"window_height", newHeight},
+            {"window_x", newPosX},
+            {"window_y", newPosY}
+        });
     }
 }
 

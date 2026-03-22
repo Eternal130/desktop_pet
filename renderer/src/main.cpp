@@ -23,6 +23,7 @@ int main(int argc, char* argv[])
     int instanceId = 0;
     std::string startupModel;
     int startupX = -1, startupY = -1;
+    int startupWidth = -1, startupHeight = -1;
 
     for (int i = 1; i < argc; i++)
     {
@@ -51,6 +52,16 @@ int main(int argc, char* argv[])
             startupY = std::atoi(argv[i + 1]);
             i++;
         }
+        else if (std::strcmp(argv[i], "--width") == 0 && i + 1 < argc)
+        {
+            startupWidth = std::atoi(argv[i + 1]);
+            i++;
+        }
+        else if (std::strcmp(argv[i], "--height") == 0 && i + 1 < argc)
+        {
+            startupHeight = std::atoi(argv[i + 1]);
+            i++;
+        }
     }
 
     std::string wsUrl = "ws://localhost:" + std::to_string(wsPort)
@@ -62,6 +73,8 @@ int main(int argc, char* argv[])
         delegate->SetStartupModel(startupModel);
     if (startupX >= 0 && startupY >= 0)
         delegate->SetStartupPosition(startupX, startupY);
+    if (startupWidth > 0 && startupHeight > 0)
+        delegate->SetStartupSize(startupWidth, startupHeight);
 
     if (delegate->Initialize() == GL_FALSE)
     {

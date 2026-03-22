@@ -66,10 +66,14 @@ public class ProcessManager {
     }
 
     public void startRenderer(int instanceId) throws IOException {
-        startRenderer(instanceId, null, -1, -1);
+        startRenderer(instanceId, null, -1, -1, -1, -1);
     }
 
     public void startRenderer(int instanceId, String modelName, int x, int y) throws IOException {
+        startRenderer(instanceId, modelName, x, y, -1, -1);
+    }
+
+    public void startRenderer(int instanceId, String modelName, int x, int y, int width, int height) throws IOException {
         if (isRunning()) {
             log.warn("Renderer is already running (pid={})", process.pid());
             return;
@@ -91,6 +95,12 @@ public class ProcessManager {
             command.add(String.valueOf(x));
             command.add("--y");
             command.add(String.valueOf(y));
+        }
+        if (width > 0 && height > 0) {
+            command.add("--width");
+            command.add(String.valueOf(width));
+            command.add("--height");
+            command.add(String.valueOf(height));
         }
 
         log.info("Starting renderer: {}", String.join(" ", command));

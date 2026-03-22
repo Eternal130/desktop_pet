@@ -64,7 +64,7 @@ public class AppOrchestrator {
     private final Map<String, VoicePackInfo> voicePackInfoCache = new LinkedHashMap<>();
     private final List<String> availableVoicePacks = new ArrayList<>();
 
-    private PetConfig config;
+    private volatile PetConfig config;
     private MainWindowController uiController;
 
     public AppOrchestrator() {
@@ -143,7 +143,9 @@ public class AppOrchestrator {
                 LEGACY_INSTANCE_ID,
                 config.model().currentModelName(),
                 config.window().positionX(),
-                config.window().positionY()
+                config.window().positionY(),
+                config.window().width(),
+                config.window().height()
         );
         log.info("Renderer process started");
     }
@@ -173,6 +175,14 @@ public class AppOrchestrator {
                         sendOrCache(
                                 "set_position",
                                 Protocol.serialize(Protocol.createCommand("set_position", posPayload))
+                        );
+
+                        JsonObject sizePayload = new JsonObject();
+                        sizePayload.addProperty("width", config.window().width());
+                        sizePayload.addProperty("height", config.window().height());
+                        sendOrCache(
+                                "set_size",
+                                Protocol.serialize(Protocol.createCommand("set_size", sizePayload))
                         );
 
                         JsonObject fpsPayload = new JsonObject();
@@ -274,7 +284,24 @@ public class AppOrchestrator {
                 stateManager.updateWindowPosition(wx, wy);
                 log.debug("Window position updated: ({}, {})", wx, wy);
 
-                var updatedWindow = new WindowConfig(wx, wy, config.window().opacity());
+                var updatedWindow = new WindowConfig(wx, wy, config.window().width(), config.window().height(), config.window().opacity());
+                config = new PetConfig(updatedWindow, config.model(), config.behavior(), config.system());
+                configManager.save(config);
+            }
+        });
+
+        dispatcher.registerEventHandler("window_resized", envelope -> {
+            if (envelope.payload().has("window_width") && envelope.payload().has("window_height")) {
+                int w = envelope.payload().get("window_width").getAsInt();
+                int h = envelope.payload().get("window_height").getAsInt();
+                int wx = envelope.payload().has("window_x") ? envelope.payload().get("window_x").getAsInt() : config.window().positionX();
+                int wy = envelope.payload().has("window_y") ? envelope.payload().get("window_y").getAsInt() : config.window().positionY();
+
+                stateManager.updateWindowPosition(wx, wy);
+                stateManager.updateWindowSize(w, h);
+                log.info("Window resized: {}x{} at ({}, {})", w, h, wx, wy);
+
+                var updatedWindow = new WindowConfig(wx, wy, w, h, config.window().opacity());
                 config = new PetConfig(updatedWindow, config.model(), config.behavior(), config.system());
                 configManager.save(config);
             }
@@ -476,7 +503,9 @@ public class AppOrchestrator {
                 LEGACY_INSTANCE_ID,
                 config.model().currentModelName(),
                 config.window().positionX(),
-                config.window().positionY()
+                config.window().positionY(),
+                config.window().width(),
+                config.window().height()
         );
         log.info("Renderer restarted, waiting for ready event...");
     }
@@ -487,7 +516,7 @@ public class AppOrchestrator {
 
         if (config != null) {
             var state = stateManager.getState();
-            var updatedWindow = new WindowConfig(state.windowX(), state.windowY(), config.window().opacity());
+            var updatedWindow = new WindowConfig(state.windowX(), state.windowY(), state.windowWidth(), state.windowHeight(), config.window().opacity());
             configManager.save(new PetConfig(updatedWindow, config.model(), config.behavior(), config.system()));
         }
 
@@ -543,7 +572,9 @@ public class AppOrchestrator {
                         LEGACY_INSTANCE_ID,
                         config.model().currentModelName(),
                         config.window().positionX(),
-                        config.window().positionY()
+                        config.window().positionY(),
+                        config.window().width(),
+                        config.window().height()
                 );
                 log.info("Manual renderer restart initiated");
             } catch (InterruptedException e) {

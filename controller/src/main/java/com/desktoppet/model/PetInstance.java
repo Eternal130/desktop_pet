@@ -24,6 +24,8 @@ public class PetInstance {
     private final IntegerProperty idleInterval;
     private final IntegerProperty posX;
     private final IntegerProperty posY;
+    private final IntegerProperty windowWidth;
+    private final IntegerProperty windowHeight;
     private final BooleanProperty autoStart;
     private final IntegerProperty targetFps;
     private final StringProperty currentExpression;
@@ -41,6 +43,8 @@ public class PetInstance {
         this.idleInterval = new SimpleIntegerProperty(10);
         this.posX = new SimpleIntegerProperty(1200);
         this.posY = new SimpleIntegerProperty(600);
+        this.windowWidth = new SimpleIntegerProperty(400);
+        this.windowHeight = new SimpleIntegerProperty(500);
         this.autoStart = new SimpleBooleanProperty(false);
         this.targetFps = new SimpleIntegerProperty(0);
         this.currentExpression = new SimpleStringProperty("F01");
@@ -60,6 +64,8 @@ public class PetInstance {
         instance.setIdleInterval(state.idleInterval());
         instance.setPosX(state.posX());
         instance.setPosY(state.posY());
+        instance.setWindowWidth(state.windowWidth());
+        instance.setWindowHeight(state.windowHeight());
         instance.setAutoStart(state.autoStart());
         instance.setTargetFps(state.targetFps());
         instance.setCurrentExpression(state.currentExpression());
@@ -70,7 +76,8 @@ public class PetInstance {
         return new InstanceState(
                 getLabel(), getModel(), getRendererPath(),
                 getOpacity(), getDragMode(), getIdleInterval(),
-                getPosX(), getPosY(), isAutoStart(), getCurrentExpression(),
+                getPosX(), getPosY(), getWindowWidth(), getWindowHeight(),
+                isAutoStart(), getCurrentExpression(),
                 getTargetFps()
         );
     }
@@ -131,6 +138,13 @@ public class PetInstance {
     public void setPosY(int v) { posY.set(v); }
     public IntegerProperty posYProperty() { return posY; }
 
+    public int getWindowWidth() { return windowWidth.get(); }
+    public void setWindowWidth(int v) { windowWidth.set(v); }
+    public IntegerProperty windowWidthProperty() { return windowWidth; }
+
+    public int getWindowHeight() { return windowHeight.get(); }
+    public void setWindowHeight(int v) { windowHeight.set(v); }
+    public IntegerProperty windowHeightProperty() { return windowHeight; }
 
     public boolean isAutoStart() { return autoStart.get(); }
     public void setAutoStart(boolean v) { autoStart.set(v); }

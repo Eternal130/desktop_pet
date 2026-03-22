@@ -83,6 +83,7 @@ public class MainWindowController {
     private final HitAreaCacheManager hitAreaCacheManager = new HitAreaCacheManager();
     private final Map<Integer, MountedBehaviorEngine> mountedEngines = new ConcurrentHashMap<>();
     private final Map<Integer, InteractionHandler> interactionHandlers = new ConcurrentHashMap<>();
+    private final Map<Integer, Integer> idleMotionCounts = new ConcurrentHashMap<>();
     private PanelStateManager panelStateManager;
     private PetWebSocketServer wsServer;
 
@@ -951,6 +952,7 @@ public class MainWindowController {
         restartAttempts.remove(id);
         mountedEngines.remove(id);
         interactionHandlers.remove(id);
+        idleMotionCounts.remove(id);
         log.info("Instance {} stopped", id);
     }
 
@@ -1039,6 +1041,22 @@ public class MainWindowController {
         dispatcher.registerEventHandler("motion_finished", envelope -> Platform.runLater(() -> {
             String label = resolveMotionLabel(envelope);
             instance.addLog("■ 动作结束: " + label);
+
+            boolean isIdle;
+            if (envelope.payload().has("group")) {
+                String group = envelope.payload().get("group").getAsString();
+                isIdle = "Idle".equalsIgnoreCase(group);
+            } else if (envelope.payload().has("motion_path")) {
+                String path = envelope.payload().get("motion_path").getAsString();
+                MountedBehaviorEngine engine = mountedEngines.get(id);
+                isIdle = engine != null && engine.isIdleMotionPath(path);
+            } else {
+                isIdle = true;
+            }
+
+            if (!isIdle && instance.isConnected()) {
+                triggerIdleMotion(instance);
+            }
         }));
 
         dispatcher.registerEventHandler("hit", envelope -> Platform.runLater(() -> {
@@ -1087,31 +1105,56 @@ public class MainWindowController {
         String modelName = instance.getModel();
         String rendererPath = instance.getRendererPath();
 
-        List<String> idleMotions = List.of("Idle");
+        int idleMotionCount = 0;
         var modelInfo = ModelScanner.getModelInfo(rendererPath, modelName);
-        if (modelInfo.isPresent() && !modelInfo.get().motionGroups().isEmpty()) {
-            idleMotions = List.copyOf(modelInfo.get().motionGroups().keySet());
+        if (modelInfo.isPresent()) {
+            Integer count = modelInfo.get().motionGroups().get("Idle");
+            if (count != null && count > 0) {
+                idleMotionCount = count;
+            }
         }
+        idleMotionCounts.put(instance.getId(), idleMotionCount);
 
         Scheduler scheduler = Scheduler.createDefault();
         int intervalMillis = Math.max(1, instance.getIdleInterval()) * 1000;
-        final List<String> finalIdleMotions = idleMotions;
 
-        int id = instance.getId();
-        scheduler.start(intervalMillis, finalIdleMotions, motionGroup -> {
+        scheduler.start(intervalMillis, List.of("Idle"), motionGroup -> {
             if (instance.isConnected()) {
-                JsonObject payload = new JsonObject();
-                payload.addProperty("group", motionGroup);
-                payload.addProperty("index", 0);
-                payload.addProperty("priority", 1);
-                wsServer.sendToInstance(id, Protocol.serialize(
-                        Protocol.createCommand("play_motion", payload)));
+                triggerIdleMotion(instance);
             }
         });
         scheduler.resume();
 
-        schedulers.put(id, scheduler);
+        schedulers.put(instance.getId(), scheduler);
         instance.addLog("◇ 调度器已启动: 间隔=" + instance.getIdleInterval() + "s");
+    }
+
+    private void triggerIdleMotion(PetInstance instance) {
+        int id = instance.getId();
+
+        MountedBehaviorEngine engine = mountedEngines.get(id);
+        if (engine != null) {
+            String idleKey = engine.hasGroupForArea("Idle") ? "Idle"
+                    : engine.hasGroupForArea("idle") ? "idle" : null;
+            if (idleKey != null) {
+                String cmd = engine.buildMotionCommand(idleKey);
+                if (cmd != null) {
+                    wsServer.sendToInstance(id, cmd);
+                    return;
+                }
+            }
+        }
+
+        int motionCount = idleMotionCounts.getOrDefault(id, 0);
+        if (motionCount > 0) {
+            int index = java.util.concurrent.ThreadLocalRandom.current().nextInt(motionCount);
+            JsonObject payload = new JsonObject();
+            payload.addProperty("group", "Idle");
+            payload.addProperty("index", index);
+            payload.addProperty("priority", 1);
+            wsServer.sendToInstance(id, Protocol.serialize(
+                    Protocol.createCommand("play_motion", payload)));
+        }
     }
 
     private void initMountedEngine(PetInstance instance) {

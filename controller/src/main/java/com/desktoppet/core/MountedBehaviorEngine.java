@@ -76,4 +76,29 @@ public class MountedBehaviorEngine {
         Envelope command = Protocol.createCommand("play_motion_ext", payload);
         return Protocol.serialize(command);
     }
+
+    public boolean isIdleMotionPath(String absolutePath) {
+        if (voicePack == null || voicePack.groups() == null || voicePack.basePath() == null) {
+            return false;
+        }
+
+        VoicePackGroup group = voicePack.groups().get("idle");
+        if (group == null) {
+            group = voicePack.groups().get("Idle");
+        }
+        if (group == null || group.actions() == null) {
+            return false;
+        }
+
+        String normalizedInput = absolutePath.replace('/', '\\');
+        for (VoicePackAction action : group.actions()) {
+            if (action != null && action.motionPath() != null) {
+                String resolved = voicePack.basePath().resolve(action.motionPath()).toString().replace('/', '\\');
+                if (normalizedInput.equals(resolved)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 }

@@ -329,17 +329,12 @@ void LAppModel::Update()
     csmBool motionUpdated = false;
 
     //-----------------------------------------------------------------
-    _model->LoadParameters(); // 前回セーブされた状態をロード
-    if (_motionManager->IsFinished())
+    _model->LoadParameters();
+    if (!_motionManager->IsFinished())
     {
-        // モーションの再生がない場合、待機モーションの中からランダムで再生する
-        StartRandomMotion(MotionGroupIdle, PriorityIdle);
+        motionUpdated = _motionManager->UpdateMotion(_model, deltaTimeSeconds);
     }
-    else
-    {
-        motionUpdated = _motionManager->UpdateMotion(_model, deltaTimeSeconds); // モーションを更新
-    }
-    _model->SaveParameters(); // 状態を保存
+    _model->SaveParameters();
     //-----------------------------------------------------------------
 
     // 不透明度

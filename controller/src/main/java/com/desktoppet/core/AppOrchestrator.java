@@ -301,32 +301,53 @@ public class AppOrchestrator {
         Path rendererDir = Path.of("../renderer/build/bin/desktop-pet-renderer");
         Path model3Json = rendererDir.resolve("Resources").resolve(modelName).resolve(modelName + ".model3.json");
 
-        List<String> idleMotions = List.of("Idle");
+        int idleMotionCount = 0;
         var modelInfo = ModelInfoParser.parse(model3Json);
-        if (modelInfo.isPresent() && !modelInfo.get().motionGroups().isEmpty()) {
-            idleMotions = List.copyOf(modelInfo.get().motionGroups().keySet());
-            log.info("Loaded {} motion groups for model {}", idleMotions.size(), modelName);
-        } else {
-            log.info("Using default idle motions for model {}", modelName);
+        if (modelInfo.isPresent()) {
+            Integer count = modelInfo.get().motionGroups().get("Idle");
+            if (count != null && count > 0) {
+                idleMotionCount = count;
+            }
         }
 
-        final List<String> finalIdleMotions = idleMotions;
+        final int motionCount = idleMotionCount;
         int intervalMillis = Math.max(1, config.behavior().idleIntervalSeconds()) * 1000;
-        scheduler.start(intervalMillis, finalIdleMotions, motionGroup -> {
-            if (stateManager.getState().connected() && stateManager.getState().modelLoaded()) {
+        scheduler.start(intervalMillis, List.of("Idle"), motionGroup -> {
+            if (!stateManager.getState().connected() || !stateManager.getState().modelLoaded()) {
+                return;
+            }
+
+            // Priority 1: voice pack's Idle group
+            MountedBehaviorEngine engine = mountedEngine;
+            if (engine != null) {
+                String idleKey = engine.hasGroupForArea("Idle") ? "Idle"
+                        : engine.hasGroupForArea("idle") ? "idle" : null;
+                if (idleKey != null) {
+                    String cmd = engine.buildMotionCommand(idleKey);
+                    if (cmd != null) {
+                        sendOrCache("play_motion_ext", cmd);
+                        log.debug("Idle motion from voice pack: group={}", idleKey);
+                        return;
+                    }
+                }
+            }
+
+            // Priority 2: model3.json Idle group with random index
+            if (motionCount > 0) {
+                int index = java.util.concurrent.ThreadLocalRandom.current().nextInt(motionCount);
                 JsonObject payload = new JsonObject();
-                payload.addProperty("group", motionGroup);
-                payload.addProperty("index", 0);
+                payload.addProperty("group", "Idle");
+                payload.addProperty("index", index);
                 payload.addProperty("priority", 1);
                 sendOrCache(
                         "play_motion",
                         Protocol.serialize(Protocol.createCommand("play_motion", payload))
                 );
-                log.debug("Idle motion triggered: {}", motionGroup);
+                log.debug("Idle motion from model: Idle[{}]", index);
             }
         });
         scheduler.resume();
-        log.info("Scheduler started: interval={}ms, motions={}", intervalMillis, finalIdleMotions);
+        log.info("Scheduler started: interval={}ms, idleMotionCount={}", intervalMillis, motionCount);
     }
 
     private void loadModelConfig(String modelName) {

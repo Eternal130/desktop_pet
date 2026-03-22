@@ -876,7 +876,14 @@ public class MainWindowController {
         }));
 
         try {
-            pm.startRenderer(instance.getId());
+            pm.startRenderer(
+                    instance.getId(),
+                    instance.getModel(),
+                    instance.getPosX(),
+                    instance.getPosY(),
+                    instance.getWindowWidth(),
+                    instance.getWindowHeight()
+            );
             processManagers.put(instance.getId(), pm);
             instance.setStatus("running");
             instance.setConnected(false);

@@ -117,7 +117,8 @@ public class PanelStateManager {
                         getInt(obj, "target_fps", 0),
                         getBoolean(obj, "auto_start", false),
                         getString(obj, "current_expression", "F01"),
-                        null
+                        null,
+                        1.0
                     );
                     instanceConfigManager.save(instConfig);
                     instanceIds.add(id);

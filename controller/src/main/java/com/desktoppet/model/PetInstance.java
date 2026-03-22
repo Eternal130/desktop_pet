@@ -34,6 +34,7 @@ public class PetInstance {
     private final StringProperty rendererPath;
     private final DoubleProperty modelScale;
     private final StringProperty voicePack;
+    private final DoubleProperty volume;
     private final ObservableList<String> logs;
 
     public PetInstance(String configId, String label, String model, String status,
@@ -57,6 +58,7 @@ public class PetInstance {
         this.rendererPath = new SimpleStringProperty(rendererPath);
         this.modelScale = new SimpleDoubleProperty(1.0);
         this.voicePack = new SimpleStringProperty(null);
+        this.volume = new SimpleDoubleProperty(1.0);
         this.logs = FXCollections.observableArrayList();
     }
 
@@ -84,6 +86,7 @@ public class PetInstance {
         instance.setCurrentExpression(config.currentExpression());
         instance.setModelScale(config.modelScale());
         instance.setVoicePack(config.voicePack());
+        instance.setVolume(config.volume());
         return instance;
     }
 
@@ -96,7 +99,8 @@ public class PetInstance {
                 getOpacity(),
                 getDragMode(), getIdleInterval(), getTargetFps(),
                 isAutoStart(), getCurrentExpression(),
-                getVoicePack()
+                getVoicePack(),
+                getVolume()
         );
     }
 
@@ -162,6 +166,11 @@ public class PetInstance {
     public double getOpacity() { return opacity.get(); }
     public void setOpacity(double v) { opacity.set(v); }
     public DoubleProperty opacityProperty() { return opacity; }
+
+
+    public double getVolume() { return volume.get(); }
+    public void setVolume(double v) { volume.set(v); }
+    public DoubleProperty volumeProperty() { return volume; }
 
 
     public String getDragMode() { return dragMode.get(); }

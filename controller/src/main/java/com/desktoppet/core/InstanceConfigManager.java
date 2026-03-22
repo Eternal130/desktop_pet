@@ -155,7 +155,8 @@ public class InstanceConfigManager {
             modelName, modelScale,
             windowX, windowY, windowWidth, windowHeight, opacity,
             dragMode, idleInterval, targetFps,
-            autoStart, currentExpression, voicePack
+            autoStart, currentExpression, voicePack,
+            getDouble(root, "volume", 1.0)
         );
     }
 

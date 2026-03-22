@@ -41,6 +41,30 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(ixwebsocket)
 
+# === libogg + libvorbis (official OGG Vorbis decoder) ===
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+set(INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+set(INSTALL_CMAKE_PACKAGE_MODULE OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  libogg
+  GIT_REPOSITORY https://github.com/xiph/ogg.git
+  GIT_TAG v1.3.5
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(libogg)
+
+set(OGG_INCLUDE_DIR ${libogg_SOURCE_DIR}/include ${libogg_BINARY_DIR}/include)
+set(OGG_LIBRARY ogg)
+FetchContent_Declare(
+  libvorbis
+  GIT_REPOSITORY https://github.com/xiph/vorbis.git
+  GIT_TAG v1.3.7
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(libvorbis)
+
+
 # === Compiler settings ===
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -119,6 +143,8 @@ target_sources(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/EventEmitter.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/CommandHandlers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/CommandHandlers.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.hpp
 )
 
 target_include_directories(${APP_NAME}
@@ -134,6 +160,7 @@ target_link_libraries(${APP_NAME}
   glfw
   ${OPENGL_LIBRARIES}
   ixwebsocket::ixwebsocket
+  vorbisfile
 )
 
 # === Post-build: copy resources, shaders, and DLL ===

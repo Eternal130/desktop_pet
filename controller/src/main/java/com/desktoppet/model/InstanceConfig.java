@@ -18,7 +18,8 @@ public record InstanceConfig(
     int targetFps,
     boolean autoStart,
     String currentExpression,
-    String voicePack
+    String voicePack,
+    double volume
 ) {
     public static InstanceConfig defaults() {
         return new InstanceConfig(
@@ -34,7 +35,8 @@ public record InstanceConfig(
             0,
             false,
             "F01",
-            null
+            null,
+            1.0
         );
     }
 
@@ -53,7 +55,8 @@ public record InstanceConfig(
             d.targetFps(),
             d.autoStart(),
             d.currentExpression(),
-            d.voicePack()
+            d.voicePack(),
+            d.volume()
         );
     }
 }

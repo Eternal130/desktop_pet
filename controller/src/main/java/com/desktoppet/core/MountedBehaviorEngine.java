@@ -73,6 +73,11 @@ public class MountedBehaviorEngine {
         payload.addProperty("fade_in", fadeIn);
         payload.addProperty("fade_out", fadeOut);
 
+        if (chosen.audioPath() != null && !chosen.audioPath().isEmpty()) {
+            String audioAbsPath = basePath.resolve(chosen.audioPath()).toString();
+            payload.addProperty("audio_path", audioAbsPath);
+        }
+
         Envelope command = Protocol.createCommand("play_motion_ext", payload);
         return Protocol.serialize(command);
     }

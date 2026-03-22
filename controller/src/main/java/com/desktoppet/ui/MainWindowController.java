@@ -144,6 +144,8 @@ public class MainWindowController {
     @FXML private HBox expressionRow;
     @FXML private Slider opacitySlider;
     @FXML private Label opacityValueLabel;
+    @FXML private Slider volumeSlider;
+    @FXML private Label volumeValueLabel;
     @FXML private Button dragDirectBtn;
     @FXML private Button dragPhysicsBtn;
     @FXML private Slider idleSlider;
@@ -175,6 +177,18 @@ public class MainWindowController {
             JsonObject payload = new JsonObject();
             payload.addProperty("opacity", value);
             sendInstanceCommand(currentInstance, "set_opacity", payload);
+        });
+
+        volumeSlider.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingUI || currentInstance == null) {
+                return;
+            }
+            double value = newValue.doubleValue();
+            currentInstance.setVolume(value);
+            volumeValueLabel.setText(Math.round(value * 100) + "%");
+            JsonObject payload = new JsonObject();
+            payload.addProperty("volume", value);
+            sendInstanceCommand(currentInstance, "set_volume", payload);
         });
 
         idleSlider.valueProperty().addListener((obs, oldValue, newValue) -> {
@@ -244,6 +258,7 @@ public class MainWindowController {
         });
 
         clipSliderToBounds(opacitySlider);
+        clipSliderToBounds(volumeSlider);
         clipSliderToBounds(idleSlider);
         clipSliderToBounds(fpsSlider);
         setupToggleSwitch(autoStartCheck);
@@ -537,6 +552,9 @@ public class MainWindowController {
 
             opacitySlider.setValue(currentInstance.getOpacity());
             opacityValueLabel.setText(String.format("%.1f", currentInstance.getOpacity()));
+
+            volumeSlider.setValue(currentInstance.getVolume());
+            volumeValueLabel.setText(Math.round(currentInstance.getVolume() * 100) + "%");
 
             boolean isDirect = !"physics".equals(currentInstance.getDragMode());
             dragDirectBtn.pseudoClassStateChanged(SEG_ACTIVE, isDirect);
@@ -999,6 +1017,11 @@ public class MainWindowController {
             fpsPayload.addProperty("fps", instance.getTargetFps());
             wsServer.sendToInstance(id, Protocol.serialize(
                     Protocol.createCommand("set_fps", fpsPayload)));
+
+            JsonObject volumePayload = new JsonObject();
+            volumePayload.addProperty("volume", instance.getVolume());
+            wsServer.sendToInstance(id, Protocol.serialize(
+                    Protocol.createCommand("set_volume", volumePayload)));
 
             renderSidebar();
             if (currentInstance == instance) renderDetail();

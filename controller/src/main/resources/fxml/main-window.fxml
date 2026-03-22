@@ -97,7 +97,16 @@
                                 <Label fx:id="idleValueLabel" text="10s" styleClass="value-display" minWidth="36"/>
                             </HBox>
                         </VBox>
-                    </HBox>
+
+                        <VBox spacing="8" HBox.hgrow="ALWAYS">
+                            <Label text="语音音量" styleClass="setting-label"/>
+                            <HBox spacing="12" alignment="CENTER_LEFT">
+                                <Slider fx:id="volumeSlider" min="0.0" max="1.0" value="1.0"
+                                        blockIncrement="0.1" HBox.hgrow="ALWAYS" minWidth="100"/>
+                                <Label fx:id="volumeValueLabel" text="100%" styleClass="value-display" minWidth="36"/>
+                            </HBox>
+                        </VBox>
+                     </HBox>
 
                     <HBox spacing="32" alignment="CENTER_LEFT">
                         <VBox spacing="8">

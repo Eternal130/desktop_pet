@@ -6,6 +6,7 @@
 #include "LAppModel.hpp"
 #include "LAppPal.hpp"
 #include "LAppDefine.hpp"
+#include "AudioManager.hpp"
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <string>
@@ -128,6 +129,19 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         if (emitter) {
             emitter->emit("motion_started", {{"motion_path", motionPath}});
         }
+
+        std::string audioPath = cmd.payload.value("audio_path", "");
+        if (!audioPath.empty()) {
+            auto* audio = delegate->GetAudioManager();
+            if (audio && audio->IsInitialized()) {
+                if (LAppPal::FileExists(audioPath)) {
+                    audio->Play(audioPath);
+                } else {
+                    LAppPal::PrintLogLn("[CommandHandlers] audio file not found: %s", audioPath.c_str());
+                }
+            }
+        }
+
         sendResponse(createResponse(cmd.id, "play_motion_ext", true));
     });
 
@@ -217,6 +231,51 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         }
         delegate->SetTargetFps(fps);
         sendResponse(createResponse(cmd.id, "set_fps", true));
+    });
+
+    handler.registerCommand("play_audio", [delegate](const Envelope& cmd, auto sendResponse) {
+        std::string audioPath = cmd.payload.value("audio_path", "");
+        if (audioPath.empty()) {
+            sendResponse(createResponse(cmd.id, "play_audio", false, 7001, "audio_path is required"));
+            return;
+        }
+        auto* audio = delegate->GetAudioManager();
+        if (!audio || !audio->IsInitialized()) {
+            sendResponse(createResponse(cmd.id, "play_audio", false, 7002, "Audio engine not initialized"));
+            return;
+        }
+        if (!LAppPal::FileExists(audioPath)) {
+            sendResponse(createResponse(cmd.id, "play_audio", false, 7003, "audio file not found: " + audioPath));
+            return;
+        }
+        float volume = cmd.payload.value("volume", 1.0f);
+        audio->Play(audioPath, volume);
+        sendResponse(createResponse(cmd.id, "play_audio", true));
+    });
+
+    handler.registerCommand("stop_audio", [delegate](const Envelope& cmd, auto sendResponse) {
+        auto* audio = delegate->GetAudioManager();
+        if (audio && audio->IsInitialized()) {
+            audio->StopAll();
+        }
+        sendResponse(createResponse(cmd.id, "stop_audio", true));
+    });
+
+    handler.registerCommand("set_volume", [delegate](const Envelope& cmd, auto sendResponse) {
+        auto* audio = delegate->GetAudioManager();
+        if (!audio || !audio->IsInitialized()) {
+            sendResponse(createResponse(cmd.id, "set_volume", false, 7002, "Audio engine not initialized"));
+            return;
+        }
+        if (cmd.payload.contains("volume")) {
+            float volume = cmd.payload.value("volume", 1.0f);
+            audio->SetVolume(volume);
+        }
+        if (cmd.payload.contains("muted")) {
+            bool muted = cmd.payload.value("muted", false);
+            audio->SetMuted(muted);
+        }
+        sendResponse(createResponse(cmd.id, "set_volume", true));
     });
 
     handler.registerCommand("shutdown", [delegate](const Envelope& cmd, auto sendResponse) {

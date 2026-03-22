@@ -20,6 +20,7 @@
 #include "network/EventEmitter.hpp"
 #include "network/CommandHandlers.hpp"
 #include "network/Protocol.hpp"
+#include "AudioManager.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -141,6 +142,11 @@ bool LAppDelegate::Initialize()
     //AppViewの初期化
     _view->Initialize(width, height);
 
+    _audioManager = new AudioManager();
+    if (!_audioManager->Init()) {
+        LAppPal::PrintLogLn("[LAppDelegate] Audio engine init failed, continuing without audio");
+    }
+
     InitializeNetwork();
 
     return GL_TRUE;
@@ -148,6 +154,9 @@ bool LAppDelegate::Initialize()
 
 void LAppDelegate::Release()
 {
+    if (_audioManager) { _audioManager->Uninit(); }
+    delete _audioManager; _audioManager = nullptr;
+
     if (_wsClient) { _wsClient->disconnect(); }
     delete _eventEmitter; _eventEmitter = nullptr;
     delete _messageHandler; _messageHandler = nullptr;
@@ -318,7 +327,8 @@ LAppDelegate::LAppDelegate():
     _hasStartupSize(false),
     _windowShown(false),
     _pbo(0),
-    _isClickThrough(false)
+    _isClickThrough(false),
+    _audioManager(nullptr)
 {
     _executeAbsolutePath = "";
     _view = new LAppView();

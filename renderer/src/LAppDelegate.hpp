@@ -15,6 +15,7 @@
 
 class LAppView;
 class LAppTextureManager;
+class AudioManager;
 
 namespace Network {
     class WebSocketClient;
@@ -50,6 +51,7 @@ public:
     int GetWindowWidth() { return _windowWidth; }
     int GetWindowHeight() { return _windowHeight; }
     Network::EventEmitter* GetEventEmitter() { return _eventEmitter; }
+    AudioManager* GetAudioManager() { return _audioManager; }
     void SetWsUrl(const std::string& url) { _wsUrl = url; }
     void SetStartupModel(const std::string& m) { _startupModel = m; }
     void SetStartupPosition(int x, int y) { _startupX = x; _startupY = y; _hasStartupPos = true; }
@@ -110,6 +112,8 @@ private:
 
     GLuint _pbo;
     bool _isClickThrough;
+
+    AudioManager* _audioManager;
 };
 
 class EventHandler

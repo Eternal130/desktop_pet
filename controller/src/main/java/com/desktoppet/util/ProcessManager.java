@@ -66,18 +66,32 @@ public class ProcessManager {
     }
 
     public void startRenderer(int instanceId) throws IOException {
+        startRenderer(instanceId, null, -1, -1);
+    }
+
+    public void startRenderer(int instanceId, String modelName, int x, int y) throws IOException {
         if (isRunning()) {
             log.warn("Renderer is already running (pid={})", process.pid());
             return;
         }
 
-        List<String> command = List.of(
+        List<String> command = new java.util.ArrayList<>(List.of(
                 rendererPath,
                 "--port",
                 String.valueOf(wsPort),
                 "--instance-id",
                 String.valueOf(instanceId)
-        );
+        ));
+        if (modelName != null && !modelName.isEmpty()) {
+            command.add("--model");
+            command.add(modelName);
+        }
+        if (x >= 0 && y >= 0) {
+            command.add("--x");
+            command.add(String.valueOf(x));
+            command.add("--y");
+            command.add(String.valueOf(y));
+        }
 
         log.info("Starting renderer: {}", String.join(" ", command));
 

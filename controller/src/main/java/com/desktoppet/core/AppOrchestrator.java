@@ -139,7 +139,12 @@ public class AppOrchestrator {
             }
         });
 
-        processManager.startRenderer(LEGACY_INSTANCE_ID);
+        processManager.startRenderer(
+                LEGACY_INSTANCE_ID,
+                config.model().currentModelName(),
+                config.window().positionX(),
+                config.window().positionY()
+        );
         log.info("Renderer process started");
     }
 
@@ -467,7 +472,12 @@ public class AppOrchestrator {
         log.info("Restarting renderer...");
         stateManager.setConnected(false);
         stateManager.setModelLoaded(false);
-        processManager.startRenderer(LEGACY_INSTANCE_ID);
+        processManager.startRenderer(
+                LEGACY_INSTANCE_ID,
+                config.model().currentModelName(),
+                config.window().positionX(),
+                config.window().positionY()
+        );
         log.info("Renderer restarted, waiting for ready event...");
     }
 
@@ -529,7 +539,12 @@ public class AppOrchestrator {
                 restartAttempts.set(0);
                 stateManager.setConnected(false);
                 stateManager.setModelLoaded(false);
-                processManager.startRenderer(LEGACY_INSTANCE_ID);
+                processManager.startRenderer(
+                        LEGACY_INSTANCE_ID,
+                        config.model().currentModelName(),
+                        config.window().positionX(),
+                        config.window().positionY()
+                );
                 log.info("Manual renderer restart initiated");
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

@@ -21,6 +21,8 @@ int main(int argc, char* argv[])
 
     int wsPort = 9000;
     int instanceId = 0;
+    std::string startupModel;
+    int startupX = -1, startupY = -1;
 
     for (int i = 1; i < argc; i++)
     {
@@ -34,19 +36,40 @@ int main(int argc, char* argv[])
             instanceId = std::atoi(argv[i + 1]);
             i++;
         }
+        else if (std::strcmp(argv[i], "--model") == 0 && i + 1 < argc)
+        {
+            startupModel = argv[i + 1];
+            i++;
+        }
+        else if (std::strcmp(argv[i], "--x") == 0 && i + 1 < argc)
+        {
+            startupX = std::atoi(argv[i + 1]);
+            i++;
+        }
+        else if (std::strcmp(argv[i], "--y") == 0 && i + 1 < argc)
+        {
+            startupY = std::atoi(argv[i + 1]);
+            i++;
+        }
     }
 
     std::string wsUrl = "ws://localhost:" + std::to_string(wsPort)
                       + "/?instance_id=" + std::to_string(instanceId);
-    LAppDelegate::GetInstance()->SetWsUrl(wsUrl);
 
-    if (LAppDelegate::GetInstance()->Initialize() == GL_FALSE)
+    LAppDelegate* delegate = LAppDelegate::GetInstance();
+    delegate->SetWsUrl(wsUrl);
+    if (!startupModel.empty())
+        delegate->SetStartupModel(startupModel);
+    if (startupX >= 0 && startupY >= 0)
+        delegate->SetStartupPosition(startupX, startupY);
+
+    if (delegate->Initialize() == GL_FALSE)
     {
         SetConsoleOutputCP(preConsoleOutputCP);
         return 1;
     }
 
-    LAppDelegate::GetInstance()->Run();
+    delegate->Run();
 
     ix::uninitNetSystem();
     SetConsoleOutputCP(preConsoleOutputCP);

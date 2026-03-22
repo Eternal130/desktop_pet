@@ -151,6 +151,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         int x = cmd.payload.value("x", 0);
         int y = cmd.payload.value("y", 0);
         glfwSetWindowPos(delegate->GetWindow(), x, y);
+        delegate->ShowWindowIfHidden();
     });
 
     handler.registerCommand("set_scale", [](const Envelope& cmd, auto sendResponse) {

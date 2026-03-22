@@ -50,6 +50,10 @@ public:
     int GetWindowHeight() { return _windowHeight; }
     Network::EventEmitter* GetEventEmitter() { return _eventEmitter; }
     void SetWsUrl(const std::string& url) { _wsUrl = url; }
+    void SetStartupModel(const std::string& m) { _startupModel = m; }
+    void SetStartupPosition(int x, int y) { _startupX = x; _startupY = y; _hasStartupPos = true; }
+    const std::string& GetStartupModel() const { return _startupModel; }
+    void ShowWindowIfHidden();
     void SetTargetFps(double fps);
     double GetTargetFps() const { return _targetFps; }
     float GetMouseX() const { return _mouseX; }
@@ -92,6 +96,12 @@ private:
     std::string _wsUrl;
     bool _wasEverConnected;
     std::chrono::steady_clock::time_point _connectionStartTime;
+
+    std::string _startupModel;
+    int _startupX;
+    int _startupY;
+    bool _hasStartupPos;
+    bool _windowShown;
 
     GLuint _pbo;
     bool _isClickThrough;

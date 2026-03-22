@@ -60,7 +60,9 @@ LAppLive2DManager::LAppLive2DManager()
     : _viewMatrix(NULL)
 {
     _viewMatrix = new CubismMatrix44();
-    ChangeScene("Hiyori");
+
+    const std::string& model = LAppDelegate::GetInstance()->GetStartupModel();
+    ChangeScene(model.empty() ? "Hiyori" : model.c_str());
 }
 
 LAppLive2DManager::~LAppLive2DManager()

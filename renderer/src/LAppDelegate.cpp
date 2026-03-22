@@ -66,10 +66,11 @@ bool LAppDelegate::Initialize()
         return GL_FALSE;
     }
 
-    // Desktop pet: transparent, borderless, always-on-top
+    // Desktop pet: transparent, borderless, always-on-top, initially hidden
     glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
     glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
     glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
+    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
     // Windowの生成_
     _window = glfwCreateWindow(RenderTargetWidth, RenderTargetHeight, "desktop-pet-renderer", NULL, NULL);
@@ -81,6 +82,11 @@ bool LAppDelegate::Initialize()
         }
         glfwTerminate();
         return GL_FALSE;
+    }
+
+    if (_hasStartupPos)
+    {
+        glfwSetWindowPos(_window, _startupX, _startupY);
     }
 
     // Windowのコンテキストをカレントに設定
@@ -257,6 +263,16 @@ void LAppDelegate::Run()
 
         PollNetworkMessages();
 
+        if (!_windowShown)
+        {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - _connectionStartTime).count();
+            if (elapsed > 5)
+            {
+                ShowWindowIfHidden();
+            }
+        }
+
         if (_targetFps > 0.0)
         {
             glfwWaitEventsTimeout(1.0 / _targetFps);
@@ -291,6 +307,10 @@ LAppDelegate::LAppDelegate():
     _wsUrl("ws://localhost:9000"),
     _wasEverConnected(false),
     _connectionStartTime(std::chrono::steady_clock::now()),
+    _startupX(0),
+    _startupY(0),
+    _hasStartupPos(false),
+    _windowShown(false),
     _pbo(0),
     _isClickThrough(false)
 {
@@ -559,4 +579,11 @@ void LAppDelegate::PollNetworkMessages()
             }
         }
     }
+}
+
+void LAppDelegate::ShowWindowIfHidden()
+{
+    if (_windowShown) return;
+    _windowShown = true;
+    glfwShowWindow(_window);
 }

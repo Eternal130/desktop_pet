@@ -1,9 +1,7 @@
 package com.desktoppet.ui;
 
-import com.desktoppet.core.AppOrchestrator;
 import com.desktoppet.core.InstanceConfigManager;
 import com.desktoppet.core.ModelScanner;
-import com.desktoppet.core.MountConfigManager;
 import com.desktoppet.core.PanelStateManager;
 import com.desktoppet.core.Scheduler;
 import com.desktoppet.core.HitAreaCacheManager;
@@ -12,11 +10,10 @@ import com.desktoppet.core.MetaMkoParser;
 import com.desktoppet.core.MountedBehaviorEngine;
 import com.desktoppet.core.VoicePackScanner;
 import com.desktoppet.model.Envelope;
-import com.desktoppet.model.InstanceState;
+import com.desktoppet.model.InstanceConfig;
 import com.desktoppet.model.ModelInfo;
 import com.desktoppet.model.ModelConfig;
-import com.desktoppet.model.MountConfig;
-import com.desktoppet.model.PanelState;
+import com.desktoppet.model.PanelConfig;
 import com.desktoppet.model.PetInstance;
 import com.desktoppet.model.VoicePackInfo;
 import com.desktoppet.network.MessageDispatcher;
@@ -79,7 +76,6 @@ public class MainWindowController {
     private final Map<Integer, Integer> restartAttempts = new ConcurrentHashMap<>();
     private final java.util.Set<Integer> manuallyStopping = ConcurrentHashMap.newKeySet();
     private final InstanceConfigManager instanceConfigManager = new InstanceConfigManager();
-    private final MountConfigManager mountConfigManager = new MountConfigManager();
     private final HitAreaCacheManager hitAreaCacheManager = new HitAreaCacheManager();
     private final Map<Integer, MountedBehaviorEngine> mountedEngines = new ConcurrentHashMap<>();
     private final Map<Integer, InteractionHandler> interactionHandlers = new ConcurrentHashMap<>();
@@ -260,7 +256,7 @@ public class MainWindowController {
         renderSidebar();
     }
 
-    public void setOrchestrator(AppOrchestrator orchestrator) {
+    public void setOrchestrator(Object orchestrator) {
     }
 
     public void setPanelStateManager(PanelStateManager manager) {
@@ -272,29 +268,29 @@ public class MainWindowController {
             return;
         }
 
-        PanelState state = panelStateManager.load();
+        PanelConfig panelConfig = panelStateManager.load();
 
-        if (state.theme() != null && THEMES.containsKey(state.theme())) {
-            themeCombo.setValue(state.theme());
+        if (panelConfig.theme() != null && THEMES.containsKey(panelConfig.theme())) {
+            themeCombo.setValue(panelConfig.theme());
             onThemeChanged();
         }
 
-        for (InstanceState instState : state.instances()) {
-            String rendererPath = instState.rendererPath();
+        List<InstanceConfig> configs = instanceConfigManager.loadAll(panelConfig.instanceIds());
+        for (InstanceConfig instConfig : configs) {
+            String rendererPath = instConfig.rendererPath();
             if (rendererPath == null || rendererPath.isBlank()) {
                 rendererPath = findRendererExecutable();
             }
             if (rendererPath == null) {
-                log.warn("Skipping restored instance '{}': no renderer available", instState.label());
+                log.warn("Skipping restored instance '{}': no renderer available", instConfig.label());
                 continue;
             }
 
-            PetInstance instance = PetInstance.fromInstanceState(instState);
+            PetInstance instance = PetInstance.fromInstanceConfig(instConfig);
             if (!instance.getRendererPath().equals(rendererPath)) {
                 instance.setRendererPath(rendererPath);
             }
 
-            instanceConfigManager.createConfig(instance.getId(), instance.getLabel(), instance.getRendererPath());
             instance.addLog("◆ 恢复实例「" + instance.getLabel() + "」");
             instances.add(instance);
         }
@@ -310,10 +306,10 @@ public class MainWindowController {
         }
 
         renderSidebar();
-        log.info("Restored {} instances from panel state", state.instances().size());
+        log.info("Restored {} instances from panel config", configs.size());
     }
 
-    public PanelState buildCurrentState() {
+    public PanelConfig buildCurrentPanelConfig() {
         Stage stage = titleBar.getScene() != null
                 ? (Stage) titleBar.getScene().getWindow() : null;
 
@@ -323,19 +319,26 @@ public class MainWindowController {
         double panelH = stage != null ? stage.getHeight() : 760;
         String theme = themeCombo.getValue() != null ? themeCombo.getValue() : "深紫梦幻";
 
-        List<InstanceState> instStates = new ArrayList<>();
+        List<String> instanceIds = new ArrayList<>();
         for (PetInstance inst : instances) {
-            instStates.add(inst.toInstanceState());
+            instanceIds.add(inst.getConfigId());
         }
 
-        return new PanelState(panelX, panelY, panelW, panelH, theme, instStates);
+        return new PanelConfig(panelX, panelY, panelW, panelH, theme, instanceIds);
     }
 
     private void saveState() {
         if (panelStateManager == null) {
             return;
         }
-        panelStateManager.save(buildCurrentState());
+        panelStateManager.save(buildCurrentPanelConfig());
+        for (PetInstance inst : instances) {
+            instanceConfigManager.save(inst.toInstanceConfig());
+        }
+    }
+
+    private void saveInstanceConfig(PetInstance instance) {
+        instanceConfigManager.save(instance.toInstanceConfig());
     }
 
     private void selectInstance(PetInstance instance) {
@@ -413,13 +416,8 @@ public class MainWindowController {
             voicePackCombo.getItems().add("(无)");
             voicePackCombo.getItems().addAll(voicePacks);
 
-            String model = currentInstance.getModel();
-            if (model != null && !model.isEmpty()) {
-                MountConfig mc = mountConfigManager.loadForModel(model);
-                voicePackCombo.setValue(mc.voicePackName() != null ? mc.voicePackName() : "(无)");
-            } else {
-                voicePackCombo.setValue("(无)");
-            }
+            String vp = currentInstance.getVoicePack();
+            voicePackCombo.setValue(vp != null ? vp : "(无)");
         } finally {
             updatingUI = false;
         }
@@ -430,18 +428,15 @@ public class MainWindowController {
         if (updatingUI || currentInstance == null) {
             return;
         }
-        String model = currentInstance.getModel();
-        if (model == null || model.isEmpty()) {
-            return;
-        }
         String selected = voicePackCombo.getValue();
         if (selected == null || "(无)".equals(selected)) {
-            mountConfigManager.saveForModel(new MountConfig(model, null));
+            currentInstance.setVoicePack(null);
             currentInstance.addLog("✦ 卸载语音包");
         } else {
-            mountConfigManager.saveForModel(new MountConfig(model, selected));
+            currentInstance.setVoicePack(selected);
             currentInstance.addLog("✦ 挂载语音包: " + selected);
         }
+        saveInstanceConfig(currentInstance);
         initMountedEngine(currentInstance);
     }
 
@@ -562,13 +557,8 @@ public class MainWindowController {
             posYField.setText(String.valueOf(currentInstance.getPosY()));
             autoStartCheck.setSelected(currentInstance.isAutoStart());
 
-            String vpModel = currentInstance.getModel();
-            if (vpModel != null && !vpModel.isEmpty()) {
-                MountConfig mc = mountConfigManager.loadForModel(vpModel);
-                voicePackCombo.setValue(mc.voicePackName() != null ? mc.voicePackName() : "(无)");
-            } else {
-                voicePackCombo.setValue("(无)");
-            }
+            String vp = currentInstance.getVoicePack();
+            voicePackCombo.setValue(vp != null ? vp : "(无)");
 
             logListView.setItems(currentInstance.getLogs());
         } finally {
@@ -791,16 +781,17 @@ public class MainWindowController {
         dialog.setContentText("实例名称:");
 
         dialog.showAndWait().map(String::trim).filter(s -> !s.isEmpty()).ifPresent(label -> {
-            PetInstance instance = new PetInstance(label, "", "stopped", false, rendererPath);
+            InstanceConfig newConfig = InstanceConfig.create(label, rendererPath);
+            PetInstance instance = PetInstance.fromInstanceConfig(newConfig);
 
             List<String> scannedModels = ModelScanner.scanAvailableModels(instance.getRendererPath());
             if (!scannedModels.isEmpty()) {
                 instance.setModel(scannedModels.getFirst());
             }
 
-            instanceConfigManager.createConfig(instance.getId(), instance.getLabel(), instance.getRendererPath());
+            saveInstanceConfig(instance);
             instance.addLog("◆ 创建实例「" + instance.getLabel() + "」");
-            instance.addLog("◇ 配置文件已创建: " + instanceConfigManager.getConfigPath(instance.getId()));
+            instance.addLog("◇ 配置文件: " + instanceConfigManager.getConfigPath(instance.getConfigId()));
             instance.addLog("◇ 渲染引擎: " + instance.getRendererPath());
             instance.addLog("◇ 扫描到 " + scannedModels.size() + " 个模型: " + String.join(", ", scannedModels));
             instances.add(instance);
@@ -1096,6 +1087,7 @@ public class MainWindowController {
                 instance.setPosX(wx);
                 instance.setPosY(wy);
                 instance.addLog("↕ 拖拽结束: (" + wx + ", " + wy + ")");
+                saveInstanceConfig(instance);
                 if (currentInstance == instance) renderDetail();
             }
         }));
@@ -1111,7 +1103,7 @@ public class MainWindowController {
                     instance.setPosY(envelope.payload().get("window_y").getAsInt());
                 }
                 instance.addLog("⇲ 窗口缩放: " + w + "×" + h);
-                saveState();
+                saveInstanceConfig(instance);
                 if (currentInstance == instance) renderDetail();
             }
         }));
@@ -1181,25 +1173,22 @@ public class MainWindowController {
 
     private void initMountedEngine(PetInstance instance) {
         int id = instance.getId();
-        String model = instance.getModel();
-        if (model == null || model.isEmpty()) {
+        String voicePackName = instance.getVoicePack();
+        if (voicePackName == null) {
             mountedEngines.remove(id);
             return;
         }
 
-        MountConfig mc = mountConfigManager.loadForModel(model);
-        if (mc.voicePackName() != null) {
-            VoicePackInfo info = resolveVoicePackInfo(instance.getRendererPath(), mc.voicePackName());
-            if (info != null) {
-                mountedEngines.put(id, new MountedBehaviorEngine(info));
-                log.info("Mounted voice pack '{}' on instance {} model '{}'",
-                        mc.voicePackName(), id, model);
-                return;
-            }
+        VoicePackInfo info = resolveVoicePackInfo(instance.getRendererPath(), voicePackName);
+        if (info != null) {
+            mountedEngines.put(id, new MountedBehaviorEngine(info));
+            log.info("Mounted voice pack '{}' on instance {} model '{}'",
+                    voicePackName, id, instance.getModel());
+        } else {
             log.warn("Voice pack '{}' not found for instance {} model '{}'",
-                    mc.voicePackName(), id, model);
+                    voicePackName, id, instance.getModel());
+            mountedEngines.remove(id);
         }
-        mountedEngines.remove(id);
     }
 
     private VoicePackInfo resolveVoicePackInfo(String rendererPath, String voicePackName) {

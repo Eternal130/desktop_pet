@@ -1,7 +1,7 @@
 package com.desktoppet.core;
 
-import com.desktoppet.model.InstanceState;
-import com.desktoppet.model.PanelState;
+import com.desktoppet.model.InstanceConfig;
+import com.desktoppet.model.PanelConfig;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -15,125 +15,170 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public class PanelStateManager {
 
     private static final Logger log = LoggerFactory.getLogger(PanelStateManager.class);
 
-    private final Path statePath;
+    private final Path configPath;
+    private final Path legacyPath;
     private final Gson gson;
+    private final InstanceConfigManager instanceConfigManager;
 
     public PanelStateManager() {
-        this(Path.of(System.getProperty("user.home"), ".config", "desktop-pet", "panel-state.json"));
+        this(
+            Path.of(System.getProperty("user.home"), ".config", "desktop-pet", "panel.json"),
+            Path.of(System.getProperty("user.home"), ".config", "desktop-pet", "panel-state.json"),
+            new InstanceConfigManager()
+        );
     }
 
-    public PanelStateManager(Path statePath) {
-        this.statePath = statePath;
+    public PanelStateManager(Path configPath, Path legacyPath, InstanceConfigManager instanceConfigManager) {
+        this.configPath = configPath;
+        this.legacyPath = legacyPath;
+        this.instanceConfigManager = instanceConfigManager;
         this.gson = new GsonBuilder().setPrettyPrinting().create();
     }
 
-    public PanelState load() {
-        PanelState defaults = PanelState.defaults();
-
-        if (!Files.exists(statePath)) {
-            return defaults;
+    public PanelConfig load() {
+        if (Files.exists(configPath)) {
+            return loadNewFormat();
         }
 
-        try {
-            String content = Files.readString(statePath);
-            JsonObject root = JsonParser.parseString(content).getAsJsonObject();
-            return mergeWithDefaults(root, defaults);
-        } catch (Exception e) {
-            log.warn("Failed to load panel state from {}, using defaults", statePath, e);
-            return defaults;
+        if (Files.exists(legacyPath)) {
+            log.info("Migrating legacy panel-state.json to new format");
+            return migrateFromLegacy();
         }
+
+        return PanelConfig.defaults();
     }
 
-    public void save(PanelState state) {
+    public void save(PanelConfig config) {
         try {
-            if (statePath.getParent() != null) {
-                Files.createDirectories(statePath.getParent());
+            if (configPath.getParent() != null) {
+                Files.createDirectories(configPath.getParent());
             }
-            JsonObject root = toJson(state);
-            Files.writeString(statePath, gson.toJson(root));
-            log.info("Panel state saved to {}", statePath);
+            JsonObject root = toJson(config);
+            Files.writeString(configPath, gson.toJson(root));
         } catch (IOException e) {
-            log.error("Failed to save panel state to {}", statePath, e);
+            log.error("Failed to save panel config to {}", configPath, e);
         }
     }
 
-    public String getStatePath() {
-        return statePath.toString();
+    public String getConfigPath() {
+        return configPath.toString();
     }
 
-    private PanelState mergeWithDefaults(JsonObject root, PanelState defaults) {
-        JsonObject panelObj = getObject(root, "panel");
-        double panelX = getDouble(panelObj, "x", defaults.panelX());
-        double panelY = getDouble(panelObj, "y", defaults.panelY());
-        double panelWidth = getDouble(panelObj, "width", defaults.panelWidth());
-        double panelHeight = getDouble(panelObj, "height", defaults.panelHeight());
-        String theme = getString(panelObj, "theme", defaults.theme());
+    private PanelConfig loadNewFormat() {
+        try {
+            String content = Files.readString(configPath);
+            JsonObject root = JsonParser.parseString(content).getAsJsonObject();
+            return fromJson(root);
+        } catch (Exception e) {
+            log.warn("Failed to load panel config from {}, using defaults", configPath, e);
+            return PanelConfig.defaults();
+        }
+    }
 
-        List<InstanceState> instanceStates = new ArrayList<>();
-        if (root.has("instances") && root.get("instances").isJsonArray()) {
-            JsonArray arr = root.getAsJsonArray("instances");
-            InstanceState instDefaults = InstanceState.defaults();
-            for (var elem : arr) {
-                if (!elem.isJsonObject()) continue;
-                JsonObject obj = elem.getAsJsonObject();
-                instanceStates.add(new InstanceState(
-                    getString(obj, "label", instDefaults.label()),
-                    getString(obj, "model", instDefaults.model()),
-                    getString(obj, "renderer_path", instDefaults.rendererPath()),
-                    getDouble(obj, "opacity", instDefaults.opacity()),
-                    getString(obj, "drag_mode", instDefaults.dragMode()),
-                    getInt(obj, "idle_interval", instDefaults.idleInterval()),
-                    getInt(obj, "pos_x", instDefaults.posX()),
-                    getInt(obj, "pos_y", instDefaults.posY()),
-                    getInt(obj, "window_width", instDefaults.windowWidth()),
-                    getInt(obj, "window_height", instDefaults.windowHeight()),
-                    getBoolean(obj, "auto_start", instDefaults.autoStart()),
-                    getString(obj, "current_expression", instDefaults.currentExpression()),
-                    getInt(obj, "target_fps", instDefaults.targetFps())
-                ));
+    private PanelConfig migrateFromLegacy() {
+        try {
+            String content = Files.readString(legacyPath);
+            JsonObject root = JsonParser.parseString(content).getAsJsonObject();
+
+            JsonObject panelObj = getObject(root, "panel");
+            PanelConfig defaults = PanelConfig.defaults();
+            double panelX = getDouble(panelObj, "x", defaults.panelX());
+            double panelY = getDouble(panelObj, "y", defaults.panelY());
+            double panelW = getDouble(panelObj, "width", defaults.panelWidth());
+            double panelH = getDouble(panelObj, "height", defaults.panelHeight());
+            String theme = getString(panelObj, "theme", defaults.theme());
+
+            List<String> instanceIds = new ArrayList<>();
+            if (root.has("instances") && root.get("instances").isJsonArray()) {
+                for (var elem : root.getAsJsonArray("instances")) {
+                    if (!elem.isJsonObject()) continue;
+                    JsonObject obj = elem.getAsJsonObject();
+
+                    String id = UUID.randomUUID().toString();
+                    InstanceConfig instConfig = new InstanceConfig(
+                        id,
+                        getString(obj, "label", "新实例"),
+                        getString(obj, "renderer_path", ""),
+                        getString(obj, "model", ""),
+                        1.0,
+                        getInt(obj, "pos_x", 1200),
+                        getInt(obj, "pos_y", 600),
+                        getInt(obj, "window_width", 400),
+                        getInt(obj, "window_height", 500),
+                        getDouble(obj, "opacity", 1.0),
+                        getString(obj, "drag_mode", "direct"),
+                        getInt(obj, "idle_interval", 10),
+                        getInt(obj, "target_fps", 0),
+                        getBoolean(obj, "auto_start", false),
+                        getString(obj, "current_expression", "F01"),
+                        null
+                    );
+                    instanceConfigManager.save(instConfig);
+                    instanceIds.add(id);
+                    log.info("Migrated instance '{}' → {}", instConfig.label(), id);
+                }
             }
-        }
 
-        return new PanelState(panelX, panelY, panelWidth, panelHeight, theme, instanceStates);
+            PanelConfig panelConfig = new PanelConfig(panelX, panelY, panelW, panelH, theme, instanceIds);
+            save(panelConfig);
+
+            Path backupPath = legacyPath.resolveSibling("panel-state.json.bak");
+            Files.move(legacyPath, backupPath);
+            log.info("Legacy panel-state.json backed up to {}", backupPath);
+
+            return panelConfig;
+        } catch (Exception e) {
+            log.warn("Failed to migrate legacy panel state, using defaults", e);
+            return PanelConfig.defaults();
+        }
     }
 
-    private JsonObject toJson(PanelState state) {
+    private JsonObject toJson(PanelConfig config) {
         JsonObject root = new JsonObject();
 
         JsonObject panel = new JsonObject();
-        panel.addProperty("x", state.panelX());
-        panel.addProperty("y", state.panelY());
-        panel.addProperty("width", state.panelWidth());
-        panel.addProperty("height", state.panelHeight());
-        panel.addProperty("theme", state.theme());
+        panel.addProperty("x", config.panelX());
+        panel.addProperty("y", config.panelY());
+        panel.addProperty("width", config.panelWidth());
+        panel.addProperty("height", config.panelHeight());
+        panel.addProperty("theme", config.theme());
         root.add("panel", panel);
 
         JsonArray instances = new JsonArray();
-        for (InstanceState inst : state.instances()) {
-            JsonObject obj = new JsonObject();
-            obj.addProperty("label", inst.label());
-            obj.addProperty("model", inst.model());
-            obj.addProperty("renderer_path", inst.rendererPath());
-            obj.addProperty("opacity", inst.opacity());
-            obj.addProperty("drag_mode", inst.dragMode());
-            obj.addProperty("idle_interval", inst.idleInterval());
-            obj.addProperty("pos_x", inst.posX());
-            obj.addProperty("pos_y", inst.posY());
-            obj.addProperty("window_width", inst.windowWidth());
-            obj.addProperty("window_height", inst.windowHeight());
-            obj.addProperty("auto_start", inst.autoStart());
-            obj.addProperty("current_expression", inst.currentExpression());
-            obj.addProperty("target_fps", inst.targetFps());
-            instances.add(obj);
+        for (String id : config.instanceIds()) {
+            instances.add(id);
         }
         root.add("instances", instances);
 
         return root;
+    }
+
+    private PanelConfig fromJson(JsonObject root) {
+        PanelConfig defaults = PanelConfig.defaults();
+        JsonObject panelObj = getObject(root, "panel");
+
+        double panelX = getDouble(panelObj, "x", defaults.panelX());
+        double panelY = getDouble(panelObj, "y", defaults.panelY());
+        double panelW = getDouble(panelObj, "width", defaults.panelWidth());
+        double panelH = getDouble(panelObj, "height", defaults.panelHeight());
+        String theme = getString(panelObj, "theme", defaults.theme());
+
+        List<String> instanceIds = new ArrayList<>();
+        if (root.has("instances") && root.get("instances").isJsonArray()) {
+            for (var elem : root.getAsJsonArray("instances")) {
+                if (elem.isJsonPrimitive()) {
+                    instanceIds.add(elem.getAsString());
+                }
+            }
+        }
+
+        return new PanelConfig(panelX, panelY, panelW, panelH, theme, instanceIds);
     }
 
     private JsonObject getObject(JsonObject root, String key) {

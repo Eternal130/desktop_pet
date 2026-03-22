@@ -1,8 +1,7 @@
 package com.desktoppet;
 
-import com.desktoppet.core.AppOrchestrator;
 import com.desktoppet.core.PanelStateManager;
-import com.desktoppet.model.PanelState;
+import com.desktoppet.model.PanelConfig;
 import com.desktoppet.ui.MainWindowController;
 import com.desktoppet.ui.TrayManager;
 import javafx.application.Application;
@@ -17,15 +16,13 @@ import org.slf4j.LoggerFactory;
 
 public class App extends Application {
     private static final Logger log = LoggerFactory.getLogger(App.class);
-    private AppOrchestrator orchestrator;
     private PanelStateManager panelStateManager;
     private TrayManager trayManager;
 
     @Override
     public void start(Stage primaryStage) throws Exception {
-        orchestrator = new AppOrchestrator();
         panelStateManager = new PanelStateManager();
-        PanelState savedState = panelStateManager.load();
+        PanelConfig savedState = panelStateManager.load();
 
         FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/main-window.fxml"));
         VBox root = loader.load();
@@ -54,12 +51,7 @@ public class App extends Application {
         controller.restoreState();
 
         trayManager = new TrayManager(primaryStage);
-        trayManager.setOnExitCallback(() -> {
-            orchestrator.shutdown();
-            Platform.exit();
-        });
-        trayManager.setOnRandomMotionCallback(() -> orchestrator.triggerRandomIdleMotion());
-        trayManager.setOnTogglePauseCallback(() -> orchestrator.toggleSchedulerPause());
+        trayManager.setOnExitCallback(() -> Platform.exit());
         trayManager.initialize();
 
         log.info("Desktop Pet Controller started");
@@ -69,9 +61,6 @@ public class App extends Application {
     public void stop() {
         if (trayManager != null) {
             trayManager.shutdown();
-        }
-        if (orchestrator != null) {
-            orchestrator.shutdown();
         }
     }
 

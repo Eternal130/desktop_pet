@@ -6,6 +6,7 @@ import javafx.collections.ObservableList;
 
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class PetInstance {
@@ -15,6 +16,7 @@ public class PetInstance {
     private static final int MAX_LOG_ENTRIES = 50;
 
     private final int id;
+    private final String configId;
     private final StringProperty label;
     private final StringProperty model;
     private final StringProperty status;       // "running" | "stopped"
@@ -30,10 +32,14 @@ public class PetInstance {
     private final IntegerProperty targetFps;
     private final StringProperty currentExpression;
     private final StringProperty rendererPath;
+    private final DoubleProperty modelScale;
+    private final StringProperty voicePack;
     private final ObservableList<String> logs;
 
-    public PetInstance(String label, String model, String status, boolean connected, String rendererPath) {
+    public PetInstance(String configId, String label, String model, String status,
+                       boolean connected, String rendererPath) {
         this.id = ID_GEN.getAndIncrement();
+        this.configId = configId;
         this.label = new SimpleStringProperty(label);
         this.model = new SimpleStringProperty(model);
         this.status = new SimpleStringProperty(status);
@@ -49,11 +55,49 @@ public class PetInstance {
         this.targetFps = new SimpleIntegerProperty(0);
         this.currentExpression = new SimpleStringProperty("F01");
         this.rendererPath = new SimpleStringProperty(rendererPath);
+        this.modelScale = new SimpleDoubleProperty(1.0);
+        this.voicePack = new SimpleStringProperty(null);
         this.logs = FXCollections.observableArrayList();
+    }
+
+    public PetInstance(String label, String model, String status, boolean connected, String rendererPath) {
+        this(UUID.randomUUID().toString(), label, model, status, connected, rendererPath);
     }
 
     public PetInstance(String label, String model, String status, boolean connected) {
         this(label, model, status, connected, "");
+    }
+
+    public static PetInstance fromInstanceConfig(InstanceConfig config) {
+        PetInstance instance = new PetInstance(
+                config.id(), config.label(), config.modelName(),
+                "stopped", false, config.rendererPath());
+        instance.setOpacity(config.opacity());
+        instance.setDragMode(config.dragMode());
+        instance.setIdleInterval(config.idleInterval());
+        instance.setPosX(config.windowX());
+        instance.setPosY(config.windowY());
+        instance.setWindowWidth(config.windowWidth());
+        instance.setWindowHeight(config.windowHeight());
+        instance.setAutoStart(config.autoStart());
+        instance.setTargetFps(config.targetFps());
+        instance.setCurrentExpression(config.currentExpression());
+        instance.setModelScale(config.modelScale());
+        instance.setVoicePack(config.voicePack());
+        return instance;
+    }
+
+    public InstanceConfig toInstanceConfig() {
+        return new InstanceConfig(
+                configId,
+                getLabel(), getRendererPath(),
+                getModel(), getModelScale(),
+                getPosX(), getPosY(), getWindowWidth(), getWindowHeight(),
+                getOpacity(),
+                getDragMode(), getIdleInterval(), getTargetFps(),
+                isAutoStart(), getCurrentExpression(),
+                getVoicePack()
+        );
     }
 
     public static PetInstance fromInstanceState(InstanceState state) {
@@ -95,6 +139,7 @@ public class PetInstance {
     }
 
     public int getId() { return id; }
+    public String getConfigId() { return configId; }
 
     public String getLabel() { return label.get(); }
     public void setLabel(String v) { label.set(v); }
@@ -163,6 +208,14 @@ public class PetInstance {
     public String getRendererPath() { return rendererPath.get(); }
     public void setRendererPath(String v) { rendererPath.set(v); }
     public StringProperty rendererPathProperty() { return rendererPath; }
+
+    public double getModelScale() { return modelScale.get(); }
+    public void setModelScale(double v) { modelScale.set(v); }
+    public DoubleProperty modelScaleProperty() { return modelScale; }
+
+    public String getVoicePack() { return voicePack.get(); }
+    public void setVoicePack(String v) { voicePack.set(v); }
+    public StringProperty voicePackProperty() { return voicePack; }
 
     public ObservableList<String> getLogs() { return logs; }
 }

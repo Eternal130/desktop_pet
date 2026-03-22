@@ -94,6 +94,9 @@ private:
     std::string _wsUrl;
     bool _wasEverConnected;
     std::chrono::steady_clock::time_point _connectionStartTime;
+
+    GLuint _pbo;
+    bool _isClickThrough;
 };
 
 class EventHandler

@@ -104,6 +104,12 @@ bool LAppDelegate::Initialize()
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+    glGenBuffers(1, &_pbo);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, _pbo);
+    GLubyte zeros[4] = {0, 0, 0, 0};
+    glBufferData(GL_PIXEL_PACK_BUFFER, 4, zeros, GL_STREAM_READ);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+
     //コールバック関数の登録
     glfwSetMouseButtonCallback(_window, EventHandler::OnMouseCallBack);
     glfwSetCursorPosCallback(_window, EventHandler::OnMouseCallBack);
@@ -137,6 +143,12 @@ void LAppDelegate::Release()
     delete _eventEmitter; _eventEmitter = nullptr;
     delete _messageHandler; _messageHandler = nullptr;
     delete _wsClient; _wsClient = nullptr;
+
+    if (_pbo)
+    {
+        glDeleteBuffers(1, &_pbo);
+        _pbo = 0;
+    }
 
     glfwDestroyWindow(_window);
 
@@ -197,6 +209,49 @@ void LAppDelegate::Run()
         //描画更新
         _view->Render();
 
+        if (!_isDragging && !_captured)
+        {
+            POINT cursorPos;
+            if (GetCursorPos(&cursorPos))
+            {
+                int windowX, windowY;
+                glfwGetWindowPos(_window, &windowX, &windowY);
+                int localX = cursorPos.x - windowX;
+                int localY = cursorPos.y - windowY;
+
+                if (localX >= 0 && localX < _windowWidth && localY >= 0 && localY < _windowHeight)
+                {
+                    glBindBuffer(GL_PIXEL_PACK_BUFFER, _pbo);
+                    GLubyte* ptr = static_cast<GLubyte*>(glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
+                    GLubyte alpha = 0;
+                    if (ptr)
+                    {
+                        alpha = ptr[3];
+                        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+                    }
+
+                    int fbY = _windowHeight - 1 - localY;
+                    glReadPixels(localX, fbY, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+                    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+
+                    bool shouldBeClickThrough = (alpha == 0);
+                    if (shouldBeClickThrough != _isClickThrough)
+                    {
+                        glfwSetWindowAttrib(_window, GLFW_MOUSE_PASSTHROUGH, shouldBeClickThrough ? GLFW_TRUE : GLFW_FALSE);
+                        _isClickThrough = shouldBeClickThrough;
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (_isClickThrough)
+            {
+                glfwSetWindowAttrib(_window, GLFW_MOUSE_PASSTHROUGH, GLFW_FALSE);
+                _isClickThrough = false;
+            }
+        }
+
         // バッファの入れ替え
         glfwSwapBuffers(_window);
 
@@ -237,7 +292,9 @@ LAppDelegate::LAppDelegate():
     _targetFps(0.0),
     _wsUrl("ws://localhost:9000"),
     _wasEverConnected(false),
-    _connectionStartTime(std::chrono::steady_clock::now())
+    _connectionStartTime(std::chrono::steady_clock::now()),
+    _pbo(0),
+    _isClickThrough(false)
 {
     _executeAbsolutePath = "";
     _view = new LAppView();

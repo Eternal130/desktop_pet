@@ -283,8 +283,6 @@ LAppDelegate::LAppDelegate():
     _isDragging(false),
     _dragStartX(0.0),
     _dragStartY(0.0),
-    _windowStartX(0),
-    _windowStartY(0),
     _wsClient(nullptr),
     _messageHandler(nullptr),
     _eventEmitter(nullptr),
@@ -358,7 +356,6 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
                 _isDragging = true;
                 _dragStartX = _mouseX;
                 _dragStartY = _mouseY;
-                glfwGetWindowPos(_window, &_windowStartX, &_windowStartY);
 
                 if (_eventEmitter && _eventEmitter->isActive())
                 {
@@ -410,9 +407,10 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
 
     if (_isDragging)
     {
-        const int offsetX = static_cast<int>(x - _dragStartX);
-        const int offsetY = static_cast<int>(y - _dragStartY);
-        glfwSetWindowPos(_window, _windowStartX + offsetX, _windowStartY + offsetY);
+        POINT pt;
+        GetCursorPos(&pt);
+        glfwSetWindowPos(_window, pt.x - static_cast<int>(_dragStartX),
+                                  pt.y - static_cast<int>(_dragStartY));
         return;
     }
 

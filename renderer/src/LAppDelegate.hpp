@@ -81,8 +81,6 @@ private:
     bool _isDragging;
     double _dragStartX;
     double _dragStartY;
-    int _windowStartX;
-    int _windowStartY;
 
     Network::WebSocketClient* _wsClient;
     Network::MessageHandler* _messageHandler;

@@ -81,23 +81,30 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
      });
 
     handler.registerCommand("play_motion", [delegate](const Envelope& cmd, auto sendResponse) {
-        std::string group = cmd.payload.value("group", "");
-        int index = cmd.payload.value("index", 0);
-        int priority = cmd.payload.value("priority", 2);
+         std::string group = cmd.payload.value("group", "");
+         int index = cmd.payload.value("index", 0);
+         int priority = cmd.payload.value("priority",2);
 
-        LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
-        if (manager->GetModelNum() == 0) {
-            sendResponse(createEvent("error", {{"error_code", 2001}, {"error_message", "No model loaded"}}));
-            return;
-        }
-        LAppModel* model = manager->GetModel(0);
-        if (!model) return;
-        auto* emitter = delegate->GetEventEmitter();
-        auto* ctx = new MotionFinishedCtx{emitter, group, index};
-        model->StartMotionWithCustomData(group.c_str(), index, priority, OnMotionFinishedStatic, ctx);
-        if (emitter) {
-            emitter->emit("motion_started", {{"group", group}, {"index", index}});
-        }
+         LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
+         if (manager->GetModelNum() == 0) {
+             sendResponse(createEvent("error", {{"error_code", 2001}, {"error_message", "No model loaded"}}));
+             return;
+         }
+         LAppModel* model = manager->GetModel(0);
+         if (!model) return;
+
+         auto* emitter = delegate->GetEventEmitter();
+         auto* ctx = new MotionFinishedCtx{emitter, group, index};
+         Csm::CubismMotionQueueEntryHandle handle = model->StartMotionWithCustomData(group.c_str(), index, priority, OnMotionFinishedStatic, ctx);
+         
+         if (handle == Csm::InvalidMotionQueueEntryHandleValue) {
+             delete ctx;
+             return;
+         }
+         
+         if (emitter) {
+             emitter->emit("motion_started", {{"group", group}, {"index", index}});
+         }
     });
 
     handler.registerCommand("play_motion_ext", [delegate](const Envelope& cmd, auto sendResponse) {
@@ -124,16 +131,20 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             sendResponse(createResponse(cmd.id, "play_motion_ext", false, 2001, "No model loaded"));
             return;
         }
+
         auto* emitter = delegate->GetEventEmitter();
-        model->StartMotionFromFile(motionPath, priority, fadeIn, fadeOut, emitter);
-        if (emitter) {
-            emitter->emit("motion_started", {{"motion_path", motionPath}});
+        bool motionStarted = model->StartMotionFromFile(motionPath, priority, fadeIn, fadeOut, emitter);
+
+        if (!motionStarted) {
+            sendResponse(createResponse(cmd.id, "play_motion_ext", false, 3003, "Motion rejected by priority guard or failed to load"));
+            return;
         }
 
         std::string audioPath = cmd.payload.value("audio_path", "");
         if (!audioPath.empty()) {
             auto* audio = delegate->GetAudioManager();
             if (audio && audio->IsInitialized()) {
+                audio->StopAll();
                 if (LAppPal::FileExists(audioPath)) {
                     audio->Play(audioPath);
                 } else {

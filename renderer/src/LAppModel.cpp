@@ -697,10 +697,11 @@ static void OnExtMotionFinishedStatic(Csm::ACubismMotion* motion) {
 
 }
 
-void LAppModel::StartMotionFromFile(const std::string& filePath, int priority,
-                                     float fadeIn, float fadeOut, Network::EventEmitter* emitter)
+bool LAppModel::StartMotionFromFile(const std::string& filePath, int priority,
+                                      float fadeIn, float fadeOut, Network::EventEmitter* emitter)
 {
-    // Priority guard — same logic as StartMotion()
+    auto* ctx = new ExtMotionCtx{emitter, filePath};
+
     if (priority == PriorityForce)
     {
         _motionManager->SetReservePriority(priority);
@@ -711,7 +712,8 @@ void LAppModel::StartMotionFromFile(const std::string& filePath, int priority,
         {
             LAppPal::PrintLogLn("[APP]StartMotionFromFile: can't start motion (priority too low): %s", filePath.c_str());
         }
-        return;
+        delete ctx;
+        return false;
     }
 
     csmByte* buffer;
@@ -720,7 +722,8 @@ void LAppModel::StartMotionFromFile(const std::string& filePath, int priority,
     if (!buffer || size == 0) {
         LAppPal::PrintLogLn("[LAppModel] StartMotionFromFile: failed to read file: %s", filePath.c_str());
         if (buffer) { DeleteBuffer(buffer, filePath.c_str()); }
-        return;
+        delete ctx;
+        return false;
     }
 
     CubismMotion* motion = static_cast<CubismMotion*>(LoadMotion(buffer, size, NULL, NULL, NULL));
@@ -728,16 +731,16 @@ void LAppModel::StartMotionFromFile(const std::string& filePath, int priority,
 
     if (!motion) {
         LAppPal::PrintLogLn("[LAppModel] StartMotionFromFile: failed to create motion from: %s", filePath.c_str());
-        return;
+        delete ctx;
+        return false;
     }
 
     motion->SetFadeInTime(fadeIn);
     motion->SetFadeOutTime(fadeOut);
     motion->SetEffectIds(_eyeBlinkIds, _lipSyncIds);
-
-    auto* ctx = new ExtMotionCtx{emitter, filePath};
     motion->SetFinishedMotionHandler(OnExtMotionFinishedStatic);
     motion->SetFinishedMotionCustomData(ctx);
 
     _motionManager->StartMotionPriority(motion, true, priority);
+    return true;
 }

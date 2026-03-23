@@ -76,8 +76,8 @@ public:
 
     Csm::CubismMotionQueueEntryHandle StartMotionWithCustomData(const Csm::csmChar* group, Csm::csmInt32 no, Csm::csmInt32 priority, Csm::ACubismMotion::FinishedMotionCallback onFinishedMotionHandler, void* customData);
 
-    void StartMotionFromFile(const std::string& filePath, int priority,
-                             float fadeIn, float fadeOut, Network::EventEmitter* emitter);
+    bool StartMotionFromFile(const std::string& filePath, int priority,
+                                     float fadeIn, float fadeOut, Network::EventEmitter* emitter);
 
     /**
      * @brief   ランダムに選ばれたモーションの再生を開始する。

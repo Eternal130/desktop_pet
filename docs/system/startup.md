@@ -72,7 +72,38 @@
 
 ---
 
-## 三、关闭流程（AppOrchestrator.shutdown()）
+## 三、多实例管理 ✅ 已实现
+
+Phase 2 引入多实例管理后，配置采用分层结构：
+
+```plain
+启动流程：
+  PanelStateManager.load()
+    │
+    ├─ 读取 panel.json → PanelConfig（面板窗口位置/主题/实例 ID 列表）
+    │   └─ 若不存在，检查旧版 panel-state.json → 自动迁移
+    │
+    ├─ 遍历 instanceIds
+    │   └─ InstanceConfigManager.load(uuid) → InstanceConfig
+    │       └─ 创建 PetInstance（JavaFX 可观察模型，绑定 UI）
+    │
+    └─ 每个 PetInstance 独立管理：
+        ├─ 独立渲染器进程（ProcessManager）
+        ├─ 独立 WebSocket 连接
+        ├─ 独立 Scheduler（闲时动作）
+        └─ 独立语音包挂载（MountedBehaviorEngine）
+
+配置文件结构：
+  ~/.config/desktop-pet/
+  ├── panel.json                  ← 面板配置
+  ├── instances/{uuid-1}.json     ← 实例 1 配置
+  ├── instances/{uuid-2}.json     ← 实例 2 配置
+  └── mount.json                  ← 语音包挂载关系
+```
+
+---
+
+## 四、关闭流程（AppOrchestrator.shutdown()）
 
 ```plain
 App.stop() → AppOrchestrator.shutdown()

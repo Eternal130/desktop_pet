@@ -2,6 +2,8 @@
 
 > **Phase 3 实现**：本功能作为 Phase 3（音频模块）的核心能力，在现有音频架构（参见 [音频播放架构](../renderer/audio.md)）基础上，实现语音包与模型的解耦挂载。
 > 系统设计概述参见 [系统设计](./README.md)，整体架构参见 [架构总览](../README.md)，配置文件参见 [配置文件设计](./configuration.md)。
+>
+> **当前实现状态**：Phase 3a（基础挂载）Java 侧已完成——`VoicePackScanner`、`MetaMkoParser`（Protobuf 解析）、`MountConfigManager`、`MountedBehaviorEngine` 及全部数据模型已实现并通过测试。渲染器侧 `play_motion_ext` 指令待实现。Phase 3b/3c/3d 待后续开发。
 
 ---
 
@@ -396,11 +398,12 @@ public record VoicePackModule(
 
 ### 4.5 MountConfig 配置
 
+> **实现简化**：当前实现省略了 `eventOverrides` 字段，因为模型 HitArea Name 与语音包事件名已天然对齐（见 [2.5 事件名与 HitArea Name 对齐](#25-事件名与-hitarea-name-对齐)），暂不需要重映射。后续如遇特殊模型可扩展。
+
 ```java
 public record MountConfig(
     String modelName,                        // 模型目录名
-    String voicePackName,                    // 语音包目录名，null 表示未挂载
-    Map<String, String> eventOverrides       // 可选：事件名重映射（模型独有事件 → 语音包事件）
+    String voicePackName                     // 语音包目录名，null 表示未挂载
 ) {}
 ```
 
@@ -978,16 +981,16 @@ message GraphData {
 
 ### Phase 3a — 基础挂载（最小可用）
 
-| 步骤 | 内容 | 依赖 |
-|:---|:---|:---|
-| 1 | `VoicePackScanner` — 扫描识别语音包 | 无 |
-| 2 | `MountConfig` + `MountConfigManager` — 挂载配置持久化 | 无 |
-| 3 | `play_motion_ext` 指令 — Renderer 支持外部路径 motion | Renderer C++ |
-| 4 | 引入 protobuf-java 依赖 + `protoc` 编译 `bundles.proto` 生成 Java 类 | 无 |
-| 5 | `MountedBehaviorEngine` — hit 事件 → 语音包 motion | 步骤 2, 3, 4 |
-| 6 | UI 扩展 — 模型切换时可选语音包 | 步骤 1, 2 |
+| 步骤 | 内容 | 依赖 | 状态 |
+|:---|:---|:---|:---:|
+| 1 | `VoicePackScanner` — 扫描识别语音包 | 无 | ✅ 已完成 |
+| 2 | `MountConfig` + `MountConfigManager` — 挂载配置持久化 | 无 | ✅ 已完成 |
+| 3 | `play_motion_ext` 指令 — Renderer 支持外部路径 motion | Renderer C++ | ❌ 待实现 |
+| 4 | 引入 protobuf-java 依赖 + `protoc` 编译 `bundles.proto` 生成 Java 类 | 无 | ✅ 已完成 |
+| 5 | `MetaMkoParser` + `MountedBehaviorEngine` — hit 事件 → 语音包 motion | 步骤 2, 3, 4 | ✅ Java 侧已完成（依赖步骤 3 渲染器指令后联调） |
+| 6 | UI 扩展 — Settings Tab 语音包选择 ComboBox | 步骤 1, 2 | ✅ 已完成 |
 
-**Phase 3a 交付物**：用户可选择模型+语音包组合，点击交互时播放语音包中的动作（无音频）。
+**Phase 3a 当前状态**：Java 侧全部完成。用户可在 Settings Tab 选择语音包挂载，`MountedBehaviorEngine` 可生成 `play_motion_ext` 指令。待渲染器实现 `play_motion_ext` 指令后即可联调。
 
 ### Phase 3b — 音频播放
 
@@ -1024,11 +1027,12 @@ message GraphData {
 
 ## 十、风险与待决事项
 
-| 风险 | 影响 | 缓解措施 |
-|:---|:---|:---|
-| ~~meta.mko 格式未知~~ | ~~无法自动解析语音包~~ | ✅ 已解决 — Protobuf3 `Bundle` message，schema 完整确认 |
-| .mkai 行为图复杂度 | 条件触发逻辑需要图执行引擎 | Phase 3d 实现；基础挂载仅需 `Bundle.actions` 即可工作 |
-| motion 参数兼容度 | 部分模型可能缺少参数导致动作不完整 | SDK 静默忽略缺失参数；可增加兼容度检测 UI |
-| 口型参数映射精度 | 音素→ParamMouthOpenY 映射可能不准确 | 初始映射表 + 可调参数，通过实际效果迭代优化 |
-| play_motion_ext 性能 | 频繁从磁盘加载 motion 文件 | Renderer 端增加 motion 缓存（LRU） |
-| lipSync 驱动精度 | WebSocket 延迟影响口型同步 | 采用本地时钟驱动，提前 buffer；或改为 Renderer 端驱动 |
+| 风险 | 影响 | 缓解措施 | 状态 |
+|:---|:---|:---|:---:|
+| ~~meta.mko 格式未知~~ | ~~无法自动解析语音包~~ | ✅ 已解决 — Protobuf3 `Bundle` message，schema 完整确认 | ✅ 已解决 |
+| ~~Java 侧解析/挂载~~ | ~~无法使用语音包~~ | ✅ 已解决 — `MetaMkoParser` + `MountedBehaviorEngine` 已实现并通过测试 | ✅ 已解决 |
+| .mkai 行为图复杂度 | 条件触发逻辑需要图执行引擎 | Phase 3d 实现；基础挂载仅需 `Bundle.actions` 即可工作 | 待实现 |
+| motion 参数兼容度 | 部分模型可能缺少参数导致动作不完整 | SDK 静默忽略缺失参数；可增加兼容度检测 UI | 待验证 |
+| 口型参数映射精度 | 音素→ParamMouthOpenY 映射可能不准确 | 初始映射表 + 可调参数，通过实际效果迭代优化 | 待实现 |
+| play_motion_ext 性能 | 频繁从磁盘加载 motion 文件 | Renderer 端增加 motion 缓存（LRU） | 待实现 |
+| lipSync 驱动精度 | WebSocket 延迟影响口型同步 | 采用本地时钟驱动，提前 buffer；或改为 Renderer 端驱动 | 待实现 |

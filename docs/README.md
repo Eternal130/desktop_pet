@@ -7,7 +7,7 @@
 
 ## 一、项目阶段与当前进度
 
-本项目分为 4 个阶段，**MVP 和 Phase 1 已完成，Phase 2 已基本完成**：
+本项目分为 4 个阶段，**MVP、Phase 1、Phase 2 已完成，Phase 3a 已部分完成**：
 
 | 功能 | MVP | Phase 1 | Phase 2 | Phase 3 |
 |:---|:---:|:---:|:---:|:---:|
@@ -16,15 +16,18 @@
 | 透明无边框置顶窗口 | ✅ 已完成 | — | — | — |
 | 点击检测（HitArea → 即时动画反馈） | ✅ 已完成 | — | ✅ 事件上报到控制面板 | — |
 | 窗口拖拽移动 | ✅ 已完成 | — | ✅ 位置上报与持久化 | — |
-| 自适应帧率 | ✅ 已完成 | — | — | — |
+| 自适应帧率 | ✅ 已完成 | — | ✅ 可选固定帧率 | — |
 | WebSocket 通信 | ✗ | ✅ 已完成（端口 9000） | — | — |
-| Java 控制面板 | ✗ | — | ✅ 已基本完成 | — |
-| 音频播放 | ✗ | — | — | 待开发（OpenAL，音频独立管理） |
+| Java 控制面板 | ✗ | — | ✅ 已完成（Tab 式 UI + 多实例） | — |
+| 多实例管理 | ✗ | — | ✅ 已完成 | — |
+| 外置语音包挂载（Java 侧） | ✗ | — | — | ✅ Phase 3a 已完成（扫描/解析/挂载/行为引擎） |
+| 音频播放 | ✗ | — | — | 待开发（Phase 3b，OpenAL） |
+| 口型同步 + 文案气泡 | ✗ | — | — | 待开发（Phase 3c） |
 | 闲时随机动作 | ✅ 已完成（渲染器内置） | — | ✅ 由控制面板 Scheduler 调度 | — |
 
-> **阶段说明**：Phase 1 = WebSocket 通信层，Phase 2 = Java 控制面板，Phase 3 = 音频模块。音频模块置于控制面板之后开发，以支持音频文件与模型文件分离管理、降低存储占用、实现音频跨模型复用。
+> **阶段说明**：Phase 1 = WebSocket 通信层，Phase 2 = Java 控制面板，Phase 3 = 音频与语音包模块（细分为 3a 基础挂载、3b 音频播放、3c 口型同步、3d 行为图引擎）。
 >
-> **当前状态**：MVP（渲染引擎独立运行）、Phase 1（WebSocket 通信）已完成。Phase 2（Java 控制面板）已基本完成，包括 UI、业务逻辑、进程管理、系统托盘、崩溃恢复等核心功能。Phase 3（音频模块）已完成架构预留（AudioMapping 记录），待后续实现。
+> **当前状态**：MVP、Phase 1、Phase 2 已完成。Phase 2 控制面板已重构为 Tab 式 UI（Dashboard/Settings/Actions/Advanced），支持多宠物实例管理。Phase 3a（语音包挂载 Java 侧）已完成核心实现——语音包扫描（`VoicePackScanner`）、meta.mko 解析（`MetaMkoParser`）、挂载配置持久化（`MountConfigManager`）、运行时行为引擎（`MountedBehaviorEngine`）。Phase 3a 渲染器侧（`play_motion_ext` 指令）及 Phase 3b/3c/3d 待后续实现。
 
 ---
 
@@ -53,7 +56,7 @@
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 完整架构（后期目标）
+### 2.2 完整架构（Phase 2+ 已实现）
 
 ```plain
 ┌────────────────────────────────────────────────────────────────────┐
@@ -106,8 +109,8 @@
 |:---|:---|:---|:---|:---|
 | 渲染引擎 | C++17 | GCC ≥ 11.4 / CMake ≥ 3.16 | Cubism Native SDK 5-r.5-beta.3.1（兼容 Cubism 5/5.3）、GLFW 3.4、GLEW 2.3.1（均使用 SDK 内置版本） | ✅ MVP |
 | 通信模块（渲染引擎端） | C++ | 同上 | IXWebSocket 11.4.6（Client）、nlohmann/json 3.12.0 | ✅ Phase 1 |
-| 控制面板 | Java 21 LTS | OpenJDK 21 / Maven ≥ 3.9 | JavaFX 21 (OpenJFX 21.0.5)、Java-WebSocket 1.6.0（Server）、Gson 2.13.2、SLF4J 2.0.17 + Logback 1.5.32 | ✅ Phase 2 |
-| 音频模块 | C++ | 同上 | OpenAL Soft 1.25.1 | Phase 3 |
+| 控制面板 | Java 21 LTS | OpenJDK 21 / Maven ≥ 3.9 | JavaFX 21 (OpenJFX 21.0.5)、Java-WebSocket 1.6.0（Server）、Gson 2.13.2、SLF4J 2.0.17 + Logback 1.5.32、protobuf-java 4.29.3 | ✅ Phase 2 + Phase 3a |
+| 音频模块 | C++ | 同上 | OpenAL Soft 1.25.1 | Phase 3b 待实现 |
 | 通信协议 | — | — | WebSocket（端口 9000）+ JSON Envelope | ✅ Phase 1 |
 | 目标平台（MVP） | — | — | Ubuntu 22.04 LTS (X11)、OpenGL 3.3+ | ✅ MVP |
 
@@ -171,15 +174,19 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | :------- | :---------------------- | :--- | :---: |
 | **通信**   | WebSocket + JSON 协议，Envelope 格式，端口 9000 | ✅ 已实现 | Phase 1 |
 | **整体架构** | Java 控制面板（Server）+ C++ 渲染引擎（Client）分离 | ✅ 已实现 | Phase 2 |
+| **控制面板 UI** | Tab 式布局（Dashboard/Settings/Actions/Advanced），支持多宠物实例管理 | ✅ 已实现 | Phase 2 |
+| **多实例** | 每个宠物实例独立配置（`instances/{uuid}.json`），面板统一管理（`panel.json`） | ✅ 已实现 | Phase 2 |
 | **模型加载** | 控制面板通过 `load_model` 指令动态切换（模型短名称，如 "Hiyori"） | ✅ 已实现 | Phase 2 |
 | **点击事件** | 渲染器即时反馈 + 上报 `hit` 事件到控制面板处理业务逻辑 | ✅ 已实现 | Phase 2 |
 | **拖拽行为** | 直接跟随模式，`drag_end` 事件上报窗口位置（window_x, window_y），控制面板持久化 | ✅ 已实现 | Phase 2 |
 | **闲时行为** | 控制面板 Scheduler 定时触发，从闲时动作池随机选择，预留权重打分扩展 | ✅ 已实现 | Phase 2 |
-| **音频**   | 音频文件独立于模型管理，支持跨模型复用；渲染器播放（OpenAL），控制面板管理映射和音量 | 架构预留，待实现 | Phase 3 |
-| **性能**   | 自适应帧率（15-60fps），闲时低占用 | ✅ 已实现 | MVP |
+| **语音包挂载** | 语音包与模型解耦挂载，meta.mko (Protobuf) 解析，Java 侧行为引擎已实现 | ✅ Java 侧已实现 | Phase 3a |
+| **音频播放** | 音频文件独立于模型管理，支持跨模型复用；渲染器播放（OpenAL），控制面板管理映射和音量 | 待实现 | Phase 3b |
+| **口型同步** | lipSync txt 解析 + 定时驱动 `ParamMouthOpenY`，文案气泡 UI | 待实现 | Phase 3c |
+| **性能**   | 自适应帧率（15-60fps）或固定帧率（15-120fps 可配），闲时低占用 | ✅ 已实现 | MVP/Phase 2 |
 | **平台**   | Ubuntu 22.04 / X11 | ✅ 已实现 | MVP |
 | **容错**   | 崩溃自动重启（指数退避，最大 5 次），断连缓存关键指令 | ✅ 已实现 | Phase 2 |
-| **配置**   | JSON 格式（`~/.config/desktop-pet/config.json`），支持用户配置读写 | ✅ 已实现 | Phase 2 |
+| **配置**   | JSON 格式，多文件分层：`config.json`（全局）、`panel.json`（面板）、`instances/*.json`（实例）、`mount.json`（挂载） | ✅ 已实现 | Phase 2/3a |
 | **分发**   | 单一 C++ 可执行文件 | 当前状态 | MVP |
 | **日志**   | C++ 端使用 `LAppPal::PrintLogLn`（SDK 内置），Java 端使用 SLF4J + Logback（文件轮转） | ✅ 已实现 | MVP/Phase 2 |
 | **扩展预留** | Lua 脚本插件系统、养成状态系统 | 架构预留 | 后期 |
@@ -192,9 +199,9 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 |:---|:---|:---:|
 | [渲染引擎设计](./renderer/README.md) | C++ 渲染引擎模块详细设计 | ✅ MVP + Phase 1 已实现 |
 | [Cubism SDK 集成](./renderer/cubism-sdk.md) | Cubism SDK 集成架构、关键 API | ✅ MVP 已实现 |
-| [音频播放架构](./renderer/audio.md) | 音频模块架构设计 | Phase 3 待实现 |
+| [音频播放架构](./renderer/audio.md) | 音频模块架构设计 | Phase 3b 待实现 |
 | [性能设计](./renderer/performance.md) | 自适应帧率、资源优化策略 | ✅ MVP 已实现 |
-| [控制面板设计](./controller/README.md) | Java 控制面板模块详细设计、技术选型、闲时行为策略 | ✅ Phase 2 已基本实现 |
+| [控制面板设计](./controller/README.md) | Java 控制面板模块详细设计、多实例管理、语音包挂载、闲时行为策略 | ✅ Phase 2 + Phase 3a 已实现 |
 | [通信协议](./protocol/README.md) | WebSocket 协议规范、消息格式 | ✅ Phase 1 已实现 |
 | [协议 - Commands](./protocol/commands.md) | 控制面板→渲染器指令定义 | ✅ Phase 1 已实现 |
 | [协议 - Events](./protocol/events.md) | 渲染器→控制面板事件定义 | ✅ Phase 1 已实现 |
@@ -204,11 +211,11 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | [交互设计](./interaction/README.md) | 点击事件处理流程、拖拽行为设计 | ✅ 已实现 |
 | [系统设计](./system/README.md) | 系统设计概述索引 | ✅ 核心已实现 |
 | [容错与错误处理](./system/fault-tolerance.md) | 崩溃恢复、断连处理 | ✅ Phase 2 已实现 |
-| [配置文件设计](./system/configuration.md) | config.json、model_config.json、audio_mapping.json | ✅ Phase 2 已实现 |
+| [配置文件设计](./system/configuration.md) | config.json、panel.json、instances/*.json、mount.json、hit_area_cache.json | ✅ Phase 2/3a 已实现 |
 | [日志体系](./system/logging.md) | 日志框架、级别、文件管理 | ✅ MVP/Phase 2 已实现 |
-| [启动流程](./system/startup.md) | MVP 和控制面板启动/关闭流程 | ✅ 已实现 |
+| [启动流程](./system/startup.md) | MVP 和控制面板启动/关闭流程、多实例管理 | ✅ 已实现 |
 | [扩展性预留](./system/extensibility.md) | 插件系统、状态系统预留 | 架构预留 |
-| [外置语音包挂载](./system/voice-pack-mounting.md) | 语音包与模型解耦挂载设计、事件映射、口型同步 | Phase 3 待实现 |
+| [外置语音包挂载](./system/voice-pack-mounting.md) | 语音包与模型解耦挂载设计、事件映射、口型同步 | ✅ Phase 3a Java 侧已实现，渲染器侧待实现 |
 | [工程化](./engineering/README.md) | 工程化概述索引 | ✅ 持续更新 |
 | [开发语言与工具链](./engineering/toolchain.md) | C++/Java 工具链选型 | ✅ 已确定 |
 | [第三方库选型](./engineering/dependencies.md) | C++/Java 端依赖库 | ✅ 已确定 |

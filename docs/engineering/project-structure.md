@@ -58,7 +58,7 @@ desktop_pet/
 
 ---
 
-## 二、控制面板目录结构（Phase 2 已实现）
+## 二、控制面板目录结构（Phase 2 + Phase 3a 已实现）
 
 ```plain
 controller/                               # Java 控制面板
@@ -69,18 +69,31 @@ controller/                               # Java 控制面板
     │   │   ├── module-info.java           # Java 模块声明（JPMS）
     │   │   └── com/desktoppet/
     │   │       ├── App.java               # 应用入口（JavaFX Application，调用 AppOrchestrator）
-    │   │       ├── ui/                    # UI 层（JavaFX）
-    │   │       │   ├── MainWindowController  # 主窗口 FXML 控制器
-    │   │       │   ├── SettingsPanelController # 设置面板 FXML 控制器
-    │   │       │   └── TrayManager        # 系统托盘集成（java.awt.SystemTray）
+    │   │       ├── Launcher.java          # 非模块化启动入口（绕过 JPMS 限制）
+    │   │       ├── ui/                    # UI 层（JavaFX，Tab 式布局）
+    │   │       │   ├── MainWindowController    # 主窗口 Tab 容器（main-window.fxml）
+    │   │       │   ├── DashboardTabController  # Dashboard Tab（状态/模型切换/日志）
+    │   │       │   ├── SettingsTabController   # Settings Tab（行为配置/语音包选择）
+    │   │       │   ├── ActionsTabController    # Actions Tab（动作/表情手动触发）
+    │   │       │   ├── AdvancedTabController   # Advanced Tab（高级设置）
+    │   │       │   ├── SettingsPanelController # 设置面板（独立 Stage，兼容旧入口）
+    │   │       │   └── TrayManager             # 系统托盘集成（java.awt.SystemTray）
     │   │       ├── core/                  # 业务逻辑层
     │   │       │   ├── AppOrchestrator    # 生命周期编排器（启动/关闭/崩溃恢复的中枢）
     │   │       │   ├── PetStateManager    # 宠物运行时状态管理（线程安全，ReentrantReadWriteLock）
     │   │       │   ├── InteractionHandler # 交互事件处理（hit→play_motion 指令生成）
     │   │       │   ├── Scheduler          # 定时闲时动作触发（ScheduledExecutorService）
-    │   │       │   ├── ConfigManager      # 配置读写与持久化（~/.config/desktop-pet/config.json）
+    │   │       │   ├── ConfigManager      # 全局配置读写（~/.config/desktop-pet/config.json）
+    │   │       │   ├── InstanceConfigManager   # 实例配置管理（instances/{uuid}.json）
+    │   │       │   ├── PanelStateManager       # 面板配置管理（panel.json，含旧版迁移）
     │   │       │   ├── ModelInfoParser    # 解析 model3.json（动作组/表情/HitArea）
-    │   │       │   └── audio/             # Phase 3 音频架构预留
+    │   │       │   ├── ModelScanner       # 扫描 Resources 目录识别可用模型
+    │   │       │   ├── HitAreaCacheManager     # HitArea 缓存（hit_area_cache.json）
+    │   │       │   ├── VoicePackScanner   # 扫描识别语音包（含 meta.mko 的目录）
+    │   │       │   ├── MetaMkoParser      # 解析 meta.mko（Protobuf → VoicePackInfo）
+    │   │       │   ├── MountConfigManager # 挂载配置持久化（mount.json）
+    │   │       │   ├── MountedBehaviorEngine   # 语音包运行时行为引擎（事件→motion 指令）
+    │   │       │   └── audio/             # Phase 3b 音频架构预留
     │   │       │       └── AudioMapping   # 音频映射记录
     │   │       ├── network/               # 网络层
     │   │       │   ├── PetWebSocketServer # Java-WebSocket 服务端（单连接管理、消息回调）
@@ -90,32 +103,59 @@ controller/                               # Java 控制面板
     │   │       │   ├── Envelope           # WebSocket 消息信封
     │   │       │   ├── PetState           # 宠物运行时状态快照（不可变）
     │   │       │   ├── PetConfig          # 用户配置（含 WindowConfig、ModelSettingsConfig 等子记录）
-    │   │       │   ├── ModelConfig         # 模型行为映射（HitAction 列表）
+    │   │       │   ├── WindowConfig       # 窗口配置（positionX/Y、width/height、opacity）
+    │   │       │   ├── BehaviorConfig     # 行为配置（dragMode、idleIntervalSeconds、targetFps）
+    │   │       │   ├── SystemConfig       # 系统配置（autoStart）
+    │   │       │   ├── ModelSettingsConfig # 模型设置配置
+    │   │       │   ├── ModelConfig        # 模型行为映射（HitAction 列表）
     │   │       │   ├── ModelInfo          # 模型元信息（动作组、表情、HitArea）
     │   │       │   ├── Motion             # 动作定义
-    │   │       │   └── HitAction          # 点击区域→动作映射
+    │   │       │   ├── HitAction          # 点击区域→动作映射
+    │   │       │   ├── PetInstance        # 宠物实例 UI 模型（JavaFX Properties，支持数据绑定）
+    │   │       │   ├── InstanceConfig     # 实例持久化配置（Record）
+    │   │       │   ├── InstanceState      # 实例状态快照（Record）
+    │   │       │   ├── PanelConfig        # 面板配置（窗口位置/主题/实例ID列表）
+    │   │       │   ├── PanelState         # 面板状态快照
+    │   │       │   ├── MountConfig        # 语音包挂载配置（modelName + voicePackName）
+    │   │       │   ├── VoicePackInfo      # 语音包元数据（dirName/displayName/groups/modules）
+    │   │       │   ├── VoicePackGroup     # 语音包动作分组（code/name/priority/actions）
+    │   │       │   ├── VoicePackAction    # 语音包单条动作（motion/audio/lipSync/doc/fade）
+    │   │       │   └── VoicePackModule    # 语音包行为模块（key/priority/filePath）
     │   │       └── util/                  # 工具类
     │   │           └── ProcessManager     # 渲染器进程启动/监控/停止（ProcessBuilder）
     │   └── resources/
     │       ├── fxml/                      # JavaFX FXML 布局文件
-    │       │   ├── main-window.fxml       # 主窗口布局
-    │       │   └── settings-panel.fxml    # 设置面板布局
+    │       │   ├── main-window.fxml       # 主窗口（Tab 容器）
+    │       │   ├── tab-dashboard.fxml     # Dashboard Tab
+    │       │   ├── tab-settings.fxml      # Settings Tab
+    │       │   ├── tab-actions.fxml       # Actions Tab
+    │       │   ├── tab-advanced.fxml      # Advanced Tab
+    │       │   └── settings-panel.fxml    # 设置面板（独立 Stage）
     │       └── logback.xml                # Logback 日志配置（控制台 + 文件轮转）
     └── test/
         ├── java/com/desktoppet/
         │   ├── core/                      # 业务逻辑测试
         │   │   ├── ConfigManagerTest      # 配置管理测试（7 cases）
         │   │   ├── PetStateManagerTest    # 状态管理测试（7 cases，含并发）
+        │   │   ├── PanelStateManagerTest  # 面板状态管理测试
         │   │   ├── InteractionHandlerTest # 交互处理测试（5 cases）
         │   │   ├── SchedulerTest          # 定时任务测试（6 cases）
-        │   │   └── ModelInfoParserTest    # 模型解析测试（6 cases）
+        │   │   ├── ModelInfoParserTest    # 模型解析测试（6 cases）
+        │   │   ├── ModelScannerTest       # 模型扫描测试
+        │   │   ├── VoicePackScannerTest   # 语音包扫描测试
+        │   │   ├── MetaMkoParserTest      # meta.mko 解析测试
+        │   │   ├── MountConfigManagerTest # 挂载配置测试
+        │   │   └── MountedBehaviorEngineTest # 行为引擎测试
         │   ├── network/                   # 网络层测试
         │   │   ├── ProtocolTest           # 协议序列化测试（12 cases，含 C++ 互操作）
         │   │   ├── MessageDispatcherTest  # 消息分发测试（6 cases）
         │   │   └── PetWebSocketServerTest # WebSocket 集成测试（6 cases，真实端口）
         │   ├── ui/                        # UI 测试（TestFX + Monocle 无头模式）
         │   │   ├── MainWindowTest         # 主窗口测试（4 cases）
-        │   │   └── SettingsPanelTest      # 设置面板测试（4 cases）
+        │   │   ├── SettingsPanelTest      # 设置面板测试（4 cases）
+        │   │   └── SettingsTabTest        # Settings Tab 测试
+        │   ├── integration/
+        │   │   └── E2ESmokeTest           # 端到端冒烟测试
         │   └── util/
         │       └── ProcessManagerTest     # 进程管理测试（5 cases）
         └── resources/
@@ -124,9 +164,9 @@ controller/                               # Java 控制面板
 
 ---
 
-## 三、完整目录结构总览（Phase 3 计划扩展）
+## 三、完整目录结构总览（Phase 3b/3c 计划扩展）
 
-Phase 3（音频模块）引入后，在现有结构基础上扩展：
+Phase 3a（语音包挂载 Java 侧）已完成。Phase 3b（音频播放）引入后，在现有结构基础上扩展 C++ 渲染器侧：
 
 ```plain
 desktop_pet/                              # 项目根目录
@@ -134,21 +174,16 @@ desktop_pet/                              # 项目根目录
 │   └── src/
 │       ├── ...                           # 现有 LApp* 代码
 │       ├── network/                      # 网络模块（已实现）
-│       └── audio/                        # 音频模块（Phase 3 计划）
-│           ├── AudioManager              # 音频资源管理与缓存（从独立目录加载）
-│           ├── AudioPlayer               # OpenAL 播放器封装
+│       └── audio/                        # 音频模块（Phase 3b 计划）
+│           ├── AudioManager              # 音频资源管理与缓存
+│           ├── AudioPlayer               # OpenAL 播放器封装（OGG 播放）
 │           ├── AudioSync                 # 动作-音频时间戳对齐
 │           └── AudioMappingCache         # 接收并缓存控制面板下发的音频映射
 │
-├── controller/                           # Java 控制面板（见第二节）
+├── controller/                           # Java 控制面板（见第二节，Phase 2 + 3a 已实现）
 │
 ├── third_party/                          # 项目级第三方依赖
 │   └── CubismSdkForNative/              # Cubism Native SDK
-│
-├── shared/                               # 共享资源（Phase 3 计划）
-│   ├── models/                           # Live2D 模型文件（不含音频）
-│   ├── audio/                            # 音频文件独立目录（与模型分离存储）
-│   └── assets/                           # 其他共享资源
 │
 └── docs/                                 # 项目文档
 ```

@@ -127,6 +127,15 @@ public:
 
     std::vector<std::string> GetHitAreaNames() const;
 
+    void SetUserLayout(float offsetX, float offsetY, float scale);
+    void AdjustUserOffset(float dx, float dy);
+    void AdjustUserScale(float factor);
+    void ResetUserLayout();
+
+    float GetUserOffsetX() const { return _userOffsetX; }
+    float GetUserOffsetY() const { return _userOffsetY; }
+    float GetUserScale() const { return _userScale; }
+
 protected:
     /**
      *  @brief  モデルを描画する処理。モデルを描画する空間のView-Projection行列を渡す。
@@ -197,4 +206,8 @@ private:
     const Csm::CubismId* _idParamEyeBallY; ///< パラメータID: ParamEyeBallXY
 
     LAppWavFileHandler_Common _wavFileHandler; ///< wavファイルハンドラ
+
+    float _userOffsetX = 0.0f;
+    float _userOffsetY = 0.0f;
+    float _userScale   = 1.0f;
 };

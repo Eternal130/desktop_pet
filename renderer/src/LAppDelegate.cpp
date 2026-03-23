@@ -416,6 +416,33 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
         return;
     }
 
+    if (GLFW_MOUSE_BUTTON_LEFT == button &&
+        (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+         glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS))
+    {
+        if (GLFW_PRESS == action)
+        {
+            _isModelDragging = true;
+            _modelDragLastX = _mouseX;
+            _modelDragLastY = _mouseY;
+        }
+        else if (GLFW_RELEASE == action && _isModelDragging)
+        {
+            _isModelDragging = false;
+
+            LAppModel* model = LAppLive2DManager::GetInstance()->GetModel(0);
+            if (model && _eventEmitter && _eventEmitter->isActive())
+            {
+                _eventEmitter->emit("layout_changed", {
+                    {"offset_x", model->GetUserOffsetX()},
+                    {"offset_y", model->GetUserOffsetY()},
+                    {"scale", model->GetUserScale()}
+                });
+            }
+        }
+        return;
+    }
+
     if (GLFW_MOUSE_BUTTON_LEFT != button)
     {
         return;
@@ -450,6 +477,25 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
         return;
     }
 
+    if (_isModelDragging)
+    {
+        float dx = _mouseX - _modelDragLastX;
+        float dy = _mouseY - _modelDragLastY;
+
+        float ndcDx =  dx * 2.0f / static_cast<float>(_windowHeight);
+        float ndcDy = -dy * 2.0f / static_cast<float>(_windowHeight);
+
+        LAppModel* model = LAppLive2DManager::GetInstance()->GetModel(0);
+        if (model)
+        {
+            model->AdjustUserOffset(ndcDx, ndcDy);
+        }
+
+        _modelDragLastX = _mouseX;
+        _modelDragLastY = _mouseY;
+        return;
+    }
+
     if (_view)
     {
         _view->OnTouchesMoved(_mouseX, _mouseY);
@@ -467,9 +513,32 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
 
 void LAppDelegate::OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 {
-    // Ctrl + scroll = window resize
-    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) != GLFW_PRESS &&
-        glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) != GLFW_PRESS)
+    bool shiftPressed = (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+                         glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
+    bool ctrlPressed = (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                        glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+
+    if (shiftPressed)
+    {
+        float factor = 1.0f + static_cast<float>(yoffset) * 0.1f;
+        LAppModel* model = LAppLive2DManager::GetInstance()->GetModel(0);
+        if (model)
+        {
+            model->AdjustUserScale(factor);
+
+            if (_eventEmitter && _eventEmitter->isActive())
+            {
+                _eventEmitter->emit("layout_changed", {
+                    {"offset_x", model->GetUserOffsetX()},
+                    {"offset_y", model->GetUserOffsetY()},
+                    {"scale", model->GetUserScale()}
+                });
+            }
+        }
+        return;
+    }
+
+    if (!ctrlPressed)
     {
         return;
     }

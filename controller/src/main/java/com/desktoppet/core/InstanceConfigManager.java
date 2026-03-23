@@ -99,6 +99,9 @@ public class InstanceConfigManager {
         window.addProperty("width", config.windowWidth());
         window.addProperty("height", config.windowHeight());
         window.addProperty("opacity", config.opacity());
+        window.addProperty("layout_offset_x", config.layoutOffsetX());
+        window.addProperty("layout_offset_y", config.layoutOffsetY());
+        window.addProperty("layout_scale", config.layoutScale());
         root.add("window", window);
 
         JsonObject behavior = new JsonObject();
@@ -150,13 +153,18 @@ public class InstanceConfigManager {
             voicePack = root.get("voice_pack").getAsString();
         }
 
+        double layoutOffsetX = getDouble(windowObj, "layout_offset_x", d.layoutOffsetX());
+        double layoutOffsetY = getDouble(windowObj, "layout_offset_y", d.layoutOffsetY());
+        double layoutScale = getDouble(windowObj, "layout_scale", d.layoutScale());
+
         return new InstanceConfig(
             id, label, rendererPath,
             modelName, modelScale,
             windowX, windowY, windowWidth, windowHeight, opacity,
             dragMode, idleInterval, targetFps,
             autoStart, currentExpression, voicePack,
-            getDouble(root, "volume", 1.0)
+            getDouble(root, "volume", 1.0),
+            layoutOffsetX, layoutOffsetY, layoutScale
         );
     }
 

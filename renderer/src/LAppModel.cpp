@@ -512,6 +512,14 @@ void LAppModel::Draw(CubismMatrix44& matrix)
         return;
     }
 
+    if (_userScale != 1.0f || _userOffsetX != 0.0f || _userOffsetY != 0.0f)
+    {
+        CubismMatrix44 userLayout;
+        userLayout.Scale(_userScale, _userScale);
+        userLayout.Translate(_userOffsetX, _userOffsetY);
+        matrix.MultiplyByMatrix(&userLayout);
+    }
+
     matrix.MultiplyByMatrix(_modelMatrix);
 
     GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->SetMvpMatrix(&matrix);
@@ -519,23 +527,52 @@ void LAppModel::Draw(CubismMatrix44& matrix)
     DoDraw();
 }
 
+void LAppModel::SetUserLayout(float offsetX, float offsetY, float scale)
+{
+    _userOffsetX = offsetX;
+    _userOffsetY = offsetY;
+    _userScale = (scale < 0.1f) ? 0.1f : (scale > 5.0f) ? 5.0f : scale;
+}
+
+void LAppModel::AdjustUserOffset(float dx, float dy)
+{
+    _userOffsetX += dx;
+    _userOffsetY += dy;
+}
+
+void LAppModel::AdjustUserScale(float factor)
+{
+    float newScale = _userScale * factor;
+    _userScale = (newScale < 0.1f) ? 0.1f : (newScale > 5.0f) ? 5.0f : newScale;
+}
+
+void LAppModel::ResetUserLayout()
+{
+    _userOffsetX = 0.0f;
+    _userOffsetY = 0.0f;
+    _userScale = 1.0f;
+}
+
 csmBool LAppModel::HitTest(const csmChar* hitAreaName, csmFloat32 x, csmFloat32 y)
 {
-    // 透明時は当たり判定なし。
     if (_opacity < 1)
     {
         return false;
     }
+
+    csmFloat32 adjX = (_userScale != 0.0f) ? (x - _userOffsetX) / _userScale : x;
+    csmFloat32 adjY = (_userScale != 0.0f) ? (y - _userOffsetY) / _userScale : y;
+
     const csmInt32 count = _modelSetting->GetHitAreasCount();
     for (csmInt32 i = 0; i < count; i++)
     {
         if (strcmp(_modelSetting->GetHitAreaName(i), hitAreaName) == 0)
         {
             const CubismIdHandle drawID = _modelSetting->GetHitAreaId(i);
-            return IsHit(drawID, x, y);
+            return IsHit(drawID, adjX, adjY);
         }
     }
-    return false; // 存在しない場合はfalse
+    return false;
 }
 
 std::vector<std::string> LAppModel::GetHitAreaNames() const

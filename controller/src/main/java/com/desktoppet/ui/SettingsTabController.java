@@ -184,7 +184,10 @@ public class SettingsTabController {
                 current.window().positionY(),
                 current.window().width(),
                 current.window().height(),
-                opacity);
+                opacity,
+                current.window().layoutOffsetX(),
+                current.window().layoutOffsetY(),
+                current.window().layoutScale());
         var newSystem = new SystemConfig(autoStart);
         var newConfig = new PetConfig(newWindow, current.model(), newBehavior, newSystem);
 

@@ -90,6 +90,10 @@ private:
     double _dragStartX;
     double _dragStartY;
 
+    bool _isModelDragging = false;
+    float _modelDragLastX = 0.0f;
+    float _modelDragLastY = 0.0f;
+
     Network::WebSocketClient* _wsClient;
     Network::MessageHandler* _messageHandler;
     Network::EventEmitter* _eventEmitter;

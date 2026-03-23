@@ -116,7 +116,10 @@ public class SettingsPanelController {
             currentConfig.window().positionY(),
             currentConfig.window().width(),
             currentConfig.window().height(),
-            opacity
+            opacity,
+            currentConfig.window().layoutOffsetX(),
+            currentConfig.window().layoutOffsetY(),
+            currentConfig.window().layoutScale()
         );
         var newModel = selectedModel != null && !selectedModel.isEmpty()
             ? new com.desktoppet.model.ModelSettingsConfig(selectedModel, currentConfig.model().scale())

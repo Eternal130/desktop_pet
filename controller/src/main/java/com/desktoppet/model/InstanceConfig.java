@@ -19,7 +19,10 @@ public record InstanceConfig(
     boolean autoStart,
     String currentExpression,
     String voicePack,
-    double volume
+    double volume,
+    double layoutOffsetX,
+    double layoutOffsetY,
+    double layoutScale
 ) {
     public static InstanceConfig defaults() {
         return new InstanceConfig(
@@ -36,7 +39,8 @@ public record InstanceConfig(
             false,
             "F01",
             null,
-            1.0
+            1.0,
+            0.0, 0.0, 1.0
         );
     }
 
@@ -56,7 +60,8 @@ public record InstanceConfig(
             d.autoStart(),
             d.currentExpression(),
             d.voicePack(),
-            d.volume()
+            d.volume(),
+            d.layoutOffsetX(), d.layoutOffsetY(), d.layoutScale()
         );
     }
 }

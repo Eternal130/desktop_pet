@@ -1023,6 +1023,17 @@ public class MainWindowController {
             wsServer.sendToInstance(id, Protocol.serialize(
                     Protocol.createCommand("set_volume", volumePayload)));
 
+            if (instance.getLayoutOffsetX() != 0.0
+                    || instance.getLayoutOffsetY() != 0.0
+                    || instance.getLayoutScale() != 1.0) {
+                JsonObject layoutPayload = new JsonObject();
+                layoutPayload.addProperty("offset_x", instance.getLayoutOffsetX());
+                layoutPayload.addProperty("offset_y", instance.getLayoutOffsetY());
+                layoutPayload.addProperty("scale", instance.getLayoutScale());
+                wsServer.sendToInstance(id, Protocol.serialize(
+                        Protocol.createCommand("set_layout", layoutPayload)));
+            }
+
             renderSidebar();
             if (currentInstance == instance) renderDetail();
         }));
@@ -1121,6 +1132,16 @@ public class MainWindowController {
                 saveInstanceConfig(instance);
                 if (currentInstance == instance) renderDetail();
             }
+        }));
+
+        dispatcher.registerEventHandler("layout_changed", envelope -> Platform.runLater(() -> {
+            double ox = envelope.payload().has("offset_x") ? envelope.payload().get("offset_x").getAsDouble() : 0.0;
+            double oy = envelope.payload().has("offset_y") ? envelope.payload().get("offset_y").getAsDouble() : 0.0;
+            double sc = envelope.payload().has("scale") ? envelope.payload().get("scale").getAsDouble() : 1.0;
+            instance.setLayoutOffsetX(ox);
+            instance.setLayoutOffsetY(oy);
+            instance.setLayoutScale(sc);
+            saveInstanceConfig(instance);
         }));
 
         dispatcher.registerEventHandler("window_resized", envelope -> Platform.runLater(() -> {

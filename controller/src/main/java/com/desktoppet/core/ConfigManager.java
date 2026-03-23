@@ -80,7 +80,10 @@ public class ConfigManager {
             getInt(windowObj, "position_y", defaults.window().positionY()),
             getInt(windowObj, "window_width", defaults.window().width()),
             getInt(windowObj, "window_height", defaults.window().height()),
-            getDouble(windowObj, "opacity", defaults.window().opacity())
+            getDouble(windowObj, "opacity", defaults.window().opacity()),
+            getDouble(windowObj, "layout_offset_x", defaults.window().layoutOffsetX()),
+            getDouble(windowObj, "layout_offset_y", defaults.window().layoutOffsetY()),
+            getDouble(windowObj, "layout_scale", defaults.window().layoutScale())
         );
 
         ModelSettingsConfig model = new ModelSettingsConfig(
@@ -110,6 +113,9 @@ public class ConfigManager {
         window.addProperty("window_width", config.window().width());
         window.addProperty("window_height", config.window().height());
         window.addProperty("opacity", config.window().opacity());
+        window.addProperty("layout_offset_x", config.window().layoutOffsetX());
+        window.addProperty("layout_offset_y", config.window().layoutOffsetY());
+        window.addProperty("layout_scale", config.window().layoutScale());
         root.add("window", window);
 
         JsonObject model = new JsonObject();

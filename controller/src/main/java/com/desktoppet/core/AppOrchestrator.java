@@ -287,7 +287,8 @@ public class AppOrchestrator {
                 stateManager.updateWindowPosition(wx, wy);
                 log.debug("Window position updated: ({}, {})", wx, wy);
 
-                var updatedWindow = new WindowConfig(wx, wy, config.window().width(), config.window().height(), config.window().opacity());
+                var updatedWindow = new WindowConfig(wx, wy, config.window().width(), config.window().height(), config.window().opacity(),
+                        0.0, 0.0, 1.0);
                 config = new PetConfig(updatedWindow, config.model(), config.behavior(), config.system());
                 configManager.save(config);
             }
@@ -304,7 +305,8 @@ public class AppOrchestrator {
                 stateManager.updateWindowSize(w, h);
                 log.info("Window resized: {}x{} at ({}, {})", w, h, wx, wy);
 
-                var updatedWindow = new WindowConfig(wx, wy, w, h, config.window().opacity());
+                var updatedWindow = new WindowConfig(wx, wy, w, h, config.window().opacity(),
+                        0.0, 0.0, 1.0);
                 config = new PetConfig(updatedWindow, config.model(), config.behavior(), config.system());
                 configManager.save(config);
             }
@@ -519,7 +521,8 @@ public class AppOrchestrator {
 
         if (config != null) {
             var state = stateManager.getState();
-            var updatedWindow = new WindowConfig(state.windowX(), state.windowY(), state.windowWidth(), state.windowHeight(), config.window().opacity());
+            var updatedWindow = new WindowConfig(state.windowX(), state.windowY(), state.windowWidth(), state.windowHeight(), config.window().opacity(),
+                    0.0, 0.0, 1.0);
             configManager.save(new PetConfig(updatedWindow, config.model(), config.behavior(), config.system()));
         }
 

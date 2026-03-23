@@ -35,6 +35,9 @@ public class PetInstance {
     private final DoubleProperty modelScale;
     private final StringProperty voicePack;
     private final DoubleProperty volume;
+    private final DoubleProperty layoutOffsetX;
+    private final DoubleProperty layoutOffsetY;
+    private final DoubleProperty layoutScale;
     private final ObservableList<String> logs;
 
     public PetInstance(String configId, String label, String model, String status,
@@ -59,6 +62,9 @@ public class PetInstance {
         this.modelScale = new SimpleDoubleProperty(1.0);
         this.voicePack = new SimpleStringProperty(null);
         this.volume = new SimpleDoubleProperty(1.0);
+        this.layoutOffsetX = new SimpleDoubleProperty(0.0);
+        this.layoutOffsetY = new SimpleDoubleProperty(0.0);
+        this.layoutScale = new SimpleDoubleProperty(1.0);
         this.logs = FXCollections.observableArrayList();
     }
 
@@ -87,6 +93,9 @@ public class PetInstance {
         instance.setModelScale(config.modelScale());
         instance.setVoicePack(config.voicePack());
         instance.setVolume(config.volume());
+        instance.setLayoutOffsetX(config.layoutOffsetX());
+        instance.setLayoutOffsetY(config.layoutOffsetY());
+        instance.setLayoutScale(config.layoutScale());
         return instance;
     }
 
@@ -100,7 +109,8 @@ public class PetInstance {
                 getDragMode(), getIdleInterval(), getTargetFps(),
                 isAutoStart(), getCurrentExpression(),
                 getVoicePack(),
-                getVolume()
+                getVolume(),
+                getLayoutOffsetX(), getLayoutOffsetY(), getLayoutScale()
         );
     }
 
@@ -225,6 +235,15 @@ public class PetInstance {
     public String getVoicePack() { return voicePack.get(); }
     public void setVoicePack(String v) { voicePack.set(v); }
     public StringProperty voicePackProperty() { return voicePack; }
+
+    public double getLayoutOffsetX() { return layoutOffsetX.get(); }
+    public void setLayoutOffsetX(double v) { layoutOffsetX.set(v); }
+
+    public double getLayoutOffsetY() { return layoutOffsetY.get(); }
+    public void setLayoutOffsetY(double v) { layoutOffsetY.set(v); }
+
+    public double getLayoutScale() { return layoutScale.get(); }
+    public void setLayoutScale(double v) { layoutScale.set(v); }
 
     public ObservableList<String> getLogs() { return logs; }
 }

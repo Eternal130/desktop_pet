@@ -278,6 +278,54 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         sendResponse(createResponse(cmd.id, "set_volume", true));
     });
 
+    handler.registerCommand("set_layout", [](const Envelope& cmd, auto sendResponse) {
+        LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
+        if (manager->GetModelNum() == 0) {
+            sendResponse(createResponse(cmd.id, "set_layout", false, 8001, "No model loaded"));
+            return;
+        }
+        LAppModel* model = manager->GetModel(0);
+        if (!model) {
+            sendResponse(createResponse(cmd.id, "set_layout", false, 8001, "No model loaded"));
+            return;
+        }
+
+        float offsetX = cmd.payload.value("offset_x", model->GetUserOffsetX());
+        float offsetY = cmd.payload.value("offset_y", model->GetUserOffsetY());
+        float scale   = cmd.payload.value("scale", model->GetUserScale());
+
+        model->SetUserLayout(offsetX, offsetY, scale);
+        sendResponse(createResponse(cmd.id, "set_layout", true));
+    });
+
+    handler.registerCommand("get_layout", [](const Envelope& cmd, auto sendResponse) {
+        LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
+        if (manager->GetModelNum() == 0) {
+            sendResponse(createResponse(cmd.id, "get_layout", false, 8001, "No model loaded"));
+            return;
+        }
+        LAppModel* model = manager->GetModel(0);
+        if (!model) {
+            sendResponse(createResponse(cmd.id, "get_layout", false, 8001, "No model loaded"));
+            return;
+        }
+
+        nlohmann::json payload;
+        payload["offset_x"] = model->GetUserOffsetX();
+        payload["offset_y"] = model->GetUserOffsetY();
+        payload["scale"]    = model->GetUserScale();
+        sendResponse(createEvent("layout_state", payload));
+    });
+
+    handler.registerCommand("reset_layout", [](const Envelope& cmd, auto sendResponse) {
+        LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
+        if (manager->GetModelNum() > 0) {
+            LAppModel* model = manager->GetModel(0);
+            if (model) model->ResetUserLayout();
+        }
+        sendResponse(createResponse(cmd.id, "reset_layout", true));
+    });
+
     handler.registerCommand("shutdown", [delegate](const Envelope& cmd, auto sendResponse) {
         sendResponse(createResponse(cmd.id, "shutdown", true));
         glfwSetWindowShouldClose(delegate->GetWindow(), GLFW_TRUE);

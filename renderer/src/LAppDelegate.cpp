@@ -28,6 +28,21 @@ using namespace LAppDefine;
 
 namespace {
     LAppDelegate* s_instance = NULL;
+    WNDPROC s_originalWndProc = NULL;
+
+    LRESULT CALLBACK WindowSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    {
+        if (msg == WM_SYSCOMMAND && (wParam & 0xFFF0) == SC_MINIMIZE)
+        {
+            return 0;
+        }
+        if (msg == WM_SIZE && wParam == SIZE_MINIMIZED)
+        {
+            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            return 0;
+        }
+        return CallWindowProc(s_originalWndProc, hwnd, msg, wParam, lParam);
+    }
 }
 
 LAppDelegate* LAppDelegate::GetInstance()
@@ -92,11 +107,24 @@ bool LAppDelegate::Initialize()
         glfwSetWindowPos(_window, _startupX, _startupY);
     }
 
-    // Windows: ensure always-on-top via Win32 API (GLFW_FLOATING can be unreliable)
     HWND hwnd = FindWindow("GLFW30", NULL);
     if (hwnd)
     {
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+        exStyle |= WS_EX_TOOLWINDOW;
+        exStyle &= ~WS_EX_APPWINDOW;
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle);
+
+        LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+        style &= ~WS_MINIMIZEBOX;
+        style &= ~WS_SYSMENU;
+        SetWindowLongPtr(hwnd, GWL_STYLE, style);
+
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+        s_originalWndProc = reinterpret_cast<WNDPROC>(
+            SetWindowLongPtr(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(WindowSubclassProc)));
     }
 
     // Windowのコンテキストをカレントに設定
@@ -173,6 +201,16 @@ void LAppDelegate::Release()
     {
         glDeleteBuffers(1, &_pbo);
         _pbo = 0;
+    }
+
+    if (s_originalWndProc)
+    {
+        HWND hwnd = FindWindow("GLFW30", NULL);
+        if (hwnd)
+        {
+            SetWindowLongPtr(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(s_originalWndProc));
+        }
+        s_originalWndProc = NULL;
     }
 
     glfwDestroyWindow(_window);

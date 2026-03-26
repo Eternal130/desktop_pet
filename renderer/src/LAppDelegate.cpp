@@ -92,6 +92,13 @@ bool LAppDelegate::Initialize()
         glfwSetWindowPos(_window, _startupX, _startupY);
     }
 
+    // Windows: ensure always-on-top via Win32 API (GLFW_FLOATING can be unreliable)
+    HWND hwnd = FindWindow("GLFW30", NULL);
+    if (hwnd)
+    {
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+
     // Windowのコンテキストをカレントに設定
     glfwMakeContextCurrent(_window);
     glfwSwapInterval(1);

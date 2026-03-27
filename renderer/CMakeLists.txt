@@ -145,6 +145,11 @@ target_sources(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/CommandHandlers.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/WindowManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/WindowManager.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/IGraphicsBackend.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/OpenGLBackend.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/OpenGLBackend.hpp
 )
 
 target_include_directories(${APP_NAME}

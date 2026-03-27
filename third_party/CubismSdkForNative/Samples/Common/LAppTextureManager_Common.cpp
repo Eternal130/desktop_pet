@@ -39,7 +39,7 @@ LAppTextureManager_Common::TextureInfo* LAppTextureManager_Common::GetTextureInf
     return NULL;
 }
 
-LAppTextureManager_Common::TextureInfo* LAppTextureManager_Common::GetTextureInfoById(Csm::csmUint32 textureId) const
+LAppTextureManager_Common::TextureInfo* LAppTextureManager_Common::GetTextureInfoById(uint64_t textureId) const
 {
     for (Csm::csmUint32 i = 0; i < _texturesInfo.GetSize(); i++)
     {

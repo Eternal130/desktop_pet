@@ -8,6 +8,7 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
 
 #include <Type/CubismBasicType.hpp>
 #include <Type/csmVector.hpp>
@@ -26,7 +27,7 @@ public:
      */
     struct TextureInfo
     {
-        Csm::csmUint32 id;      ///< テクスチャID
+        uint64_t id;            ///< テクスチャID
         int width;              ///< 横幅
         int height;             ///< 高さ
         std::string fileName;   ///< ファイル名
@@ -83,7 +84,7 @@ public:
      *
      * @return テクスチャが存在していればTextureInfoが返る
      **/
-    virtual TextureInfo* GetTextureInfoById(Csm::csmUint32 textureId) const;
+    virtual TextureInfo* GetTextureInfoById(uint64_t textureId) const;
 
 protected:
     Csm::csmVector<TextureInfo*> _texturesInfo;         ///< テクスチャ情報

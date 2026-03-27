@@ -76,7 +76,7 @@ int main(int argc, char* argv[])
     if (startupWidth > 0 && startupHeight > 0)
         delegate->SetStartupSize(startupWidth, startupHeight);
 
-    if (delegate->Initialize() == GL_FALSE)
+    if (!delegate->Initialize())
     {
         SetConsoleOutputCP(preConsoleOutputCP);
         return 1;

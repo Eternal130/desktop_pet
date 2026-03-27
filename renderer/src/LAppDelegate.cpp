@@ -5,10 +5,11 @@
  * that can be found at https://www.live2d.com/eula/live2d-open-software-license-agreement_en.html.
  */
 
-#include "LAppDelegate.hpp"
-#include <windows.h>
+// GLEW must be included before GLFW (which pulls in gl.h)
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include "graphics/OpenGLBackend.hpp"
+#include "LAppDelegate.hpp"
 #include "LAppView.hpp"
 #include "LAppPal.hpp"
 #include "LAppDefine.hpp"
@@ -28,21 +29,6 @@ using namespace LAppDefine;
 
 namespace {
     LAppDelegate* s_instance = NULL;
-    WNDPROC s_originalWndProc = NULL;
-
-    LRESULT CALLBACK WindowSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-    {
-        if (msg == WM_SYSCOMMAND && (wParam & 0xFFF0) == SC_MINIMIZE)
-        {
-            return 0;
-        }
-        if (msg == WM_SIZE && wParam == SIZE_MINIMIZED)
-        {
-            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-            return 0;
-        }
-        return CallWindowProc(s_originalWndProc, hwnd, msg, wParam, lParam);
-    }
 }
 
 LAppDelegate* LAppDelegate::GetInstance()
@@ -72,99 +58,33 @@ bool LAppDelegate::Initialize()
         LAppPal::PrintLogLn("START");
     }
 
-    // GLFWの初期化
-    if (glfwInit() == GL_FALSE)
+    if (!_windowManager->Initialize(RenderTargetWidth, RenderTargetHeight,
+                                       _hasStartupPos, _startupX, _startupY,
+                                       _hasStartupSize, _startupWidth, _startupHeight))
     {
         if (DebugLogEnable)
         {
-            LAppPal::PrintLogLn("Can't initilize GLFW");
+            LAppPal::PrintLogLn("Can't initialize window.");
         }
-        return GL_FALSE;
+        return false;
     }
 
-    // Desktop pet: transparent, borderless, always-on-top, initially hidden
-    glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
-    glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-    glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
-    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-
-    // Windowの生成_
-    int initWidth = _hasStartupSize ? _startupWidth : RenderTargetWidth;
-    int initHeight = _hasStartupSize ? _startupHeight : RenderTargetHeight;
-    _window = glfwCreateWindow(initWidth, initHeight, "desktop-pet-renderer", NULL, NULL);
-    if (_window == NULL)
+    if (!_graphicsBackend->InitializeGraphics(_windowManager->GetWindow()))
     {
         if (DebugLogEnable)
         {
-            LAppPal::PrintLogLn("Can't create GLFW window.");
+            LAppPal::PrintLogLn("Can't initialize graphics.");
         }
-        glfwTerminate();
-        return GL_FALSE;
+        return false;
     }
 
-    if (_hasStartupPos)
-    {
-        glfwSetWindowPos(_window, _startupX, _startupY);
-    }
+    GLFWwindow* window = _windowManager->GetWindow();
+    glfwSetMouseButtonCallback(window, EventHandler::OnMouseCallBack);
+    glfwSetCursorPosCallback(window, EventHandler::OnMouseCallBack);
+    glfwSetScrollCallback(window, EventHandler::OnScrollCallback);
 
-    HWND hwnd = FindWindow("GLFW30", NULL);
-    if (hwnd)
-    {
-        LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
-        exStyle |= WS_EX_TOOLWINDOW;
-        exStyle &= ~WS_EX_APPWINDOW;
-        SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle);
-
-        LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
-        style &= ~WS_MINIMIZEBOX;
-        style &= ~WS_SYSMENU;
-        SetWindowLongPtr(hwnd, GWL_STYLE, style);
-
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-
-        s_originalWndProc = reinterpret_cast<WNDPROC>(
-            SetWindowLongPtr(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(WindowSubclassProc)));
-    }
-
-    // Windowのコンテキストをカレントに設定
-    glfwMakeContextCurrent(_window);
-    glfwSwapInterval(1);
-
-    if (glewInit() != GLEW_OK) {
-        if (DebugLogEnable)
-        {
-            LAppPal::PrintLogLn("Can't initilize glew.");
-        }
-        glfwTerminate();
-        return GL_FALSE;
-    }
-
-    //テクスチャサンプリング設定
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-
-    //透過設定
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    glGenBuffers(1, &_pbo);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, _pbo);
-    GLubyte zeros[4] = {0, 0, 0, 0};
-    glBufferData(GL_PIXEL_PACK_BUFFER, 4, zeros, GL_STREAM_READ);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-
-    //コールバック関数の登録
-    glfwSetMouseButtonCallback(_window, EventHandler::OnMouseCallBack);
-    glfwSetCursorPosCallback(_window, EventHandler::OnMouseCallBack);
-    glfwSetScrollCallback(_window, EventHandler::OnScrollCallback);
-
-    // ウィンドウサイズ記憶
-    int width, height;
-    glfwGetWindowSize(LAppDelegate::GetInstance()->GetWindow(), &width, &height);
-    _windowWidth = width;
-    _windowHeight = height;
-    glViewport(0, 0, _windowWidth, _windowHeight);
+    _windowManager->GetWindowSize(_windowWidth, _windowHeight);
+    _graphicsBackend->BeginFrame(_windowWidth, _windowHeight);
 
     // Cubismの初期化
     InitializeCubism();
@@ -175,7 +95,7 @@ bool LAppDelegate::Initialize()
     LAppLive2DManager::GetInstance();
 
     //AppViewの初期化
-    _view->Initialize(width, height);
+    _view->Initialize(_windowWidth, _windowHeight);
 
     _audioManager = new AudioManager();
     if (!_audioManager->Init()) {
@@ -184,7 +104,7 @@ bool LAppDelegate::Initialize()
 
     InitializeNetwork();
 
-    return GL_TRUE;
+    return true;
 }
 
 void LAppDelegate::Release()
@@ -197,25 +117,11 @@ void LAppDelegate::Release()
     delete _messageHandler; _messageHandler = nullptr;
     delete _wsClient; _wsClient = nullptr;
 
-    if (_pbo)
-    {
-        glDeleteBuffers(1, &_pbo);
-        _pbo = 0;
-    }
+    _graphicsBackend->ReleaseGraphics();
+    _windowManager->Release();
 
-    if (s_originalWndProc)
-    {
-        HWND hwnd = FindWindow("GLFW30", NULL);
-        if (hwnd)
-        {
-            SetWindowLongPtr(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(s_originalWndProc));
-        }
-        s_originalWndProc = NULL;
-    }
-
-    glfwDestroyWindow(_window);
-
-    glfwTerminate();
+    delete _graphicsBackend; _graphicsBackend = nullptr;
+    delete _windowManager; _windowManager = nullptr;
 
     delete _textureManager;
     delete _view;
@@ -228,10 +134,10 @@ void LAppDelegate::Release()
 void LAppDelegate::Run()
 {
     //メインループ
-    while (glfwWindowShouldClose(_window) == GL_FALSE)
+    while (!_windowManager->ShouldClose())
     {
         int width, height;
-        glfwGetWindowSize(LAppDelegate::GetInstance()->GetWindow(), &width, &height);
+        _windowManager->GetWindowSize(width, height);
         if((_windowWidth!=width || _windowHeight!=height) && width>0 && height>0)
         {
             _view->Initialize(width, height);
@@ -240,7 +146,6 @@ void LAppDelegate::Run()
             _windowWidth = width;
             _windowHeight = height;
         }
-        glViewport(0, 0, _windowWidth, _windowHeight);
 
         // 時間更新
         LAppPal::UpdateTime();
@@ -252,7 +157,7 @@ void LAppDelegate::Run()
             if (GetCursorPos(&cursorPos))
             {
                 int windowX, windowY;
-                glfwGetWindowPos(_window, &windowX, &windowY);
+                _windowManager->GetWindowPosition(windowX, windowY);
 
                 float localX = static_cast<float>(cursorPos.x - windowX);
                 float localY = static_cast<float>(cursorPos.y - windowY);
@@ -265,9 +170,7 @@ void LAppDelegate::Run()
         }
 
         // 画面の初期化 (alpha=0 for transparency)
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glClearDepth(1.0);
+        _graphicsBackend->BeginFrame(_windowWidth, _windowHeight);
 
         //描画更新
         _view->Render();
@@ -278,30 +181,17 @@ void LAppDelegate::Run()
             if (GetCursorPos(&cursorPos))
             {
                 int windowX, windowY;
-                glfwGetWindowPos(_window, &windowX, &windowY);
+                _windowManager->GetWindowPosition(windowX, windowY);
                 int localX = cursorPos.x - windowX;
                 int localY = cursorPos.y - windowY;
 
                 if (localX >= 0 && localX < _windowWidth && localY >= 0 && localY < _windowHeight)
                 {
-                    glBindBuffer(GL_PIXEL_PACK_BUFFER, _pbo);
-                    GLubyte* ptr = static_cast<GLubyte*>(glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
-                    GLubyte alpha = 0;
-                    if (ptr)
+                    bool isTransparent = _graphicsBackend->IsPixelTransparent(localX, localY, _windowHeight);
+                    if (isTransparent != _isClickThrough)
                     {
-                        alpha = ptr[3];
-                        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-                    }
-
-                    int fbY = _windowHeight - 1 - localY;
-                    glReadPixels(localX, fbY, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-                    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-
-                    bool shouldBeClickThrough = (alpha == 0);
-                    if (shouldBeClickThrough != _isClickThrough)
-                    {
-                        glfwSetWindowAttrib(_window, GLFW_MOUSE_PASSTHROUGH, shouldBeClickThrough ? GLFW_TRUE : GLFW_FALSE);
-                        _isClickThrough = shouldBeClickThrough;
+                        _windowManager->SetMousePassthrough(isTransparent);
+                        _isClickThrough = isTransparent;
                     }
                 }
             }
@@ -310,33 +200,34 @@ void LAppDelegate::Run()
         {
             if (_isClickThrough)
             {
-                glfwSetWindowAttrib(_window, GLFW_MOUSE_PASSTHROUGH, GLFW_FALSE);
+                _windowManager->SetMousePassthrough(false);
                 _isClickThrough = false;
             }
         }
 
         // バッファの入れ替え
-        glfwSwapBuffers(_window);
+        _graphicsBackend->EndFrame(_windowManager->GetWindow());
 
         PollNetworkMessages();
 
-        if (!_windowShown)
+        if (!_windowManager->IsWindowShown())
         {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - _connectionStartTime).count();
             if (elapsed > 5)
             {
-                ShowWindowIfHidden();
+                _windowManager->ShowWindow();
             }
         }
 
-        if (_targetFps > 0.0)
+        double fps = _windowManager->GetTargetFps();
+        if (fps > 0.0)
         {
-            glfwWaitEventsTimeout(1.0 / _targetFps);
+            _windowManager->WaitEvents(1.0 / fps);
         }
         else
         {
-            glfwWaitEventsTimeout(1.0 / 60.0);
+            _windowManager->WaitEvents(1.0 / 60.0);
         }
     }
 
@@ -347,7 +238,8 @@ void LAppDelegate::Run()
 
 LAppDelegate::LAppDelegate():
     _cubismOption(),
-    _window(NULL),
+    _windowManager(new WindowManager()),
+    _graphicsBackend(new OpenGLBackend()),
     _captured(false),
     _mouseX(0.0f),
     _mouseY(0.0f),
@@ -356,11 +248,11 @@ LAppDelegate::LAppDelegate():
     _isDragging(false),
     _dragStartX(0.0),
     _dragStartY(0.0),
+    _isClickThrough(false),
     _wsClient(nullptr),
     _messageHandler(nullptr),
     _eventEmitter(nullptr),
     _networkReady(false),
-    _targetFps(0.0),
     _wsUrl("ws://localhost:9000"),
     _wasEverConnected(false),
     _connectionStartTime(std::chrono::steady_clock::now()),
@@ -370,14 +262,12 @@ LAppDelegate::LAppDelegate():
     _startupWidth(0),
     _startupHeight(0),
     _hasStartupSize(false),
-    _windowShown(false),
-    _pbo(0),
-    _isClickThrough(false),
     _audioManager(nullptr)
 {
     _executeAbsolutePath = "";
     _view = new LAppView();
     _textureManager = new LAppTextureManager();
+    _textureManager->SetGraphicsBackend(_graphicsBackend);
 }
 
 LAppDelegate::~LAppDelegate()
@@ -387,17 +277,20 @@ LAppDelegate::~LAppDelegate()
 
 void LAppDelegate::SetTargetFps(double fps)
 {
-    _targetFps = fps;
+    _windowManager->SetTargetFps(fps);
     if (fps <= 0.0)
     {
-        glfwSwapInterval(1);
         LAppPal::PrintLogLn("[LAppDelegate] FPS mode: adaptive (VSync)");
     }
     else
     {
-        glfwSwapInterval(0);
         LAppPal::PrintLogLn("[LAppDelegate] FPS mode: fixed %.0f", fps);
     }
+}
+
+double LAppDelegate::GetTargetFps() const
+{
+    return _windowManager->GetTargetFps();
 }
 
 void LAppDelegate::InitializeCubism()
@@ -453,7 +346,7 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
                 if (_eventEmitter && _eventEmitter->isActive())
                 {
                     int wx, wy;
-                    glfwGetWindowPos(_window, &wx, &wy);
+                    _windowManager->GetWindowPosition(wx, wy);
                     _eventEmitter->emit("drag_end", {{"x", static_cast<float>(_mouseX)}, {"y", static_cast<float>(_mouseY)}, {"window_x", wx}, {"window_y", wy}});
                 }
             }
@@ -462,8 +355,8 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
     }
 
     if (GLFW_MOUSE_BUTTON_LEFT == button &&
-        (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-         glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS))
+        (_windowManager->IsKeyPressed(GLFW_KEY_LEFT_SHIFT) ||
+         _windowManager->IsKeyPressed(GLFW_KEY_RIGHT_SHIFT)))
     {
         if (GLFW_PRESS == action)
         {
@@ -517,8 +410,8 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
     {
         POINT pt;
         GetCursorPos(&pt);
-        glfwSetWindowPos(_window, pt.x - static_cast<int>(_dragStartX),
-                                  pt.y - static_cast<int>(_dragStartY));
+        _windowManager->SetWindowPosition(pt.x - static_cast<int>(_dragStartX),
+                                        pt.y - static_cast<int>(_dragStartY));
         return;
     }
 
@@ -558,10 +451,10 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
 
 void LAppDelegate::OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 {
-    bool shiftPressed = (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-                         glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
-    bool ctrlPressed = (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-                        glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+    bool shiftPressed = (_windowManager->IsKeyPressed(GLFW_KEY_LEFT_SHIFT) ||
+                         _windowManager->IsKeyPressed(GLFW_KEY_RIGHT_SHIFT));
+    bool ctrlPressed = (_windowManager->IsKeyPressed(GLFW_KEY_LEFT_CONTROL) ||
+                         _windowManager->IsKeyPressed(GLFW_KEY_RIGHT_CONTROL));
 
     if (shiftPressed)
     {
@@ -612,7 +505,7 @@ void LAppDelegate::OnScrollCallback(GLFWwindow* window, double xoffset, double y
     }
 
     int posX, posY;
-    glfwGetWindowPos(window, &posX, &posY);
+    _windowManager->GetWindowPosition(posX, posY);
 
     // Center-pivot: keep window center stable across resize
     int centerX = posX + currentWidth / 2;
@@ -620,8 +513,8 @@ void LAppDelegate::OnScrollCallback(GLFWwindow* window, double xoffset, double y
     int newPosX = centerX - newWidth / 2;
     int newPosY = centerY - newHeight / 2;
 
-    glfwSetWindowSize(window, newWidth, newHeight);
-    glfwSetWindowPos(window, newPosX, newPosY);
+    _windowManager->SetWindowSize(newWidth, newHeight);
+    _windowManager->SetWindowPosition(newPosX, newPosY);
 
     LAppPal::PrintLogLn("[LAppDelegate] Window resized: %dx%d -> %dx%d, pos: (%d,%d)",
         currentWidth, currentHeight, newWidth, newHeight, newPosX, newPosY);
@@ -639,7 +532,7 @@ void LAppDelegate::OnScrollCallback(GLFWwindow* window, double xoffset, double y
 
 void LAppDelegate::GetClientSize(int& rWidth, int& rHeight)
 {
-    glfwGetWindowSize(LAppDelegate::GetInstance()->GetWindow(), &rWidth, &rHeight);
+    LAppDelegate::GetInstance()->_windowManager->GetWindowSize(rWidth, rHeight);
 }
 
 void LAppDelegate::SetExecuteAbsolutePath()
@@ -748,7 +641,7 @@ void LAppDelegate::PollNetworkMessages()
             if (elapsed > 10)
             {
                 LAppPal::PrintLogLn("[Network] Connection timeout (%llds), exiting...", elapsed);
-                glfwSetWindowShouldClose(_window, GLFW_TRUE);
+                _windowManager->SetShouldClose();
             }
         }
         return;
@@ -771,7 +664,5 @@ void LAppDelegate::PollNetworkMessages()
 
 void LAppDelegate::ShowWindowIfHidden()
 {
-    if (_windowShown) return;
-    _windowShown = true;
-    glfwShowWindow(_window);
+    _windowManager->ShowWindow();
 }

@@ -10,9 +10,6 @@
 #include <algorithm>
 #include <string>
 
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-
 #include "LAppPal.hpp"
 #include "LAppDefine.hpp"
 #include "LAppDelegate.hpp"
@@ -182,8 +179,8 @@ const std::vector<std::string>& LAppLive2DManager::GetHitAreaNames() const
 
 void LAppLive2DManager::OnUpdate() const
 {
-    int width, height;
-    glfwGetWindowSize(LAppDelegate::GetInstance()->GetWindow(), &width, &height);
+    int width = LAppDelegate::GetInstance()->GetWindowWidth();
+    int height = LAppDelegate::GetInstance()->GetWindowHeight();
 
     csmUint32 modelCount = _models.GetSize();
     for (csmUint32 i = 0; i < modelCount; ++i)

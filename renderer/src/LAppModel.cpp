@@ -12,7 +12,13 @@
 #include <Motion/CubismMotion.hpp>
 #include <Physics/CubismPhysics.hpp>
 #include <CubismDefaultParameterId.hpp>
+#ifdef USE_VULKAN
+#include <Rendering/Vulkan/CubismRenderer_Vulkan.hpp>
+#define CUBISM_RENDERER_TYPE Rendering::CubismRenderer_Vulkan
+#else
 #include <Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp>
+#define CUBISM_RENDERER_TYPE Rendering::CubismRenderer_OpenGLES2
+#endif
 #include <Utils/CubismString.hpp>
 #include <Id/CubismIdManager.hpp>
 #include <Motion/CubismMotionQueueEntry.hpp>
@@ -502,7 +508,7 @@ void LAppModel::DoDraw()
         return;
     }
 
-    GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->DrawModel();
+    GetRenderer<CUBISM_RENDERER_TYPE>()->DrawModel();
 }
 
 void LAppModel::Draw(CubismMatrix44& matrix)
@@ -522,7 +528,7 @@ void LAppModel::Draw(CubismMatrix44& matrix)
 
     matrix.MultiplyByMatrix(_modelMatrix);
 
-    GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->SetMvpMatrix(&matrix);
+    GetRenderer<CUBISM_RENDERER_TYPE>()->SetMvpMatrix(&matrix);
 
     DoDraw();
 }
@@ -658,16 +664,16 @@ void LAppModel::SetupTextures()
         texturePath = _modelHomeDir + texturePath;
 
         LAppTextureManager::TextureInfo* texture = LAppDelegate::GetInstance()->GetTextureManager()->CreateTextureFromPngFile(texturePath.GetRawString());
-        const csmInt32 glTextueNumber = texture->id;
+        const csmInt32 glTextueNumber = static_cast<csmInt32>(texture->id);
 
         //OpenGL
-        GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->BindTexture(modelTextureNumber, glTextueNumber);
+        GetRenderer<CUBISM_RENDERER_TYPE>()->BindTexture(modelTextureNumber, glTextueNumber);
     }
 
 #ifdef PREMULTIPLIED_ALPHA_ENABLE
-    GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->IsPremultipliedAlpha(true);
+    GetRenderer<CUBISM_RENDERER_TYPE>()->IsPremultipliedAlpha(true);
 #else
-    GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->IsPremultipliedAlpha(false);
+    GetRenderer<CUBISM_RENDERER_TYPE>()->IsPremultipliedAlpha(false);
 #endif
 
 }

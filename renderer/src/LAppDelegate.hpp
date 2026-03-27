@@ -9,9 +9,10 @@
 
 #include <string>
 #include <chrono>
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
+#include <windows.h>
 #include "LAppAllocator_Common.hpp"
+#include "platform/WindowManager.hpp"
+#include "graphics/IGraphicsBackend.hpp"
 
 class LAppView;
 class LAppTextureManager;
@@ -23,10 +24,6 @@ namespace Network {
     class EventEmitter;
 }
 
-/**
-* @brief   アプリケーションクラス。
-*   Cubismの管理を行う。
-*/
 class LAppDelegate
 {
 public:
@@ -43,7 +40,7 @@ public:
 
     static void GetClientSize(int& rWidth, int& rHeight);
 
-    GLFWwindow* GetWindow() { return _window; }
+    GLFWwindow* GetWindow() { return _windowManager->GetWindow(); }
     LAppView* GetView() { return _view; }
     void SetExecuteAbsolutePath();
     std::string GetExecuteAbsolutePath(){ return _executeAbsolutePath;}
@@ -59,7 +56,7 @@ public:
     const std::string& GetStartupModel() const { return _startupModel; }
     void ShowWindowIfHidden();
     void SetTargetFps(double fps);
-    double GetTargetFps() const { return _targetFps; }
+    double GetTargetFps() const;
     float GetMouseX() const { return _mouseX; }
     float GetMouseY() const { return _mouseY; }
 
@@ -75,7 +72,10 @@ private:
 
     LAppAllocator_Common _cubismAllocator;
     Csm::CubismFramework::Option _cubismOption;
-    GLFWwindow* _window;
+
+    WindowManager* _windowManager;
+    IGraphicsBackend* _graphicsBackend;
+
     LAppView* _view;
     bool _captured;
     float _mouseX;
@@ -93,13 +93,12 @@ private:
     bool _isModelDragging = false;
     float _modelDragLastX = 0.0f;
     float _modelDragLastY = 0.0f;
+    bool _isClickThrough = false;
 
     Network::WebSocketClient* _wsClient;
     Network::MessageHandler* _messageHandler;
     Network::EventEmitter* _eventEmitter;
     bool _networkReady;
-
-    double _targetFps;
 
     std::string _wsUrl;
     bool _wasEverConnected;
@@ -112,10 +111,6 @@ private:
     int _startupWidth;
     int _startupHeight;
     bool _hasStartupSize;
-    bool _windowShown;
-
-    GLuint _pbo;
-    bool _isClickThrough;
 
     AudioManager* _audioManager;
 };

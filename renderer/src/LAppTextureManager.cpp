@@ -40,7 +40,7 @@ LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(st
         }
     }
 
-    GLuint textureId;
+    uint64_t textureId = 0;
     int width, height, channels;
     unsigned int size;
     unsigned char* png;
@@ -68,14 +68,7 @@ LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(st
 #endif
     }
 
-    // OpenGL用のテクスチャを生成する
-    glGenTextures(1, &textureId);
-    glBindTexture(GL_TEXTURE_2D, textureId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, png);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    textureId = _backend->CreateTexture(png, width, height, 4);
 
     // 解放処理
     stbi_image_free(png);
@@ -100,13 +93,13 @@ void LAppTextureManager::ReleaseTextures()
 {
     for (Csm::csmUint32 i = 0; i < _texturesInfo.GetSize(); i++)
     {
-        glDeleteTextures(1, &(_texturesInfo[i]->id));
+        _backend->DeleteTexture(_texturesInfo[i]->id);
     }
 
     ReleaseTexturesInfo();
 }
 
-void LAppTextureManager::ReleaseTexture(Csm::csmUint32 textureId)
+void LAppTextureManager::ReleaseTexture(uint64_t textureId)
 {
     for (Csm::csmUint32 i = 0; i < _texturesInfo.GetSize(); i++)
     {
@@ -114,7 +107,7 @@ void LAppTextureManager::ReleaseTexture(Csm::csmUint32 textureId)
         {
             continue;
         }
-        glDeleteTextures(1, &(_texturesInfo[i]->id));
+        _backend->DeleteTexture(_texturesInfo[i]->id);
         delete _texturesInfo[i];
         _texturesInfo.Remove(i);
         break;
@@ -127,7 +120,7 @@ void LAppTextureManager::ReleaseTexture(std::string fileName)
     {
         if (_texturesInfo[i]->fileName == fileName)
         {
-            glDeleteTextures(1, &(_texturesInfo[i]->id));
+            _backend->DeleteTexture(_texturesInfo[i]->id);
             delete _texturesInfo[i];
             _texturesInfo.Remove(i);
             break;

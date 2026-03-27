@@ -8,11 +8,11 @@
 #pragma once
 
 #include <string>
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
+#include <cstdint>
 #include <Type/csmVector.hpp>
 
 #include "LAppTextureManager_Common.hpp"
+#include "graphics/IGraphicsBackend.hpp"
 
 /**
 * @brief テクスチャ管理クラス
@@ -54,7 +54,9 @@ public:
      * 指定したテクスチャIDの画像を解放する
      * @param[in] textureId  解放するテクスチャID
      **/
-    void ReleaseTexture(Csm::csmUint32 textureId);
+    void ReleaseTexture(uint64_t textureId);
+
+    void SetGraphicsBackend(IGraphicsBackend* backend) { _backend = backend; }
 
     /**
     * @brief 画像の解放
@@ -63,4 +65,7 @@ public:
     * @param[in] fileName  解放する画像ファイルパス名
     **/
     void ReleaseTexture(std::string fileName);
+
+private:
+    IGraphicsBackend* _backend = nullptr;
 };

@@ -1,0 +1,32 @@
+target_sources(${APP_NAME}
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppDefine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppDefine.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppDelegate.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppDelegate.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppLive2DManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppLive2DManager.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppModel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppModel.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppPal.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppPal.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppSprite.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppSprite.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppSpritePipeline.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppSpritePipeline.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppModelSpritePipeline.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppModelSpritePipeline.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppTextureManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppTextureManager.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/LAppView.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/VulkanManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/VulkanManager.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/SwapchainManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src/SwapchainManager.hpp
+)
+
+target_include_directories(${APP_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../proj.win.cmake/src
+)

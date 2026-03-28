@@ -14,6 +14,10 @@ third_party/CubismSdkForNative/Samples/OpenGL/thirdParty/glew/
 third_party/CubismSdkForNative/Samples/OpenGL/thirdParty/glfw/
 third_party/CubismSdkForNative/Samples/OpenGL/Demo/proj.linux.cmake/build/
 
+# Cubism Vulkan demo MinGW build output
+third_party/CubismSdkForNative/Samples/Vulkan/Demo/proj.mingw.cmake/build/
+third_party/CubismSdkForNative/Samples/Vulkan/thirdParty/glfw/
+
 # IDE
 .idea/
 .vscode/

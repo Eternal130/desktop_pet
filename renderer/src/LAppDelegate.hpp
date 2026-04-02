@@ -49,6 +49,7 @@ public:
     int GetWindowHeight() { return _windowHeight; }
     Network::EventEmitter* GetEventEmitter() { return _eventEmitter; }
     AudioManager* GetAudioManager() { return _audioManager; }
+    IGraphicsBackend* GetGraphicsBackend() const { return _graphicsBackend; }
     void SetWsUrl(const std::string& url) { _wsUrl = url; }
     void SetStartupModel(const std::string& m) { _startupModel = m; }
     void SetStartupPosition(int x, int y) { _startupX = x; _startupY = y; _hasStartupPos = true; }

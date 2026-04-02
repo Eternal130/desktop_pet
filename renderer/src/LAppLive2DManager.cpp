@@ -16,6 +16,12 @@
 #include "LAppModel.hpp"
 #include "network/EventEmitter.hpp"
 
+#ifdef USE_VULKAN
+#include <Rendering/Vulkan/CubismOffscreenManager_Vulkan.hpp>
+#include <Rendering/Vulkan/CubismRenderer_Vulkan.hpp>
+#include "graphics/VulkanBackend.hpp"
+#endif
+
 using namespace Csm;
 using namespace LAppDefine;
 
@@ -64,6 +70,9 @@ LAppLive2DManager::LAppLive2DManager()
 
 LAppLive2DManager::~LAppLive2DManager()
 {
+#ifdef USE_VULKAN
+    Csm::Rendering::CubismOffscreenManager_Vulkan::ReleaseInstance();
+#endif
     ReleaseAllModel();
     delete _viewMatrix;
 }
@@ -78,10 +87,30 @@ void LAppLive2DManager::LoadModel(const csmChar* modelName)
     csmString modelJsonName(modelName);
     modelJsonName += ".model3.json";
 
+#ifdef USE_VULKAN
+    {
+        auto* vkBackend = static_cast<VulkanBackend*>(
+            LAppDelegate::GetInstance()->GetGraphicsBackend());
+        vkDeviceWaitIdle(vkBackend->GetDevice());
+    }
+#endif
+
     ReleaseAllModel();
 
     _models.PushBack(new LAppModel());
+#ifdef USE_VULKAN
+    {
+        auto* vkBackend = static_cast<VulkanBackend*>(
+            LAppDelegate::GetInstance()->GetGraphicsBackend());
+        _models[0]->LoadAssets(
+            vkBackend->GetDevice(),
+            vkBackend->GetImageFormat(),
+            modelPath.GetRawString(),
+            modelJsonName.GetRawString());
+    }
+#else
     _models[0]->LoadAssets(modelPath.GetRawString(), modelJsonName.GetRawString());
+#endif
 
     _hitAreaNames = _models[0]->GetHitAreaNames();
     if (DebugLogEnable)
@@ -179,6 +208,20 @@ const std::vector<std::string>& LAppLive2DManager::GetHitAreaNames() const
 
 void LAppLive2DManager::OnUpdate() const
 {
+#ifdef USE_VULKAN
+    Csm::Rendering::CubismOffscreenManager_Vulkan::GetInstance()->BeginFrameProcess();
+
+    {
+        auto* vkBackend = static_cast<VulkanBackend*>(
+            LAppDelegate::GetInstance()->GetGraphicsBackend());
+        Live2D::Cubism::Framework::Rendering::CubismRenderer_Vulkan::SetRenderTarget(
+            vkBackend->GetSwapchainImage(),
+            vkBackend->GetSwapchainImageView(),
+            vkBackend->GetSwapchainImageFormat(),
+            vkBackend->GetSwapchainExtent());
+    }
+#endif
+
     int width = LAppDelegate::GetInstance()->GetWindowWidth();
     int height = LAppDelegate::GetInstance()->GetWindowHeight();
 
@@ -212,6 +255,11 @@ void LAppLive2DManager::OnUpdate() const
         model->Update();
         model->Draw(projection);
     }
+
+#ifdef USE_VULKAN
+    Csm::Rendering::CubismOffscreenManager_Vulkan::GetInstance()->EndFrameProcess();
+    Csm::Rendering::CubismOffscreenManager_Vulkan::GetInstance()->ReleaseStaleRenderTextures();
+#endif
 }
 
 void LAppLive2DManager::ChangeScene(const csmChar* modelName)

@@ -2,19 +2,38 @@ cmake_minimum_required(VERSION 3.16)
 
 project(desktop-pet-renderer)
 
+# Compatibility: CMake 4.x requires minimum policy version 3.5.
+# Dependencies (GLEW 2.8.12, GLFW 3.4, IXWebSocket, libogg, libvorbis)
+# declare older cmake_minimum_required versions. Setting this variable
+# before any FetchContent/add_subdirectory call tells CMake to treat
+# all sub-projects as if they require at least 3.5, suppressing the
+# deprecation error.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 set(APP_NAME desktop-pet-renderer)
 
-# === Paths ===
+# === Backend selection ===
+option(USE_VULKAN "Use Vulkan renderer instead of OpenGL" OFF)
+
+# === Paths (common) ===
 set(SDK_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/CubismSdkForNative)
 set(CORE_PATH ${SDK_ROOT_PATH}/Core)
 set(FRAMEWORK_PATH ${SDK_ROOT_PATH}/Framework)
-set(THIRD_PARTY_PATH ${SDK_ROOT_PATH}/Samples/OpenGL/thirdParty)
-set(STB_PATH ${THIRD_PARTY_PATH}/stb)
-set(GLEW_PATH ${THIRD_PARTY_PATH}/glew)
-set(GLFW_PATH ${THIRD_PARTY_PATH}/glfw)
 set(RES_PATH ${SDK_ROOT_PATH}/Samples/Resources)
-set(FRAMEWORK_SHADER_PATH ${FRAMEWORK_PATH}/src/Rendering/OpenGL/Shaders/Standard)
 set(COMMON_SRC_PATH ${SDK_ROOT_PATH}/Samples/Common)
+
+# === Paths (backend-specific) ===
+if(USE_VULKAN)
+    set(THIRD_PARTY_PATH ${SDK_ROOT_PATH}/Samples/Vulkan/thirdParty)
+    set(FRAMEWORK_SHADER_PATH ${FRAMEWORK_PATH}/src/Rendering/Vulkan/Shaders)
+    set(SAMPLE_SHADER_PATH ${SDK_ROOT_PATH}/Samples/Vulkan/Shaders)
+else()
+    set(THIRD_PARTY_PATH ${SDK_ROOT_PATH}/Samples/OpenGL/thirdParty)
+    set(GLEW_PATH ${THIRD_PARTY_PATH}/glew)
+    set(FRAMEWORK_SHADER_PATH ${FRAMEWORK_PATH}/src/Rendering/OpenGL/Shaders/Standard)
+endif()
+set(STB_PATH ${THIRD_PARTY_PATH}/stb)
+set(GLFW_PATH ${THIRD_PARTY_PATH}/glfw)
 
 # === Output ===
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../build/bin)
@@ -81,21 +100,45 @@ set_target_properties(Live2DCubismCore PROPERTIES
   INTERFACE_INCLUDE_DIRECTORIES ${CORE_PATH}/include
 )
 
-# === GLEW & GLFW ===
-add_subdirectory(${GLEW_PATH}/build/cmake ${CMAKE_CURRENT_BINARY_DIR}/glew)
+# === GLEW (OpenGL only) & GLFW ===
+if(NOT USE_VULKAN)
+    add_subdirectory(${GLEW_PATH}/build/cmake ${CMAKE_CURRENT_BINARY_DIR}/glew)
+endif()
 add_subdirectory(${GLFW_PATH} ${CMAKE_CURRENT_BINARY_DIR}/glfw)
 
-# === Cubism Framework ===
-set(FRAMEWORK_SOURCE OpenGL)
-add_subdirectory(${FRAMEWORK_PATH} ${CMAKE_CURRENT_BINARY_DIR}/Framework)
-target_compile_definitions(Framework PUBLIC CSM_TARGET_WIN_GL)
-target_include_directories(Framework PUBLIC ${GLEW_PATH}/include)
-target_link_libraries(Framework Live2DCubismCore glew_s)
-# GCC rejects PROC-to-void* implicit conversion in SDK's wglGetProcAddress usage
-target_compile_options(Framework PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fpermissive>)
+# === Graphics library ===
+if(USE_VULKAN)
+    find_package(Vulkan REQUIRED)
+else()
+    find_package(OpenGL REQUIRED)
+endif()
 
-# === OpenGL ===
-find_package(OpenGL REQUIRED)
+# === Cubism Framework ===
+if(USE_VULKAN)
+    set(FRAMEWORK_SOURCE Vulkan)
+else()
+    set(FRAMEWORK_SOURCE OpenGL)
+endif()
+add_subdirectory(${FRAMEWORK_PATH} ${CMAKE_CURRENT_BINARY_DIR}/Framework)
+
+if(USE_VULKAN)
+    target_include_directories(Framework PUBLIC ${Vulkan_INCLUDE_DIRS})
+    target_link_libraries(Framework Live2DCubismCore ${Vulkan_LIBRARIES})
+else()
+    target_compile_definitions(Framework PUBLIC CSM_TARGET_WIN_GL)
+    target_include_directories(Framework PUBLIC ${GLEW_PATH}/include)
+    target_link_libraries(Framework Live2DCubismCore glew_s)
+    # GCC rejects PROC-to-void* implicit conversion in SDK's wglGetProcAddress usage
+    target_compile_options(Framework PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fpermissive>)
+endif()
+
+# === Vulkan Shader Compilation ===
+if(USE_VULKAN)
+    add_subdirectory(${SAMPLE_SHADER_PATH} ${CMAKE_CURRENT_BINARY_DIR}/SampleShaders)
+    add_subdirectory(${FRAMEWORK_SHADER_PATH} ${CMAKE_CURRENT_BINARY_DIR}/FrameworkShaders)
+    add_dependencies(Framework SampleShaders)
+    add_dependencies(Framework FrameworkShaders)
+endif()
 
 # === Main executable ===
 add_executable(${APP_NAME})
@@ -148,9 +191,25 @@ target_sources(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/WindowManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/WindowManager.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/IGraphicsBackend.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/OpenGLBackend.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/OpenGLBackend.hpp
 )
+
+# Backend-specific source files
+if(USE_VULKAN)
+    target_sources(${APP_NAME}
+      PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/VulkanBackend.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/VulkanBackend.hpp
+    )
+    target_compile_definitions(${APP_NAME} PRIVATE USE_VULKAN)
+    set_target_properties(${APP_NAME} PROPERTIES OUTPUT_NAME "desktop-pet-renderer-vulkan")
+else()
+    target_sources(${APP_NAME}
+      PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/OpenGLBackend.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/OpenGLBackend.hpp
+    )
+    target_compile_definitions(${APP_NAME} PRIVATE USE_OPENGL)
+endif()
 
 target_include_directories(${APP_NAME}
   PRIVATE
@@ -160,19 +219,45 @@ target_include_directories(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )
 
-target_link_libraries(${APP_NAME}
-  Framework
-  glfw
-  ${OPENGL_LIBRARIES}
-  ixwebsocket::ixwebsocket
-  vorbisfile
-)
+if(USE_VULKAN)
+    target_include_directories(${APP_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
+endif()
+
+# === Link libraries ===
+if(USE_VULKAN)
+    target_link_libraries(${APP_NAME}
+      Framework
+      glfw
+      ${Vulkan_LIBRARIES}
+      ixwebsocket::ixwebsocket
+      vorbisfile
+    )
+else()
+    target_link_libraries(${APP_NAME}
+      Framework
+      glfw
+      ${OPENGL_LIBRARIES}
+      ixwebsocket::ixwebsocket
+      vorbisfile
+    )
+endif()
 
 # === Post-build: copy resources, shaders, and DLL ===
-add_custom_command(
-  TARGET ${APP_NAME}
-  POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_directory ${RES_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/Resources
-  COMMAND ${CMAKE_COMMAND} -E copy_directory ${FRAMEWORK_SHADER_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/FrameworkShaders
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll $<TARGET_FILE_DIR:${APP_NAME}>
-)
+if(USE_VULKAN)
+    add_custom_command(
+      TARGET ${APP_NAME}
+      POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${RES_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/Resources
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/SampleShaders/compiledShaders $<TARGET_FILE_DIR:${APP_NAME}>/SampleShaders
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/FrameworkShaders/compiledShaders $<TARGET_FILE_DIR:${APP_NAME}>/FrameworkShaders
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll $<TARGET_FILE_DIR:${APP_NAME}>
+    )
+else()
+    add_custom_command(
+      TARGET ${APP_NAME}
+      POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${RES_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/Resources
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${FRAMEWORK_SHADER_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/FrameworkShaders
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll $<TARGET_FILE_DIR:${APP_NAME}>
+    )
+endif()

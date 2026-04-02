@@ -16,6 +16,10 @@
 #include <string>
 #include <vector>
 
+#ifdef USE_VULKAN
+#include <vulkan/vulkan.h>
+#endif
+
 namespace Network { class EventEmitter; }
 
 /**
@@ -50,7 +54,6 @@ public:
     void ReloadRenderer();
 
 #ifdef USE_VULKAN
-    #include <vulkan/vulkan.h>
     /**
      * @brief Vulkan overload: Load model assets with Vulkan device info
      */

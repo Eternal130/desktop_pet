@@ -14,6 +14,12 @@
 #include "LAppTextureManager_Common.hpp"
 #include "graphics/IGraphicsBackend.hpp"
 
+#ifdef USE_VULKAN
+#include <vulkan/vulkan.h>
+#include <Rendering/Vulkan/CubismClass_Vulkan.hpp>
+#include "graphics/VulkanBackend.hpp"
+#endif
+
 /**
 * @brief テクスチャ管理クラス
 *
@@ -58,6 +64,20 @@ public:
 
     void SetGraphicsBackend(IGraphicsBackend* backend) { _backend = backend; }
 
+#ifdef USE_VULKAN
+    TextureInfo* CreateTextureFromPngFile(
+        std::string fileName,
+        VkFormat format,
+        VkImageTiling tiling,
+        VkImageUsageFlags usage,
+        VkMemoryPropertyFlags imageProperties,
+        Csm::csmFloat32 anisotropy
+    );
+
+    bool GetTexture(Csm::csmUint32 textureId,
+                    Live2D::Cubism::Framework::CubismImageVulkan& retTexture) const;
+#endif
+
     /**
     * @brief 画像の解放
     *
@@ -68,4 +88,17 @@ public:
 
 private:
     IGraphicsBackend* _backend = nullptr;
+
+#ifdef USE_VULKAN
+    void CopyBufferToImage(VkCommandBuffer commandBuffer, const VkBuffer& buffer,
+                           VkImage image, uint32_t width, uint32_t height);
+    void GenerateMipmaps(Live2D::Cubism::Framework::CubismImageVulkan image,
+                         uint32_t texWidth, uint32_t texHeight, uint32_t mipLevels);
+#endif
+
+#ifdef USE_VULKAN
+    Csm::csmVector<Live2D::Cubism::Framework::CubismImageVulkan> _textures;
+    Csm::csmUint32 _sequenceId = 0;
+    uint32_t _mipLevels = 0;
+#endif
 };

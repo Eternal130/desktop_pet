@@ -310,11 +310,12 @@ void CubismImageVulkan::Destroy(VkDevice device)
     }
     if (memory != VK_NULL_HANDLE)
     {
-        vkDestroyImageView(device, view, nullptr);
+        vkFreeMemory(device, memory, nullptr);
+        memory = VK_NULL_HANDLE;
     }
     if (view != VK_NULL_HANDLE)
     {
-        vkFreeMemory(device, memory, nullptr);
+        vkDestroyImageView(device, view, nullptr);
         view = VK_NULL_HANDLE;
     }
     if (sampler != VK_NULL_HANDLE)

@@ -663,8 +663,31 @@ void LAppModel::SetupTextures()
         csmString texturePath = _modelSetting->GetTextureFileName(modelTextureNumber);
         texturePath = _modelHomeDir + texturePath;
 
-        LAppTextureManager::TextureInfo* texture = LAppDelegate::GetInstance()->GetTextureManager()->CreateTextureFromPngFile(texturePath.GetRawString());
-#ifndef USE_VULKAN
+#ifdef USE_VULKAN
+        auto* vkBackend = static_cast<VulkanBackend*>(
+            LAppDelegate::GetInstance()->GetGraphicsBackend());
+        LAppTextureManager::TextureInfo* texture = LAppDelegate::GetInstance()
+            ->GetTextureManager()
+            ->CreateTextureFromPngFile(
+                texturePath.GetRawString(),
+                vkBackend->GetImageFormat(),
+                VK_IMAGE_TILING_OPTIMAL,
+                VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                GetRenderer<CUBISM_RENDERER_TYPE>()->GetAnisotropy()
+            );
+
+        if (texture)
+        {
+            CubismImageVulkan image;
+            if (LAppDelegate::GetInstance()->GetTextureManager()->GetTexture(texture->id, image))
+            {
+                GetRenderer<CUBISM_RENDERER_TYPE>()->BindTexture(image);
+            }
+        }
+#else
+        LAppTextureManager::TextureInfo* texture = LAppDelegate::GetInstance()
+            ->GetTextureManager()->CreateTextureFromPngFile(texturePath.GetRawString());
         const csmInt32 glTextueNumber = static_cast<csmInt32>(texture->id);
 
         //OpenGL

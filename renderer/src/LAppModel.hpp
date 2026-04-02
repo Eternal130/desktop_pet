@@ -49,6 +49,19 @@ public:
      */
     void ReloadRenderer();
 
+#ifdef USE_VULKAN
+    #include <vulkan/vulkan.h>
+    /**
+     * @brief Vulkan overload: Load model assets with Vulkan device info
+     */
+    void LoadAssets(VkDevice device, VkFormat imageFormat, const Csm::csmChar* dir, const Csm::csmChar* fileName);
+
+    /**
+     * @brief Vulkan overload: Rebuild renderer with Vulkan device info
+     */
+    void ReloadRenderer(VkDevice device, VkFormat surfaceFormat);
+#endif
+
     /**
      * @brief   モデルの更新処理。モデルのパラメータから描画状態を決定する。
      *

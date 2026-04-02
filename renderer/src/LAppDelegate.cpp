@@ -110,6 +110,16 @@ bool LAppDelegate::Initialize()
         );
         LAppPal::PrintLogLn("[LAppDelegate] Vulkan: CubismRenderer_Vulkan constant settings initialized");
     }
+    // Phase 2.5a: Set initial render target to swapchain
+    {
+        auto* vkBackend = static_cast<VulkanBackend*>(_graphicsBackend);
+        Live2D::Cubism::Framework::Rendering::CubismRenderer_Vulkan::SetRenderTarget(
+            vkBackend->GetSwapchainImage(),
+            vkBackend->GetSwapchainImageView(),
+            vkBackend->GetSwapchainImageFormat(),
+            vkBackend->GetSwapchainExtent());
+        LAppPal::PrintLogLn("[LAppDelegate] Vulkan: Initial SetRenderTarget completed");
+    }
 #endif
 
     // Cubismの初期化
@@ -211,6 +221,15 @@ void LAppDelegate::Run()
             }
             static_cast<VulkanBackend*>(_graphicsBackend)->RecreateSwapchain();
             LAppPal::PrintLogLn("[LAppDelegate] Vulkan: Swapchain recreated (%dx%d)", fbWidth, fbHeight);
+            {
+                auto* vkBackend = static_cast<VulkanBackend*>(_graphicsBackend);
+                Live2D::Cubism::Framework::Rendering::CubismRenderer_Vulkan::SetRenderTarget(
+                    vkBackend->GetSwapchainImage(),
+                    vkBackend->GetSwapchainImageView(),
+                    vkBackend->GetSwapchainImageFormat(),
+                    vkBackend->GetSwapchainExtent());
+                LAppPal::PrintLogLn("[LAppDelegate] Vulkan: SetRenderTarget updated after swapchain recreation");
+            }
         }
 #endif
         _graphicsBackend->BeginFrame(_windowWidth, _windowHeight);

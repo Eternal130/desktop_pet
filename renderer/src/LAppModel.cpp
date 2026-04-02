@@ -92,6 +92,36 @@ void LAppModel::LoadAssets(const csmChar* dir, const csmChar* fileName)
     SetupTextures();
 }
 
+#ifdef USE_VULKAN
+void LAppModel::LoadAssets(VkDevice device, VkFormat imageFormat, const csmChar* dir, const csmChar* fileName)
+{
+    _modelHomeDir = dir;
+
+    if (_debugMode)
+    {
+        LAppPal::PrintLogLn("[APP]load model setting (Vulkan): %s", fileName);
+    }
+
+    csmSizeInt size;
+    const csmString path = csmString(dir) + fileName;
+
+    csmByte* buffer = CreateBuffer(path.GetRawString(), &size);
+    ICubismModelSetting* setting = new CubismModelSettingJson(buffer, size);
+    DeleteBuffer(buffer, path.GetRawString());
+
+    SetupModel(setting);
+
+    if (_model == NULL)
+    {
+        LAppPal::PrintLogLn("Failed to LoadAssets() (Vulkan).");
+        return;
+    }
+
+    CreateRenderer(LAppDelegate::GetInstance()->GetWindowWidth(), LAppDelegate::GetInstance()->GetWindowHeight());
+
+    SetupTextures();
+}
+#endif
 
 void LAppModel::SetupModel(ICubismModelSetting* setting)
 {
@@ -648,6 +678,17 @@ void LAppModel::ReloadRenderer()
 
     SetupTextures();
 }
+
+#ifdef USE_VULKAN
+void LAppModel::ReloadRenderer(VkDevice device, VkFormat surfaceFormat)
+{
+    DeleteRenderer();
+
+    CreateRenderer(LAppDelegate::GetInstance()->GetWindowWidth(), LAppDelegate::GetInstance()->GetWindowHeight());
+
+    SetupTextures();
+}
+#endif
 
 void LAppModel::SetupTextures()
 {

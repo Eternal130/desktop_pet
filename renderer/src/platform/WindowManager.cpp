@@ -29,6 +29,10 @@ bool WindowManager::Initialize(int width, int height, bool hasStartupPos, int st
         return false;
     }
 
+#ifdef USE_VULKAN
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+#endif
+
     glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
     glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
     glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
@@ -134,6 +138,7 @@ void WindowManager::SetMousePassthrough(bool enable)
 void WindowManager::SetTargetFps(double fps)
 {
     _targetFps = fps;
+#ifndef USE_VULKAN
     if (fps <= 0.0)
     {
         glfwSwapInterval(1);
@@ -142,6 +147,7 @@ void WindowManager::SetTargetFps(double fps)
     {
         glfwSwapInterval(0);
     }
+#endif
 }
 
 double WindowManager::GetTargetFps() const

@@ -664,10 +664,12 @@ void LAppModel::SetupTextures()
         texturePath = _modelHomeDir + texturePath;
 
         LAppTextureManager::TextureInfo* texture = LAppDelegate::GetInstance()->GetTextureManager()->CreateTextureFromPngFile(texturePath.GetRawString());
+#ifndef USE_VULKAN
         const csmInt32 glTextueNumber = static_cast<csmInt32>(texture->id);
 
         //OpenGL
         GetRenderer<CUBISM_RENDERER_TYPE>()->BindTexture(modelTextureNumber, glTextueNumber);
+#endif
     }
 
 #ifdef PREMULTIPLIED_ALPHA_ENABLE

@@ -6,9 +6,16 @@
  */
 
 // GLEW must be included before GLFW (which pulls in gl.h)
+#ifndef USE_VULKAN
 #include <GL/glew.h>
+#endif
 #include <GLFW/glfw3.h>
+#ifdef USE_VULKAN
+#include "graphics/VulkanBackend.hpp"
+#include <Rendering/Vulkan/CubismRenderer_Vulkan.hpp>
+#else
 #include "graphics/OpenGLBackend.hpp"
+#endif
 #include "LAppDelegate.hpp"
 #include "LAppView.hpp"
 #include "LAppPal.hpp"
@@ -86,6 +93,25 @@ bool LAppDelegate::Initialize()
     _windowManager->GetWindowSize(_windowWidth, _windowHeight);
     _graphicsBackend->BeginFrame(_windowWidth, _windowHeight);
 
+#ifdef USE_VULKAN
+    // Phase 2.2: Inject Vulkan device info into CubismRenderer_Vulkan static state
+    {
+        auto* vkBackend = static_cast<VulkanBackend*>(_graphicsBackend);
+        Live2D::Cubism::Framework::Rendering::CubismRenderer_Vulkan::InitializeConstantSettings(
+            vkBackend->GetDevice(),
+            vkBackend->GetPhysicalDevice(),
+            vkBackend->GetCommandPool(),
+            vkBackend->GetGraphicQueue(),
+            vkBackend->GetSwapchainImageCount(),
+            vkBackend->GetSwapchainExtent(),
+            vkBackend->GetSwapchainImageView(),
+            vkBackend->GetSwapchainImageFormat(),
+            vkBackend->GetDepthFormat()
+        );
+        LAppPal::PrintLogLn("[LAppDelegate] Vulkan: CubismRenderer_Vulkan constant settings initialized");
+    }
+#endif
+
     // Cubismの初期化
     InitializeCubism();
 
@@ -145,6 +171,9 @@ void LAppDelegate::Run()
             LAppLive2DManager::GetInstance()->SetRenderTargetSize(width, height);
             _windowWidth = width;
             _windowHeight = height;
+#ifdef USE_VULKAN
+            static_cast<VulkanBackend*>(_graphicsBackend)->SetFrameBufferResized(true);
+#endif
         }
 
         // 時間更新
@@ -170,6 +199,20 @@ void LAppDelegate::Run()
         }
 
         // 画面の初期化 (alpha=0 for transparency)
+#ifdef USE_VULKAN
+        if (static_cast<VulkanBackend*>(_graphicsBackend)->IsSwapchainInvalid())
+        {
+            int fbWidth, fbHeight;
+            glfwGetFramebufferSize(_windowManager->GetWindow(), &fbWidth, &fbHeight);
+            while (fbWidth == 0 || fbHeight == 0)
+            {
+                glfwGetFramebufferSize(_windowManager->GetWindow(), &fbWidth, &fbHeight);
+                glfwWaitEvents();
+            }
+            static_cast<VulkanBackend*>(_graphicsBackend)->RecreateSwapchain();
+            LAppPal::PrintLogLn("[LAppDelegate] Vulkan: Swapchain recreated (%dx%d)", fbWidth, fbHeight);
+        }
+#endif
         _graphicsBackend->BeginFrame(_windowWidth, _windowHeight);
 
         //描画更新
@@ -239,7 +282,11 @@ void LAppDelegate::Run()
 LAppDelegate::LAppDelegate():
     _cubismOption(),
     _windowManager(new WindowManager()),
+#ifdef USE_VULKAN
+    _graphicsBackend(new VulkanBackend()),
+#else
     _graphicsBackend(new OpenGLBackend()),
+#endif
     _captured(false),
     _mouseX(0.0f),
     _mouseY(0.0f),

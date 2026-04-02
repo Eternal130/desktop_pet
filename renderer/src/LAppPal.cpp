@@ -12,7 +12,9 @@
 #include <sys/stat.h>
 #include <iostream>
 #include <fstream>
+#ifndef USE_VULKAN
 #include <GL/glew.h>
+#endif
 #include <GLFW/glfw3.h>
 #include <Model/CubismMoc.hpp>
 #include "LAppDefine.hpp"

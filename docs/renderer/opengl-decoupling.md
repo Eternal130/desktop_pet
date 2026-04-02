@@ -342,107 +342,632 @@ GetRenderer<CUBISM_RENDERER_TYPE>()->DrawModel();
 
 ### Phase 2：Vulkan 后端实现
 
-#### 步骤 2.1：新建 VulkanBackend
+> **参考代码**：`Samples/Vulkan/Demo/proj.win.cmake/src/` 下共 26 个源文件
+>
+> **关键发现**：
+> - Demo 使用**动态渲染**（`vkCmdBeginRendering`），无 `VkRenderPass` / `VkFramebuffer`
+> - Demo 有 3 个 OpenGL Demo 不存在的文件：`LAppSprite` / `LAppSpritePipeline` / `LAppModelSpritePipeline`（Vulkan UI 精灵管线）
+> - Demo **没有**像素回读逻辑，点击穿透需自行实现
+> - 纹理参数完全不同：`CreateTextureFromPngFile` 需要 `VkFormat/VkImageTiling/VkImageUsageFlags/VkMemoryPropertyFlags`
+> - `BindTexture` 签名不同：GL 版是 `(slot, GLuint)`，VK 版是 `(CubismImageVulkan&)`
+> - `CubismOffscreenManager_Vulkan` 单例管理离屏渲染目标，GL 路径无对应物
+
+Phase 2 拆分为 7 个子阶段，按依赖顺序实施：
+
+---
+
+#### Phase 2.1：Vulkan 核心基础设施
+
+> **目标**：移植 `VulkanManager` + `SwapchainManager`，创建 `VulkanBackend` 骨架，完成 Vulkan 设备初始化和 Swapchain 创建。
 
 **新建文件**：`renderer/src/graphics/VulkanBackend.hpp/.cpp`
 
-参考 SDK Vulkan Demo（`Samples/Vulkan/Demo/proj.win.cmake/src/`）的架构：
-- `VulkanManager` — Instance / PhysicalDevice / Device / Surface / Queue / CommandPool / SyncObjects
-- `SwapchainManager` — Swapchain / ImageView / Framebuffer / RenderPass
+**移植来源**：
+- `VulkanManager.hpp/.cpp`（543 行）→ Instance / PhysicalDevice / Device / Surface / Queue / CommandPool / SyncObjects / AcquireNextImage / Present / RecreateSwapchain
+- `SwapchainManager.hpp/.cpp`（270 行）→ Swapchain / ImageView / Layout Transition / Present
 
-合并为 `VulkanBackend`，实现 `IGraphicsBackend` 接口：
+**VulkanBackend 类设计**（合并 VulkanManager + SwapchainManager，实现 `IGraphicsBackend` 接口）：
 
 ```cpp
 class VulkanBackend : public IGraphicsBackend {
 public:
+    // === IGraphicsBackend 接口 ===
     bool InitializeGraphics(GLFWwindow* window) override;
-    // → CreateInstance → SetupDebugMessenger → CreateSurface →
-    //   PickPhysicalDevice → CreateLogicalDevice → CreateCommandPool →
-    //   CreateSwapchain → CreateSyncObjects →
-    //   CubismRenderer_Vulkan::InitializeConstantSettings(...)
     void ReleaseGraphics() override;
-
     void BeginFrame(int width, int height) override;
-    // → AcquireNextImage → BeginCommandBuffer → BeginRenderPass
     void EndFrame(GLFWwindow* window) override;
-    // → EndRenderPass → EndCommandBuffer → SubmitCommand → Present
-
     uint64_t CreateTexture(const void* data, int width, int height, int channels) override;
-    // → CreateImage + CreateStagingBuffer + vkCmdCopyBufferToImage + GenerateMipmaps
     void DeleteTexture(uint64_t handle) override;
-    // → vkDestroyImage + vkFreeMemory + vkDestroyImageView
-
     bool IsPixelTransparent(int x, int y, int windowHeight) override;
-    // → vkCmdCopyImage to staging buffer → map → read alpha
 
-    // Vulkan 额外接口（GL Backend 不需要，LAppModel 通过条件编译直接调用）
+    // === Vulkan 特有接口（条件编译调用） ===
+    // 命令缓冲管理（LAppTextureManager、LAppView 等通过条件编译调用）
     VkCommandBuffer BeginSingleTimeCommands();
-    void SubmitCommand(VkCommandBuffer cmdBuf);
+    void SubmitCommand(VkCommandBuffer cmdBuf, bool isFirstDraw = false);
+
+    // Getter（LAppModel::LoadAssets/SetupTextures、LAppView 等通过条件编译调用）
     VkDevice GetDevice() const;
-    // ... 其他 VulkanManager/SwapchainManager 的 getter
+    VkPhysicalDevice GetPhysicalDevice() const;
+    VkCommandPool GetCommandPool() const;
+    VkQueue GetGraphicQueue() const;
+    VkFormat GetDepthFormat() const;
+    VkFormat GetImageFormat() const;  // VK_FORMAT_R8G8B8A8_UNORM
+
+    // Swapchain 访问
+    VkImage GetSwapchainImage() const;
+    VkImageView GetSwapchainImageView() const;
+    VkExtent2D GetSwapchainExtent() const;
+    int32_t GetSwapchainImageCount() const;
+    VkFormat GetSwapchainImageFormat() const;
+
+    // Swapchain 重建
+    void RecreateSwapchain();
+    bool IsSwapchainInvalid() const;
+    void SetSwapchainInvalid(bool flag);
+
+    // OffscreenFrameBuffer 相关（配合 CubismOffscreenManager_Vulkan）
+    void SetFrameBufferResized(bool flag);
+
+private:
+    // === VulkanManager 成员 ===
+    VkInstance _instance = VK_NULL_HANDLE;
+    VkSurfaceKHR _surface = VK_NULL_HANDLE;
+    VkPhysicalDevice _physicalDevice = VK_NULL_HANDLE;
+    VkDevice _device = VK_NULL_HANDLE;
+    VkQueue _graphicQueue = VK_NULL_HANDLE;
+    VkQueue _presentQueue = VK_NULL_HANDLE;
+    VkCommandPool _commandPool = VK_NULL_HANDLE;
+    VkSemaphore _imageAvailableSemaphore;
+    VkDebugUtilsMessengerEXT _debugMessenger;
+    VkFormat _depthFormat;
+    uint32_t _imageIndex = 0;
+
+    // === SwapchainManager 成员 ===
+    VkSwapchainKHR _swapchain = VK_NULL_HANDLE;
+    Csm::csmVector<VkImage> _swapchainImages;
+    Csm::csmVector<VkImageView> _swapchainImageViews;
+    VkExtent2D _swapchainExtent = {0, 0};
+    uint32_t _swapchainImageCount = 0;
+
+    // === 状态标志 ===
+    bool _isSwapchainInvalid = false;
+    bool _framebufferResized = false;
+    bool _enableValidationLayers = true;
+
+    GLFWwindow* _window = nullptr;
+
+    // === 内部初始化方法（对应 VulkanManager 的各步骤） ===
+    void CreateInstance();
+    void SetupDebugMessenger();
+    void CreateSurface();
+    void PickPhysicalDevice();
+    void CreateLogicalDevice();
+    void ChooseSupportedDepthFormat();
+    void CreateCommandPool();
+    void CreateSyncObjects();
+    void CreateSwapchain();
+    void TransitionSwapchainLayouts();  // UNDEFINED → PRESENT_SRC_KHR
 };
 ```
 
-#### 步骤 2.2：Vulkan 渲染循环差异处理
+**初始化序列**（`InitializeGraphics()` 内部，对应 Demo `VulkanManager::Initialize()` L421-L434）：
 
-Vulkan 的 `CubismRenderer_Vulkan` 需要显式的命令缓冲管理，渲染循环与 GL 完全不同。需要在 `LAppDelegate::Run()` 中条件编译：
+```
+glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API)   // 关键：不创建 GL 上下文
+→ CreateInstance()          // VK_API_VERSION_1_3, debug layers
+→ SetupDebugMessenger()     // VK_EXT_debug_utils
+→ CreateSurface()           // glfwCreateWindowSurface
+→ PickPhysicalDevice()      // 需要 anisotropy + swapchain 支持
+→ CreateLogicalDevice()     // 动态渲染 + 扩展动态状态 + Vulkan 1.3 synchronization2
+→ ChooseSupportedDepthFormat()  // D32_SFLOAT_S8_UINT → D16_UNORM 回退链
+→ CreateSwapchain()         // 含 ImageView 创建
+→ TransitionSwapchainLayouts()  // 所有 swapchain image: UNDEFINED → PRESENT_SRC_KHR
+→ CreateCommandPool()       // RESET_COMMAND_BUFFER_BIT
+→ CreateSyncObjects()       // 单 semaphore
+```
+
+**每帧操作**：
+- `BeginFrame()` → `vkAcquireNextImageKHR`（对应 Demo `UpdateDrawFrame()` L490-L503）
+- `EndFrame()` → `SwapchainManager::QueuePresent`（对应 Demo `PostDraw()` L505-L515）
+
+> **与原方案的关键差异**：原方案称 `SwapchainManager` 包含 `Framebuffer / RenderPass`，但实际上 Demo 使用**动态渲染**，没有这些对象。SwapchainManager 仅管理 Swapchain + ImageView。
+
+**清理序列**（`ReleaseGraphics()` 内部，对应 Demo `VulkanManager::Destroy()` L526-L543）：
+```
+CleanupSwapchain() → vkDestroySemaphore → DestroyDebugMessenger →
+vkDestroyCommandPool → vkDestroyDevice → vkDestroySurfaceKHR → vkDestroyInstance
+```
+
+**验证标准**：
+- [ ] Vulkan Instance 创建成功
+- [ ] 物理设备选择成功（支持 anisotropy + swapchain）
+- [ ] 逻辑设备创建成功（动态渲染 + Vulkan 1.3 特性启用）
+- [ ] Swapchain + ImageView 创建成功
+- [ ] `vkAcquireNextImageKHR` 返回成功
+- [ ] `vkQueuePresentKHR` 返回成功（黑屏即可，后续阶段才渲染内容）
+
+---
+
+#### Phase 2.2：CubismRenderer_Vulkan 静态初始化
+
+> **目标**：调用 `InitializeConstantSettings()` 和 `SetRenderTarget()`，将 VulkanBackend 的设备信息注入 SDK 渲染器。
+
+**修改文件**：`renderer/src/LAppDelegate.cpp`（初始化部分增加 `#ifdef USE_VULKAN` 块）
+
+在 `LAppDelegate::Initialize()` 中，Phase 1 已创建 `IGraphicsBackend*` 并调用 `InitializeGraphics()`。Vulkan 路径需要额外调用 SDK 静态初始化：
 
 ```cpp
+// LAppDelegate::Initialize() 中，InitializeGraphics() 之后
 #ifdef USE_VULKAN
     auto* vkBackend = static_cast<VulkanBackend*>(_graphicsBackend);
-    // 获取当前帧的 command buffer
-    auto cmdBuf = vkBackend->BeginSingleTimeCommands();
-    CubismRenderer_Vulkan::BeginRendering(cmdBuf, false);
-    _view->Render();
-    CubismRenderer_Vulkan::EndRendering(cmdBuf);
-    vkBackend->EndFrame(_windowManager->GetWindow());
-    CubismRenderer_Vulkan::PostDraw();
-#else
-    _graphicsBackend->BeginFrame(width, height);
-    _view->Render();
-    _graphicsBackend->EndFrame(_windowManager->GetWindow());
+    // 将 Vulkan 设备信息注入 SDK 渲染器（对应 Demo LAppDelegate.cpp L106-L112）
+    Rendering::CubismRenderer_Vulkan::InitializeConstantSettings(
+        vkBackend->GetDevice(),
+        vkBackend->GetPhysicalDevice(),
+        vkBackend->GetCommandPool(),
+        vkBackend->GetGraphicQueue(),
+        vkBackend->GetSwapchainImageCount(),
+        vkBackend->GetSwapchainExtent(),
+        vkBackend->GetSwapchainImageView(),
+        vkBackend->GetSwapchainImageFormat(),
+        vkBackend->GetDepthFormat()
+    );
 #endif
 ```
 
-#### 步骤 2.3：纹理管理 Vulkan 版
-
-Vulkan 的 `LAppTextureManager::CreateTextureFromPngFile()` 需要额外的 Vulkan 参数。通过条件编译提供两个版本：
+**Swapchain 重建时重新初始化**（对应 Demo `LAppDelegate::RecreateSwapchain()` L147-L182）：
 
 ```cpp
 #ifdef USE_VULKAN
-TextureInfo* LAppTextureManager::CreateTextureFromPngFile(
-    std::string fileName,
-    VkFormat format, VkImageTiling tiling,
-    VkImageUsageFlags usage, VkMemoryPropertyFlags memProps,
-    float anisotropy)
-{
-    // ... stb_image 解码 ...
-    auto* vkBackend = LAppDelegate::GetInstance()->GetVulkanBackend();
-    auto handle = vkBackend->CreateTexture(png, width, height, 4);
-    // ...
-    GetRenderer<CubismRenderer_Vulkan>()->BindTexture(vkImage);
-}
-#else
-TextureInfo* LAppTextureManager::CreateTextureFromPngFile(std::string fileName)
-{
-    // ... stb_image 解码 ...
-    auto handle = _backend->CreateTexture(png, width, height, 4);
-    // ...
-    GetRenderer<CubismRenderer_OpenGLES2>()->BindTexture(slot, handle);
+bool LAppDelegate::RecreateSwapchain() {
+    auto* vkBackend = static_cast<VulkanBackend*>(_graphicsBackend);
+    if (!vkBackend->IsSwapchainInvalid()) return false;
+
+    // 等待窗口不再最小化
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(_windowManager->GetWindow(), &width, &height);
+    while (width == 0 || height == 0) {
+        glfwGetFramebufferSize(_windowManager->GetWindow(), &width, &height);
+        glfwWaitEvents();
+    }
+
+    vkBackend->RecreateSwapchain();
+
+    // 更新 SDK 渲染器目标（对应 Demo L160-L165）
+    Rendering::CubismRenderer_Vulkan::SetRenderTarget(
+        vkBackend->GetSwapchainImage(),
+        vkBackend->GetSwapchainImageView(),
+        vkBackend->GetSwapchainImageFormat(),
+        vkBackend->GetSwapchainExtent()
+    );
+
+    _view->Initialize(width, height);
+    _view->ResizeSprite(width, height);
+    _view->DestroyRenderTarget();
+    LAppLive2DManager::GetInstance()->SetRenderTargetSize(width, height);
+    vkBackend->SetSwapchainInvalid(false);
+    return true;
 }
 #endif
 ```
+
+**验证标准**：
+- [ ] `InitializeConstantSettings()` 调用成功
+- [ ] 无 Vulkan 验证层错误
+- [ ] Swapchain 重建后 `SetRenderTarget()` 更新正确
+
+---
+
+#### Phase 2.3：Vulkan 纹理管线
+
+> **目标**：实现 Vulkan 版 `LAppTextureManager`，完成 `stb_image 解码 → staging buffer → image → mipmaps → view + sampler` 全流程。
+
+**修改文件**：
+- `renderer/src/LAppTextureManager.hpp` — 增加 Vulkan 特有成员和方法
+- `renderer/src/LAppTextureManager.cpp` — Vulkan 版 `CreateTextureFromPngFile()` 实现
+
+**LAppTextureManager Vulkan 版改造要点**：
+
+1. **TextureInfo 内部存储差异**：GL 版存 `GLuint`，VK 版存 `CubismImageVulkan`（SDK 提供的 RAII 类，包含 VkImage + VkDeviceMemory + VkImageView + VkSampler）
+
+2. **CreateTextureFromPngFile 签名完全不同**（对应 Demo `LAppTextureManager.cpp` L133-L218）：
+
+```cpp
+// Vulkan 版签名（比 GL 版多 5 个参数）
+#ifdef USE_VULKAN
+TextureInfo* CreateTextureFromPngFile(
+    std::string fileName,
+    VkFormat format,           // 通常 VK_FORMAT_R8G8B8A8_UNORM
+    VkImageTiling tiling,      // 通常 VK_IMAGE_TILING_OPTIMAL
+    VkImageUsageFlags usage,   // TRANSFER_SRC | TRANSFER_DST | SAMPLED
+    VkMemoryPropertyFlags memProps,  // DEVICE_LOCAL_BIT
+    float anisotropy           // 从 renderer 获取
+);
+#endif
+```
+
+3. **纹理创建流程**（对应 Demo L133-L218）：
+
+```
+stb_image_load_from_memory(fileName)     // CPU 端 PNG 解码
+→ stagingBuffer.CreateBuffer(TRANSFER_SRC, HOST_VISIBLE)  // 创建 staging buffer
+→ stagingBuffer.Map() → MemCpy(png) → UnMap()            // 上传像素数据
+→ textureImage.CreateImage(w, h, mipLevels, format, OPTIMAL, ...)  // 创建 VkImage
+→ BeginSingleTimeCommands()
+→ textureImage.SetImageLayout(TRANSFER_DST_OPTIMAL)        // Image layout 转换
+→ CopyBufferToImage(stagingBuffer → textureImage)          // vkCmdCopyBufferToImage
+→ SubmitCommand()
+→ GenerateMipmaps(textureImage, ...)                       // vkCmdBlitImage mipmap 链
+→ textureImage.CreateView(format, COLOR_BIT, mipLevels)    // VkImageView
+→ textureImage.CreateSampler(anisotropy, mipLevels)        // VkSampler
+→ stagingBuffer.Destroy()
+```
+
+4. **内部辅助方法**（直接从 Demo 移植）：
+
+```cpp
+// Vulkan 版新增的私有方法
+#ifdef USE_VULKAN
+void CopyBufferToImage(VkCommandBuffer cmdBuf, const VkBuffer& buffer,
+                       VkImage image, uint32_t width, uint32_t height);
+void GenerateMipmaps(CubismImageVulkan image, uint32_t w, uint32_t h, uint32_t mipLevels);
+bool GetTexture(uint32_t textureId, CubismImageVulkan& outTexture) const;
+#endif
+```
+
+5. **纹理释放**（对应 Demo L220-L295）：`CubismImageVulkan::Destroy(device)` 替换 `glDeleteTextures()`
+
+6. **mipLevels 计算**：`floor(log2(max(width, height))) + 1`
+
+**注意**：Phase 1 将 `TextureInfo.id` 改为 `uint64_t` 后，Vulkan 版可直接复用。纹理查找仍按 `id` 匹配，`_textures` 向量存储 `CubismImageVulkan` 对象。
+
+**验证标准**：
+- [ ] PNG 解码 → Vulkan Image 全流程无错误
+- [ ] Mipmap 生成正确（无验证层错误）
+- [ ] VkSampler 创建成功
+- [ ] 多次加载同一文件返回缓存（id 匹配）
+- [ ] ReleaseTextures / ReleaseTexture 正确释放所有 Vulkan 资源
+
+---
+
+#### Phase 2.4：Vulkan 精灵管线
+
+> **目标**：移植 Demo 中 3 个 OpenGL 版不存在的文件，实现 Vulkan UI 精灵渲染（背景/齿轮/电源按钮 sprite）。
+
+**新建文件**：
+- `renderer/src/graphics/LAppSprite.hpp/.cpp`
+- `renderer/src/graphics/LAppSpritePipeline.hpp/.cpp`
+- `renderer/src/graphics/LAppModelSpritePipeline.hpp/.cpp`
+
+> **为什么 OpenGL 版不需要这些文件**：GL 版使用 SDK 内置的 sprite 绘制（`LAppView_Common`），但 Vulkan 版的 sprite 渲染需要显式管理 vertex/index buffer、descriptor set、graphics pipeline，这些在 GL 中由驱动隐式处理。
+
+**LAppSpritePipeline**（对应 Demo `LAppSpritePipeline.hpp/.cpp`）：
+- 创建 Vulkan graphics pipeline（vertex + fragment shader，动态渲染模式）
+- 管线配置：`VK_DYNAMIC_STATE_VIEWPORT`、`VK_DYNAMIC_STATE_SCISSOR`、 blending
+- 提供 `GetPipeline()` / `GetPipelineLayout()` 访问
+
+**LAppModelSpritePipeline**（对应 Demo `LAppModelSpritePipeline.hpp/.cpp`）：
+- 类似 LAppSpritePipeline，但使用**预乘 Alpha 混合**（用于离屏渲染目标的精灵）
+
+**LAppSprite**（对应 Demo `LAppSprite.hpp/.cpp`）：
+- 管理 UI 精灵的 vertex/index/uniform buffer + descriptor set
+- 提供 `Render(VkCommandBuffer, VulkanManager*, width, height)` 方法
+- 提供 `IsHit()` 点击检测、`SetPipeline()`、`ResetRect()`、`UpdateDescriptorSet()` 等
+
+**这些文件的代码几乎可以从 Demo 直接复制**，仅需将 `VulkanManager*` 参数改为 `VulkanBackend*`（或通过 `LAppDelegate::GetInstance()->GetVulkanBackend()` 获取）。
+
+**验证标准**：
+- [ ] Pipeline 创建无验证层错误
+- [ ] Sprite vertex/index buffer 创建成功
+- [ ] Descriptor set layout 与 shader 匹配
+
+---
+
+#### Phase 2.5：Vulkan 渲染循环集成
+
+> **目标**：改造 `LAppView`、`LAppModel`、`LAppLive2DManager` 的 Vulkan 渲染路径，完成主循环集成。
+
+这是最复杂的子阶段，涉及 4 个文件的 Vulkan 路径改造。
+
+##### 2.5a：LAppDelegate 主循环改造
+
+**修改文件**：`renderer/src/LAppDelegate.cpp`
+
+Vulkan 的渲染循环与 GL **完全不同**，无法通过 `IGraphicsBackend` 接口统一。Demo 的 `Run()` 循环（`LAppDelegate.cpp` L184-L209）：
+
+```cpp
+// LAppDelegate::Run() 中
+while (glfwWindowShouldClose(window) == GL_FALSE && !_isEnd)
+{
+    glfwPollEvents();
+    LAppPal::UpdateTime();
+
+    #ifdef USE_VULKAN
+        auto* vkBackend = static_cast<VulkanBackend*>(_graphicsBackend);
+        vkBackend->BeginFrame(width, height);  // vkAcquireNextImageKHR
+        if (RecreateSwapchain()) continue;
+        _view->Render();                        // 所有渲染在此完成
+        vkBackend->EndFrame(_windowManager->GetWindow());  // vkQueuePresentKHR
+        RecreateSwapchain();
+    #else
+        _graphicsBackend->BeginFrame(width, height);
+        // ... GL 渲染循环（透明检测等）...
+        _graphicsBackend->EndFrame(_windowManager->GetWindow());
+    #endif
+}
+```
+
+> **关键差异**：Demo 没有 `glClear/glViewport` 这样的独立清屏步骤——清屏在 `LAppView::BeginRendering()` 中通过 `vkCmdBeginRendering` 的 `clearValue` 完成。GL 版 `BeginFrame()` 中的 `glClear/glViewport` 在 Vulkan 版不存在。
+
+##### 2.5b：LAppView Vulkan 渲染
+
+**修改文件**：`renderer/src/LAppView.hpp/.cpp`
+
+Vulkan 版 `LAppView` 需要新增以下方法（对应 Demo `LAppView.cpp`）：
+
+```cpp
+#ifdef USE_VULKAN
+    // 动态渲染控制
+    void BeginRendering(VkCommandBuffer cmdBuf, float r, float g, float b, float a, bool isClear);
+    // → VkRenderingAttachmentInfoKHR + VkRenderingInfo + vkCmdBeginRendering
+
+    void EndRendering(VkCommandBuffer cmdBuf);
+    // → vkCmdEndRendering
+
+    void ChangeEndLayout(VkCommandBuffer cmdBuf);
+    // → ImageMemoryBarrier: COLOR_ATTACHMENT → PRESENT_SRC_KHR
+
+    // 精灵初始化（使用 Vulkan 版 LAppSprite/LAppSpritePipeline）
+    void InitializeSprite() override;
+    void ResizeSprite(int width, int height) override;
+#endif
+```
+
+**Render() 方法的 Vulkan 路径**（对应 Demo `LAppView::Render()` L140-L202）：
+
+```
+1. Sprite 渲染（UI overlay）:
+   cmdBuf = vkBackend->BeginSingleTimeCommands()
+   BeginRendering(cmdBuf, 0,0,0,1, isClear=true)  // 清屏 + 开始渲染
+   vkCmdBindPipeline(cmdBuf, _spritePipeline)
+   _back->Render(cmdBuf, ...), _gear->Render(...), _power->Render(...)
+   EndRendering(cmdBuf)
+   vkBackend->SubmitCommand(cmdBuf, isFirstDraw=true)  // 等待 semaphore
+
+2. Cubism 模型渲染:
+   live2DManager->OnUpdate()
+   // 内部调用 CubismRenderer_Vulkan::DoDrawModel()
+
+3. 最终 layout 转换:
+   cmdBuf = vkBackend->BeginSingleTimeCommands()
+   ChangeEndLayout(cmdBuf)  // COLOR_ATTACHMENT → PRESENT_SRC_KHR
+   vkBackend->SubmitCommand(cmdBuf)
+```
+
+##### 2.5c：LAppModel Vulkan 适配
+
+**修改文件**：`renderer/src/LAppModel.hpp/.cpp`
+
+Demo 的 `LAppModel` 与 GL 版的关键差异：
+
+| 差异点 | GL 版 | Vulkan 版（Demo 实现） |
+|--------|-------|----------------------|
+| `LoadAssets` 签名 | `(dir, fileName)` | `(VkDevice, VkFormat, dir, fileName)` — L66 |
+| `CreateRenderer` | `CubismRenderer_OpenGLES2` 工厂 | `CubismRenderer_Vulkan` 工厂 |
+| `Draw()` | `GetRenderer<OpenGLES2>()->SetMvpMatrix/DrawModel` — L515-516 | `GetRenderer<Vulkan>()->SetMvpMatrix/DrawModel` — L516-517 |
+| `SetupTextures` | `BindTexture(slot, GLuint)` | `BindTexture(CubismImageVulkan&)` — L616 |
+| `ReloadRenderer` | `DeleteRenderer → CreateRenderer → SetupTextures` | 新增 `(VkDevice, VkFormat)` 参数 — L579-L586 |
+| `GetRenderBuffer` | 无 | 返回 `CubismRenderTarget_Vulkan&` — L634-L637 |
+
+条件编译改造：
+
+```cpp
+// LAppModel::LoadAssets
+#ifdef USE_VULKAN
+void LAppModel::LoadAssets(VkDevice device, VkFormat imageFormat,
+                           const csmChar* dir, const csmChar* fileName)
+{
+    // ... 模型加载 ...
+    CreateRenderer(w, h);
+    SetupTextures(device, imageFormat);
+}
+#else
+void LAppModel::LoadAssets(const csmChar* dir, const csmChar* fileName)
+{
+    // ... 原有 GL 逻辑 ...
+}
+#endif
+```
+
+```cpp
+// LAppModel::SetupTextures
+#ifdef USE_VULKAN
+void LAppModel::SetupTextures(VkDevice device, VkFormat surfaceFormat)
+{
+    for (/* each texture */) {
+        auto* texInfo = textureManager->CreateTextureFromPngFile(
+            texturePath, surfaceFormat, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            GetRenderer<CubismRenderer_Vulkan>()->GetAnisotropy());
+
+        CubismImageVulkan image;
+        if (textureManager->GetTexture(texInfo->id, image)) {
+            GetRenderer<CubismRenderer_Vulkan>()->BindTexture(image);
+        }
+    }
+    // IsPremultipliedAlpha 设置
+}
+#endif
+```
+
+##### 2.5d：LAppLive2DManager Vulkan 适配
+
+**修改文件**：`renderer/src/LAppLive2DManager.hpp/.cpp`
+
+Demo 的 `LAppLive2DManager` 与 GL 版的关键差异：
+
+1. **Offscreen 管理器**（Demo L212/L252/L254）：
+
+```cpp
+#ifdef USE_VULKAN
+    // OnUpdate() 中
+    CubismOffscreenManager_Vulkan::GetInstance()->BeginFrameProcess();
+    // ... 模型渲染循环 ...
+    CubismOffscreenManager_Vulkan::GetInstance()->EndFrameProcess();
+    CubismOffscreenManager_Vulkan::GetInstance()->ReleaseStaleRenderTextures();
+#endif
+```
+
+2. **模型加载**（Demo `ChangeScene()` L282-L292）：需要传递 `VkDevice` 和 `VkFormat`：
+
+```cpp
+#ifdef USE_VULKAN
+    auto* vkBackend = static_cast<VulkanBackend*>(
+        LAppDelegate::GetInstance()->GetGraphicsBackend());
+    vkDeviceWaitIdle(vkBackend->GetDevice());
+    // ...
+    _models[0]->LoadAssets(vkBackend->GetDevice(), vkBackend->GetImageFormat(),
+                           modelPath, modelJsonName);
+#endif
+```
+
+3. **析构**（Demo L78）：`CubismOffscreenManager_Vulkan::ReleaseInstance()`
+
+**验证标准**：
+- [ ] 模型加载成功（`LoadAssets` 含 Vulkan 参数）
+- [ ] 渲染循环无验证层错误
+- [ ] Sprite UI 正确渲染（背景/齿轮/电源按钮可见）
+- [ ] Swapchain 重建正确处理
+- [ ] 窗口大小调整后渲染目标更新
+
+---
+
+#### Phase 2.6：像素回读（点击穿透检测）
+
+> **目标**：实现 Vulkan 版的像素透明度检测，用于点击穿透功能。
+
+**新建文件**：`renderer/src/graphics/VulkanPixelReadback.hpp/.cpp`
+
+> **关键发现**：Vulkan Demo **没有实现像素回读**。Demo 的点击检测完全通过 Live2D 内置的 `HitTest()` 方法（CPU 侧坐标变换 + drawable 范围判定），不涉及 GPU 像素读取。
+>
+> 但本项目的桌面宠物需要像素级透明度检测（实现窗口级点击穿透），这是 Demo 没有的需求。
+
+**实现方案**：
+
+```cpp
+class VulkanPixelReadback {
+public:
+    void Initialize(VkDevice device, VkPhysicalDevice physicalDevice,
+                    VkCommandPool commandPool, VkQueue queue);
+    void Cleanup();
+
+    // 从 swapchain image 读取指定像素的 alpha 值
+    bool IsPixelTransparent(int x, int y, int windowWidth, int windowHeight,
+                            VkImage swapchainImage);
+
+private:
+    VkDevice _device;
+    VkPhysicalDevice _physicalDevice;
+    VkCommandPool _commandPool;
+    VkQueue _queue;
+    VkBuffer _readbackBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory _readbackMemory = VK_NULL_HANDLE;
+};
+```
+
+**回读流程**：
+```
+1. 创建 host-visible staging buffer（窗口尺寸 × RGBA）
+2. vkCmdCopyImage(swapchainImage → stagingBuffer)
+3. vkMapMemory → 读取 (x, y) 处的 alpha 值
+4. alpha == 0 → 透明，允许穿透
+```
+
+> **性能优化**：由于回读需要 GPU→CPU 同步（`vkQueueWaitIdle` 或 fence），不应每帧执行。仅在鼠标点击时触发回读，或使用上帧渲染结果缓存。
+
+**在 `VulkanBackend` 中集成**：
+
+```cpp
+bool VulkanBackend::IsPixelTransparent(int x, int y, int windowHeight) override {
+    #ifdef USE_VULKAN
+    return _pixelReadback.IsPixelTransparent(
+        x, y, _swapchainExtent.width, _swapchainExtent.height,
+        GetSwapchainImage());
+    #endif
+}
+```
+
+**验证标准**：
+- [ ] 点击透明区域 → 鼠标穿透
+- [ ] 点击模型区域 → 鼠标不穿透
+- [ ] 回读延迟不影响交互体验（< 16ms）
+
+---
+
+#### Phase 2.7：Swapchain 重建与窗口管理适配
+
+> **目标**：处理窗口大小变化、最小化恢复等场景下的 Swapchain 重建。
+
+**修改文件**：
+- `renderer/src/LAppDelegate.cpp` — ResizeCallback → Swapchain 重建
+- `renderer/src/graphics/VulkanBackend.cpp` — `RecreateSwapchain()` 实现
+
+**Swapchain 重建流程**（对应 Demo `VulkanManager::RecreateSwapchain()` L517-L524）：
+
+```
+vkDeviceWaitIdle(_device)
+→ CleanupSwapchain()       // 销毁旧 ImageView + Swapchain
+→ CreateSwapchain()         // 重新创建 Swapchain + ImageView
+→ TransitionSwapchainLayouts()  // UNDEFINED → PRESENT_SRC_KHR
+```
+
+**窗口事件回调**（对应 Demo `EventHandler::OnFramebufferResizedCallback` L163-L167）：
+
+```cpp
+// GLFW frame buffer size callback（Vulkan 版）
+static void OnFramebufferResizedCallback(GLFWwindow* window, int w, int h) {
+    auto* backend = static_cast<VulkanBackend*>(
+        LAppDelegate::GetInstance()->GetGraphicsBackend());
+    backend->SetFrameBufferResized(true);
+}
+```
+
+> **注意**：GL 版的窗口回调在 `WindowManager` 中处理。Vulkan 版额外需要 `OnFramebufferResizedCallback` 触发 swapchain 重建标记。可通过条件编译在 `WindowManager` 中注册该回调。
+
+**验证标准**：
+- [ ] 调整窗口大小后渲染正常恢复
+- [ ] Ctrl+滚轮缩放窗口后 Swapchain 正确重建
+- [ ] 不出现 `VK_ERROR_OUT_OF_DATE_KHR` 未处理的错误
+- [ ] 不出现 `VK_SUBOPTIMAL_KHR` 持续未处理的情况
+
+---
 
 #### Phase 2 文件变更汇总
 
-| 操作 | 文件 | 说明 |
-|------|------|------|
-| **新建** | `renderer/src/graphics/VulkanBackend.hpp` | VK 后端声明 |
-| **新建** | `renderer/src/graphics/VulkanBackend.cpp` | VK 后端实现 |
-| **修改** | `renderer/src/LAppDelegate.hpp/cpp` | Vulkan 渲染循环 + VulkanBackend 访问 |
-| **修改** | `renderer/src/LAppTextureManager.hpp/cpp` | 添加 Vulkan 版 CreateTextureFromPngFile |
-| **修改** | `renderer/src/LAppModel.cpp` | Vulkan 版 Draw/SetupTextures |
-| **修改** | `renderer/src/LAppLive2DManager.cpp` | Vulkan 版渲染循环 |
+| 操作 | 文件 | 子阶段 |
+|------|------|--------|
+| **新建** | `graphics/VulkanBackend.hpp` | 2.1 |
+| **新建** | `graphics/VulkanBackend.cpp` | 2.1 |
+| **新建** | `graphics/LAppSprite.hpp` | 2.4 |
+| **新建** | `graphics/LAppSprite.cpp` | 2.4 |
+| **新建** | `graphics/LAppSpritePipeline.hpp` | 2.4 |
+| **新建** | `graphics/LAppSpritePipeline.cpp` | 2.4 |
+| **新建** | `graphics/LAppModelSpritePipeline.hpp` | 2.4 |
+| **新建** | `graphics/LAppModelSpritePipeline.cpp` | 2.4 |
+| **新建** | `graphics/VulkanPixelReadback.hpp` | 2.6 |
+| **新建** | `graphics/VulkanPixelReadback.cpp` | 2.6 |
+| **修改** | `LAppDelegate.hpp` | 2.2, 2.5a |
+| **修改** | `LAppDelegate.cpp` | 2.2, 2.5a, 2.7 |
+| **修改** | `LAppTextureManager.hpp` | 2.3 |
+| **修改** | `LAppTextureManager.cpp` | 2.3 |
+| **修改** | `LAppView.hpp` | 2.5b |
+| **修改** | `LAppView.cpp` | 2.5b |
+| **修改** | `LAppModel.hpp` | 2.5c |
+| **修改** | `LAppModel.cpp` | 2.5c |
+| **修改** | `LAppLive2DManager.hpp` | 2.5d |
+| **修改** | `LAppLive2DManager.cpp` | 2.5d |
+| **修改** | `CMakeLists.txt` | 2.1, 2.4 |
 
 ---
 
@@ -513,23 +1038,37 @@ endif()
 ## 五、实施优先级
 
 ```
-Phase 1.3  抽取 WindowManager          ← 纯提取，零风险
+Phase 1.3  抽取 WindowManager              ← 纯提取，零风险
     ↓
-Phase 1.4  重构 LAppTextureManager      ← 接口变更，中风险
+Phase 1.4  重构 LAppTextureManager          ← 接口变更，中风险
     ↓
-Phase 1.2  实现 OpenGLBackend + 接口     ← 迁移 GL 调用，中风险
+Phase 1.2  实现 OpenGLBackend + 接口         ← 迁移 GL 调用，中风险
     ↓
-Phase 1.1  精简 LAppDelegate             ← 依赖前几步完成
+Phase 1.1  精简 LAppDelegate                 ← 依赖前几步完成
     ↓
-Phase 1.5  LAppModel 条件编译            ← 低风险
+Phase 1.5  LAppModel 条件编译                ← 低风险
     ↓
-Phase 1 清理 去无用 include             ← 低风险
+Phase 1 清理 去无用 include                 ← 低风险
     ↓
 [验证: OpenGL 模式功能与重构前完全一致]
     ↓
-Phase 2    Vulkan 后端实现              ← 高复杂度
+Phase 2.1  Vulkan 核心基础设施               ← 移植 VulkanManager + SwapchainManager
+    ↓                                           验证: Swapchain 创建/销毁/黑屏 Present
+Phase 2.2  CubismRenderer_Vulkan 静态初始化    ← 调用 InitializeConstantSettings
+    ↓                                           验证: 无验证层错误
+Phase 2.3  Vulkan 纹理管线                    ← staging buffer → image → mipmaps → view + sampler
+    ↓                                           验证: 纹理加载释放无错误
+Phase 2.4  Vulkan 精灵管线                    ← 移植 Sprite/Pipeline 三个文件
+    ↓                                           验证: Pipeline 创建成功
+Phase 2.5  Vulkan 渲染循环集成                ← LAppView/LAppModel/LAppLive2DManager Vulkan 路径
+    ↓                                           验证: 模型渲染可见
+Phase 2.6  像素回读（点击穿透）                ← 自行实现，Demo 无此功能
+    ↓                                           验证: 透明区域穿透
+Phase 2.7  Swapchain 重建适配                 ← 窗口 resize 处理
+    ↓                                           验证: 窗口缩放后渲染正常
+[验证: Vulkan 模式功能与 OpenGL 模式完全一致]
     ↓
-Phase 3    CMake 条件编译完善            ← 低复杂度
+Phase 3    CMake 条件编译完善                 ← 低复杂度
 ```
 
 ---
@@ -542,7 +1081,10 @@ Phase 3    CMake 条件编译完善            ← 低复杂度
 | PBO 像素回读抽象后性能下降 | 低 | 点击穿透检测延迟 | 接口零开销（虚调用 vs 直接调用差异可忽略），具体实现与当前代码一致 |
 | Vulkan 渲染循环与 GL 差异导致架构不兼容 | 高 | Vulkan 无法集成 | Phase 1 完成后先评估 IGraphicsBackend 接口是否足够支撑 Vulkan，必要时调整 |
 | TextureInfo.id 类型变更 | 低 | 纹理绑定异常 | id 仅在渲染内部使用，不涉及网络传输或序列化；改为 uint64_t 向下兼容 GLuint |
-| Vulkan Demo 的 VulkanManager 不能直接复用 | 中 | 需要适配 | Vulkan Demo 的 VulkanManager 包含 swapchain 管理和 debug messenger，需裁剪并适配 IGraphicsBackend 接口 |
+| Vulkan Demo 的 VulkanManager 不能直接复用 | 中 | 需要适配 | Demo 的 VulkanManager 包含 swapchain 管理和 debug messenger，需裁剪并适配 IGraphicsBackend 接口 |
+| Vulkan Demo 缺少像素回读实现 | 高 | 点击穿透功能无法工作 | Demo 完全没有 GPU 回读代码，需自行实现 `vkCmdCopyImageToBuffer`，性能需评估 |
+| Vulkan Demo 的 3 个精灵管线文件需移植 | 中 | 构建配置遗漏 | `LAppSprite/LAppSpritePipeline/LAppModelSpritePipeline` 是 Vulkan 独有的，OpenGL 版不存在；CMake 必须条件编译加入 |
+| Vulkan Demo 使用动态渲染（无 RenderPass/Framebuffer） | 低 | 认知偏差 | 原方案中提到 SwapchainManager 包含 Framebuffer/RenderPass 是错误的，实际使用 `vkCmdBeginRendering` 动态渲染 |
 
 ---
 

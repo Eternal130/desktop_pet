@@ -15,7 +15,7 @@ renderer/
 │   ├── LAppView.cpp/hpp        # Coordinate transforms, hit testing, render dispatch
 │   ├── LAppPal.cpp/hpp         # Platform abstraction: file I/O, time, logging
 │   ├── LAppDefine.cpp/hpp      # Global constants (paths, ports, defaults)
-│   ├── LAppTextureManager.cpp/hpp  # stb_image → OpenGL texture loading
+│   ├── LAppTextureManager.cpp/hpp  # stb_image → texture loading (GL via Backend, VK via CubismImageVulkan)
 │   ├── AudioManager.cpp/hpp    # miniaudio + libvorbis audio playback
 │   ├── network/                # WebSocket client + JSON protocol
 │   │   ├── WebSocketClient.cpp/hpp  # IXWebSocket wrapper
@@ -23,12 +23,12 @@ renderer/
 │   │   ├── CommandHandlers.cpp/hpp  # Handles load_model, play_motion, etc.
 │   │   ├── EventEmitter.cpp/hpp     # Sends hit, drag, model_loaded events
 │   │   └── Protocol.cpp/hpp         # Envelope serialize/deserialize (nlohmann/json)
-│   ├── graphics/               # Backend abstraction
-│   │   ├── IGraphicsBackend.hpp     # Interface
+│   ├── graphics/               # Backend abstraction (compile-time switch via USE_VULKAN)
+│   │   ├── IGraphicsBackend.hpp     # Interface (6 virtual methods)
 │   │   ├── OpenGLBackend.cpp/hpp    # OpenGL implementation
-│   │   └── VulkanBackend.cpp/hpp    # Vulkan stub (Phase 2 TODOs)
+│   │   └── VulkanBackend.cpp/hpp    # Vulkan implementation (VulkanManager + SwapchainManager merged)
 │   └── platform/
-│       └── WindowManager.cpp/hpp    # Window creation/management
+│       └── WindowManager.cpp/hpp    # GLFW window management (shared by GL and Vulkan)
 ├── scripts/                    # build_mingw.bat, setup_thirdparty.bat
 ├── tests/                      # Google Test
 │   ├── ProtocolTest.cpp        # 11 cases
@@ -48,9 +48,9 @@ renderer/
 | Add command handler | `network/CommandHandlers.cpp` | Register in `RegisterHandlers()`, match C++ `Protocol.hpp` |
 | Add event emission | `network/EventEmitter.cpp` | Match Java `MessageDispatcher.java` handling |
 | Change protocol format | `network/Protocol.hpp/cpp` + Java `Protocol.java` | Both sides must match |
-| Add graphics feature | `graphics/` | Implement `IGraphicsBackend` for both backends |
+| Add graphics feature | `graphics/` | Implement `IGraphicsBackend` for both backends; Vulkan path also touches `LAppView`, `LAppModel`, `LAppLive2DManager` via `#ifdef USE_VULKAN` |
 | Change model rendering | `LAppModel.cpp`, `LAppView.cpp` | Cubism SDK integration point |
-| Change window behavior | `platform/WindowManager.cpp`, `LAppDelegate.cpp` | GLFW window management |
+| Change window behavior | `platform/WindowManager.cpp`, `LAppDelegate.cpp` | GLFW window management; WindowManager shared by both GL and Vulkan |
 | Add audio feature | `AudioManager.cpp/hpp` | miniaudio + libvorbis (OGG playback) |
 | Change hit detection | `LAppView.cpp` | Coordinate transform + Cubism hit test |
 | Change logging | `LAppPal.cpp` | `LAppPal::PrintLogLn` is the only logging API |
@@ -62,6 +62,7 @@ renderer/
 | Cubism SDK (Core+Framework) | 5-r.5-beta.3.1 | `third_party/CubismSdkForNative/` |
 | GLFW | 3.4 | Auto-downloaded by `build.py` |
 | GLEW | 2.2.0 | Auto-downloaded (OpenGL only) |
+| Vulkan SDK | system install | `find_package(Vulkan REQUIRED)` (Vulkan only) |
 | IXWebSocket | v11.4.5 | CMake FetchContent |
 | nlohmann/json | 3.12.0 | Vendored header |
 | miniaudio | single-header | Vendored |
@@ -77,6 +78,7 @@ renderer/
 - **No config files**: All configuration comes from Java controller via WebSocket commands
 - **JSON keys**: `snake_case` in protocol, matching the Envelope spec in `docs/protocol/`
 - **Tests**: Google Test, separate from main executable (no GL/GLFW/Framework linking)
+- **Backend selection**: Compile-time via `USE_VULKAN` cmake option — no runtime switching. `CUBISM_RENDERER_TYPE` macro selects CubismRenderer subclass
 
 ## ANTI-PATTERNS
 
@@ -124,5 +126,5 @@ cd build/renderer_mingw && ctest
 - **CMake target_sources**: Adding new `.cpp` files requires `cmake -S ... -B ...` reconfigure
 - **`-fpermissive`**: Enabled for Cubism Framework target (GCC rejects SDK's `wglGetProcAddress` PROC→void*)
 - **`set_scale` stub**: Command registered but only logs, no actual scale change
-- **VulkanBackend**: 10 Phase 2.x TODO stubs — incomplete, do not rely on it
+- **VulkanBackend**: Fully implemented (Instance → Device → Swapchain → Render → Present pipeline). Uses dynamic rendering (`vkCmdBeginRendering`), no RenderPass/Framebuffer. Pixel readback for click-through via `vkCmdCopyImageToBuffer`.
 - **IXWebSocket**: Bundled version lacks `Reconnecting` message type (only Open/Close/Error/Ping/Pong/Fragment)

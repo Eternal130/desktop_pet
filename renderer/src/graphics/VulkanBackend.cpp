@@ -484,7 +484,13 @@ void VulkanBackend::CreateSwapchain()
     }
 
     createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+
+    VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    if (swapChainSupport.capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR)
+        compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
+    else if (swapChainSupport.capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR)
+        compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    createInfo.compositeAlpha = compositeAlpha;
     createInfo.presentMode = presentMode;
     createInfo.clipped = VK_TRUE;
     createInfo.oldSwapchain = VK_NULL_HANDLE;
@@ -637,11 +643,14 @@ bool VulkanBackend::InitializeGraphics(GLFWwindow* window)
 
 void VulkanBackend::BeginFrame(int width, int height)
 {
-    vkWaitForFences(_device, 1, &_inFlightFence, VK_TRUE, UINT64_MAX);
-    vkResetFences(_device, 1, &_inFlightFence);
+    // Cubism SDK Vulkan renderer submits commands via SubmitCommand() with
+    // vkQueueWaitIdle() synchronization, so our fence is never signaled by
+    // the rendering path. Use vkDeviceWaitIdle to ensure prior work completes
+    // before acquiring the next swapchain image.
+    vkDeviceWaitIdle(_device);
 
     VkResult result = vkAcquireNextImageKHR(_device, _swapchain, UINT64_MAX,
-        _imageAvailableSemaphore, VK_NULL_HANDLE, &_imageIndex);
+        VK_NULL_HANDLE, VK_NULL_HANDLE, &_imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {

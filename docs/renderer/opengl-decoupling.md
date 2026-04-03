@@ -630,36 +630,15 @@ bool GetTexture(uint32_t textureId, CubismImageVulkan& outTexture) const;
 
 ---
 
-#### Phase 2.4：Vulkan 精灵管线
+#### Phase 2.4：~~Vulkan 精灵管线~~ — 跳过
 
-> **目标**：移植 Demo 中 3 个 OpenGL 版不存在的文件，实现 Vulkan UI 精灵渲染（背景/齿轮/电源按钮 sprite）。
+> **决策**：本项目不使用 SDK Demo 的 UI 精灵（背景/齿轮/电源按钮），因此跳过此阶段。
 
-**新建文件**：
-- `renderer/src/graphics/LAppSprite.hpp/.cpp`
-- `renderer/src/graphics/LAppSpritePipeline.hpp/.cpp`
-- `renderer/src/graphics/LAppModelSpritePipeline.hpp/.cpp`
+SDK Demo 中的 3 个精灵管线文件（`LAppSprite` / `LAppSpritePipeline` / `LAppModelSpritePipeline`）用于渲染 Demo 特有的 UI 叠加层。它们的存在原因是 Vulkan 的显式 API 需要预先创建 `VkPipeline`、`VkDescriptorSet`、GPU Buffer 等对象来绘制一个简单的 2D 纹理矩形——而这些在 OpenGL 中由驱动隐式处理。
 
-> **为什么 OpenGL 版不需要这些文件**：GL 版使用 SDK 内置的 sprite 绘制（`LAppView_Common`），但 Vulkan 版的 sprite 渲染需要显式管理 vertex/index buffer、descriptor set、graphics pipeline，这些在 GL 中由驱动隐式处理。
+本项目的桌面宠物不需要这些 Demo UI 元素，Cubism 模型渲染由 SDK 内部的 `CubismRenderer_Vulkan` 直接处理，无需额外精灵管线。
 
-**LAppSpritePipeline**（对应 Demo `LAppSpritePipeline.hpp/.cpp`）：
-- 创建 Vulkan graphics pipeline（vertex + fragment shader，动态渲染模式）
-- 管线配置：`VK_DYNAMIC_STATE_VIEWPORT`、`VK_DYNAMIC_STATE_SCISSOR`、 blending
-- 提供 `GetPipeline()` / `GetPipelineLayout()` 访问
-
-**LAppModelSpritePipeline**（对应 Demo `LAppModelSpritePipeline.hpp/.cpp`）：
-- 类似 LAppSpritePipeline，但使用**预乘 Alpha 混合**（用于离屏渲染目标的精灵）
-
-**LAppSprite**（对应 Demo `LAppSprite.hpp/.cpp`）：
-- 管理 UI 精灵的 vertex/index/uniform buffer + descriptor set
-- 提供 `Render(VkCommandBuffer, VulkanManager*, width, height)` 方法
-- 提供 `IsHit()` 点击检测、`SetPipeline()`、`ResetRect()`、`UpdateDescriptorSet()` 等
-
-**这些文件的代码几乎可以从 Demo 直接复制**，仅需将 `VulkanManager*` 参数改为 `VulkanBackend*`（或通过 `LAppDelegate::GetInstance()->GetVulkanBackend()` 获取）。
-
-**验证标准**：
-- [ ] Pipeline 创建无验证层错误
-- [ ] Sprite vertex/index buffer 创建成功
-- [ ] Descriptor set layout 与 shader 匹配
+> **如果后续需要添加自定义 2D UI 叠加**（如 HUD、提示气泡），再参考 Demo 的 `LAppSpritePipeline` 实现即可。
 
 ---
 
@@ -716,23 +695,19 @@ Vulkan 版 `LAppView` 需要新增以下方法（对应 Demo `LAppView.cpp`）�
 
     void ChangeEndLayout(VkCommandBuffer cmdBuf);
     // → ImageMemoryBarrier: COLOR_ATTACHMENT → PRESENT_SRC_KHR
-
-    // 精灵初始化（使用 Vulkan 版 LAppSprite/LAppSpritePipeline）
-    void InitializeSprite() override;
-    void ResizeSprite(int width, int height) override;
 #endif
 ```
 
-**Render() 方法的 Vulkan 路径**（对应 Demo `LAppView::Render()` L140-L202）：
+> **注意**：Demo 的 `InitializeSprite()` / `ResizeSprite()` 不再需要——本项目不使用 Demo 的 UI 精灵。
+
+**Render() 方法的 Vulkan 路径**（基于 Demo `LAppView::Render()` L140-L202，已去除精灵步骤）：
 
 ```
-1. Sprite 渲染（UI overlay）:
+1. 清屏 + 开始渲染:
    cmdBuf = vkBackend->BeginSingleTimeCommands()
-   BeginRendering(cmdBuf, 0,0,0,1, isClear=true)  // 清屏 + 开始渲染
-   vkCmdBindPipeline(cmdBuf, _spritePipeline)
-   _back->Render(cmdBuf, ...), _gear->Render(...), _power->Render(...)
+   BeginRendering(cmdBuf, 0,0,0,0, isClear=true)  // alpha=0 透明背景
    EndRendering(cmdBuf)
-   vkBackend->SubmitCommand(cmdBuf, isFirstDraw=true)  // 等待 semaphore
+   vkBackend->SubmitCommand(cmdBuf, isFirstDraw=true)
 
 2. Cubism 模型渲染:
    live2DManager->OnUpdate()
@@ -949,12 +924,6 @@ static void OnFramebufferResizedCallback(GLFWwindow* window, int w, int h) {
 |------|------|--------|
 | **新建** | `graphics/VulkanBackend.hpp` | 2.1 |
 | **新建** | `graphics/VulkanBackend.cpp` | 2.1 |
-| **新建** | `graphics/LAppSprite.hpp` | 2.4 |
-| **新建** | `graphics/LAppSprite.cpp` | 2.4 |
-| **新建** | `graphics/LAppSpritePipeline.hpp` | 2.4 |
-| **新建** | `graphics/LAppSpritePipeline.cpp` | 2.4 |
-| **新建** | `graphics/LAppModelSpritePipeline.hpp` | 2.4 |
-| **新建** | `graphics/LAppModelSpritePipeline.cpp` | 2.4 |
 | **新建** | `graphics/VulkanPixelReadback.hpp` | 2.6 |
 | **新建** | `graphics/VulkanPixelReadback.cpp` | 2.6 |
 | **修改** | `LAppDelegate.hpp` | 2.2, 2.5a |
@@ -967,7 +936,7 @@ static void OnFramebufferResizedCallback(GLFWwindow* window, int w, int h) {
 | **修改** | `LAppModel.cpp` | 2.5c |
 | **修改** | `LAppLive2DManager.hpp` | 2.5d |
 | **修改** | `LAppLive2DManager.cpp` | 2.5d |
-| **修改** | `CMakeLists.txt` | 2.1, 2.4 |
+| **修改** | `CMakeLists.txt` | 2.1 |
 
 ---
 
@@ -1058,8 +1027,7 @@ Phase 2.2  CubismRenderer_Vulkan 静态初始化    ← 调用 InitializeConstan
     ↓                                           验证: 无验证层错误
 Phase 2.3  Vulkan 纹理管线                    ← staging buffer → image → mipmaps → view + sampler
     ↓                                           验证: 纹理加载释放无错误
-Phase 2.4  Vulkan 精灵管线                    ← 移植 Sprite/Pipeline 三个文件
-    ↓                                           验证: Pipeline 创建成功
+Phase 2.4  ~~Vulkan 精灵管线~~                 ← 跳过：本项目不使用 Demo UI 精灵
 Phase 2.5  Vulkan 渲染循环集成                ← LAppView/LAppModel/LAppLive2DManager Vulkan 路径
     ↓                                           验证: 模型渲染可见
 Phase 2.6  像素回读（点击穿透）                ← 自行实现，Demo 无此功能
@@ -1083,7 +1051,6 @@ Phase 3    CMake 条件编译完善                 ← 低复杂度
 | TextureInfo.id 类型变更 | 低 | 纹理绑定异常 | id 仅在渲染内部使用，不涉及网络传输或序列化；改为 uint64_t 向下兼容 GLuint |
 | Vulkan Demo 的 VulkanManager 不能直接复用 | 中 | 需要适配 | Demo 的 VulkanManager 包含 swapchain 管理和 debug messenger，需裁剪并适配 IGraphicsBackend 接口 |
 | Vulkan Demo 缺少像素回读实现 | 高 | 点击穿透功能无法工作 | Demo 完全没有 GPU 回读代码，需自行实现 `vkCmdCopyImageToBuffer`，性能需评估 |
-| Vulkan Demo 的 3 个精灵管线文件需移植 | 中 | 构建配置遗漏 | `LAppSprite/LAppSpritePipeline/LAppModelSpritePipeline` 是 Vulkan 独有的，OpenGL 版不存在；CMake 必须条件编译加入 |
 | Vulkan Demo 使用动态渲染（无 RenderPass/Framebuffer） | 低 | 认知偏差 | 原方案中提到 SwapchainManager 包含 Framebuffer/RenderPass 是错误的，实际使用 `vkCmdBeginRendering` 动态渲染 |
 
 ---

@@ -115,7 +115,7 @@ cd controller && mvnw.cmd test                          # Java tests (headless v
 cd renderer/build && ctest                              # C++ tests (Google Test)
 
 # Vulkan backend
-cmake -S renderer -B build/renderer_vulkan -DUSE_VULKAN=ON ...
+cmake --build build/renderer_vulkan --config Release -j
 ```
 
 ## NOTES

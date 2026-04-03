@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 
+# Allow target_link_libraries on targets not built in this directory (Live2DCubismCore)
+cmake_policy(SET CMP0079 NEW)
+
 project(desktop-pet-renderer)
 
 # Compatibility: CMake 4.x requires minimum policy version 3.5.

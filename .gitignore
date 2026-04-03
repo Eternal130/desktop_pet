@@ -28,3 +28,6 @@ third_party/CubismSdkForNative/Samples/Vulkan/thirdParty/glfw/
 # OS
 .DS_Store
 Thumbs.db
+
+.sisyphus/
+.opencode/

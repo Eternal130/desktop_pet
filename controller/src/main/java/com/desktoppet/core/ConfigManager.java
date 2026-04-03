@@ -98,7 +98,8 @@ public class ConfigManager {
         );
 
         SystemConfig system = new SystemConfig(
-            getBoolean(systemObj, "auto_start", defaults.system().autoStart())
+            getBoolean(systemObj, "auto_start", defaults.system().autoStart()),
+            getString(systemObj, "default_graphics_backend", defaults.system().defaultGraphicsBackend())
         );
 
         return new PetConfig(window, model, behavior, system);
@@ -131,6 +132,7 @@ public class ConfigManager {
 
         JsonObject system = new JsonObject();
         system.addProperty("auto_start", config.system().autoStart());
+        system.addProperty("default_graphics_backend", config.system().defaultGraphicsBackend());
         root.add("system", system);
 
         return root;

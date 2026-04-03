@@ -105,6 +105,7 @@ public class PanelStateManager {
                         id,
                         getString(obj, "label", "新实例"),
                         getString(obj, "renderer_path", ""),
+                        "opengl",
                         getString(obj, "model", ""),
                         1.0,
                         getInt(obj, "pos_x", 1200),

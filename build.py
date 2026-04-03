@@ -195,32 +195,27 @@ def _get_renderer_env():
     return env
 
 
-def build_renderer():
-    header("Building: Renderer (C++ / CMake)")
+def _build_renderer_variant(use_vulkan: bool, env, generator):
+    """Build one renderer variant (OpenGL or Vulkan).
 
-    if not check_tool("cmake"):
-        error("cmake not found on PATH. Install CMake and add it to PATH.")
-        return False
-
-    if IS_WINDOWS:
-        generator = "MinGW Makefiles"
-        build_subdir = BUILD_DIR / "renderer_mingw"
-        if not check_tool("mingw32-make"):
-            error("mingw32-make not found on PATH. Install MinGW-w64 and add its bin/ to PATH.")
-            return False
-    else:
-        if check_tool("ninja"):
-            generator = "Ninja"
+    Returns True on success, False on failure.
+    """
+    if use_vulkan:
+        if IS_WINDOWS:
+            build_subdir = BUILD_DIR / "renderer_vulkan_mingw"
         else:
-            generator = "Unix Makefiles"
-        build_subdir = BUILD_DIR / "renderer_build"
+            build_subdir = BUILD_DIR / "renderer_vulkan_build"
+        label = "Vulkan"
+        cmake_args = ["-DUSE_VULKAN=ON"]
+    else:
+        if IS_WINDOWS:
+            build_subdir = BUILD_DIR / "renderer_mingw"
+        else:
+            build_subdir = BUILD_DIR / "renderer_build"
+        label = "OpenGL"
+        cmake_args = []
 
-    if not setup_thirdparty():
-        return False
-
-    env = _get_renderer_env()
-
-    info("Configuring CMake...")
+    info(f"Configuring CMake ({label})...")
     rc = run(
         [
             "cmake",
@@ -229,15 +224,15 @@ def build_renderer():
             "-G", generator,
             "-DCMAKE_BUILD_TYPE=Release",
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
-        ],
+        ] + cmake_args,
         env=env,
     )
     if rc != 0:
-        error("CMake configuration failed.")
+        error(f"CMake configuration failed ({label}).")
         return False
 
     nproc = os.cpu_count() or 4
-    info(f"Building with {nproc} parallel jobs...")
+    info(f"Building {label} renderer with {nproc} parallel jobs...")
     rc = run(
         [
             "cmake",
@@ -248,10 +243,48 @@ def build_renderer():
         env=env,
     )
     if rc != 0:
-        error("Renderer build failed.")
         return False
 
-    success("Renderer built → build/bin/desktop-pet-renderer" + (".exe" if IS_WINDOWS else ""))
+    suffix = ".exe" if IS_WINDOWS else ""
+    if use_vulkan:
+        success(f"{label} renderer built → build/bin/desktop-pet-renderer-vulkan{suffix}")
+    else:
+        success(f"{label} renderer built → build/bin/desktop-pet-renderer{suffix}")
+    return True
+
+
+def build_renderer():
+    header("Building: Renderer (C++ / CMake)")
+
+    if not check_tool("cmake"):
+        error("cmake not found on PATH. Install CMake and add it to PATH.")
+        return False
+
+    if IS_WINDOWS:
+        generator = "MinGW Makefiles"
+        if not check_tool("mingw32-make"):
+            error("mingw32-make not found on PATH. Install MinGW-w64 and add its bin/ to PATH.")
+            return False
+    else:
+        if check_tool("ninja"):
+            generator = "Ninja"
+        else:
+            generator = "Unix Makefiles"
+
+    if not setup_thirdparty():
+        return False
+
+    env = _get_renderer_env()
+
+    # Build OpenGL (required)
+    if not _build_renderer_variant(use_vulkan=False, env=env, generator=generator):
+        error("OpenGL renderer build failed.")
+        return False
+
+    # Build Vulkan (optional)
+    if not _build_renderer_variant(use_vulkan=True, env=env, generator=generator):
+        warn("Vulkan renderer build failed. OpenGL renderer is still available.")
+
     return True
 
 

@@ -89,6 +89,14 @@
                             </HBox>
                         </VBox>
 
+                        <VBox spacing="8">
+                            <Label text="渲染后端" styleClass="setting-label"/>
+                            <HBox spacing="0" styleClass="seg-control">
+                                <Button fx:id="backendOpenglBtn" text="OpenGL" styleClass="seg-btn" onAction="#onBackendOpengl"/>
+                                <Button fx:id="backendVulkanBtn" text="Vulkan" styleClass="seg-btn" onAction="#onBackendVulkan"/>
+                            </HBox>
+                        </VBox>
+
                         <VBox spacing="8" HBox.hgrow="ALWAYS">
                             <Label text="闲置间隔" styleClass="setting-label"/>
                             <HBox spacing="12" alignment="CENTER_LEFT">

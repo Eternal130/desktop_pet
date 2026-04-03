@@ -148,6 +148,8 @@ public class MainWindowController {
     @FXML private Label volumeValueLabel;
     @FXML private Button dragDirectBtn;
     @FXML private Button dragPhysicsBtn;
+    @FXML private Button backendOpenglBtn;
+    @FXML private Button backendVulkanBtn;
     @FXML private Slider idleSlider;
     @FXML private Label idleValueLabel;
     @FXML private Button fpsAdaptiveBtn;
@@ -294,7 +296,7 @@ public class MainWindowController {
         for (InstanceConfig instConfig : configs) {
             String rendererPath = instConfig.rendererPath();
             if (rendererPath == null || rendererPath.isBlank()) {
-                rendererPath = findRendererExecutable();
+                rendererPath = resolveRendererPath(instConfig.graphicsBackend());
             }
             if (rendererPath == null) {
                 log.warn("Skipping restored instance '{}': no renderer available", instConfig.label());
@@ -560,6 +562,10 @@ public class MainWindowController {
             dragDirectBtn.pseudoClassStateChanged(SEG_ACTIVE, isDirect);
             dragPhysicsBtn.pseudoClassStateChanged(SEG_ACTIVE, !isDirect);
 
+            boolean isOpengl = !"vulkan".equals(currentInstance.getGraphicsBackend());
+            backendOpenglBtn.pseudoClassStateChanged(SEG_ACTIVE, isOpengl);
+            backendVulkanBtn.pseudoClassStateChanged(SEG_ACTIVE, !isOpengl);
+
             idleSlider.setValue(currentInstance.getIdleInterval());
             idleValueLabel.setText(currentInstance.getIdleInterval() + "s");
 
@@ -781,9 +787,35 @@ public class MainWindowController {
         }
     }
 
+    private String resolveRendererPath(String backend) {
+        Path currentDir = Path.of(".").toAbsolutePath().normalize();
+        String targetName;
+        if ("vulkan".equals(backend)) {
+            targetName = "desktop-pet-renderer-vulkan";
+        } else {
+            targetName = "desktop-pet-renderer";
+        }
+
+        try (var stream = Files.walk(currentDir, 3)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(p -> {
+                        String name = p.getFileName().toString().toLowerCase();
+                        return name.equals(targetName.toLowerCase() + ".exe")
+                            || name.equals(targetName.toLowerCase());
+                    })
+                    .findFirst()
+                    .map(p -> p.toAbsolutePath().toString())
+                    .orElse(null);
+        } catch (IOException e) {
+            log.warn("Failed to resolve renderer path for {}: {}", backend, e.getMessage());
+            return null;
+        }
+    }
+
     @FXML
     private void onAddInstance() {
-        String rendererPath = findRendererExecutable();
+        String rendererPath = resolveRendererPath("opengl");
         if (rendererPath == null) {
             Alert alert = new Alert(Alert.AlertType.ERROR);
             alert.setTitle("错误");
@@ -853,6 +885,12 @@ public class MainWindowController {
 
     private void startInstance(PetInstance instance) {
         String rendererPath = instance.getRendererPath();
+        if (rendererPath == null || rendererPath.isBlank()) {
+            rendererPath = resolveRendererPath(instance.getGraphicsBackend());
+            if (rendererPath != null) {
+                instance.setRendererPath(rendererPath);
+            }
+        }
         if (rendererPath == null || rendererPath.isBlank()) {
             instance.addLog("✖ 启动失败: 未配置渲染引擎路径");
             log.warn("Cannot start instance {}: no renderer path configured", instance.getId());
@@ -1381,6 +1419,24 @@ public class MainWindowController {
             return;
         }
         currentInstance.setDragMode("physics");
+        renderDetail();
+    }
+
+    @FXML
+    private void onBackendOpengl() {
+        if (currentInstance == null) {
+            return;
+        }
+        currentInstance.setGraphicsBackend("opengl");
+        renderDetail();
+    }
+
+    @FXML
+    private void onBackendVulkan() {
+        if (currentInstance == null) {
+            return;
+        }
+        currentInstance.setGraphicsBackend("vulkan");
         renderDetail();
     }
 

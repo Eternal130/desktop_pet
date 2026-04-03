@@ -32,6 +32,7 @@ public class PetInstance {
     private final IntegerProperty targetFps;
     private final StringProperty currentExpression;
     private final StringProperty rendererPath;
+    private final StringProperty graphicsBackend;
     private final DoubleProperty modelScale;
     private final StringProperty voicePack;
     private final DoubleProperty volume;
@@ -59,6 +60,7 @@ public class PetInstance {
         this.targetFps = new SimpleIntegerProperty(0);
         this.currentExpression = new SimpleStringProperty("F01");
         this.rendererPath = new SimpleStringProperty(rendererPath);
+        this.graphicsBackend = new SimpleStringProperty("opengl");
         this.modelScale = new SimpleDoubleProperty(1.0);
         this.voicePack = new SimpleStringProperty(null);
         this.volume = new SimpleDoubleProperty(1.0);
@@ -96,13 +98,14 @@ public class PetInstance {
         instance.setLayoutOffsetX(config.layoutOffsetX());
         instance.setLayoutOffsetY(config.layoutOffsetY());
         instance.setLayoutScale(config.layoutScale());
+        instance.setGraphicsBackend(config.graphicsBackend());
         return instance;
     }
 
     public InstanceConfig toInstanceConfig() {
         return new InstanceConfig(
                 configId,
-                getLabel(), getRendererPath(),
+                getLabel(), getRendererPath(), getGraphicsBackend(),
                 getModel(), getModelScale(),
                 getPosX(), getPosY(), getWindowWidth(), getWindowHeight(),
                 getOpacity(),
@@ -127,12 +130,13 @@ public class PetInstance {
         instance.setAutoStart(state.autoStart());
         instance.setTargetFps(state.targetFps());
         instance.setCurrentExpression(state.currentExpression());
+        instance.setGraphicsBackend(state.graphicsBackend());
         return instance;
     }
 
     public InstanceState toInstanceState() {
         return new InstanceState(
-                getLabel(), getModel(), getRendererPath(),
+                getLabel(), getModel(), getRendererPath(), getGraphicsBackend(),
                 getOpacity(), getDragMode(), getIdleInterval(),
                 getPosX(), getPosY(), getWindowWidth(), getWindowHeight(),
                 isAutoStart(), getCurrentExpression(),
@@ -227,6 +231,10 @@ public class PetInstance {
     public String getRendererPath() { return rendererPath.get(); }
     public void setRendererPath(String v) { rendererPath.set(v); }
     public StringProperty rendererPathProperty() { return rendererPath; }
+
+    public String getGraphicsBackend() { return graphicsBackend.get(); }
+    public void setGraphicsBackend(String v) { graphicsBackend.set(v); }
+    public StringProperty graphicsBackendProperty() { return graphicsBackend; }
 
     public double getModelScale() { return modelScale.get(); }
     public void setModelScale(double v) { modelScale.set(v); }

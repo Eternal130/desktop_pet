@@ -188,7 +188,7 @@ public class SettingsTabController {
                 current.window().layoutOffsetX(),
                 current.window().layoutOffsetY(),
                 current.window().layoutScale());
-        var newSystem = new SystemConfig(autoStart);
+        var newSystem = new SystemConfig(autoStart, current.system().defaultGraphicsBackend());
         var newConfig = new PetConfig(newWindow, current.model(), newBehavior, newSystem);
 
         orchestrator.applyConfig(newConfig);

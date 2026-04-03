@@ -87,6 +87,7 @@ public class InstanceConfigManager {
         root.addProperty("id", config.id());
         root.addProperty("label", config.label());
         root.addProperty("renderer_path", config.rendererPath());
+        root.addProperty("graphics_backend", config.graphicsBackend());
 
         JsonObject model = new JsonObject();
         model.addProperty("name", config.modelName());
@@ -128,6 +129,7 @@ public class InstanceConfigManager {
         String id = getString(root, "id", configId);
         String label = getString(root, "label", d.label());
         String rendererPath = getString(root, "renderer_path", d.rendererPath());
+        String graphicsBackend = getString(root, "graphics_backend", d.graphicsBackend());
 
         JsonObject modelObj = getObject(root, "model");
         String modelName = getString(modelObj, "name", d.modelName());
@@ -158,7 +160,7 @@ public class InstanceConfigManager {
         double layoutScale = getDouble(windowObj, "layout_scale", d.layoutScale());
 
         return new InstanceConfig(
-            id, label, rendererPath,
+            id, label, rendererPath, graphicsBackend,
             modelName, modelScale,
             windowX, windowY, windowWidth, windowHeight, opacity,
             dragMode, idleInterval, targetFps,

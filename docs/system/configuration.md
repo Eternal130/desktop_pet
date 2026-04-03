@@ -47,7 +47,8 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
     "idle_interval_seconds": 10
   },
   "system": {
-    "auto_start": false
+    "auto_start": false,
+    "default_graphics_backend": "opengl"
   }
 }
 ```
@@ -65,6 +66,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 | `behavior.drag_mode` | string | "direct" | 拖拽模式："direct" (直接跟随) / "physics" (物理惯性) | Phase 2 |
 | `behavior.idle_interval_seconds` | int | 10 | 闲时动作触发间隔（秒） | Phase 2 |
 | `system.auto_start` | bool | false | 开机自启 | Phase 2 |
+| `system.default_graphics_backend` | string | "opengl" | 渲染后端："opengl" (OpenGL) / "vulkan" (Vulkan) | Phase 2 |
 
 ---
 
@@ -140,6 +142,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
   "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "label": "锦瑟",
   "renderer_path": "/path/to/desktop-pet-renderer",
+  "graphics_backend": "opengl",
   "model": {
     "name": "giwa-idol2023",
     "scale": 1.0
@@ -168,6 +171,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 | `id` | string | UUID | 实例唯一标识 |
 | `label` | string | "新实例" | 实例显示名称 |
 | `renderer_path` | string | "" | 渲染器可执行文件路径 |
+| `graphics_backend` | string | "opengl" | 渲染后端（opengl / vulkan） |
 | `model.name` | string | "" | 当前模型目录名 |
 | `model.scale` | double | 1.0 | 模型缩放比例 |
 | `window.x` / `window.y` | int | 1200 / 600 | 窗口位置 |

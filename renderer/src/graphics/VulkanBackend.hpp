@@ -81,6 +81,10 @@ private:
 
     GLFWwindow* _window = nullptr;
 
+    // Pixel readback (click-through detection)
+    VkBuffer _readbackBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory _readbackBufferMemory = VK_NULL_HANDLE;
+
     QueueFamilyIndices _queueFamilyIndices;
 
     static constexpr const char* VALIDATION_LAYERS[] = { "VK_LAYER_KHRONOS_validation" };
@@ -113,6 +117,9 @@ private:
     VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& presentModes);
     VkExtent2D ChooseSwapExtent(GLFWwindow* window, const VkSurfaceCapabilitiesKHR& capabilities);
     void QueuePresent();
+    uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    void CreateReadbackBuffer();
+    void DestroyReadbackBuffer();
 };
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(

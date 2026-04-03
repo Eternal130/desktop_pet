@@ -635,6 +635,12 @@ bool VulkanBackend::InitializeGraphics(GLFWwindow* window)
     ChooseSupportedDepthFormat();
     CreateSwapchain();
     CreateCommandPool();
+    CreateReadbackBuffer();
+    if (_readbackBuffer == VK_NULL_HANDLE)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] Failed to create readback buffer, initialization failed");
+        return false;
+    }
     TransitionSwapchainLayouts();
     CreateSyncObjects();
     LAppPal::PrintLogLn("[VulkanBackend] Initialized successfully");
@@ -708,6 +714,70 @@ void VulkanBackend::QueuePresent()
     else if (result != VK_SUCCESS)
     {
         LAppPal::PrintLogLn("[VulkanBackend] failed to present swap chain image!");
+    }
+}
+
+uint32_t VulkanBackend::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+{
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(_physicalDevice, &memProperties);
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+    {
+        if ((typeFilter & (1 << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+        {
+            return i;
+        }
+    }
+    LAppPal::PrintLogLn("[VulkanBackend] Failed to find suitable memory type");
+    return UINT32_MAX;
+}
+
+void VulkanBackend::CreateReadbackBuffer()
+{
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = 4;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(_device, &bufferInfo, nullptr, &_readbackBuffer) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] Failed to create readback buffer");
+        return;
+    }
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(_device, _readbackBuffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(_device, &allocInfo, nullptr, &_readbackBufferMemory) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] Failed to allocate readback buffer memory");
+        vkDestroyBuffer(_device, _readbackBuffer, nullptr);
+        _readbackBuffer = VK_NULL_HANDLE;
+        return;
+    }
+
+    vkBindBufferMemory(_device, _readbackBuffer, _readbackBufferMemory, 0);
+}
+
+void VulkanBackend::DestroyReadbackBuffer()
+{
+    if (_readbackBuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(_device, _readbackBuffer, nullptr);
+        _readbackBuffer = VK_NULL_HANDLE;
+    }
+    if (_readbackBufferMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(_device, _readbackBufferMemory, nullptr);
+        _readbackBufferMemory = VK_NULL_HANDLE;
     }
 }
 
@@ -790,6 +860,7 @@ void VulkanBackend::ReleaseGraphics()
     vkDeviceWaitIdle(_device); // BUG FIX: first line must be vkDeviceWaitIdle
 
     CleanupSwapchain();
+    DestroyReadbackBuffer();
     vkDestroyFence(_device, _inFlightFence, nullptr);
     vkDestroySemaphore(_device, _imageAvailableSemaphore, nullptr);
 
@@ -822,23 +893,87 @@ VkImageView VulkanBackend::GetSwapchainImageView() const
     return VK_NULL_HANDLE;
 }
 
-// --- Stub methods (Phase 2.3 / 2.6) ---
-
 uint64_t VulkanBackend::CreateTexture(const void* data, int width, int height, int channels)
 {
-    LAppPal::PrintLogLn("[VulkanBackend] CreateTexture: Phase 2.3 TODO");
+    // Vulkan path uses LAppTextureManager::CreateTextureFromPngFile(VkFormat, ...) overloads.
+    // This IGraphicsBackend method is only called by the OpenGL code path.
     return 0;
 }
 
 void VulkanBackend::DeleteTexture(uint64_t handle)
 {
-    LAppPal::PrintLogLn("[VulkanBackend] DeleteTexture: Phase 2.3 TODO");
+    // Vulkan path uses CubismImageVulkan::Destroy(device) directly.
+    // This IGraphicsBackend method is only called by the OpenGL code path.
 }
 
 bool VulkanBackend::IsPixelTransparent(int x, int y, int windowHeight)
 {
-    LAppPal::PrintLogLn("[VulkanBackend] IsPixelTransparent: Phase 2.6 TODO");
-    return true;
+    VkImage swapchainImage = GetSwapchainImage();
+    if (swapchainImage == VK_NULL_HANDLE || _readbackBuffer == VK_NULL_HANDLE)
+    {
+        return true;
+    }
+
+    VkCommandBuffer cmdBuf = BeginSingleTimeCommands();
+
+    VkImageMemoryBarrier preCopyBarrier{};
+    preCopyBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    preCopyBarrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    preCopyBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    preCopyBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    preCopyBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    preCopyBarrier.image = swapchainImage;
+    preCopyBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    preCopyBarrier.subresourceRange.baseMipLevel = 0;
+    preCopyBarrier.subresourceRange.levelCount = 1;
+    preCopyBarrier.subresourceRange.baseArrayLayer = 0;
+    preCopyBarrier.subresourceRange.layerCount = 1;
+    preCopyBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    preCopyBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmdBuf,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+        0, nullptr, 0, nullptr, 1, &preCopyBarrier);
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {x, y, 0};
+    region.imageExtent = {1, 1, 1};
+
+    vkCmdCopyImageToBuffer(cmdBuf, swapchainImage,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        _readbackBuffer, 1, &region);
+
+    VkImageMemoryBarrier postCopyBarrier = preCopyBarrier;
+    postCopyBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    postCopyBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    postCopyBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    postCopyBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+
+    vkCmdPipelineBarrier(cmdBuf,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+        0, nullptr, 0, nullptr, 1, &postCopyBarrier);
+
+    SubmitCommand(cmdBuf);
+
+    uint8_t* data = nullptr;
+    vkMapMemory(_device, _readbackBufferMemory, 0, 4, 0, reinterpret_cast<void**>(&data));
+    uint8_t alpha = 0;
+    if (data)
+    {
+        alpha = data[3];
+        vkUnmapMemory(_device, _readbackBufferMemory);
+    }
+
+    return (alpha == 0);
 }
 
 #endif // USE_VULKAN

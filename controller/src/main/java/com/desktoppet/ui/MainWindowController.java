@@ -24,6 +24,7 @@ import com.google.gson.JsonObject;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
 import javafx.geometry.Pos;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
@@ -35,8 +36,10 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.ScrollPane;
 import javafx.css.PseudoClass;
 import javafx.scene.Cursor;
+import javafx.scene.Node;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -101,6 +104,8 @@ public class MainWindowController {
     private boolean updatingUI;
     private double dragOffsetX;
     private double dragOffsetY;
+    private SettingsPageController settingsPageController;
+    private Node settingsPageNode;
 
     private static final int RESIZE_MARGIN = 6;
     private boolean resizing;
@@ -161,6 +166,8 @@ public class MainWindowController {
     @FXML private CheckBox autoStartCheck;
     @FXML private ComboBox<String> voicePackCombo;
     @FXML private ListView<String> logListView;
+    @FXML private StackPane contentStackPane;
+    @FXML private ScrollPane mainScrollPane;
 
     @FXML
     public void initialize() {
@@ -271,6 +278,19 @@ public class MainWindowController {
         buildMotionGrid(null);
         buildExpressionButtons(null);
         renderSidebar();
+
+        // Load settings page
+        try {
+            FXMLLoader settingsLoader = new FXMLLoader(getClass().getResource("/fxml/settings-page.fxml"));
+            settingsPageNode = settingsLoader.load();
+            settingsPageController = settingsLoader.getController();
+            settingsPageController.setMainWindowController(this);
+            contentStackPane.getChildren().add(settingsPageNode);
+            settingsPageNode.setVisible(false);
+            settingsPageNode.setManaged(false);
+        } catch (IOException e) {
+            log.error("Failed to load settings page", e);
+        }
     }
 
     public void setOrchestrator(Object orchestrator) {
@@ -291,6 +311,11 @@ public class MainWindowController {
             themeCombo.setValue(panelConfig.theme());
             onThemeChanged();
         }
+
+        Platform.runLater(() -> {
+            applyFontSize(panelConfig.fontSize());
+            applyPanelOpacity(panelConfig.panelOpacity());
+        });
 
         List<InstanceConfig> configs = instanceConfigManager.loadAll(panelConfig.instanceIds());
         for (InstanceConfig instConfig : configs) {
@@ -341,7 +366,24 @@ public class MainWindowController {
             instanceIds.add(inst.getConfigId());
         }
 
-        return new PanelConfig(panelX, panelY, panelW, panelH, theme, instanceIds);
+        int fontSize = 13;
+        double panelOpacity = 1.0;
+        if (contentStackPane != null && contentStackPane.getScene() != null) {
+            String style = contentStackPane.getScene().getRoot().getStyle();
+            if (style != null && style.contains("-fx-font-size:")) {
+                try {
+                    String sizeStr = style.replaceAll(".*-fx-font-size:\\s*(\\d+)px.*", "$1");
+                    fontSize = Integer.parseInt(sizeStr);
+                } catch (NumberFormatException ignored) {}
+            }
+            try {
+                Stage configStage = (Stage) contentStackPane.getScene().getWindow();
+                if (configStage != null) {
+                    panelOpacity = configStage.getOpacity();
+                }
+            } catch (Exception ignored) {}
+        }
+        return new PanelConfig(panelX, panelY, panelW, panelH, theme, fontSize, panelOpacity, instanceIds);
     }
 
     private void saveState() {
@@ -1675,5 +1717,61 @@ public class MainWindowController {
             case SW -> Cursor.SW_RESIZE;
             default -> Cursor.DEFAULT;
         };
+    }
+
+    public void applyTheme(String themeName) {
+        if (themeName == null || !THEMES.containsKey(themeName)) {
+            return;
+        }
+        themeCombo.setValue(themeName);
+        onThemeChanged();
+        if (settingsPageController != null) {
+            settingsPageController.updateThemeSelection(themeName);
+        }
+    }
+
+    public void applyFontSize(int size) {
+        if (contentStackPane != null && contentStackPane.getScene() != null) {
+            Platform.runLater(() -> {
+                contentStackPane.getScene().getRoot().setStyle(
+                        "-fx-font-size: " + size + "px;");
+            });
+        }
+    }
+
+    public void applyPanelOpacity(double opacity) {
+        if (contentStackPane != null && contentStackPane.getScene() != null) {
+            Platform.runLater(() -> {
+                Stage stage = (Stage) contentStackPane.getScene().getWindow();
+                stage.setOpacity(opacity);
+            });
+        }
+    }
+
+    public void showInstanceDetail() {
+        if (settingsPageNode != null) {
+            settingsPageNode.setVisible(false);
+            settingsPageNode.setManaged(false);
+        }
+        if (mainScrollPane != null) {
+            mainScrollPane.setVisible(true);
+            mainScrollPane.setManaged(true);
+        }
+    }
+
+    @FXML
+    private void onOpenSettings() {
+        if (settingsPageController == null || settingsPageNode == null) {
+            return;
+        }
+        String currentTheme = themeCombo.getValue();
+        PanelConfig config = buildCurrentPanelConfig();
+        settingsPageController.loadSettings(currentTheme != null ? currentTheme : "深紫梦幻",
+                config.fontSize(), config.panelOpacity());
+
+        mainScrollPane.setVisible(false);
+        mainScrollPane.setManaged(false);
+        settingsPageNode.setVisible(true);
+        settingsPageNode.setManaged(true);
     }
 }

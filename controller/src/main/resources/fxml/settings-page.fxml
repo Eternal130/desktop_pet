@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox spacing="20" styleClass="main-content" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.desktoppet.ui.SettingsPageController">
+    <padding><Insets top="24" right="32" bottom="24" left="28"/></padding>
+
+    <!-- Header -->
+    <HBox alignment="CENTER_LEFT" spacing="16" styleClass="detail-header">
+        <Button fx:id="backBtn" text="← 返回实例" styleClass="btn-primary" onAction="#onBack"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Label text="外观设置" styleClass="main-model-name"/>
+    </HBox>
+
+    <!-- Theme Selection Section -->
+    <VBox spacing="14" styleClass="settings-panel">
+        <Label text="✦ 主题风格" styleClass="section-title"/>
+        <Label text="选择控制面板的视觉主题，即时生效" styleClass="setting-label"/>
+        <GridPane fx:id="themeGrid" hgap="12" vgap="12"/>
+    </VBox>
+
+    <!-- Appearance Settings Section -->
+    <VBox spacing="14" styleClass="settings-panel">
+        <Label text="✦ 界面调整" styleClass="section-title"/>
+
+        <HBox spacing="32" alignment="CENTER_LEFT">
+            <!-- Font Size -->
+            <VBox spacing="8" HBox.hgrow="ALWAYS">
+                <Label text="字体大小" styleClass="setting-label"/>
+                <HBox spacing="12" alignment="CENTER_LEFT">
+                    <Slider fx:id="fontSizeSlider" min="11" max="18" value="13" blockIncrement="1" HBox.hgrow="ALWAYS" minWidth="100"/>
+                    <Label fx:id="fontSizeValueLabel" text="13px" styleClass="value-display" minWidth="40"/>
+                </HBox>
+            </VBox>
+
+            <!-- Panel Opacity -->
+            <VBox spacing="8" HBox.hgrow="ALWAYS">
+                <Label text="面板透明度" styleClass="setting-label"/>
+                <HBox spacing="12" alignment="CENTER_LEFT">
+                    <Slider fx:id="panelOpacitySlider" min="0.3" max="1.0" value="1.0" blockIncrement="0.05" HBox.hgrow="ALWAYS" minWidth="100"/>
+                    <Label fx:id="panelOpacityValueLabel" text="100%" styleClass="value-display" minWidth="40"/>
+                </HBox>
+            </VBox>
+        </HBox>
+    </VBox>
+</VBox>

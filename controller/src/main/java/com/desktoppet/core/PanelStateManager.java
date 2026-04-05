@@ -128,7 +128,7 @@ public class PanelStateManager {
                 }
             }
 
-            PanelConfig panelConfig = new PanelConfig(panelX, panelY, panelW, panelH, theme, instanceIds);
+            PanelConfig panelConfig = new PanelConfig(panelX, panelY, panelW, panelH, theme, 13, 1.0, instanceIds);
             save(panelConfig);
 
             Path backupPath = legacyPath.resolveSibling("panel-state.json.bak");
@@ -151,6 +151,8 @@ public class PanelStateManager {
         panel.addProperty("width", config.panelWidth());
         panel.addProperty("height", config.panelHeight());
         panel.addProperty("theme", config.theme());
+        panel.addProperty("font_size", config.fontSize());
+        panel.addProperty("panel_opacity", config.panelOpacity());
         root.add("panel", panel);
 
         JsonArray instances = new JsonArray();
@@ -171,6 +173,8 @@ public class PanelStateManager {
         double panelW = getDouble(panelObj, "width", defaults.panelWidth());
         double panelH = getDouble(panelObj, "height", defaults.panelHeight());
         String theme = getString(panelObj, "theme", defaults.theme());
+        int fontSize = getInt(panelObj, "font_size", defaults.fontSize());
+        double panelOpacity = getDouble(panelObj, "panel_opacity", defaults.panelOpacity());
 
         List<String> instanceIds = new ArrayList<>();
         if (root.has("instances") && root.get("instances").isJsonArray()) {
@@ -181,7 +185,7 @@ public class PanelStateManager {
             }
         }
 
-        return new PanelConfig(panelX, panelY, panelW, panelH, theme, instanceIds);
+        return new PanelConfig(panelX, panelY, panelW, panelH, theme, fontSize, panelOpacity, instanceIds);
     }
 
     private JsonObject getObject(JsonObject root, String key) {

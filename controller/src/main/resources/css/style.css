@@ -685,3 +685,62 @@
 .theme-combo .arrow-button .arrow {
     -fx-background-color: #6E6B8A;
 }
+
+/* --- Settings Button --- */
+.settings-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: #6E6B8A;
+    -fx-font-size: 16px;
+    -fx-padding: 8 12;
+    -fx-cursor: hand;
+    -fx-background-radius: 6;
+}
+
+.settings-btn:hover {
+    -fx-background-color: #34325A;
+    -fx-text-fill: #FFFFFF;
+}
+
+/* --- Theme Cards --- */
+.theme-card {
+    -fx-background-color: #2D2B4E;
+    -fx-background-radius: 12;
+    -fx-border-color: transparent;
+    -fx-border-width: 2;
+    -fx-border-radius: 14;
+    -fx-padding: 12;
+    -fx-alignment: center;
+    -fx-spacing: 8;
+    -fx-cursor: hand;
+}
+
+.theme-card:hover {
+    -fx-background-color: #34325A;
+    -fx-border-color: rgba(196, 183, 255, 0.30);
+    -fx-effect: dropshadow(three-pass-box, rgba(164, 148, 255, 0.22), 12, 0.25, 0, 2);
+}
+
+.theme-card:theme-active {
+    -fx-border-color: #FFB7C5;
+    -fx-effect: dropshadow(three-pass-box, rgba(255, 183, 197, 0.35), 14, 0.35, 0, 2);
+}
+
+.theme-swatch {
+    -fx-min-width: 30;
+    -fx-min-height: 24;
+    -fx-pref-width: 30;
+    -fx-pref-height: 24;
+    -fx-max-width: 30;
+    -fx-max-height: 24;
+    -fx-background-radius: 4;
+}
+
+.theme-card-name {
+    -fx-text-fill: #B8B5D0;
+    -fx-font-size: 12px;
+}
+
+.theme-card:theme-active .theme-card-name {
+    -fx-text-fill: #FFB7C5;
+    -fx-font-weight: 600;
+}

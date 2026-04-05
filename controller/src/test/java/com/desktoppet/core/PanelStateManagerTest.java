@@ -33,7 +33,7 @@ class PanelStateManagerTest {
         Path legacyPath = tempDir.resolve("panel-state.json");
         InstanceConfigManager instanceManager = new InstanceConfigManager(tempDir.resolve("instances"));
         PanelStateManager manager = new PanelStateManager(configPath, legacyPath, instanceManager);
-        PanelConfig input = new PanelConfig(100, 200, 1400, 800, "深紫梦幻", List.of("id-1", "id-2"));
+        PanelConfig input = new PanelConfig(100, 200, 1400, 800, "深紫梦幻", 13, 1.0, List.of("id-1", "id-2"));
 
         manager.save(input);
         PanelConfig loaded = manager.load();

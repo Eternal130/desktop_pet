@@ -1,5 +1,6 @@
 package com.desktoppet.ui;
 
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import org.junit.jupiter.api.Test;
 import org.testfx.framework.junit5.ApplicationTest;
@@ -27,21 +28,31 @@ public class MainWindowTest extends ApplicationTest {
     }
 
     @Test
-    void statusLabel_showsDisconnectedByDefault() {
-        Label statusLabel = lookup("#statusLabel").queryAs(Label.class);
-        assertNotNull(statusLabel);
-        assertTrue(statusLabel.getText().contains("Disconnected") || statusLabel.getText().contains("○"));
+    void connectionBadge_showsDisconnectedByDefault() {
+        Label badge = lookup("#connectionBadge").queryAs(Label.class);
+        assertNotNull(badge);
+        assertTrue(badge.getText().contains("已断开"));
     }
+
+
 
     @Test
     void updateConnectionStatus_changesLabel() {
         interact(() -> controller.updateConnectionStatus(true));
-        Label statusLabel = lookup("#statusLabel").queryAs(Label.class);
-        assertTrue(statusLabel.getText().contains("Connected") || statusLabel.getText().contains("●"));
+        Label badge = lookup("#connectionBadge").queryAs(Label.class);
+        assertTrue(badge.getText().contains("已连接") || badge.getText().contains("●"));
+    }
+
+    @Test
+    void updateConnectionStatus_changesBadge() {
+        interact(() -> controller.updateConnectionStatus(true));
+        Label badge = lookup("#connectionBadge").queryAs(Label.class);
+        assertTrue(badge.getText().contains("已连接") || badge.getText().contains("●"));
     }
 
     @Test
     void settingsButton_exists() {
-        assertNotNull(lookup("#settingsButton").tryQuery().orElse(null));
+        Button settingsBtn = lookup("#settingsButton").queryAs(Button.class);
+        assertNotNull(settingsBtn);
     }
 }

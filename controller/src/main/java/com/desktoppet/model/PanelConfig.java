@@ -8,9 +8,11 @@ public record PanelConfig(
     double panelWidth,
     double panelHeight,
     String theme,
+    int fontSize,
+    double panelOpacity,
     List<String> instanceIds
 ) {
     public static PanelConfig defaults() {
-        return new PanelConfig(-1, -1, 1200, 760, "深紫梦幻", List.of());
+        return new PanelConfig(-1, -1, 1200, 760, "深紫梦幻", 13, 1.0, List.of());
     }
 }

@@ -43,7 +43,7 @@
                     <HBox alignment="CENTER_LEFT" spacing="16" styleClass="detail-header">
                         <Label fx:id="modelNameBig" text="Hiyori" styleClass="main-model-name"/>
                         <Label fx:id="instanceTagLabel" text="✎ 主屏宠物" styleClass="main-tag" onMouseClicked="#onEditTag"/>
-                        <Label fx:id="connectionBadge" text="● 已连接" styleClass="connection-badge-connected"/>
+                        <Label fx:id="connectionBadge" text="● 已断开" styleClass="connection-badge-disconnected"/>
                         <Region HBox.hgrow="ALWAYS"/>
                         <Button fx:id="toggleStatusBtn" text="停止运行" styleClass="btn-danger-outline" onAction="#onToggleStatus"/>
                         <Button text="重启引擎 ↺" styleClass="btn-primary" onAction="#onRestartEngine"/>

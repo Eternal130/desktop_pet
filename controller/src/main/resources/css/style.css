@@ -744,3 +744,100 @@
     -fx-text-fill: #FFB7C5;
     -fx-font-weight: 600;
 }
+
+/* --- Welcome Page --- */
+.welcome-pane {
+    -fx-alignment: CENTER;
+    -fx-spacing: 24;
+    -fx-padding: 60 80;
+}
+
+.welcome-icon {
+    -fx-font-size: 48px;
+    -fx-text-fill: #C4B7FF;
+    -fx-effect: dropshadow(three-pass-box, rgba(196, 183, 255, 0.40), 20, 0.5, 0, 0);
+    -fx-alignment: center;
+}
+
+.welcome-title {
+    -fx-font-size: 28px;
+    -fx-text-fill: #FFB7C5;
+    -fx-font-weight: 700;
+    -fx-alignment: center;
+}
+
+.welcome-subtitle {
+    -fx-font-size: 14px;
+    -fx-text-fill: #B8B5D0;
+    -fx-alignment: center;
+}
+
+.feature-card {
+    -fx-background-color: #252440;
+    -fx-background-radius: 16;
+    -fx-border-color: rgba(196, 183, 255, 0.20);
+    -fx-border-width: 1;
+    -fx-border-radius: 16;
+    -fx-padding: 16 20;
+    -fx-alignment: center;
+    -fx-spacing: 8;
+}
+
+.feature-icon {
+    -fx-font-size: 24px;
+}
+
+.feature-title {
+    -fx-font-size: 13px;
+    -fx-text-fill: #FFFFFF;
+    -fx-font-weight: 700;
+}
+
+.feature-desc {
+    -fx-font-size: 11px;
+    -fx-text-fill: #6E6B8A;
+}
+
+.env-panel {
+    -fx-background-color: #252440;
+    -fx-background-radius: 20;
+    -fx-border-color: rgba(196, 183, 255, 0.20);
+    -fx-border-width: 1;
+    -fx-border-radius: 20;
+    -fx-padding: 20 24;
+    -fx-spacing: 12;
+}
+
+.env-row {
+    -fx-spacing: 12;
+    -fx-alignment: center-left;
+}
+
+.env-label {
+    -fx-text-fill: #B8B5D0;
+    -fx-font-size: 13px;
+    -fx-min-width: 80;
+    -fx-pref-width: 80;
+}
+
+.env-status-ok {
+    -fx-background-color: rgba(152, 232, 193, 0.10);
+    -fx-background-radius: 999;
+    -fx-padding: 4 10;
+    -fx-text-fill: #98E8C1;
+    -fx-font-size: 12px;
+}
+
+.env-status-err {
+    -fx-background-color: rgba(255, 138, 128, 0.10);
+    -fx-background-radius: 999;
+    -fx-padding: 4 10;
+    -fx-text-fill: #FF8A80;
+    -fx-font-size: 12px;
+}
+
+.env-detail {
+    -fx-text-fill: #6E6B8A;
+    -fx-font-size: 11px;
+    -fx-font-family: "Consolas", "JetBrains Mono", monospace;
+}

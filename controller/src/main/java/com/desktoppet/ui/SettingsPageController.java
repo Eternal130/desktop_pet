@@ -29,9 +29,9 @@ public class SettingsPageController {
         THEME_COLORS.put("深紫梦幻", new String[]{"#1C1B2E", "#252440", "#FFB7C5"});
         THEME_COLORS.put("樱花浅粉", new String[]{"#FFF5F7", "#FFE8EE", "#E91E63"});
         THEME_COLORS.put("赛博霓虹", new String[]{"#0A0A0F", "#0F0F1A", "#FF0080"});
-        THEME_COLORS.put("暖阳橙棕", new String[]{"#1A150F", "#231C14", "#FFB347"});
-        THEME_COLORS.put("深海幽蓝", new String[]{"#0B1929", "#0F2136", "#00BCD4"});
-        THEME_COLORS.put("终端绿黑", new String[]{"#0A0A0A", "#0E0E0E", "#00FF41"});
+        THEME_COLORS.put("暖橘小窝", new String[]{"#1A150F", "#231C14", "#FFB347"});
+        THEME_COLORS.put("深海蔚蓝", new String[]{"#0B1929", "#0F2136", "#00BCD4"});
+        THEME_COLORS.put("终端黑客", new String[]{"#0A0A0A", "#0E0E0E", "#00FF41"});
         THEME_COLORS.put("云石浅灰", new String[]{"#F5F5F5", "#EBEBEB", "#455A64"});
     }
 

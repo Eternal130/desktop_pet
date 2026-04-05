@@ -668,3 +668,47 @@
 .theme-combo .arrow-button .arrow {
     -fx-background-color: #A08090;
 }
+
+/* --- Theme Cards --- */
+.theme-card {
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 12;
+    -fx-border-color: transparent;
+    -fx-border-width: 2;
+    -fx-border-radius: 14;
+    -fx-padding: 12;
+    -fx-alignment: center;
+    -fx-spacing: 8;
+    -fx-cursor: hand;
+}
+
+.theme-card:hover {
+    -fx-background-color: #FFF0F3;
+    -fx-border-color: rgba(233, 30, 99, 0.20);
+    -fx-effect: dropshadow(three-pass-box, rgba(233, 30, 99, 0.15), 12, 0.25, 0, 2);
+}
+
+.theme-card:theme-active {
+    -fx-border-color: #E91E63;
+    -fx-effect: dropshadow(three-pass-box, rgba(233, 30, 99, 0.25), 14, 0.35, 0, 2);
+}
+
+.theme-swatch {
+    -fx-min-width: 30;
+    -fx-min-height: 24;
+    -fx-pref-width: 30;
+    -fx-pref-height: 24;
+    -fx-max-width: 30;
+    -fx-max-height: 24;
+    -fx-background-radius: 4;
+}
+
+.theme-card-name {
+    -fx-text-fill: #A08090;
+    -fx-font-size: 12px;
+}
+
+.theme-card:theme-active .theme-card-name {
+    -fx-text-fill: #E91E63;
+    -fx-font-weight: 600;
+}

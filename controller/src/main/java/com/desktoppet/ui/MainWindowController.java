@@ -106,6 +106,13 @@ public class MainWindowController {
     private double dragOffsetY;
     private SettingsPageController settingsPageController;
     private Node settingsPageNode;
+    private VBox welcomePane;
+    private Label envRendererStatus;
+    private Label envRendererDetail;
+    private Label envModelStatus;
+    private Label envModelDetail;
+    private Label envPortStatus;
+    private Label envPortDetail;
 
     private static final int RESIZE_MARGIN = 6;
     private boolean resizing;
@@ -291,6 +298,165 @@ public class MainWindowController {
         } catch (IOException e) {
             log.error("Failed to load settings page", e);
         }
+
+        // Build welcome pane
+        welcomePane = buildWelcomePane();
+        contentStackPane.getChildren().add(welcomePane);
+        updateContentPaneVisibility();
+    }
+
+    private VBox buildWelcomePane() {
+        VBox pane = new VBox(24);
+        pane.getStyleClass().add("welcome-pane");
+        pane.setAlignment(Pos.CENTER);
+
+        Label icon = new Label("✧");
+        icon.getStyleClass().add("welcome-icon");
+
+        Label title = new Label("欢迎使用 Live2D 桌面宠物");
+        title.getStyleClass().add("welcome-title");
+
+        Label subtitle = new Label("点击下方按钮创建你的第一个桌面宠物实例");
+        subtitle.getStyleClass().add("welcome-subtitle");
+
+        Button ctaBtn = new Button("＋ 创建第一个实例");
+        ctaBtn.getStyleClass().add("btn-primary");
+        ctaBtn.setPrefWidth(220);
+        ctaBtn.setOnAction(e -> onAddInstance());
+
+        javafx.scene.control.Separator sep1 = new javafx.scene.control.Separator();
+
+        HBox featuresRow = new HBox(16);
+        featuresRow.setAlignment(Pos.CENTER);
+
+        featuresRow.getChildren().addAll(
+                buildFeatureCard("🎭", "多实例并行", "同时运行多个桌面宠物"),
+                buildFeatureCard("🎨", "7 套主题", "深紫梦幻、樱花浅粉等"),
+                buildFeatureCard("🎙", "语音包挂载", "为模型赋予声音与行为")
+        );
+
+        javafx.scene.control.Separator sep2 = new javafx.scene.control.Separator();
+
+        VBox envPanel = new VBox(8);
+        envPanel.getStyleClass().add("env-panel");
+
+        Label envTitle = new Label("环境检测");
+        envTitle.getStyleClass().add("section-title");
+
+        envRendererStatus = new Label();
+        envRendererDetail = new Label();
+        envRendererDetail.getStyleClass().add("env-detail");
+        HBox rendererRow = buildEnvRow("渲染引擎", envRendererStatus, envRendererDetail);
+
+        envModelStatus = new Label();
+        envModelDetail = new Label();
+        envModelDetail.getStyleClass().add("env-detail");
+        HBox modelRow = buildEnvRow("可用模型", envModelStatus, envModelDetail);
+
+        envPortStatus = new Label();
+        envPortDetail = new Label();
+        envPortDetail.getStyleClass().add("env-detail");
+        HBox portRow = buildEnvRow("WS 端口", envPortStatus, envPortDetail);
+
+        envPanel.getChildren().addAll(envTitle, rendererRow, modelRow, portRow);
+
+        pane.getChildren().addAll(icon, title, subtitle, ctaBtn, sep1, featuresRow, sep2, envPanel);
+        return pane;
+    }
+
+    private VBox buildFeatureCard(String emoji, String titleText, String descText) {
+        VBox card = new VBox(6);
+        card.getStyleClass().add("feature-card");
+        card.setAlignment(Pos.CENTER);
+
+        Label emojiLabel = new Label(emoji);
+        emojiLabel.getStyleClass().add("feature-icon");
+
+        Label titleLabel = new Label(titleText);
+        titleLabel.getStyleClass().add("feature-title");
+
+        Label descLabel = new Label(descText);
+        descLabel.getStyleClass().add("feature-desc");
+
+        card.getChildren().addAll(emojiLabel, titleLabel, descLabel);
+        return card;
+    }
+
+    private HBox buildEnvRow(String labelText, Label statusLabel, Label detailLabel) {
+        HBox row = new HBox(8);
+        row.getStyleClass().add("env-row");
+        row.setAlignment(Pos.CENTER_LEFT);
+
+        Label label = new Label(labelText);
+        label.getStyleClass().add("env-label");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        row.getChildren().addAll(label, spacer, statusLabel, detailLabel);
+        return row;
+    }
+
+    private void refreshEnvironmentStatus() {
+        String rendererPath = resolveRendererPath("opengl");
+        if (rendererPath != null) {
+            envRendererStatus.setText("● 已就绪");
+            envRendererStatus.getStyleClass().setAll("env-status-ok");
+            File f = new File(rendererPath);
+            envRendererDetail.setText(f.getName());
+        } else {
+            envRendererStatus.setText("● 未找到");
+            envRendererStatus.getStyleClass().setAll("env-status-err");
+            envRendererDetail.setText("请确认渲染引擎位于当前目录");
+        }
+
+        if (rendererPath != null) {
+            List<String> models = ModelScanner.scanAvailableModels(rendererPath);
+            if (models.isEmpty()) {
+                envModelStatus.setText("● 无模型");
+                envModelStatus.getStyleClass().setAll("env-status-err");
+                envModelDetail.setText("请将模型放入 Resources 目录");
+            } else {
+                envModelStatus.setText("● " + models.size() + " 个");
+                envModelStatus.getStyleClass().setAll("env-status-ok");
+                envModelDetail.setText(String.join(", ", models));
+            }
+        } else {
+            envModelStatus.setText("● —");
+            envModelStatus.getStyleClass().setAll("env-status-err");
+            envModelDetail.setText("");
+        }
+
+        if (wsServer != null) {
+            envPortStatus.setText("● 已就绪");
+            envPortStatus.getStyleClass().setAll("env-status-ok");
+            envPortDetail.setText(":" + WS_PORT);
+        } else {
+            envPortStatus.setText("● 未启动");
+            envPortStatus.getStyleClass().setAll("env-status-err");
+            envPortDetail.setText(":" + WS_PORT);
+        }
+    }
+
+    private void updateContentPaneVisibility() {
+        boolean hasInstances = !instances.isEmpty();
+
+        if (welcomePane != null) {
+            welcomePane.setVisible(!hasInstances);
+            welcomePane.setManaged(!hasInstances);
+        }
+        if (mainScrollPane != null) {
+            mainScrollPane.setVisible(hasInstances);
+            mainScrollPane.setManaged(hasInstances);
+        }
+        if (settingsPageNode != null) {
+            settingsPageNode.setVisible(false);
+            settingsPageNode.setManaged(false);
+        }
+
+        if (!hasInstances && welcomePane != null) {
+            refreshEnvironmentStatus();
+        }
     }
 
     public void setOrchestrator(Object orchestrator) {
@@ -402,6 +568,10 @@ public class MainWindowController {
 
     private void selectInstance(PetInstance instance) {
         currentInstance = instance;
+        if (welcomePane != null) {
+            welcomePane.setVisible(false);
+            welcomePane.setManaged(false);
+        }
         refreshModelList();
         refreshVoicePackList();
         renderSidebar();
@@ -541,6 +711,7 @@ public class MainWindowController {
             card.setOnMouseClicked(event -> selectInstance(inst));
             instanceListBox.getChildren().add(card);
         }
+        updateContentPaneVisibility();
     }
 
     private void renderDetail() {
@@ -1753,10 +1924,7 @@ public class MainWindowController {
             settingsPageNode.setVisible(false);
             settingsPageNode.setManaged(false);
         }
-        if (mainScrollPane != null) {
-            mainScrollPane.setVisible(true);
-            mainScrollPane.setManaged(true);
-        }
+        updateContentPaneVisibility();
     }
 
     @FXML
@@ -1771,6 +1939,10 @@ public class MainWindowController {
 
         mainScrollPane.setVisible(false);
         mainScrollPane.setManaged(false);
+        if (welcomePane != null) {
+            welcomePane.setVisible(false);
+            welcomePane.setManaged(false);
+        }
         settingsPageNode.setVisible(true);
         settingsPageNode.setManaged(true);
     }

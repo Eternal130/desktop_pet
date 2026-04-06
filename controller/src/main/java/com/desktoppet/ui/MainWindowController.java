@@ -1686,6 +1686,9 @@ public class MainWindowController {
             scene.getStylesheets().add(baseUrl);
         }
         scene.getStylesheets().add(cssUrl);
+        if (settingsPageController != null) {
+            settingsPageController.updateThemeSelection(selected);
+        }
     }
     @FXML
     private void onModelChanged() {

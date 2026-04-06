@@ -47,6 +47,7 @@
                         <Region HBox.hgrow="ALWAYS"/>
                         <Button fx:id="toggleStatusBtn" text="停止运行" styleClass="btn-danger-outline" onAction="#onToggleStatus"/>
                         <Button text="重启引擎 ↺" styleClass="btn-primary" onAction="#onRestartEngine"/>
+                        <Button fx:id="deleteInstanceBtn" text="🗑 删除" styleClass="btn-danger" onAction="#onDeleteInstance"/>
                     </HBox>
 
                     <HBox spacing="24">

@@ -160,6 +160,7 @@ public class MainWindowController {
     @FXML private Label instanceTagLabel;
     @FXML private Label connectionBadge;
     @FXML private Button toggleStatusBtn;
+    @FXML private Button deleteInstanceBtn;
     @FXML private Label avatarLabel;
     @FXML private Label modelNameCard;
     @FXML private ComboBox<String> modelSelectCombo;
@@ -1182,6 +1183,12 @@ public class MainWindowController {
         renderDetail();
     }
 
+    @FXML
+    private void onDeleteInstance() {
+        if (currentInstance == null) return;
+        deleteInstance(currentInstance);
+    }
+
     private void startInstance(PetInstance instance) {
         String rendererPath = instance.getRendererPath();
         if (rendererPath == null || rendererPath.isBlank()) {
@@ -1311,6 +1318,43 @@ public class MainWindowController {
         interactionHandlers.remove(id);
         idleMotionCounts.remove(id);
         log.info("Instance {} stopped", id);
+    }
+
+    private void deleteInstance(PetInstance instance) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("确认删除");
+        alert.setHeaderText(null);
+        alert.setContentText("确定要删除实例 \"" + instance.getLabel() + "\" 吗？\n\n" +
+            "• 实例配置将被永久删除\n" +
+            "• 正在运行的渲染进程将被终止\n" +
+            "• 此操作不可撤销");
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isEmpty() || result.get() != ButtonType.OK) return;
+
+        if (instance.isRunning()) {
+            stopInstance(instance);
+        }
+
+        manuallyStopping.remove(instance.getId());
+
+        instanceConfigManager.delete(instance.getConfigId());
+
+        int removedIndex = instances.indexOf(instance);
+        instances.remove(instance);
+
+        if (currentInstance == instance) {
+            if (!instances.isEmpty()) {
+                int newIndex = Math.min(removedIndex, instances.size() - 1);
+                selectInstance(instances.get(newIndex));
+            } else {
+                currentInstance = null;
+                updateContentPaneVisibility();
+            }
+        }
+
+        renderSidebar();
+
+        saveState();
     }
 
     private void registerInstanceEventHandlers(PetInstance instance,

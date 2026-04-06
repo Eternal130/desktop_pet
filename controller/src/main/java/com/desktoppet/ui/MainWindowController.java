@@ -1278,6 +1278,9 @@ public class MainWindowController {
                 return;
             }
             Platform.runLater(() -> {
+                if (instances.stream().noneMatch(i -> i.getId() == instance.getId())) {
+                    return;
+                }
                 if (!"running".equals(instance.getStatus())) {
                     startInstance(instance);
                 }

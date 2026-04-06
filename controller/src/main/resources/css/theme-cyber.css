@@ -625,6 +625,9 @@
     -fx-padding: 8 14;
     -fx-cursor: hand;
     -fx-background-radius: 6;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-background-insets: 0;
 }
 
 .title-btn:hover {
@@ -632,7 +635,15 @@
     -fx-text-fill: #E0E0E0;
 }
 
-.title-btn-close:hover {
+.title-btn:focused {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-text-fill: #555570;
+}
+
+#close-btn:hover {
     -fx-background-color: #FF0040;
     -fx-text-fill: #FFFFFF;
 }

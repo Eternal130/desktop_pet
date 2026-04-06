@@ -629,6 +629,9 @@
     -fx-padding: 8 14;
     -fx-cursor: hand;
     -fx-background-radius: 6;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-background-insets: 0;
 }
 
 .title-btn:hover {
@@ -636,10 +639,19 @@
     -fx-text-fill: #4A3040;
 }
 
-.title-btn-close:hover {
+.title-btn:focused {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-text-fill: #B06078;
+}
+
+#close-btn:hover {
     -fx-background-color: #E53935;
     -fx-text-fill: #FFFFFF;
 }
+
 
 /* --- Theme Combo Selector --- */
 

@@ -17,7 +17,7 @@
         <ComboBox fx:id="themeCombo" styleClass="theme-combo" onAction="#onThemeChanged" prefWidth="120"/>
         <Button fx:id="settingsButton" text="⚙" styleClass="settings-btn" onAction="#onOpenSettings"/>
         <Button text="—" styleClass="title-btn" onAction="#onMinimize"/>
-        <Button text="✕" styleClass="title-btn title-btn-close" onAction="#onCloseWindow"/>
+        <Button text="✕" id="close-btn" styleClass="title-btn" onAction="#onCloseWindow"/>
     </HBox>
 
     <HBox VBox.vgrow="ALWAYS">

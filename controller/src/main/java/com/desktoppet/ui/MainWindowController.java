@@ -1680,9 +1680,13 @@ public class MainWindowController {
         }
         String cssUrl = getClass().getResource(cssPath).toExternalForm();
         scene.getStylesheets().clear();
+        // For non-default themes, load style.css first as base, then theme CSS on top
+        if (!"/css/style.css".equals(cssPath)) {
+            String baseUrl = getClass().getResource("/css/style.css").toExternalForm();
+            scene.getStylesheets().add(baseUrl);
+        }
         scene.getStylesheets().add(cssUrl);
     }
-
     @FXML
     private void onModelChanged() {
         if (updatingUI || currentInstance == null) {

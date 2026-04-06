@@ -2,7 +2,9 @@ package com.desktoppet.ui;
 
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.RadioButton;
 import javafx.scene.control.Slider;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -41,6 +43,11 @@ public class SettingsPageController {
     @FXML private Label fontSizeValueLabel;
     @FXML private Slider panelOpacitySlider;
     @FXML private Label panelOpacityValueLabel;
+    @FXML private CheckBox autoLaunchCheckBox;
+    @FXML private CheckBox startMinimizedCheckBox;
+    @FXML private RadioButton closeExitRadio;
+    @FXML private RadioButton closeHideRadio;
+    @FXML private CheckBox confirmOnExitCheckBox;
 
     private MainWindowController mainController;
     private String currentTheme;
@@ -50,7 +57,9 @@ public class SettingsPageController {
         this.mainController = controller;
     }
 
-    public void loadSettings(String currentTheme, int fontSize, double panelOpacity) {
+    public void loadSettings(String currentTheme, int fontSize, double panelOpacity,
+                             boolean autoLaunchSystem, boolean startMinimized,
+                             String closeAction, boolean confirmOnExit) {
         updatingUI = true;
         try {
             this.currentTheme = currentTheme;
@@ -59,6 +68,14 @@ public class SettingsPageController {
             fontSizeValueLabel.setText(fontSize + "px");
             panelOpacitySlider.setValue(panelOpacity);
             panelOpacityValueLabel.setText(Math.round(panelOpacity * 100) + "%");
+            autoLaunchCheckBox.setSelected(autoLaunchSystem);
+            startMinimizedCheckBox.setSelected(startMinimized);
+            if ("hide_to_tray".equals(closeAction)) {
+                closeHideRadio.setSelected(true);
+            } else {
+                closeExitRadio.setSelected(true);
+            }
+            confirmOnExitCheckBox.setSelected(confirmOnExit);
         } finally {
             updatingUI = false;
         }
@@ -85,6 +102,9 @@ public class SettingsPageController {
     private void initialize() {
         clipSliderToBounds(fontSizeSlider);
         clipSliderToBounds(panelOpacitySlider);
+        MainWindowController.setupToggleSwitch(autoLaunchCheckBox);
+        MainWindowController.setupToggleSwitch(startMinimizedCheckBox);
+        MainWindowController.setupToggleSwitch(confirmOnExitCheckBox);
 
         fontSizeSlider.valueProperty().addListener((obs, oldValue, newValue) -> {
             if (updatingUI) return;
@@ -102,6 +122,31 @@ public class SettingsPageController {
             if (mainController != null) {
                 mainController.applyPanelOpacity(opacity);
             }
+        });
+
+        autoLaunchCheckBox.selectedProperty().addListener((obs, old, val) -> {
+            if (updatingUI) return;
+            if (mainController != null) mainController.applyAutoLaunch(val);
+        });
+
+        startMinimizedCheckBox.selectedProperty().addListener((obs, old, val) -> {
+            if (updatingUI) return;
+            if (mainController != null) mainController.applyStartMinimized(val);
+        });
+
+        closeExitRadio.selectedProperty().addListener((obs, old, val) -> {
+            if (updatingUI) return;
+            if (val && mainController != null) mainController.applyCloseAction("exit");
+        });
+
+        closeHideRadio.selectedProperty().addListener((obs, old, val) -> {
+            if (updatingUI) return;
+            if (val && mainController != null) mainController.applyCloseAction("hide_to_tray");
+        });
+
+        confirmOnExitCheckBox.selectedProperty().addListener((obs, old, val) -> {
+            if (updatingUI) return;
+            if (mainController != null) mainController.applyConfirmOnExit(val);
         });
     }
 

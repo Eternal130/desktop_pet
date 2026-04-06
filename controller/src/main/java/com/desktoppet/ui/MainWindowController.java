@@ -1328,6 +1328,7 @@ public class MainWindowController {
             "• 实例配置将被永久删除\n" +
             "• 正在运行的渲染进程将被终止\n" +
             "• 此操作不可撤销");
+        alert.getDialogPane().lookupButton(ButtonType.CANCEL).requestFocus();
         Optional<ButtonType> result = alert.showAndWait();
         if (result.isEmpty() || result.get() != ButtonType.OK) return;
 

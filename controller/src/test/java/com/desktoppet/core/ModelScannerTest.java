@@ -54,18 +54,18 @@ class ModelScannerTest {
 
     @Test
     void scanAvailableModels_validDir_findsModelsWithModel3Json(@TempDir Path tempDir) throws IOException {
-        Path resourcesDir = tempDir.resolve("Resources");
-        Files.createDirectories(resourcesDir);
+        Path modelsDir = tempDir.resolve("Resources").resolve("Models");
+        Files.createDirectories(modelsDir);
 
-        Path validModel = resourcesDir.resolve("TestModel");
+        Path validModel = modelsDir.resolve("TestModel");
         Files.createDirectories(validModel);
         Files.writeString(validModel.resolve("TestModel.model3.json"), validModel3Json());
 
-        Path anotherModel = resourcesDir.resolve("AnotherModel");
+        Path anotherModel = modelsDir.resolve("AnotherModel");
         Files.createDirectories(anotherModel);
         Files.writeString(anotherModel.resolve("AnotherModel.model3.json"), validModel3Json());
 
-        Path notAModel = resourcesDir.resolve("SharedAssets");
+        Path notAModel = modelsDir.resolve("SharedAssets");
         Files.createDirectories(notAModel);
         Files.writeString(notAModel.resolve("readme.txt"), "not a model");
 
@@ -80,10 +80,10 @@ class ModelScannerTest {
 
     @Test
     void scanAvailableModels_ignoresDirsWithoutModel3Json(@TempDir Path tempDir) throws IOException {
-        Path resourcesDir = tempDir.resolve("Resources");
-        Files.createDirectories(resourcesDir);
+        Path modelsDir = tempDir.resolve("Resources").resolve("Models");
+        Files.createDirectories(modelsDir);
 
-        Path noJsonDir = resourcesDir.resolve("FakeModel");
+        Path noJsonDir = modelsDir.resolve("FakeModel");
         Files.createDirectories(noJsonDir);
         Files.writeString(noJsonDir.resolve("something.json"), "{}");
 
@@ -96,8 +96,8 @@ class ModelScannerTest {
 
     @Test
     void getModelInfo_validModel_parsesMotionsAndHitAreas(@TempDir Path tempDir) throws IOException {
-        Path resourcesDir = tempDir.resolve("Resources");
-        Path modelDir = resourcesDir.resolve("MyModel");
+        Path modelsDir = tempDir.resolve("Resources").resolve("Models");
+        Path modelDir = modelsDir.resolve("MyModel");
         Files.createDirectories(modelDir);
         Files.writeString(modelDir.resolve("MyModel.model3.json"), validModel3Json());
 
@@ -117,8 +117,8 @@ class ModelScannerTest {
 
     @Test
     void getModelInfo_missingModel_returnsEmpty(@TempDir Path tempDir) throws IOException {
-        Path resourcesDir = tempDir.resolve("Resources");
-        Files.createDirectories(resourcesDir);
+        Path modelsDir = tempDir.resolve("Resources").resolve("Models");
+        Files.createDirectories(modelsDir);
 
         String rendererPath = tempDir.resolve("renderer.exe").toString();
 

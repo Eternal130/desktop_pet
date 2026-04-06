@@ -457,43 +457,40 @@ public class MainWindowController {
 
         String primaryRendererPath = openglPath != null ? openglPath : vulkanPath;
         if (primaryRendererPath != null) {
-            Path resourcesDir = ModelScanner.resolveResourcesDir(primaryRendererPath);
-            if (resourcesDir != null && Files.isDirectory(resourcesDir)) {
-                try (var stream = Files.list(resourcesDir)) {
+            Path modelsDir = ModelScanner.resolveModelsDir(primaryRendererPath);
+            if (modelsDir != null && Files.isDirectory(modelsDir)) {
+                try (var stream = Files.list(modelsDir)) {
                     long modelCount = stream
                             .filter(Files::isDirectory)
                             .count();
                     envCubismStatus.setText("● 已就绪");
                     envCubismStatus.getStyleClass().setAll("env-status-ok");
-                    envCubismDetail.setText("Resources 目录包含 " + modelCount + " 个子目录");
+                    envCubismDetail.setText("Models 目录包含 " + modelCount + " 个子目录");
                 } catch (IOException e) {
                     envCubismStatus.setText("● 已就绪");
                     envCubismStatus.getStyleClass().setAll("env-status-ok");
-                    envCubismDetail.setText(resourcesDir.getFileName().toString());
+                    envCubismDetail.setText(modelsDir.getFileName().toString());
                 }
             } else {
                 envCubismStatus.setText("● 未找到");
                 envCubismStatus.getStyleClass().setAll("env-status-err");
-                envCubismDetail.setText("请确认 Cubism SDK Resources 目录");
+                envCubismDetail.setText("请确认 Resources/Models 目录");
             }
-        } else {
-            envCubismStatus.setText("● —");
-            envCubismStatus.getStyleClass().setAll("env-status-err");
-            envCubismDetail.setText("");
-        }
 
-        if (primaryRendererPath != null) {
             List<String> models = ModelScanner.scanAvailableModels(primaryRendererPath);
             if (models.isEmpty()) {
                 envModelStatus.setText("● 无模型");
                 envModelStatus.getStyleClass().setAll("env-status-err");
-                envModelDetail.setText("请将模型放入 Resources 目录");
+                envModelDetail.setText("请将模型放入 Resources/Models 目录");
             } else {
                 envModelStatus.setText("● " + models.size() + " 个");
                 envModelStatus.getStyleClass().setAll("env-status-ok");
                 envModelDetail.setText(String.join(", ", models));
             }
         } else {
+            envCubismStatus.setText("● —");
+            envCubismStatus.getStyleClass().setAll("env-status-err");
+            envCubismDetail.setText("");
             envModelStatus.setText("● —");
             envModelStatus.getStyleClass().setAll("env-status-err");
             envModelDetail.setText("");
@@ -708,8 +705,8 @@ public class MainWindowController {
             return;
         }
 
-        Path resourcesDir = ModelScanner.resolveResourcesDir(currentInstance.getRendererPath());
-        List<String> voicePacks = VoicePackScanner.scanAvailableVoicePacks(resourcesDir);
+        Path voicePacksDir = ModelScanner.resolveVoicePacksDir(currentInstance.getRendererPath());
+        List<String> voicePacks = VoicePackScanner.scanAvailableVoicePacks(voicePacksDir);
 
         updatingUI = true;
         try {
@@ -1567,11 +1564,11 @@ public class MainWindowController {
     }
 
     private VoicePackInfo resolveVoicePackInfo(String rendererPath, String voicePackName) {
-        Path resourcesDir = ModelScanner.resolveResourcesDir(rendererPath);
-        if (resourcesDir == null || voicePackName == null) {
+        Path voicePacksDir = ModelScanner.resolveVoicePacksDir(rendererPath);
+        if (voicePacksDir == null || voicePackName == null) {
             return null;
         }
-        Path vpDir = resourcesDir.resolve(voicePackName);
+        Path vpDir = voicePacksDir.resolve(voicePackName);
         if (!Files.isDirectory(vpDir)) {
             return null;
         }
@@ -1608,15 +1605,15 @@ public class MainWindowController {
         if (modelName == null || modelName.isEmpty()) {
             return;
         }
-        Path resourcesDir = ModelScanner.resolveResourcesDir(instance.getRendererPath());
-        if (resourcesDir == null) {
+        Path modelsDir = ModelScanner.resolveModelsDir(instance.getRendererPath());
+        if (modelsDir == null) {
             return;
         }
         InteractionHandler handler = interactionHandlers.get(instance.getId());
         if (handler == null) {
             return;
         }
-        Path modelConfigPath = resourcesDir.resolve(modelName).resolve("model_config.json");
+        Path modelConfigPath = modelsDir.resolve(modelName).resolve("model_config.json");
         if (Files.exists(modelConfigPath)) {
             try {
                 String json = Files.readString(modelConfigPath);

@@ -19,6 +19,10 @@ public final class ModelScanner {
     private ModelScanner() {
     }
 
+    private static final String RESOURCES_DIR = "Resources";
+    private static final String MODELS_SUBDIR = "Models";
+    private static final String VOICE_PACKS_SUBDIR = "VoicePacks";
+
     public static Path resolveResourcesDir(String rendererPath) {
         if (rendererPath == null || rendererPath.isBlank()) {
             return null;
@@ -28,18 +32,34 @@ public final class ModelScanner {
         if (parentDir == null) {
             return null;
         }
-        return parentDir.resolve("Resources");
+        return parentDir.resolve(RESOURCES_DIR);
+    }
+
+    public static Path resolveModelsDir(String rendererPath) {
+        Path resourcesDir = resolveResourcesDir(rendererPath);
+        if (resourcesDir == null) {
+            return null;
+        }
+        return resourcesDir.resolve(MODELS_SUBDIR);
+    }
+
+    public static Path resolveVoicePacksDir(String rendererPath) {
+        Path resourcesDir = resolveResourcesDir(rendererPath);
+        if (resourcesDir == null) {
+            return null;
+        }
+        return resourcesDir.resolve(VOICE_PACKS_SUBDIR);
     }
 
     public static List<String> scanAvailableModels(String rendererPath) {
-        Path resourcesDir = resolveResourcesDir(rendererPath);
-        if (resourcesDir == null || !Files.isDirectory(resourcesDir)) {
-            log.debug("Resources directory not found for renderer: {}", rendererPath);
+        Path modelsDir = resolveModelsDir(rendererPath);
+        if (modelsDir == null || !Files.isDirectory(modelsDir)) {
+            log.debug("Models directory not found for renderer: {}", rendererPath);
             return Collections.emptyList();
         }
 
         List<String> models = new ArrayList<>();
-        try (var stream = Files.list(resourcesDir)) {
+        try (var stream = Files.list(modelsDir)) {
             stream.filter(Files::isDirectory)
                   .filter(dir -> {
                       String name = dir.getFileName().toString();
@@ -49,19 +69,19 @@ public final class ModelScanner {
                   .sorted()
                   .forEach(models::add);
         } catch (IOException e) {
-            log.warn("Failed to scan models in {}: {}", resourcesDir, e.getMessage());
+            log.warn("Failed to scan models in {}: {}", modelsDir, e.getMessage());
         }
 
-        log.debug("Found {} models in {}: {}", models.size(), resourcesDir, models);
+        log.debug("Found {} models in {}: {}", models.size(), modelsDir, models);
         return models;
     }
 
     public static Optional<ModelInfo> getModelInfo(String rendererPath, String modelName) {
-        Path resourcesDir = resolveResourcesDir(rendererPath);
-        if (resourcesDir == null || modelName == null || modelName.isBlank()) {
+        Path modelsDir = resolveModelsDir(rendererPath);
+        if (modelsDir == null || modelName == null || modelName.isBlank()) {
             return Optional.empty();
         }
-        Path model3Json = resourcesDir.resolve(modelName).resolve(modelName + ".model3.json");
+        Path model3Json = modelsDir.resolve(modelName).resolve(modelName + ".model3.json");
         return ModelInfoParser.parse(model3Json);
     }
 }

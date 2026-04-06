@@ -40,7 +40,6 @@ public class App extends Application {
         primaryStage.setScene(scene);
         primaryStage.setMinWidth(900);
         primaryStage.setMinHeight(600);
-        primaryStage.show();
 
         if (savedState.panelX() >= 0 && savedState.panelY() >= 0) {
             primaryStage.setX(savedState.panelX());
@@ -51,8 +50,13 @@ public class App extends Application {
         controller.restoreState();
 
         trayManager = new TrayManager(primaryStage);
-        trayManager.setOnExitCallback(() -> Platform.exit());
+        trayManager.setOnExitCallback(() -> Platform.runLater(controller::performFullShutdown));
+        trayManager.setOnCloseRequestCallback(controller::handleCloseRequest);
         trayManager.initialize();
+
+        if (!controller.isStartMinimized() || !java.awt.SystemTray.isSupported()) {
+            primaryStage.show();
+        }
 
         log.info("Desktop Pet Controller started");
     }

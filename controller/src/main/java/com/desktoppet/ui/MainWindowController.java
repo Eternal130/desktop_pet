@@ -20,6 +20,7 @@ import com.desktoppet.network.MessageDispatcher;
 import com.desktoppet.network.PetWebSocketServer;
 import com.desktoppet.network.Protocol;
 import com.desktoppet.util.ProcessManager;
+import com.desktoppet.util.AutoLaunchManager;
 import com.google.gson.JsonObject;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -29,6 +30,7 @@ import javafx.geometry.Pos;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
@@ -54,6 +56,7 @@ import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.SystemTray;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -85,6 +88,10 @@ public class MainWindowController {
     private final Map<Integer, Integer> idleMotionCounts = new ConcurrentHashMap<>();
     private PanelStateManager panelStateManager;
     private PetWebSocketServer wsServer;
+    private boolean startMinimized = false;
+    private String closeAction = "exit";
+    private boolean confirmOnExit = false;
+    private boolean autoLaunchSystem = false;
 
     private static final Map<String, String> MOTION_ICONS = Map.ofEntries(
             Map.entry("idle", "✨"),
@@ -535,6 +542,10 @@ public class MainWindowController {
         this.panelStateManager = manager;
     }
 
+    public boolean isStartMinimized() {
+        return startMinimized;
+    }
+
     public void restoreState() {
         if (panelStateManager == null) {
             return;
@@ -551,6 +562,11 @@ public class MainWindowController {
             applyFontSize(panelConfig.fontSize());
             applyPanelOpacity(panelConfig.panelOpacity());
         });
+
+        this.startMinimized = panelConfig.startMinimized();
+        this.closeAction = panelConfig.closeAction();
+        this.confirmOnExit = panelConfig.confirmOnExit();
+        this.autoLaunchSystem = panelConfig.autoLaunchSystem();
 
         List<InstanceConfig> configs = instanceConfigManager.loadAll(panelConfig.instanceIds());
         for (InstanceConfig instConfig : configs) {
@@ -618,7 +634,8 @@ public class MainWindowController {
                 }
             } catch (Exception ignored) {}
         }
-        return new PanelConfig(panelX, panelY, panelW, panelH, theme, fontSize, panelOpacity, instanceIds);
+        return new PanelConfig(panelX, panelY, panelW, panelH, theme, fontSize, panelOpacity, instanceIds,
+                autoLaunchSystem, startMinimized, closeAction, confirmOnExit);
     }
 
     private void saveState() {
@@ -1761,7 +1778,7 @@ public class MainWindowController {
         currentInstance.getLogs().clear();
     }
 
-    private void setupToggleSwitch(CheckBox checkBox) {
+    public static void setupToggleSwitch(CheckBox checkBox) {
         StackPane track = new StackPane();
         track.getStyleClass().add("toggle-track");
 
@@ -1820,6 +1837,32 @@ public class MainWindowController {
 
     @FXML
     private void onCloseWindow() {
+        handleCloseRequest();
+    }
+
+    public void handleCloseRequest() {
+        if ("hide_to_tray".equals(closeAction)) {
+            if (!SystemTray.isSupported()) {
+                performFullShutdown();
+                return;
+            }
+            primaryStage().hide();
+            return;
+        }
+        if (confirmOnExit) {
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.setTitle("退出确认");
+            alert.setHeaderText(null);
+            alert.setContentText("确定要退出桌面宠物吗？");
+            Optional<ButtonType> result = alert.showAndWait();
+            if (result.isEmpty() || result.get() != ButtonType.OK) {
+                return;
+            }
+        }
+        performFullShutdown();
+    }
+
+    public void performFullShutdown() {
         saveState();
 
         for (PetInstance instance : instances) {
@@ -1838,6 +1881,10 @@ public class MainWindowController {
             }
         }
         Platform.exit();
+    }
+
+    private Stage primaryStage() {
+        return (Stage) titleBar.getScene().getWindow();
     }
 
     public void enableWindowResize(Stage stage) {
@@ -1988,6 +2035,32 @@ public class MainWindowController {
         }
     }
 
+    public void applyAutoLaunch(boolean enabled) {
+        this.autoLaunchSystem = enabled;
+        try {
+            AutoLaunchManager mgr = new AutoLaunchManager();
+            if (enabled) { mgr.enable(); } else { mgr.disable(); }
+        } catch (Exception e) {
+            log.error("Failed to {} auto-launch", enabled ? "enable" : "disable", e);
+        }
+        saveState();
+    }
+
+    public void applyStartMinimized(boolean enabled) {
+        this.startMinimized = enabled;
+        saveState();
+    }
+
+    public void applyCloseAction(String action) {
+        this.closeAction = action;
+        saveState();
+    }
+
+    public void applyConfirmOnExit(boolean enabled) {
+        this.confirmOnExit = enabled;
+        saveState();
+    }
+
     public void showInstanceDetail() {
         if (settingsPageNode != null) {
             settingsPageNode.setVisible(false);
@@ -2004,7 +2077,9 @@ public class MainWindowController {
         String currentTheme = themeCombo.getValue();
         PanelConfig config = buildCurrentPanelConfig();
         settingsPageController.loadSettings(currentTheme != null ? currentTheme : "深紫梦幻",
-                config.fontSize(), config.panelOpacity());
+                config.fontSize(), config.panelOpacity(),
+                config.autoLaunchSystem(), config.startMinimized(),
+                config.closeAction(), config.confirmOnExit());
 
         mainScrollPane.setVisible(false);
         mainScrollPane.setManaged(false);

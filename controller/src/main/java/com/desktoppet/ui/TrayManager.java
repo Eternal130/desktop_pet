@@ -19,6 +19,7 @@ public class TrayManager {
     private Runnable onSettingsCallback;
     private Runnable onRandomMotionCallback;
     private Runnable onTogglePauseCallback;
+    private Runnable onCloseRequestCallback;
 
     public TrayManager(Stage primaryStage) {
         this.primaryStage = primaryStage;
@@ -28,6 +29,7 @@ public class TrayManager {
     public void setOnSettingsCallback(Runnable callback) { this.onSettingsCallback = callback; }
     public void setOnRandomMotionCallback(Runnable callback) { this.onRandomMotionCallback = callback; }
     public void setOnTogglePauseCallback(Runnable callback) { this.onTogglePauseCallback = callback; }
+    public void setOnCloseRequestCallback(Runnable callback) { this.onCloseRequestCallback = callback; }
 
     public boolean initialize() {
         if (!SystemTray.isSupported()) {
@@ -65,7 +67,11 @@ public class TrayManager {
 
         primaryStage.setOnCloseRequest(event -> {
             event.consume();
-            Platform.runLater(() -> primaryStage.hide());
+            if (onCloseRequestCallback != null) {
+                Platform.runLater(onCloseRequestCallback);
+            } else {
+                Platform.runLater(() -> primaryStage.hide());
+            }
         });
 
         return true;

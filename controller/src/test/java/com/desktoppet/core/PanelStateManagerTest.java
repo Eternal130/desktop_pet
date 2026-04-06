@@ -33,12 +33,50 @@ class PanelStateManagerTest {
         Path legacyPath = tempDir.resolve("panel-state.json");
         InstanceConfigManager instanceManager = new InstanceConfigManager(tempDir.resolve("instances"));
         PanelStateManager manager = new PanelStateManager(configPath, legacyPath, instanceManager);
-        PanelConfig input = new PanelConfig(100, 200, 1400, 800, "深紫梦幻", 13, 1.0, List.of("id-1", "id-2"));
+        PanelConfig input = new PanelConfig(100, 200, 1400, 800, "深紫梦幻", 13, 1.0, List.of("id-1", "id-2"),
+                true, true, "minimize", true);
 
         manager.save(input);
         PanelConfig loaded = manager.load();
 
         assertEquals(input, loaded);
+    }
+
+    @Test
+    void load_missingNewKeys_usesDefaults(@TempDir Path tempDir) throws IOException {
+        Path configPath = tempDir.resolve("panel.json");
+        Path legacyPath = tempDir.resolve("panel-state.json");
+        InstanceConfigManager instanceManager = new InstanceConfigManager(tempDir.resolve("instances"));
+        PanelStateManager manager = new PanelStateManager(configPath, legacyPath, instanceManager);
+
+        Files.writeString(configPath, """
+            {
+              "panel": {
+                "x": 50,
+                "y": 100,
+                "width": 1300,
+                "height": 750,
+                "theme": "樱花浅粉",
+                "font_size": 14,
+                "panel_opacity": 0.9
+              },
+              "instances": ["id-1"]
+            }
+            """);
+
+        PanelConfig loaded = manager.load();
+
+        assertEquals(50, loaded.panelX());
+        assertEquals(100, loaded.panelY());
+        assertEquals("樱花浅粉", loaded.theme());
+        assertEquals(14, loaded.fontSize());
+        assertEquals(0.9, loaded.panelOpacity());
+        assertEquals(List.of("id-1"), loaded.instanceIds());
+
+        assertFalse(loaded.autoLaunchSystem());
+        assertFalse(loaded.startMinimized());
+        assertEquals("exit", loaded.closeAction());
+        assertFalse(loaded.confirmOnExit());
     }
 
     @Test

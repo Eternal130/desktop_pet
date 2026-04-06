@@ -128,7 +128,8 @@ public class PanelStateManager {
                 }
             }
 
-            PanelConfig panelConfig = new PanelConfig(panelX, panelY, panelW, panelH, theme, 13, 1.0, instanceIds);
+            PanelConfig panelConfig = new PanelConfig(panelX, panelY, panelW, panelH, theme, 13, 1.0, instanceIds,
+                    false, false, "exit", false);
             save(panelConfig);
 
             Path backupPath = legacyPath.resolveSibling("panel-state.json.bak");
@@ -153,6 +154,10 @@ public class PanelStateManager {
         panel.addProperty("theme", config.theme());
         panel.addProperty("font_size", config.fontSize());
         panel.addProperty("panel_opacity", config.panelOpacity());
+        panel.addProperty("auto_launch_system", config.autoLaunchSystem());
+        panel.addProperty("start_minimized", config.startMinimized());
+        panel.addProperty("close_action", config.closeAction());
+        panel.addProperty("confirm_on_exit", config.confirmOnExit());
         root.add("panel", panel);
 
         JsonArray instances = new JsonArray();
@@ -175,6 +180,10 @@ public class PanelStateManager {
         String theme = getString(panelObj, "theme", defaults.theme());
         int fontSize = getInt(panelObj, "font_size", defaults.fontSize());
         double panelOpacity = getDouble(panelObj, "panel_opacity", defaults.panelOpacity());
+        boolean autoLaunchSystem = getBoolean(panelObj, "auto_launch_system", defaults.autoLaunchSystem());
+        boolean startMinimized = getBoolean(panelObj, "start_minimized", defaults.startMinimized());
+        String closeAction = getString(panelObj, "close_action", defaults.closeAction());
+        boolean confirmOnExit = getBoolean(panelObj, "confirm_on_exit", defaults.confirmOnExit());
 
         List<String> instanceIds = new ArrayList<>();
         if (root.has("instances") && root.get("instances").isJsonArray()) {
@@ -185,7 +194,8 @@ public class PanelStateManager {
             }
         }
 
-        return new PanelConfig(panelX, panelY, panelW, panelH, theme, fontSize, panelOpacity, instanceIds);
+        return new PanelConfig(panelX, panelY, panelW, panelH, theme, fontSize, panelOpacity, instanceIds,
+                autoLaunchSystem, startMinimized, closeAction, confirmOnExit);
     }
 
     private JsonObject getObject(JsonObject root, String key) {

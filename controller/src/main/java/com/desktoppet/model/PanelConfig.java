@@ -10,9 +10,13 @@ public record PanelConfig(
     String theme,
     int fontSize,
     double panelOpacity,
-    List<String> instanceIds
+    List<String> instanceIds,
+    boolean autoLaunchSystem,
+    boolean startMinimized,
+    String closeAction,
+    boolean confirmOnExit
 ) {
     public static PanelConfig defaults() {
-        return new PanelConfig(-1, -1, 1200, 760, "深紫梦幻", 13, 1.0, List.of());
+        return new PanelConfig(-1, -1, 1200, 760, "深紫梦幻", 13, 1.0, List.of(), false, false, "exit", false);
     }
 }

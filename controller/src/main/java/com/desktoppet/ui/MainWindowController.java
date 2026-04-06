@@ -107,8 +107,14 @@ public class MainWindowController {
     private SettingsPageController settingsPageController;
     private Node settingsPageNode;
     private VBox welcomePane;
-    private Label envRendererStatus;
-    private Label envRendererDetail;
+    private Label envOpenglStatus;
+    private Label envOpenglDetail;
+    private Label envVulkanStatus;
+    private Label envVulkanDetail;
+    private Label envJavaStatus;
+    private Label envJavaDetail;
+    private Label envCubismStatus;
+    private Label envCubismDetail;
     private Label envModelStatus;
     private Label envModelDetail;
     private Label envPortStatus;
@@ -343,10 +349,25 @@ public class MainWindowController {
         Label envTitle = new Label("环境检测");
         envTitle.getStyleClass().add("section-title");
 
-        envRendererStatus = new Label();
-        envRendererDetail = new Label();
-        envRendererDetail.getStyleClass().add("env-detail");
-        HBox rendererRow = buildEnvRow("渲染引擎", envRendererStatus, envRendererDetail);
+        envOpenglStatus = new Label();
+        envOpenglDetail = new Label();
+        envOpenglDetail.getStyleClass().add("env-detail");
+        HBox openglRow = buildEnvRow("OpenGL 渲染引擎", envOpenglStatus, envOpenglDetail);
+
+        envVulkanStatus = new Label();
+        envVulkanDetail = new Label();
+        envVulkanDetail.getStyleClass().add("env-detail");
+        HBox vulkanRow = buildEnvRow("Vulkan 渲染引擎", envVulkanStatus, envVulkanDetail);
+
+        envJavaStatus = new Label();
+        envJavaDetail = new Label();
+        envJavaDetail.getStyleClass().add("env-detail");
+        HBox javaRow = buildEnvRow("Java 运行时", envJavaStatus, envJavaDetail);
+
+        envCubismStatus = new Label();
+        envCubismDetail = new Label();
+        envCubismDetail.getStyleClass().add("env-detail");
+        HBox cubismRow = buildEnvRow("Cubism SDK", envCubismStatus, envCubismDetail);
 
         envModelStatus = new Label();
         envModelDetail = new Label();
@@ -358,7 +379,7 @@ public class MainWindowController {
         envPortDetail.getStyleClass().add("env-detail");
         HBox portRow = buildEnvRow("WS 端口", envPortStatus, envPortDetail);
 
-        envPanel.getChildren().addAll(envTitle, rendererRow, modelRow, portRow);
+        envPanel.getChildren().addAll(envTitle, openglRow, vulkanRow, javaRow, cubismRow, modelRow, portRow);
 
         pane.getChildren().addAll(icon, title, subtitle, ctaBtn, sep1, featuresRow, sep2, envPanel);
         return pane;
@@ -398,20 +419,71 @@ public class MainWindowController {
     }
 
     private void refreshEnvironmentStatus() {
-        String rendererPath = resolveRendererPath("opengl");
-        if (rendererPath != null) {
-            envRendererStatus.setText("● 已就绪");
-            envRendererStatus.getStyleClass().setAll("env-status-ok");
-            File f = new File(rendererPath);
-            envRendererDetail.setText(f.getName());
+        String openglPath = resolveRendererPath("opengl");
+        if (openglPath != null) {
+            envOpenglStatus.setText("● 已就绪");
+            envOpenglStatus.getStyleClass().setAll("env-status-ok");
+            File f = new File(openglPath);
+            envOpenglDetail.setText(f.getName());
         } else {
-            envRendererStatus.setText("● 未找到");
-            envRendererStatus.getStyleClass().setAll("env-status-err");
-            envRendererDetail.setText("请确认渲染引擎位于当前目录");
+            envOpenglStatus.setText("● 未找到");
+            envOpenglStatus.getStyleClass().setAll("env-status-err");
+            envOpenglDetail.setText("请确认 desktop-pet-renderer.exe 存在");
         }
 
-        if (rendererPath != null) {
-            List<String> models = ModelScanner.scanAvailableModels(rendererPath);
+        String vulkanPath = resolveRendererPath("vulkan");
+        if (vulkanPath != null) {
+            envVulkanStatus.setText("● 已就绪");
+            envVulkanStatus.getStyleClass().setAll("env-status-ok");
+            File f = new File(vulkanPath);
+            envVulkanDetail.setText(f.getName());
+        } else {
+            envVulkanStatus.setText("● 未找到");
+            envVulkanStatus.getStyleClass().setAll("env-status-err");
+            envVulkanDetail.setText("请确认 desktop-pet-renderer-vulkan.exe 存在");
+        }
+
+        String javaVersion = System.getProperty("java.version");
+        String jvmName = System.getProperty("java.vm.name", "");
+        if (javaVersion != null) {
+            envJavaStatus.setText("● 已就绪");
+            envJavaStatus.getStyleClass().setAll("env-status-ok");
+            envJavaDetail.setText(jvmName + " " + javaVersion);
+        } else {
+            envJavaStatus.setText("● 异常");
+            envJavaStatus.getStyleClass().setAll("env-status-err");
+            envJavaDetail.setText("无法获取 Java 版本信息");
+        }
+
+        String primaryRendererPath = openglPath != null ? openglPath : vulkanPath;
+        if (primaryRendererPath != null) {
+            Path resourcesDir = ModelScanner.resolveResourcesDir(primaryRendererPath);
+            if (resourcesDir != null && Files.isDirectory(resourcesDir)) {
+                try (var stream = Files.list(resourcesDir)) {
+                    long modelCount = stream
+                            .filter(Files::isDirectory)
+                            .count();
+                    envCubismStatus.setText("● 已就绪");
+                    envCubismStatus.getStyleClass().setAll("env-status-ok");
+                    envCubismDetail.setText("Resources 目录包含 " + modelCount + " 个子目录");
+                } catch (IOException e) {
+                    envCubismStatus.setText("● 已就绪");
+                    envCubismStatus.getStyleClass().setAll("env-status-ok");
+                    envCubismDetail.setText(resourcesDir.getFileName().toString());
+                }
+            } else {
+                envCubismStatus.setText("● 未找到");
+                envCubismStatus.getStyleClass().setAll("env-status-err");
+                envCubismDetail.setText("请确认 Cubism SDK Resources 目录");
+            }
+        } else {
+            envCubismStatus.setText("● —");
+            envCubismStatus.getStyleClass().setAll("env-status-err");
+            envCubismDetail.setText("");
+        }
+
+        if (primaryRendererPath != null) {
+            List<String> models = ModelScanner.scanAvailableModels(primaryRendererPath);
             if (models.isEmpty()) {
                 envModelStatus.setText("● 无模型");
                 envModelStatus.getStyleClass().setAll("env-status-err");

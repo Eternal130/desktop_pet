@@ -1423,6 +1423,7 @@ public class MainWindowController {
 
             JsonObject volumePayload = new JsonObject();
             volumePayload.addProperty("volume", instance.getVolume());
+            volumePayload.addProperty("muted", instance.isMuted());
             wsServer.sendToInstance(id, Protocol.serialize(
                     Protocol.createCommand("set_volume", volumePayload)));
 

@@ -266,6 +266,11 @@ public class AppOrchestrator {
                     sendOrCache("play_motion_ext", cmd);
                     return;
                 }
+                String audioCmd = engine.buildAudioOnlyCommand(areaId);
+                if (audioCmd != null) {
+                    sendOrCache("play_audio", audioCmd);
+                    // Do NOT return — fall through to InteractionHandler to preserve action feedback (Metis W1)
+                }
             }
             interactionHandler.handleHitEvent(envelope);
         });

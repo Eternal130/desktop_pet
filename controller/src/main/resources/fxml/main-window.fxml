@@ -116,6 +116,7 @@
                                             blockIncrement="0.1" HBox.hgrow="ALWAYS" minWidth="100"/>
                                     <Label fx:id="volumeValueLabel" text="100%" styleClass="value-display" minWidth="36"/>
                                 </HBox>
+                                <CheckBox fx:id="muteCheckBox" text="静音" selected="false"/>
                             </VBox>
                          </HBox>
 

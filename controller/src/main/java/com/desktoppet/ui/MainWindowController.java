@@ -172,6 +172,7 @@ public class MainWindowController {
     @FXML private Label opacityValueLabel;
     @FXML private Slider volumeSlider;
     @FXML private Label volumeValueLabel;
+    @FXML private CheckBox muteCheckBox;
     @FXML private Button dragDirectBtn;
     @FXML private Button dragPhysicsBtn;
     @FXML private Button backendOpenglBtn;
@@ -213,11 +214,26 @@ public class MainWindowController {
             if (updatingUI || currentInstance == null) {
                 return;
             }
+            // Auto-unmute when user drags volume slider
+            if (muteCheckBox.isSelected()) {
+                muteCheckBox.setSelected(false);
+                // muteCheckBox listener fires and sends set_volume{muted:false}
+            }
             double value = newValue.doubleValue();
             currentInstance.setVolume(value);
             volumeValueLabel.setText(Math.round(value * 100) + "%");
             JsonObject payload = new JsonObject();
             payload.addProperty("volume", value);
+            sendInstanceCommand(currentInstance, "set_volume", payload);
+        });
+
+        muteCheckBox.selectedProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingUI || currentInstance == null) {
+                return;
+            }
+            currentInstance.setMuted(newValue);
+            JsonObject payload = new JsonObject();
+            payload.addProperty("muted", newValue);
             sendInstanceCommand(currentInstance, "set_volume", payload);
         });
 
@@ -857,6 +873,8 @@ public class MainWindowController {
 
             volumeSlider.setValue(currentInstance.getVolume());
             volumeValueLabel.setText(Math.round(currentInstance.getVolume() * 100) + "%");
+
+            muteCheckBox.setSelected(currentInstance.isMuted());
 
             boolean isDirect = !"physics".equals(currentInstance.getDragMode());
             dragDirectBtn.pseudoClassStateChanged(SEG_ACTIVE, isDirect);

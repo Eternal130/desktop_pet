@@ -88,6 +88,28 @@ class MountedBehaviorEngineTest {
     }
 
     @Test
+    void buildAudioOnlyCommand_forAudioOnlyArea_returnsPlayAudio() {
+        String json = engine.buildAudioOnlyCommand("audio_only");
+        assertNotNull(json);
+
+        Envelope envelope = Protocol.deserialize(json)
+            .orElseThrow(() -> new AssertionError("Expected valid envelope JSON"));
+
+        assertEquals("command", envelope.type());
+        assertEquals("play_audio", envelope.action());
+
+        JsonObject payload = envelope.payload();
+        assertNotNull(payload.get("audio_path"));
+        assertTrue(payload.get("audio_path").getAsString().endsWith("1.ogg"),
+            "Unexpected audio path: " + payload.get("audio_path"));
+    }
+
+    @Test
+    void buildAudioOnlyCommand_forMotionGroup_returnsNull() {
+        assertNull(engine.buildAudioOnlyCommand("tap_head"));
+    }
+
+    @Test
     void buildMotionCommand_convertsFadeMillisecondsToSeconds() {
         for (int i = 0; i < 20; i++) {
             String json = engine.buildMotionCommand("tap_head");

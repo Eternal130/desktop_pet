@@ -82,6 +82,52 @@ public class MountedBehaviorEngine {
         return Protocol.serialize(command);
     }
 
+    public String buildAudioOnlyCommand(String areaId) {
+        if (voicePack == null || voicePack.groups() == null) {
+            return null;
+        }
+
+        VoicePackGroup group = voicePack.groups().get(areaId);
+        if (group == null) {
+            log.debug("No voice pack group for area: {}", areaId);
+            return null;
+        }
+
+        List<VoicePackAction> audioOnlyActions = new ArrayList<>();
+        if (group.actions() != null) {
+            for (VoicePackAction action : group.actions()) {
+                if (action == null) {
+                    continue;
+                }
+                boolean hasAudio = action.audioPath() != null && !action.audioPath().isEmpty();
+                boolean noMotion = action.motionPath() == null || action.motionPath().isEmpty();
+                if (hasAudio && noMotion) {
+                    audioOnlyActions.add(action);
+                }
+            }
+        }
+
+        if (audioOnlyActions.isEmpty()) {
+            log.debug("No audio-only actions for area: {}", areaId);
+            return null;
+        }
+
+        VoicePackAction chosen = audioOnlyActions.get(random.nextInt(audioOnlyActions.size()));
+
+        Path basePath = voicePack.basePath();
+        if (basePath == null) {
+            return null;
+        }
+        String absolutePath = basePath.resolve(chosen.audioPath()).toString();
+
+        JsonObject payload = new JsonObject();
+        payload.addProperty("audio_path", absolutePath);
+        payload.addProperty("volume", 1.0);
+
+        Envelope command = Protocol.createCommand("play_audio", payload);
+        return Protocol.serialize(command);
+    }
+
     public boolean isIdleMotionPath(String absolutePath) {
         if (voicePack == null || voicePack.groups() == null || voicePack.basePath() == null) {
             return false;

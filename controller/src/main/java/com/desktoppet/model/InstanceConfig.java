@@ -21,6 +21,7 @@ public record InstanceConfig(
     String currentExpression,
     String voicePack,
     double volume,
+    boolean muted,
     double layoutOffsetX,
     double layoutOffsetY,
     double layoutScale
@@ -42,6 +43,7 @@ public record InstanceConfig(
             "F01",
             null,
             1.0,
+            false,
             0.0, 0.0, 1.0
         );
     }
@@ -64,6 +66,7 @@ public record InstanceConfig(
             d.currentExpression(),
             d.voicePack(),
             d.volume(),
+            d.muted(),
             d.layoutOffsetX(), d.layoutOffsetY(), d.layoutScale()
         );
     }

@@ -120,6 +120,9 @@ public class InstanceConfigManager {
             root.add("voice_pack", com.google.gson.JsonNull.INSTANCE);
         }
 
+        root.addProperty("volume", config.volume());
+        root.addProperty("muted", config.muted());
+
         return root;
     }
 
@@ -166,6 +169,7 @@ public class InstanceConfigManager {
             dragMode, idleInterval, targetFps,
             autoStart, currentExpression, voicePack,
             getDouble(root, "volume", 1.0),
+            getBoolean(root, "muted", false),
             layoutOffsetX, layoutOffsetY, layoutScale
         );
     }

@@ -120,6 +120,7 @@ public class PanelStateManager {
                         getString(obj, "current_expression", "F01"),
                         null,
                         1.0,
+                        false,
                         0.0, 0.0, 1.0
                     );
                     instanceConfigManager.save(instConfig);

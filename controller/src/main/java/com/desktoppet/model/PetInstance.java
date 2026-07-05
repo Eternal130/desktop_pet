@@ -36,6 +36,7 @@ public class PetInstance {
     private final DoubleProperty modelScale;
     private final StringProperty voicePack;
     private final DoubleProperty volume;
+    private final BooleanProperty muted;
     private final DoubleProperty layoutOffsetX;
     private final DoubleProperty layoutOffsetY;
     private final DoubleProperty layoutScale;
@@ -64,6 +65,7 @@ public class PetInstance {
         this.modelScale = new SimpleDoubleProperty(1.0);
         this.voicePack = new SimpleStringProperty(null);
         this.volume = new SimpleDoubleProperty(1.0);
+        this.muted = new SimpleBooleanProperty(false);
         this.layoutOffsetX = new SimpleDoubleProperty(0.0);
         this.layoutOffsetY = new SimpleDoubleProperty(0.0);
         this.layoutScale = new SimpleDoubleProperty(1.0);
@@ -95,6 +97,7 @@ public class PetInstance {
         instance.setModelScale(config.modelScale());
         instance.setVoicePack(config.voicePack());
         instance.setVolume(config.volume());
+        instance.setMuted(config.muted());
         instance.setLayoutOffsetX(config.layoutOffsetX());
         instance.setLayoutOffsetY(config.layoutOffsetY());
         instance.setLayoutScale(config.layoutScale());
@@ -113,6 +116,7 @@ public class PetInstance {
                 isAutoStart(), getCurrentExpression(),
                 getVoicePack(),
                 getVolume(),
+                isMuted(),
                 getLayoutOffsetX(), getLayoutOffsetY(), getLayoutScale()
         );
     }
@@ -185,6 +189,10 @@ public class PetInstance {
     public double getVolume() { return volume.get(); }
     public void setVolume(double v) { volume.set(v); }
     public DoubleProperty volumeProperty() { return volume; }
+
+    public boolean isMuted() { return muted.get(); }
+    public void setMuted(boolean v) { muted.set(v); }
+    public BooleanProperty mutedProperty() { return muted; }
 
 
     public String getDragMode() { return dragMode.get(); }

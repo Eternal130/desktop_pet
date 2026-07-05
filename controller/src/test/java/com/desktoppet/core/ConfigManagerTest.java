@@ -33,6 +33,7 @@ class ConfigManagerTest {
             "F02",
             "voice-pack-1",
             1.0,
+            false,
             0.0, 0.0, 1.0
         );
 
@@ -67,10 +68,10 @@ class ConfigManagerTest {
     void loadAll_mixedExistence(@TempDir Path tempDir) {
         InstanceConfigManager manager = new InstanceConfigManager(tempDir);
         InstanceConfig config1 = new InstanceConfig(
-            "id-1", "Instance 1", "", "opengl", "", 1.0, 0, 0, 400, 500, 1.0, "direct", 10, 0, false, "F01", null, 1.0, 0.0, 0.0, 1.0
+            "id-1", "Instance 1", "", "opengl", "", 1.0, 0, 0, 400, 500, 1.0, "direct", 10, 0, false, "F01", null, 1.0, false, 0.0, 0.0, 1.0
         );
         InstanceConfig config2 = new InstanceConfig(
-            "id-2", "Instance 2", "", "opengl", "", 1.0, 0, 0, 400, 500, 1.0, "direct", 10, 0, false, "F01", null, 1.0, 0.0, 0.0, 1.0
+            "id-2", "Instance 2", "", "opengl", "", 1.0, 0, 0, 400, 500, 1.0, "direct", 10, 0, false, "F01", null, 1.0, false, 0.0, 0.0, 1.0
         );
         manager.save(config1);
         manager.save(config2);
@@ -86,7 +87,7 @@ class ConfigManagerTest {
     void delete_removesFile(@TempDir Path tempDir) {
         InstanceConfigManager manager = new InstanceConfigManager(tempDir);
         InstanceConfig config = new InstanceConfig(
-            "delete-test", "Test", "", "opengl", "", 1.0, 0, 0, 400, 500, 1.0, "direct", 10, 0, false, "F01", null, 1.0, 0.0, 0.0, 1.0
+            "delete-test", "Test", "", "opengl", "", 1.0, 0, 0, 400, 500, 1.0, "direct", 10, 0, false, "F01", null, 1.0, false, 0.0, 0.0, 1.0
         );
         manager.save(config);
         Path configPath = manager.getConfigPath("delete-test");
@@ -101,12 +102,41 @@ class ConfigManagerTest {
     void save_createsDirectories(@TempDir Path tempDir) {
         InstanceConfigManager manager = new InstanceConfigManager(tempDir.resolve("nested/deep/path"));
         InstanceConfig config = new InstanceConfig(
-            "nested-test", "Test", "", "opengl", "", 1.0, 0, 0, 400, 500, 1.0, "direct", 10, 0, false, "F01", null, 1.0, 0.0, 0.0, 1.0
+            "nested-test", "Test", "", "opengl", "", 1.0, 0, 0, 400, 500, 1.0, "direct", 10, 0, false, "F01", null, 1.0, false, 0.0, 0.0, 1.0
         );
 
         manager.save(config);
 
         Path configPath = manager.getConfigPath("nested-test");
         assertTrue(Files.exists(configPath));
+    }
+
+    @Test
+    void muted_persistsThroughRoundTrip(@TempDir Path tempDir) {
+        InstanceConfigManager manager = new InstanceConfigManager(tempDir);
+        InstanceConfig input = new InstanceConfig(
+            "muted-test-id",
+            "Muted Instance",
+            "/path/to/renderer",
+            "opengl",
+            "TestModel",
+            1.0,
+            100, 200, 800, 600,
+            0.85,
+            "physics",
+            15,
+            60,
+            true,
+            "F02",
+            "voice-pack-1",
+            1.0,
+            true,
+            0.0, 0.0, 1.0
+        );
+
+        manager.save(input);
+        InstanceConfig loaded = manager.load("muted-test-id");
+
+        assertTrue(loaded.muted());
     }
 }

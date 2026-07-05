@@ -1,5 +1,0 @@
-=== WebSocket Integration Smoke Test ===
-Renderer: /opt/desktop_pet/renderer/tests/integration/../../build/bin/desktop-pet-renderer/desktop-pet-renderer
-SKIP: websocat not found. Install with: cargo install websocat
-      or: apt install websocat
-SMOKE_TEST_RESULT: SKIP (websocat not available)

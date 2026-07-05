@@ -26,6 +26,7 @@
 #include "LAppPal.hpp"
 #include "LAppTextureManager.hpp"
 #include "LAppDelegate.hpp"
+#include "LAppLive2DManager.hpp"
 #include "network/EventEmitter.hpp"
 
 using namespace Live2D::Cubism::Framework;
@@ -419,16 +420,40 @@ void LAppModel::Update()
     // リップシンクの設定
     if (_lipSync)
     {
-        // リアルタイムでリップシンクを行う場合、システムから音量を取得して0〜1の範囲で値を入力します。
         csmFloat32 value = 0.0f;
 
-        // 状態更新/RMS値取得
-        _wavFileHandler.Update(deltaTimeSeconds);
-        value = _wavFileHandler.GetRms();
-
-        for (csmUint32 i = 0; i < _lipSyncIds.GetSize(); ++i)
+        if (_lipSyncDataActive && _lipSyncData.GetSize() > 0)
         {
-            _model->AddParameterValue(_lipSyncIds[i], value, 0.8f);
+            _lipSyncDataElapsed += deltaTimeSeconds;
+            csmFloat32 t = _lipSyncDataElapsed;
+            if (t <= _lipSyncData[0].time) {
+                value = _lipSyncData[0].value;
+            } else if (t >= _lipSyncData[_lipSyncData.GetSize() - 1].time) {
+                value = _lipSyncData[_lipSyncData.GetSize() - 1].value;
+            } else {
+                for (csmUint32 i = 1; i < _lipSyncData.GetSize(); ++i) {
+                    if (t < _lipSyncData[i].time) {
+                        csmFloat32 t0 = _lipSyncData[i - 1].time;
+                        csmFloat32 t1 = _lipSyncData[i].time;
+                        csmFloat32 alpha = (t1 - t0 > 0.0f) ? (t - t0) / (t1 - t0) : 0.0f;
+                        value = _lipSyncData[i - 1].value + (_lipSyncData[i].value - _lipSyncData[i - 1].value) * alpha;
+                        break;
+                    }
+                }
+            }
+            for (csmUint32 i = 0; i < _lipSyncIds.GetSize(); ++i)
+            {
+                _model->SetParameterValue(_lipSyncIds[i], value);
+            }
+        }
+        else
+        {
+            _wavFileHandler.Update(deltaTimeSeconds);
+            value = _wavFileHandler.GetRms();
+            for (csmUint32 i = 0; i < _lipSyncIds.GetSize(); ++i)
+            {
+                _model->AddParameterValue(_lipSyncIds[i], value, 0.8f);
+            }
         }
     }
 
@@ -762,6 +787,11 @@ static void OnExtMotionFinishedStatic(Csm::ACubismMotion* motion) {
         if (ctx->emitter) {
             ctx->emitter->emit("motion_finished", {{"motion_path", ctx->filePath}});
         }
+        LAppLive2DManager* mgr = LAppLive2DManager::GetInstance();
+        if (mgr && mgr->GetModelNum() > 0) {
+            LAppModel* mdl = mgr->GetModel(0);
+            if (mdl) mdl->StopLipSyncData();
+        }
         delete ctx;
         motion->SetFinishedMotionCustomData(nullptr);
     }
@@ -815,4 +845,72 @@ bool LAppModel::StartMotionFromFile(const std::string& filePath, int priority,
 
     _motionManager->StartMotionPriority(motion, true, priority);
     return true;
+}
+
+void LAppModel::StartLipSyncFromFile(const std::string& path) {
+    _lipSyncData.Clear();
+    _lipSyncDataElapsed = 0.0f;
+    _lipSyncDataActive = false;
+
+    csmByte* buffer;
+    csmSizeInt size;
+    buffer = CreateBuffer(path.c_str(), &size);
+    if (!buffer || size == 0) {
+        LAppPal::PrintLogLn("[LipSync] Failed to open: %s", path.c_str());
+        if (buffer) DeleteBuffer(buffer, path.c_str());
+        return;
+    }
+
+    std::string content(reinterpret_cast<const char*>(buffer), size);
+    DeleteBuffer(buffer, path.c_str());
+
+    size_t pos = 0;
+    while (pos < content.size()) {
+        size_t lineEnd = content.find('\n', pos);
+        if (lineEnd == std::string::npos) lineEnd = content.size();
+        std::string line = content.substr(pos, lineEnd - pos);
+        pos = lineEnd + 1;
+
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.empty()) continue;
+
+        size_t sep = line.find('\t');
+        if (sep == std::string::npos) {
+            sep = line.find(' ');
+            if (sep == std::string::npos) continue;
+        }
+
+        float time = 0.0f;
+        try { time = std::stof(line.substr(0, sep)); } catch (...) { continue; }
+
+        char letter = (sep + 1 < line.size()) ? line[sep + 1] : 'X';
+        float value = 0.0f;
+        switch (letter) {
+            case 'A': value = 1.0f; break;
+            case 'B': value = 0.8f; break;
+            case 'C': value = 0.6f; break;
+            case 'D': value = 0.45f; break;
+            case 'E': value = 0.3f; break;
+            case 'F': value = 0.2f; break;
+            case 'G': value = 0.1f; break;
+            case 'H': value = 0.05f; break;
+            default: value = 0.0f; break;
+        }
+
+        LipSyncDataPoint pt;
+        pt.time = time;
+        pt.value = value;
+        _lipSyncData.PushBack(pt);
+    }
+
+    _lipSyncDataActive = _lipSyncData.GetSize() > 0;
+    if (_lipSyncDataActive) {
+        LAppPal::PrintLogLn("[LipSync] Loaded %d data points", _lipSyncData.GetSize());
+    }
+}
+
+void LAppModel::StopLipSyncData() {
+    _lipSyncData.Clear();
+    _lipSyncDataActive = false;
+    _lipSyncDataElapsed = 0.0f;
 }

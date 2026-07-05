@@ -223,6 +223,20 @@ private:
 
     LAppWavFileHandler_Common _wavFileHandler; ///< wavファイルハンドラ
 
+    struct LipSyncDataPoint {
+        Csm::csmFloat32 time;
+        Csm::csmFloat32 value;
+    };
+    Csm::csmVector<LipSyncDataPoint> _lipSyncData;
+    Csm::csmFloat32 _lipSyncDataElapsed = 0.0f;
+    bool _lipSyncDataActive = false;
+
+public:
+    void StartLipSyncFromFile(const std::string& path);
+    void StopLipSyncData();
+
+private:
+
     float _userOffsetX = 0.0f;
     float _userOffsetY = 0.0f;
     float _userScale   = 1.0f;

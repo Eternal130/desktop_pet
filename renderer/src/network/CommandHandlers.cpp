@@ -153,6 +153,11 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             }
         }
 
+        std::string lipSyncPath = cmd.payload.value("lip_sync_path", "");
+        if (!lipSyncPath.empty() && LAppPal::FileExists(lipSyncPath)) {
+            model->StartLipSyncFromFile(lipSyncPath);
+        }
+
         sendResponse(createResponse(cmd.id, "play_motion_ext", true));
     });
 

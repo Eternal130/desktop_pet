@@ -185,7 +185,8 @@
                 </configuration>
             </plugin>
 
-            <!-- Protobuf Maven Plugin -->
+            <!-- Protobuf Maven Plugin — disabled: proto classes pre-generated into src/main/java/com/desktoppet/bundle/ (plugin is flaky on Windows, silently produces 0 files) -->
+            <!--
             <plugin>
                 <groupId>org.xolstice.maven.plugins</groupId>
                 <artifactId>protobuf-maven-plugin</artifactId>
@@ -200,6 +201,7 @@
                     </execution>
                 </executions>
             </plugin>
+            -->
         </plugins>
     </build>
 </project>

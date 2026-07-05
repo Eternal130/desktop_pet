@@ -17,7 +17,7 @@
    │      ├─> CubismFramework::Initialize（初始化 Framework 内部状态）
    │      └─> 记录 SDK 版本（csmGetVersion）
    │
-   ├─> 4. 创建透明窗口 (X11)
+   ├─> 4. 创建透明窗口 (X11/Win32，由 WindowManager 抽象)
    │
    ├─> 5. 加载硬编码模型路径
    │      │
@@ -26,6 +26,8 @@
    │
    └─> 6. 进入主循环（渲染 + 交互 + 闲时定时器）
 ```
+
+> **平台支持**：原始 MVP 面向 Ubuntu 22.04 / X11，当前已支持 Windows（MinGW，win32）。窗口创建、透明无边框置顶等平台相关逻辑由 `renderer/src/platform/WindowManager.cpp` 抽象，X11 与 Win32 实现对上层主流程透明。
 
 ---
 
@@ -92,6 +94,8 @@ Phase 2 引入多实例管理后，配置采用分层结构：
         ├─ 独立 WebSocket 连接
         ├─ 独立 Scheduler（闲时动作）
         └─ 独立语音包挂载（MountedBehaviorEngine）
+
+> **渲染器选择与 graphicsBackend**：每个实例启动渲染器进程时，`ProcessManager` 经由 `MainWindowController.resolveRendererPath(backend)` 依据实例配置的 `graphics_backend`（`instances/{uuid}.json`，取值 `opengl` / `vulkan`）解析对应的渲染器可执行文件路径；若实例未指定则回退到全局 `config.json` 的 `system.default_graphics_backend`。OpenGL 与 Vulkan 为编译期切换（`-DUSE_VULKAN=ON`），无运行时切换。
 
 配置文件结构：
   ~/.config/desktop-pet/

@@ -151,7 +151,7 @@
 |:---|:---|:---:|:---|:---|
 | `scale` | float | ✓ | `1.0` | 缩放比例 |
 
-> ⚠️ **当前状态**：该指令已注册但**未完整实现**，收到后仅记录日志，不产生实际效果。
+> ⚠️ **当前状态：stub**。该指令已在 `CommandHandlers.cpp` 注册但**未实际实现缩放**，收到后仅调用 `LAppPal::PrintLogLn` 记录日志（输出 `"set_scale: <value> (not fully implemented)"`），不产生实际效果。模型缩放请改用 `set_layout`（通过 `scale` 字段调用 `LAppModel::SetUserLayout`）。
 
 ---
 
@@ -200,14 +200,97 @@
 
 ---
 
-## 10. Phase 3 指令（待实现）
+## 10. Phase 3 指令（✅ 已实现）
 
-以下指令已在协议文档中定义，但尚未实现。
+Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册实现：
 
-| action | payload | 需要回执 | 说明 |
-|:---|:---|:---:|:---|
-| `set_audio_mapping` | `{ mappings: [{ motion_group, audio_path }] }` | **是** | 下发音频映射配置 |
-| `set_volume` | `{ volume: 0.0-1.0 }` | 否 | 设置音量 |
-| `set_mute` | `{ muted: bool }` | 否 | 静音/取消静音 |
-| `play_audio` | `{ audio_path }` | 否 | 播放独立音频 |
-| `stop_audio` | `{}` | 否 | 停止音频 |
+- **Phase 3a**（外置语音包挂载）：`play_motion_ext` 已实现，支持从外部绝对路径加载 `.motion3.json` 动作并可选附带音频。详见 [外置语音包挂载](../system/voice-pack-mounting.md)。
+- **Phase 3b**（音频播放）：`play_audio`、`stop_audio`、`set_volume` 已实现，接入 `AudioManager`（miniaudio + libvorbis，OGG 播放）。音频播放为**即发即忘**模式，无播放完成事件上报。
+
+> **未实现的早期设计**：早期文档中设计的 `set_audio_mapping`、`set_mute` 两条指令当前**未注册**。其中 `set_mute` 的功能已合并进 `set_volume`（通过 `muted` 字段实现）；`set_audio_mapping` 属于控制器侧映射管理概念（`AudioMappingManager`），渲染器侧不需要。
+
+### 10.1 `play_motion_ext` — 播放外部动作文件（Phase 3a ✅ 已实现）
+
+从外部绝对路径加载并播放 `.motion3.json` 动作文件，支持自定义优先级与淡入淡出，可选附带音频播放。
+
+**回执**：✓ 需要 Response
+
+**Payload**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|:---|:---|:---:|:---|:---|
+| `motion_path` | string | ✓ | — | 动作文件绝对路径（`.motion3.json`）。缺失返回 `3001`，文件不存在返回 `3002` |
+| `priority` | int | 否 | `2` | 动作优先级（同 [play_motion 优先级常量](#2-play_motion--播放动作)） |
+| `fade_in` | float | 否 | `1.0` | 淡入时长（秒） |
+| `fade_out` | float | 否 | `1.0` | 淡出时长（秒） |
+| `audio_path` | string | 否 | `""` | 附带音频文件绝对路径。若 `AudioManager` 已初始化且文件存在则播放（会先停止当前音频）；引擎未初始化或文件不存在时仅记录日志，不报错 |
+
+**渲染器处理**：
+1. 校验 `motion_path` 非空，否则返回 `3001`
+2. 校验文件存在，否则返回 `3002`
+3. 校验已加载模型，否则返回 `2001`
+4. 加载并播放动作；若被优先级守卫拒绝或加载失败，返回 `3003`
+5. 若附带 `audio_path` 且 `AudioManager` 已初始化：停止当前音频 → 播放指定音频（文件不存在则仅记录日志）
+6. 返回 Response（`success: true`）
+
+**事件**：动作开始时不发送 `motion_started`；动作播放完成时发送 `motion_finished` 事件，**payload 与 `play_motion` 不同**——使用 `{ "motion_path": "<原路径>" }` 而非 `{ "group", "index" }`。详见 [Events §10](./events.md#10-phase-3-事件)。
+
+---
+
+### 10.2 `play_audio` — 播放音频（Phase 3b ✅ 已实现）
+
+播放独立音频文件（OGG），接入 `AudioManager`（miniaudio + libvorbis）。
+
+**回执**：✓ 需要 Response
+
+**Payload**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|:---|:---|:---:|:---|:---|
+| `audio_path` | string | ✓ | — | 音频文件绝对路径。缺失返回 `7001`，文件不存在返回 `7003` |
+| `volume` | float | 否 | `1.0` | 本次播放音量（`0.0`-`1.0`） |
+
+**错误码**：
+
+| error_code | 触发场景 | error_message |
+|:---:|:---|:---|
+| `7001` | `audio_path` 为空 | `"audio_path is required"` |
+| `7002` | `AudioManager` 未初始化 | `"Audio engine not initialized"` |
+| `7003` | 音频文件不存在 | `"audio file not found: <path>"` |
+
+> **即发即忘**：音频播放完成不上报事件（无 `audio_started`/`audio_ended` 事件，见 [Events §10](./events.md#10-phase-3-事件)）。
+
+---
+
+### 10.3 `stop_audio` — 停止音频（Phase 3b ✅ 已实现）
+
+停止所有正在播放的音频（调用 `AudioManager::StopAll()`）。
+
+**回执**：✓ 需要 Response
+
+**Payload**：空对象 `{}`
+
+> 无论 `AudioManager` 是否初始化，均返回 `success: true`（未初始化时静默跳过）。
+
+---
+
+### 10.4 `set_volume` — 设置音量/静音（Phase 3b ✅ 已实现）
+
+设置全局音量和/或静音状态。早期设计的 `set_mute` 指令功能已合并至此。
+
+**回执**：✓ 需要 Response
+
+**Payload**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|:---|:---|:---:|:---|:---|
+| `volume` | float | 否 | `1.0` | 播放音量（`0.0`-`1.0`）。字段存在时调用 `AudioManager::SetVolume` |
+| `muted` | bool | 否 | `false` | 是否静音。字段存在时调用 `AudioManager::SetMuted` |
+
+**错误码**：
+
+| error_code | 触发场景 | error_message |
+|:---:|:---|:---|
+| `7002` | `AudioManager` 未初始化 | `"Audio engine not initialized"` |
+
+> 两个字段均为可选，控制面板按需传入；字段不存在时对应属性保持不变。

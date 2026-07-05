@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-04-01
-**Commit:** cec584e
+**Generated:** 2026-07-05
+**Commit:** 12cef2d
 **Branch:** refactor/decouple-opengl-renderer
 
 ## OVERVIEW
@@ -48,8 +48,10 @@ desktop_pet/
 | `MessageDispatcher` | Java | `controller/.../network/MessageDispatcher.java` | Routes WS messages by type+action, CompletableFuture responses |
 | `MainWindowController` | Java | `controller/.../ui/MainWindowController.java` | Tab container, wires AppOrchestrator |
 | `ProcessManager` | Java | `controller/.../util/ProcessManager.java` | Renderer process lifecycle (start/stop/restart) |
+| `AutoLaunchManager` | Java | `controller/.../util/AutoLaunchManager.java` | OS-specific auto-launch (Windows registry / Linux .desktop) |
 | `LAppDelegate` | C++ | `renderer/src/LAppDelegate.hpp` | Engine singleton: lifecycle, main loop, window |
 | `LAppLive2DManager` | C++ | `renderer/src/LAppLive2DManager.hpp` | Model load/switch/release |
+| `AudioManager` | C++ | `renderer/src/AudioManager.hpp` | miniaudio + libvorbis OGG playback (Phase 3b renderer side) |
 | `WebSocketClient` | C++ | `renderer/src/network/WebSocketClient.hpp` | IXWebSocket client wrapper |
 | `MessageHandler` | C++ | `renderer/src/network/MessageHandler.hpp` | Message routing by action |
 
@@ -123,6 +125,8 @@ cmake --build build/renderer_vulkan --config Release -j
 - `third_party/CubismSdkForNative/` is NOT a git submodule — manually placed
 - `renderer/third_party/freetype-gl/` IS a git submodule
 - `set_scale` command is stubbed (logs only, no actual scale change)
-- VulkanBackend.cpp has 10 Phase 2.x TODO stubs — Vulkan backend is incomplete
+- VulkanBackend.cpp: **Fully implemented** (Instance → Device → Swapchain → Render → Present, 979 lines, Phase 2.1–2.6 complete). Compile-time switch via `-DUSE_VULKAN=ON`; no runtime switching. See `renderer/AGENTS.md`.
+- AudioManager.cpp/hpp: Implemented (miniaudio + libvorbis, OGG playback). `play_audio`/`stop_audio`/`set_volume` commands wired (error codes 7001/7002/7003).
+- Dual platform: Ubuntu/X11 (original MVP) + Windows/MinGW (current). `build.py` builds both OpenGL and Vulkan variants.
 - Build artifacts: `build/bin/desktop-pet-renderer.exe`, `build/bin/desktop-pet-controller.jar`
 - Renderer CLI args: `--port`, `--instance-id`, `--model`, `--x`, `--y`, `--width`, `--height`

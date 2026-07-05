@@ -4,7 +4,37 @@
 >
 > **目标**：将 `renderer/src/` 中硬编码的 OpenGL 依赖抽取为可替换的渲染后端接口，使项目能够在 OpenGL 和 Vulkan 之间切换，为后续 Vulkan 集成铺平道路。
 >
+> **实现状态**：✅ 本方案已全部落地（Phase 2.1-2.6）。分支 `refactor/decouple-opengl-renderer` 已合并。详见 `renderer/src/graphics/`（`IGraphicsBackend.hpp` + `OpenGLBackend.cpp` + `VulkanBackend.cpp`，979 行完整 Instance→Device→Swapchain→Render→Present 流水线）与 `renderer/src/platform/WindowManager.cpp`。
+>
 > **相关文档**：[Cubism SDK 集成](./cubism-sdk.md) | [渲染引擎设计](./README.md)
+
+---
+
+## 〇、实施完成情况速览
+
+> 下表对照本文档「四、分阶段实施方案」与「五、实施优先级」，标注各 Phase 在当前代码库的落地状态。正文设计方案为历史设计记录，保持原样不动。
+
+| Phase | 内容 | 实施状态 |
+|:---|:---|:---:|
+| Phase 1.3 | 抽取 `WindowManager`（纯提取，零风险） | ✅ 已完成 |
+| Phase 1.4 | 重构 `LAppTextureManager`（接口变更） | ✅ 已完成 |
+| Phase 1.2 | 实现 `OpenGLBackend` + `IGraphicsBackend` 接口 | ✅ 已完成 |
+| Phase 1.1 | 精简 `LAppDelegate`（持有 `WindowManager*` + `IGraphicsBackend*`） | ✅ 已完成 |
+| Phase 1.5 | `LAppModel` 条件编译（`CUBISM_RENDERER_TYPE` 宏） | ✅ 已完成 |
+| Phase 1 清理 | 去无用 GL/GLFW include | ✅ 已完成 |
+| Phase 2.1 | Vulkan 核心基础设施（VulkanManager + SwapchainManager 合并入 `VulkanBackend`） | ✅ 已完成 |
+| Phase 2.2 | `CubismRenderer_Vulkan` 静态初始化（`InitializeConstantSettings`） | ✅ 已完成 |
+| Phase 2.3 | Vulkan 纹理管线（`CreateTextureFromPngFile` 重载 + `CubismImageVulkan`） | ✅ 已完成 |
+| Phase 2.4 | ~~Vulkan 精灵管线~~（跳过，本项目无 Demo UI） | ⏭️ 按计划跳过 |
+| Phase 2.5 | Vulkan 渲染循环集成（`LAppView`/`LAppModel`/`LAppLive2DManager`） | ✅ 已完成 |
+| Phase 2.6 | 像素回读（点击穿透，`vkCmdCopyImageToBuffer`） | ✅ 已完成 |
+| Phase 2.7 | Swapchain 重建与窗口管理适配 | ✅ 已完成 |
+| Phase 3 | CMake 构建系统改造（`-DUSE_VULKAN=ON` 条件编译） | ✅ 已完成 |
+
+> **与原方案的实现偏差**（均已在正文相关位置标注，此处汇总）：
+> - **动态渲染**：实际使用 `vkCmdBeginRendering` 动态渲染，无 `VkRenderPass` / `VkFramebuffer`（原方案 2.2 节末已修正）。
+> - **Vulkan 纹理路径**：`VulkanBackend::CreateTexture` 返回 0 / `DeleteTexture` 空实现是**有意设计**——Vulkan 纹理由 `LAppTextureManager` 的 `CreateTextureFromPngFile(VkFormat,...)` 重载直接生成 `CubismImageVulkan`，不经接口。详见 [渲染引擎设计](./README.md) 的「1.3 渲染后端抽象层」小节。
+> - **编译时切换**：确认无运行时切换；`USE_VULKAN` CMake 选项 + `CUBISM_RENDERER_TYPE` 宏控制 CubismRenderer 子类选择。
 
 ---
 

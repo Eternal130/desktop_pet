@@ -27,13 +27,15 @@
 
 ---
 
-## 三、音频相关（3000-3099）— Phase 3
+## 三、外部动作相关（3000-3099）— Phase 3a（`play_motion_ext`）
 
-| 错误码 | 触发场景 |
-|:---:|:---|
-| 3001 | 音频文件不存在 |
-| 3002 | 音频格式不支持 |
-| 3003 | 音频播放器初始化失败 |
+> **段位复用说明**：早期文档将 3000 段规划为音频错误码。实现 Phase 3a/3b 时，3000 段被分配给外部动作指令 `play_motion_ext`，音频模块改用 [7000 段](#七音频相关7000-7099phase-3b) 以避免段位冲突。以下错误码均从 `CommandHandlers.cpp` 的 `play_motion_ext` handler 核实。
+
+| 错误码 | 触发场景 | 伴随消息 |
+|:---:|:---|:---|
+| 3001 | `play_motion_ext` 时 `motion_path` 为空 | `"motion_path is required"` |
+| 3002 | `play_motion_ext` 时动作文件不存在 | `"motion file not found: <path>"` |
+| 3003 | 动作被优先级守卫拒绝或加载失败 | `"Motion rejected by priority guard or failed to load"` |
 
 ---
 
@@ -67,3 +69,17 @@
 | 6002 | 消息序列化失败（保留） |
 
 > 该段为预留段，当前未启用。
+
+---
+
+## 七、音频相关（7000-7099）— Phase 3b
+
+> 以下错误码均从 `CommandHandlers.cpp` 的 `play_audio` / `stop_audio` / `set_volume` handler 核实。音频模块基于 `AudioManager`（miniaudio + libvorbis）。相关指令详见 [Commands §10.2–10.4](./commands.md#102-play_audio--播放音频phase-3b-已实现)。
+
+| 错误码 | 触发场景 | 伴随消息 |
+|:---:|:---|:---|
+| 7001 | `play_audio` 时 `audio_path` 为空 | `"audio_path is required"` |
+| 7002 | `play_audio` 或 `set_volume` 时 `AudioManager` 未初始化 | `"Audio engine not initialized"` |
+| 7003 | `play_audio` 时音频文件不存在 | `"audio file not found: <path>"` |
+
+> **即发即忘模式**：Phase 3b 音频播放不上报完成事件，控制面板无法收到播放结束通知（无错误码也无事件）。`stop_audio` 无论引擎状态如何均返回 `success: true`。

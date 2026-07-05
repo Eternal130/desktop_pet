@@ -7,27 +7,27 @@
 
 ## 一、项目阶段与当前进度
 
-本项目分为 4 个阶段，**MVP、Phase 1、Phase 2 已完成，Phase 3a 已部分完成**：
+本项目分为 4 个阶段，**MVP、Phase 1、Phase 2、Phase 2.x（Vulkan 渲染后端）已完成，Phase 3a 已完成，Phase 3b 渲染器侧已完成**：
 
-| 功能 | MVP | Phase 1 | Phase 2 | Phase 3 |
-|:---|:---:|:---:|:---:|:---:|
-| Live2D 模型加载与渲染 | ✅ 已完成 | — | ✅ 控制面板动态切换 | — |
-| 动画播放（动作/表情/眨眼/呼吸/物理演算） | ✅ 已完成 | — | — | — |
-| 透明无边框置顶窗口 | ✅ 已完成 | — | — | — |
-| 点击检测（HitArea → 即时动画反馈） | ✅ 已完成 | — | ✅ 事件上报到控制面板 | — |
-| 窗口拖拽移动 | ✅ 已完成 | — | ✅ 位置上报与持久化 | — |
-| 自适应帧率 | ✅ 已完成 | — | ✅ 可选固定帧率 | — |
-| WebSocket 通信 | ✗ | ✅ 已完成（端口 9000） | — | — |
-| Java 控制面板 | ✗ | — | ✅ 已完成（Tab 式 UI + 多实例） | — |
-| 多实例管理 | ✗ | — | ✅ 已完成 | — |
-| 外置语音包挂载（Java 侧） | ✗ | — | — | ✅ Phase 3a 已完成（扫描/解析/挂载/行为引擎） |
-| 音频播放 | ✗ | — | — | 待开发（Phase 3b，OpenAL） |
-| 口型同步 + 文案气泡 | ✗ | — | — | 待开发（Phase 3c） |
-| 闲时随机动作 | ✅ 已完成（渲染器内置） | — | ✅ 由控制面板 Scheduler 调度 | — |
+| 功能 | MVP | Phase 1 | Phase 2 | Phase 2.x | Phase 3 |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| Live2D 模型加载与渲染 | ✅ 已完成 | — | ✅ 控制面板动态切换 | ✅ Vulkan 后端 | — |
+| 动画播放（动作/表情/眨眼/呼吸/物理演算） | ✅ 已完成 | — | — | — | — |
+| 透明无边框置顶窗口 | ✅ 已完成 | — | — | — | — |
+| 点击检测（HitArea → 即时动画反馈） | ✅ 已完成 | — | ✅ 事件上报到控制面板 | — | — |
+| 窗口拖拽移动 | ✅ 已完成 | — | ✅ 位置上报与持久化 | — | — |
+| 自适应帧率 | ✅ 已完成 | — | ✅ 可选固定帧率 | — | — |
+| WebSocket 通信 | ✗ | ✅ 已完成（端口 9000） | — | — | — |
+| Java 控制面板 | ✗ | — | ✅ 已完成（Tab 式 UI + 多实例） | — | — |
+| 多实例管理 | ✗ | — | ✅ 已完成 | — | — |
+| 外置语音包挂载 | ✗ | — | — | — | ✅ Phase 3a 已完成（Java 侧扫描/解析/挂载/行为引擎 + 渲染器 `play_motion_ext`） |
+| 音频播放 | ✗ | — | — | — | ⚠️ 渲染器侧 ✅（`AudioManager`，miniaudio + libvorbis），控制器侧待实现 |
+| 口型同步 + 文案气泡 | ✗ | — | — | — | ❌ 待开发（Phase 3c） |
+| 闲时随机动作 | ✅ 已完成（渲染器内置） | — | ✅ 由控制面板 Scheduler 调度 | — | — |
 
-> **阶段说明**：Phase 1 = WebSocket 通信层，Phase 2 = Java 控制面板，Phase 3 = 音频与语音包模块（细分为 3a 基础挂载、3b 音频播放、3c 口型同步、3d 行为图引擎）。
+> **阶段说明**：Phase 1 = WebSocket 通信层，Phase 2 = Java 控制面板，Phase 2.x = Vulkan 渲染后端解耦（OpenGL/Vulkan 双后端，编译时切换），Phase 3 = 音频与语音包模块（细分为 3a 基础挂载、3b 音频播放、3c 口型同步、3d 行为图引擎）。
 >
-> **当前状态**：MVP、Phase 1、Phase 2 已完成。Phase 2 控制面板已重构为 Tab 式 UI（Dashboard/Settings/Actions/Advanced），支持多宠物实例管理。Phase 3a（语音包挂载 Java 侧）已完成核心实现——语音包扫描（`VoicePackScanner`）、meta.mko 解析（`MetaMkoParser`）、挂载配置持久化（`MountConfigManager`）、运行时行为引擎（`MountedBehaviorEngine`）。Phase 3a 渲染器侧（`play_motion_ext` 指令）及 Phase 3b/3c/3d 待后续实现。
+> **当前状态**：MVP、Phase 1、Phase 2、Phase 2.x（Vulkan 渲染后端）已完成，平台支持已扩展至 Windows（MinGW Makefiles，win32 环境）。Phase 2 控制面板已重构为 Tab 式 UI（Dashboard/Settings/Actions/Advanced），支持多宠物实例管理。Phase 2.x 在渲染引擎中引入 `IGraphicsBackend` 抽象接口，提供 `OpenGLBackend` 与 `VulkanBackend` 双实现，通过编译时开关 `-DUSE_VULKAN=ON` 切换（无运行时切换），`platform/WindowManager.cpp` 被 GL/Vulkan 共享。Phase 3a（语音包挂载）Java 侧与渲染器侧均已实现——Java 侧语音包扫描（`VoicePackScanner`）、meta.mko 解析（`MetaMkoParser`）、挂载配置持久化（`MountConfigManager`）、运行时行为引擎（`MountedBehaviorEngine`），渲染器侧 `play_motion_ext` 指令已注册。Phase 3b 渲染器侧音频播放已实现（`AudioManager`，miniaudio + libvorbis 播放 OGG，`play_audio`/`stop_audio`/`set_volume` 三指令已接入），控制器侧 `AudioMapping` record 仅定义、`AudioMappingManager` 与 UI 待实现。Phase 3c/3d 待后续实现。
 
 ---
 
@@ -107,12 +107,12 @@
 
 | 组件 | 语言 | 版本 | 关键依赖 | 阶段 |
 |:---|:---|:---|:---|:---|
-| 渲染引擎 | C++17 | GCC ≥ 11.4 / CMake ≥ 3.16 | Cubism Native SDK 5-r.5-beta.3.1（兼容 Cubism 5/5.3）、GLFW 3.4、GLEW 2.3.1（均使用 SDK 内置版本） | ✅ MVP |
+| 渲染引擎 | C++17 | GCC ≥ 11.4 / MinGW-w64 (GCC 13+) / CMake ≥ 3.22 | Cubism Native SDK 5-r.5-beta.3.1（兼容 Cubism 5/5.3）、GLFW 3.4、GLEW 2.2.0（OpenGL 后端）、Vulkan SDK（Vulkan 后端） | ✅ MVP + Phase 2.x |
 | 通信模块（渲染引擎端） | C++ | 同上 | IXWebSocket 11.4.6（Client）、nlohmann/json 3.12.0 | ✅ Phase 1 |
 | 控制面板 | Java 21 LTS | OpenJDK 21 / Maven ≥ 3.9 | JavaFX 21 (OpenJFX 21.0.5)、Java-WebSocket 1.6.0（Server）、Gson 2.13.2、SLF4J 2.0.17 + Logback 1.5.32、protobuf-java 4.29.3 | ✅ Phase 2 + Phase 3a |
-| 音频模块 | C++ | 同上 | OpenAL Soft 1.25.1 | Phase 3b 待实现 |
+| 音频模块（渲染器侧） | C++ | 同上 | miniaudio（single-header vendored）、libogg 1.3.5 + libvorbis 1.3.7（CMake FetchContent） | ✅ Phase 3b 渲染器侧已实现，控制器侧待实现 |
 | 通信协议 | — | — | WebSocket（端口 9000）+ JSON Envelope | ✅ Phase 1 |
-| 目标平台（MVP） | — | — | Ubuntu 22.04 LTS (X11)、OpenGL 3.3+ | ✅ MVP |
+| 目标平台 | — | — | Ubuntu 22.04 LTS（X11）+ Windows 10+（Win32 / MinGW）；GPU 支持 OpenGL 3.3+ 或 Vulkan 1.2+（Vulkan 后端） | ✅ MVP + Windows 扩展 |
 
 > 完整版本与选型决策详见 [工程化](./engineering/README.md)。
 
@@ -149,8 +149,8 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 
 - **独立存储**：音频文件存放在独立目录（`audio/`），不嵌入模型目录，降低存储占用
 - **跨模型复用**：多个模型可引用同一音频文件，通过控制面板配置映射关系
-- **渲染器播放**：音画同步要求高，音频由渲染器侧 OpenAL 播放
-- **控制面板管理**：音频文件的导入、映射、音量控制由控制面板 UI 管理
+- **渲染器播放**：音画同步要求高，音频由渲染器侧 `AudioManager`（miniaudio + libvorbis）播放 OGG，已实现 `play_audio`/`stop_audio`/`set_volume` 指令
+- **控制面板管理**：音频文件的导入、映射、音量控制由控制面板 UI 管理（`AudioMappingManager` 与 UI 待实现）
 
 ### 4.5 职责边界（Phase 2+ 完整架构）
 
@@ -180,11 +180,12 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | **点击事件** | 渲染器即时反馈 + 上报 `hit` 事件到控制面板处理业务逻辑 | ✅ 已实现 | Phase 2 |
 | **拖拽行为** | 直接跟随模式，`drag_end` 事件上报窗口位置（window_x, window_y），控制面板持久化 | ✅ 已实现 | Phase 2 |
 | **闲时行为** | 控制面板 Scheduler 定时触发，从闲时动作池随机选择，预留权重打分扩展 | ✅ 已实现 | Phase 2 |
-| **语音包挂载** | 语音包与模型解耦挂载，meta.mko (Protobuf) 解析，Java 侧行为引擎已实现 | ✅ Java 侧已实现 | Phase 3a |
-| **音频播放** | 音频文件独立于模型管理，支持跨模型复用；渲染器播放（OpenAL），控制面板管理映射和音量 | 待实现 | Phase 3b |
-| **口型同步** | lipSync txt 解析 + 定时驱动 `ParamMouthOpenY`，文案气泡 UI | 待实现 | Phase 3c |
+| **语音包挂载** | 语音包与模型解耦挂载，meta.mko (Protobuf) 解析，Java 侧行为引擎 + 渲染器 `play_motion_ext` 均已实现 | ✅ Java 侧 + 渲染器侧均已实现 | Phase 3a |
+| **渲染后端** | OpenGL/Vulkan 双后端，`IGraphicsBackend` 抽象接口（6 方法），`OpenGLBackend` + `VulkanBackend` 双实现，编译时开关 `USE_VULKAN` 切换（无运行时切换） | ✅ 已实现 | Phase 2.x |
+| **音频播放** | 音频文件独立于模型管理，支持跨模型复用；渲染器侧 miniaudio + libvorbis 播放 OGG（`play_audio`/`stop_audio`/`set_volume`），控制面板管理映射和音量 | ⚠️ 渲染器侧 ✅ 已实现，控制器侧（`AudioMappingManager`/UI）待实现 | Phase 3b |
+| **口型同步** | lipSync txt 解析 + 定时驱动 `ParamMouthOpenY`，文案气泡 UI | ❌ 待实现 | Phase 3c |
 | **性能**   | 自适应帧率（15-60fps）或固定帧率（15-120fps 可配），闲时低占用 | ✅ 已实现 | MVP/Phase 2 |
-| **平台**   | Ubuntu 22.04 / X11 | ✅ 已实现 | MVP |
+| **平台**   | Ubuntu 22.04 / X11 + Windows 10+ / Win32（MinGW Makefiles） | ✅ 双平台已实现 | MVP + Windows 扩展 |
 | **容错**   | 崩溃自动重启（指数退避，最大 5 次），断连缓存关键指令 | ✅ 已实现 | Phase 2 |
 | **配置**   | JSON 格式，多文件分层：`config.json`（全局）、`panel.json`（面板）、`instances/*.json`（实例）、`mount.json`（挂载） | ✅ 已实现 | Phase 2/3a |
 | **分发**   | 单一 C++ 可执行文件 | 当前状态 | MVP |
@@ -197,9 +198,10 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 
 | 文档 | 内容 | 实现状态 |
 |:---|:---|:---:|
-| [渲染引擎设计](./renderer/README.md) | C++ 渲染引擎模块详细设计 | ✅ MVP + Phase 1 已实现 |
+| [渲染引擎设计](./renderer/README.md) | C++ 渲染引擎模块详细设计 | ✅ MVP + Phase 1 + Phase 2.x（Vulkan 后端）已实现 |
 | [Cubism SDK 集成](./renderer/cubism-sdk.md) | Cubism SDK 集成架构、关键 API | ✅ MVP 已实现 |
-| [音频播放架构](./renderer/audio.md) | 音频模块架构设计 | Phase 3b 待实现 |
+| [音频播放架构](./renderer/audio.md) | 音频模块架构设计 | ✅ 渲染器侧已实现（miniaudio + libvorbis），控制器侧待实现 |
+| [渲染后端解耦](./renderer/opengl-decoupling.md) | OpenGL/Vulkan 双后端解耦方案与实现（`IGraphicsBackend` 抽象） | ✅ Phase 2.x 已实现 |
 | [性能设计](./renderer/performance.md) | 自适应帧率、资源优化策略 | ✅ MVP 已实现 |
 | [控制面板设计](./controller/README.md) | Java 控制面板模块详细设计、多实例管理、语音包挂载、闲时行为策略 | ✅ Phase 2 + Phase 3a 已实现 |
 | [通信协议](./protocol/README.md) | WebSocket 协议规范、消息格式 | ✅ Phase 1 已实现 |

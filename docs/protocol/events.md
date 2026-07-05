@@ -222,9 +222,16 @@
 
 ---
 
-## 10. Phase 3 事件（待实现）
+## 10. Phase 3 事件
 
-| action | payload | 说明 |
-|:---|:---|:---|
-| `audio_started` | `{ audio_path }` | 音频开始播放 |
-| `audio_ended` | `{ audio_path }` | 音频播放结束 |
+Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit()` 调用点遍布 `LAppDelegate.cpp` / `LAppLive2DManager.cpp` / `LAppModel.cpp` / `CommandHandlers.cpp`，均无音频相关 emit）：
+
+- **Phase 3a**（`play_motion_ext`）：**复用现有的 `motion_finished` 事件**，但 payload 与 `play_motion` 不同——使用 `{ "motion_path": "<动作文件路径>" }` 而非 `{ "group", "index" }`（由 `LAppModel.cpp:763` 的 `OnExtMotionFinishedStatic` 回调发出）。详见 [Commands §10.1](./commands.md#101-play_motion_ext--播放外部动作文件phase-3a-已实现)。
+- **Phase 3b**（音频播放）：采用**即发即忘（fire-and-forget）**模式，`AudioManager` 播放完成不上报事件。早期设计的 `audio_started`/`audio_ended` 事件**未实现**。
+
+| 早期设计 action | 状态 | 说明 |
+|:---|:---:|:---|
+| `audio_started` | ❌ 未实现 | 早期设计草案，Phase 3b 实现时改为即发即忘，不上报 |
+| `audio_ended` | ❌ 未实现 | 同上 |
+
+> **事件总览**：当前渲染器实际发出的事件共 12 个——`ready`、`model_loaded`、`model_load_failed`、`motion_started`、`motion_finished`（两种 payload 变体）、`hit`、`drag_start`、`drag_end`、`layout_changed`、`window_resized`、`layout_state`（`get_layout` 命令的响应事件）、`error`。

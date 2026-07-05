@@ -4,7 +4,7 @@
 
 ---
 
-## 一、渲染引擎目录结构（MVP + Phase 1 已实现）
+## 一、渲染引擎目录结构（MVP + Phase 1 + Phase 2.x + Phase 3b 已实现）
 
 > **代码风格说明**：渲染引擎源码基于 Cubism SDK Samples 的 `LApp*` 命名风格开发，而非文档早期规划的模块化目录结构。这是因为 Cubism SDK 的 Samples/Common 提供了大量基础实现（内存分配器、模型加载、纹理管理、触摸管理等），直接复用 `LApp*` 代码并在其上扩展，比从零搭建模块化架构更高效。
 
@@ -12,7 +12,7 @@
 desktop_pet/
 │
 ├── renderer/                             # C++ 渲染引擎
-│   ├── CMakeLists.txt                    # 渲染引擎 CMake（管理编译目标和依赖）
+│   ├── CMakeLists.txt                    # 渲染引擎 CMake（管理编译目标和依赖，含 USE_VULKAN 开关）
 │   ├── src/
 │   │   ├── main.cpp                      # 入口函数
 │   │   ├── LAppDefine.cpp/.hpp           # 全局常量定义（窗口尺寸、WebSocket 端口、资源路径等）
@@ -20,18 +20,26 @@ desktop_pet/
 │   │   ├── LAppLive2DManager.cpp/.hpp    # Live2D 模型管理器（模型加载/切换/释放、场景管理）
 │   │   ├── LAppModel.cpp/.hpp            # 单个 Live2D 模型封装（继承 CubismUserModel，动作/表情/物理/渲染）
 │   │   ├── LAppView.cpp/.hpp             # 视图层（坐标变换、触摸事件→模型坐标、渲染调度）
-│   │   ├── LAppTextureManager.cpp/.hpp   # 纹理加载与缓存（stb_image 解码 PNG → OpenGL 纹理）
+│   │   ├── LAppTextureManager.cpp/.hpp   # 纹理加载与缓存（stb_image 解码 PNG → 纹理）
 │   │   ├── LAppPal.cpp/.hpp              # 平台抽象层（文件读取、时间获取、日志输出）
+│   │   ├── AudioManager.cpp/.hpp         # 音频播放管理（Phase 3b，miniaudio + libvorbis 播放 OGG）
+│   │   ├── graphics/                     # 渲染后端层（Phase 2.x，OpenGL/Vulkan 双后端解耦）
+│   │   │   ├── IGraphicsBackend.hpp      # 渲染后端抽象接口（6 方法，GL/Vulkan 共享）
+│   │   │   ├── OpenGLBackend.cpp/.hpp    # OpenGL 实现（GLEW，MVP 已有）
+│   │   │   └── VulkanBackend.cpp/.hpp    # Vulkan 实现（979 行，Instance→Device→Swapchain→Render→Present，dynamic rendering + vkCmdCopyImageToBuffer）
+│   │   ├── platform/                     # 平台/窗口层（GL/Vulkan 共享）
+│   │   │   └── WindowManager.cpp/.hpp    # 窗口与上下文管理（GLFW，被双后端共享）
 │   │   └── network/                      # 网络模块（Phase 1 实现）
 │   │       ├── Protocol.cpp/.hpp         # Envelope 协议序列化/反序列化（nlohmann/json）
 │   │       ├── MessageHandler.cpp/.hpp   # 消息路由（按 action 分发 command，过滤 response）
 │   │       ├── WebSocketClient.cpp/.hpp  # IXWebSocket 客户端封装（连接/断连/消息收发）
-│   │       ├── CommandHandlers.cpp/.hpp  # 指令处理器注册（load_model、play_motion 等）
+│   │       ├── CommandHandlers.cpp/.hpp  # 指令处理器注册（load_model、play_motion、play_motion_ext、play_audio、stop_audio、set_volume 等）
 │   │       └── EventEmitter.cpp/.hpp     # 事件上报（hit、drag_start/end、model_loaded 等）
 │   ├── third_party/                      # 渲染引擎额外第三方库
 │   │   ├── nlohmann/                     # nlohmann/json 3.12.0（Header-only）
 │   │   ├── ixwebsocket/                  # IXWebSocket 11.4.6（源码编译）
-│   │   └── googletest/                   # Google Test 1.17.0（源码编译）
+│   │   ├── googletest/                   # Google Test 1.17.0（源码编译）
+│   │   └── miniaudio.h                   # miniaudio single-header（Phase 3b 音频，vendored）
 │   └── tests/                            # C++ 单元测试
 │       ├── placeholder_test.cpp          # 占位测试
 │       ├── ProtocolTest.cpp              # Protocol 序列化/反序列化测试（11 cases）
@@ -122,7 +130,8 @@ controller/                               # Java 控制面板
     │   │       │   ├── VoicePackAction    # 语音包单条动作（motion/audio/lipSync/doc/fade）
     │   │       │   └── VoicePackModule    # 语音包行为模块（key/priority/filePath）
     │   │       └── util/                  # 工具类
-    │   │           └── ProcessManager     # 渲染器进程启动/监控/停止（ProcessBuilder）
+    │   │           ├── ProcessManager     # 渲染器进程启动/监控/停止（ProcessBuilder）
+    │   │           └── AutoLaunchManager  # 开机自启管理（OS 特定：Windows 注册表 / Linux .desktop）
     │   └── resources/
     │       ├── fxml/                      # JavaFX FXML 布局文件
     │       │   ├── main-window.fxml       # 主窗口（Tab 容器）
@@ -164,23 +173,24 @@ controller/                               # Java 控制面板
 
 ---
 
-## 三、完整目录结构总览（Phase 3b/3c 计划扩展）
+## 三、完整目录结构总览（Phase 3b 渲染器侧已完成，控制器侧待实现）
 
-Phase 3a（语音包挂载 Java 侧）已完成。Phase 3b（音频播放）引入后，在现有结构基础上扩展 C++ 渲染器侧：
+Phase 3a（语音包挂载）Java 侧与渲染器侧（`play_motion_ext`）均已完成。Phase 2.x（Vulkan 后端）已完成。Phase 3b 渲染器侧音频播放（`AudioManager`，miniaudio + libvorbis）已实现，控制器侧（`AudioMappingManager`/UI）待实现。
 
 ```plain
 desktop_pet/                              # 项目根目录
 ├── renderer/                             # C++ 渲染引擎（见第一节）
 │   └── src/
 │       ├── ...                           # 现有 LApp* 代码
+│       ├── graphics/                     # 渲染后端层（Phase 2.x 已实现，IGraphicsBackend + OpenGLBackend + VulkanBackend）
+│       ├── platform/                     # 窗口层（WindowManager，GL/Vulkan 共享）
 │       ├── network/                      # 网络模块（已实现）
-│       └── audio/                        # 音频模块（Phase 3b 计划）
-│           ├── AudioManager              # 音频资源管理与缓存
-│           ├── AudioPlayer               # OpenAL 播放器封装（OGG 播放）
-│           ├── AudioSync                 # 动作-音频时间戳对齐
-│           └── AudioMappingCache         # 接收并缓存控制面板下发的音频映射
+│       ├── AudioManager.cpp/.hpp         # 音频播放（Phase 3b 渲染器侧已实现，miniaudio + libvorbis OGG 播放）
+│       └── audio/                        # 口型同步/文案气泡扩展（Phase 3c 计划）
+│           ├── AudioSync                 # 动作-音频时间戳对齐（Phase 3c 计划）
+│           └── AudioMappingCache         # 接收并缓存控制面板下发的音频映射（Phase 3b 控制器侧联动，待实现）
 │
-├── controller/                           # Java 控制面板（见第二节，Phase 2 + 3a 已实现）
+├── controller/                           # Java 控制面板（见第二节，Phase 2 + 3a 已实现，3b 控制器侧待实现）
 │
 ├── third_party/                          # 项目级第三方依赖
 │   └── CubismSdkForNative/              # Cubism Native SDK

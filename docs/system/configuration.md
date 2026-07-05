@@ -22,7 +22,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 
 ## 二、Phase 2：用户配置 (config.json)
 
-> **Phase 2 实现**：引入控制面板后，支持 JSON 配置文件读写和用户界面修改。音频相关配置在 Phase 3 启用。
+> **Phase 2 实现**：引入控制面板后，支持 JSON 配置文件读写和用户界面修改。音频播放由渲染器侧 `AudioManager` 实现（✅ miniaudio + libvorbis，OGG 播放），控制器侧音频映射管理（`audio_mapping.json`、`AudioMappingManager`/UI）待实现。
 
 存储路径：`~/.config/desktop-pet/config.json`
 
@@ -60,9 +60,9 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 | `window.opacity` | float | 1.0 | 窗口透明度 (0.0-1.0) | Phase 2 |
 | `model.current_model_path` | string | 默认模型 | 当前模型路径 | Phase 2 |
 | `model.scale` | float | 1.0 | 模型缩放比例 | Phase 2 |
-| `audio.volume` | float | 0.8 | 音量 (0.0-1.0) | Phase 3 |
-| `audio.muted` | bool | false | 是否静音 | Phase 3 |
-| `audio.audio_dir` | string | "audio/" | 音频文件独立存储目录 | Phase 3 |
+| `audio.volume` | float | 0.8 | 音量 (0.0-1.0) | Phase 3b 渲染器侧 ✅ |
+| `audio.muted` | bool | false | 是否静音 | Phase 3b 渲染器侧 ✅ |
+| `audio.audio_dir` | string | "audio/" | 音频文件独立存储目录 | Phase 3b 控制器侧待实现 |
 | `behavior.drag_mode` | string | "direct" | 拖拽模式："direct" (直接跟随) / "physics" (物理惯性) | Phase 2 |
 | `behavior.idle_interval_seconds` | int | 10 | 闲时动作触发间隔（秒） | Phase 2 |
 | `system.auto_start` | bool | false | 开机自启 | Phase 2 |
@@ -235,9 +235,11 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 
 ---
 
-## 八、Phase 3b：音频映射配置 (audio_mapping.json)（待实现）
+## 八、Phase 3b：音频映射配置 (audio_mapping.json)（⚠️ 控制器侧待实现）
 
 > **Phase 3b 实现**：音频文件与模型文件分离管理，映射关系由控制面板维护。引入语音包挂载后，挂载语音包的模型由 `meta.mko` 自动提供映射，无需此文件。
+>
+> **当前状态**：⚠️ 控制器侧待实现（`AudioMapping` record 仅定义，`AudioMappingManager`/UI 未实现）。渲染器侧 `play_audio` 命令已可用——由 `AudioManager`（miniaudio + libvorbis）提供 OGG 播放能力，错误码 7001/7002/7003 已定义。
 
 存储路径：`~/.config/desktop-pet/audio_mapping.json`
 
@@ -280,7 +282,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 ├── panel.json                   ← 面板配置（窗口位置/主题/实例 ID 列表）     [Phase 2 ✅]
 ├── mount.json                   ← 语音包挂载配置（模型↔语音包关系）          [Phase 3a ✅]
 ├── hit_area_cache.json          ← HitArea 缓存（模型→HitArea 列表）         [Phase 2 ✅]
-├── audio_mapping.json           ← 音频映射（Phase 3b 待实现）
+├── audio_mapping.json           ← 音频映射 [Phase 3b 控制器侧待实现；渲染器侧 play_audio 已接入 AudioManager]
 └── instances/                   ← 实例配置目录                              [Phase 2 ✅]
     ├── {uuid-1}.json            ← 实例 1 的独立配置
     └── {uuid-2}.json            ← 实例 2 的独立配置

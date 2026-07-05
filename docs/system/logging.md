@@ -64,6 +64,13 @@
 
 - 音频播放开始/结束
 - 音频映射加载（接收映射配置）
+- AudioManager 生命周期与播放（`[AudioManager]` 前缀，经 `LAppPal::PrintLogLn` 输出）：
+  - 初始化：`[AudioManager] Audio engine initialized (libvorbis backend)`；失败时 `[AudioManager] Failed to initialize audio engine: <result>`
+  - 播放：`[AudioManager] Playing: <filePath>`
+  - 文件/解码失败：`[AudioManager] Failed to read file` / `Failed to decode` / `Failed to init sound`（含错误码与路径）
+  - 停止：`[AudioManager] All sounds stopped`
+  - 静音切换：`[AudioManager] Muted: true|false`
+  - 关闭：`[AudioManager] Audio engine shut down`
 
 **控制面板（Java）— Phase 2**：
 

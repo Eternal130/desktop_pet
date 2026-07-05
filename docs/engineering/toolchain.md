@@ -9,10 +9,10 @@
 | 项目 | 选型 | 说明 |
 |:---|:---|:---|
 | 语言标准 | **C++17** | 提供 `std::optional`、`std::filesystem`、结构化绑定、`constexpr if` 等现代特性，各主流编译器均已完整支持 |
-| 编译器 | **GCC ≥ 11.4** | Ubuntu 22.04 LTS 默认版本，C++17 完整支持；后期 Windows 版使用 MSVC 2022 (v17.x) |
+| 编译器 | **GCC ≥ 11.4（Linux）/ MinGW-w64 (GCC 13+)（Windows）** | Ubuntu 22.04 LTS 默认版本，C++17 完整支持；Windows 版使用 MinGW-w64（MinGW Makefiles 生成器），**不使用 MSVC**（与 Cubism SDK 预编译库及项目构建脚本 `build.py` 兼容性最佳） |
 | 构建系统 | **CMake ≥ 3.22** | Ubuntu 22.04 LTS 默认版本，支持 CMake Presets、`target_sources` GENEX 等现代特性 |
-| 构建生成器 | **Ninja（推荐）/ Unix Makefiles** | Ninja 增量编译速度显著优于 Make |
-| 包管理 | **源码集成（third_party/）** | Cubism SDK 不支持常规包管理器，为统一管理，全部第三方库采用源码或预编译库形式集成 |
+| 构建生成器 | **Ninja（推荐）/ Unix Makefiles（Linux）；MinGW Makefiles（Windows）** | Ninja 增量编译速度显著优于 Make；Windows 下使用 MinGW Makefiles 与 `build.py` 统一 |
+| 包管理 | **源码集成（third_party/）+ CMake FetchContent** | Cubism SDK 不支持常规包管理器，为统一管理，大部分第三方库采用源码或预编译库形式集成；音频解码库 libogg/libvorbis 通过 CMake FetchContent 拉取 |
 
 **编译选项**：
 
@@ -49,6 +49,22 @@ target_link_libraries(desktop-pet-renderer PRIVATE
 # 单元测试（独立于渲染管线，不链接 GL/GLFW/Framework）
 add_executable(renderer-tests tests/ProtocolTest.cpp tests/MessageHandlerTest.cpp ...)
 target_link_libraries(renderer-tests PRIVATE GTest::gtest_main)
+```
+
+**Vulkan 后端构建（Phase 2.x）**：
+
+渲染引擎支持 OpenGL / Vulkan 双后端，通过编译时开关切换（无运行时切换）。`IGraphicsBackend` 抽象接口提供 6 个方法，`OpenGLBackend` 与 `VulkanBackend` 分别实现，`platform/WindowManager.cpp` 被 GL/Vulkan 共享：
+
+```cmake
+# 启用 Vulkan 后端（默认 OFF，使用 OpenGL）
+cmake -S renderer -B build/renderer_vulkan -G "MinGW Makefiles" \
+    -DUSE_VULKAN=ON -DCMAKE_BUILD_TYPE=Release
+
+# Vulkan 后端需要：
+#   1. Vulkan SDK（系统安装，find_package(Vulkan REQUIRED)）
+#   2. Framework 渲染器类型宏 CUBISM_RENDERER_TYPE 切换为 Vulkan 目标
+# VulkanBackend.cpp 实现 Instance → Device → Swapchain → Render → Present，
+# 使用 dynamic rendering (vkCmdBeginRendering)，像素回读通过 vkCmdCopyImageToBuffer。
 ```
 
 ---
@@ -92,10 +108,11 @@ Maven 配置要点：
 
 ## 三、最低系统要求
 
-| 项目 | MVP 要求 |
-|:---|:---|
-| 操作系统 | Ubuntu 22.04 LTS (x86_64) |
-| 窗口系统 | X11 |
-| GPU | 支持 OpenGL 3.3+ 的显卡及驱动 |
-| 内存 | ≥ 512 MB 可用（应用运行时预期占用 100-200 MB） |
-| 磁盘 | ≥ 200 MB（含内嵌 JRE + 默认模型） |
+| 项目 | MVP 要求 | 当前（含 Windows 扩展） |
+|:---|:---|:---|
+| 操作系统 | Ubuntu 22.04 LTS (x86_64) | Ubuntu 22.04 LTS / Windows 10+ |
+| 窗口系统 | X11 | X11 / Win32 |
+| GPU | 支持 OpenGL 3.3+ 的显卡及驱动 | 支持 OpenGL 3.3+ 或 Vulkan 1.2+（Vulkan 后端）的显卡及驱动 |
+| 内存 | ≥ 512 MB 可用（应用运行时预期占用 100-200 MB） | 同左 |
+| 磁盘 | ≥ 200 MB（含内嵌 JRE + 默认模型） | 同左 |
+| 额外依赖（Vulkan 后端） | — | Vulkan SDK（仅 Vulkan 后端构建时需要） |

@@ -3,7 +3,7 @@
 > **Phase 3 实现**：本功能作为 Phase 3（音频模块）的核心能力，在现有音频架构（参见 [音频播放架构](../renderer/audio.md)）基础上，实现语音包与模型的解耦挂载。
 > 系统设计概述参见 [系统设计](./README.md)，整体架构参见 [架构总览](../README.md)，配置文件参见 [配置文件设计](./configuration.md)。
 >
-> **当前实现状态**：Phase 3a（基础挂载）Java 侧已完成——`VoicePackScanner`、`MetaMkoParser`（Protobuf 解析）、`MountConfigManager`、`MountedBehaviorEngine` 及全部数据模型已实现并通过测试。渲染器侧 `play_motion_ext` 指令待实现。Phase 3b/3c/3d 待后续开发。
+> **当前实现状态**：Phase 3a（基础挂载）Java 侧已完成——`VoicePackScanner`、`MetaMkoParser`（Protobuf 解析）、`MountConfigManager`、`MountedBehaviorEngine` 及全部数据模型已实现并通过测试。渲染器侧 `play_motion_ext` 指令 ✅ 已实现（`CommandHandlers.cpp` 已注册）。Phase 3a 双侧齐备，可联调。Phase 3b 渲染器侧 `AudioManager`（miniaudio + libvorbis，OGG）已实现，`play_audio`/`stop_audio`/`set_volume` 命令已接入（错误码 7001/7002/7003），控制器侧音频映射管理/UI 待实现。Phase 3c/3d 待后续开发。
 
 ---
 
@@ -546,7 +546,7 @@ public record LipSyncFrame(double timestamp, float mouthOpenY) {}
 - Java 端 LipSyncDriver 定时发送 `set_parameter` 驱动口型
 - 比在 Renderer 端解析 lipSync txt 更灵活（Controller 可根据音频播放状态动态调整）
 
-#### `play_audio` — 播放音频文件（Phase 3 已预留）
+#### `play_audio` — 播放音频文件（✅ 已实现，AudioManager）
 
 参见 [Commands — Phase 3 指令](../protocol/commands.md#10-phase-3-指令待实现)。扩展 payload 支持绝对路径：
 
@@ -568,7 +568,11 @@ public record LipSyncFrame(double timestamp, float mouthOpenY) {}
 | `CommandHandlers.cpp` | 注册 `play_motion_ext`、`set_parameter` 处理器 | 中 |
 | `LAppModel.cpp` | 新增 `StartMotionFromFile(path, priority, fadeIn, fadeOut)` 方法 | 中 |
 | `LAppModel.cpp` | 新增 `SetParameterValue(paramId, value, weight)` 方法 | 小 |
-| 音频播放器 | Phase 3 新模块，支持 OGG 播放（OpenAL + stb_vorbis / dr_libs） | 大 |
+| 音频播放器 | Phase 3 新模块，支持 OGG 播放（miniaudio + libvorbis） | 大 |
+
+> **实现进度**：
+> - `play_motion_ext` 处理器 ✅ 已实现（`CommandHandlers.cpp` 已注册，错误码 3001/3002/3003）；`set_parameter` 处理器待 Phase 3c 实现。
+> - 音频播放器 ✅ 已实现——`AudioManager`（miniaudio + libvorbis，OGG 播放），`play_audio`/`stop_audio`/`set_volume` 命令已接入（错误码 7001/7002/7003）。
 
 ---
 
@@ -985,22 +989,25 @@ message GraphData {
 |:---|:---|:---|:---:|
 | 1 | `VoicePackScanner` — 扫描识别语音包 | 无 | ✅ 已完成 |
 | 2 | `MountConfig` + `MountConfigManager` — 挂载配置持久化 | 无 | ✅ 已完成 |
-| 3 | `play_motion_ext` 指令 — Renderer 支持外部路径 motion | Renderer C++ | ❌ 待实现 |
+| 3 | `play_motion_ext` 指令 — Renderer 支持外部路径 motion | Renderer C++ | ✅ 已实现 |
 | 4 | 引入 protobuf-java 依赖 + `protoc` 编译 `bundles.proto` 生成 Java 类 | 无 | ✅ 已完成 |
-| 5 | `MetaMkoParser` + `MountedBehaviorEngine` — hit 事件 → 语音包 motion | 步骤 2, 3, 4 | ✅ Java 侧已完成（依赖步骤 3 渲染器指令后联调） |
+| 5 | `MetaMkoParser` + `MountedBehaviorEngine` — hit 事件 → 语音包 motion | 步骤 2, 3, 4 | ✅ 已完成（双侧齐备，可联调） |
 | 6 | UI 扩展 — Settings Tab 语音包选择 ComboBox | 步骤 1, 2 | ✅ 已完成 |
 
-**Phase 3a 当前状态**：Java 侧全部完成。用户可在 Settings Tab 选择语音包挂载，`MountedBehaviorEngine` 可生成 `play_motion_ext` 指令。待渲染器实现 `play_motion_ext` 指令后即可联调。
+**Phase 3a 当前状态**：Java 侧全部完成，渲染器侧 `play_motion_ext` 已实现（`CommandHandlers.cpp` 已注册），双侧齐备，可联调。用户可在 Settings Tab 选择语音包挂载，`MountedBehaviorEngine` 生成的 `play_motion_ext` 指令可被渲染器直接执行。
 
 ### Phase 3b — 音频播放
 
-| 步骤 | 内容 | 依赖 |
-|:---|:---|:---|
-| 7 | Renderer 音频播放器 — OpenAL + OGG 支持 | Renderer C++ |
-| 8 | `play_audio` 指令实现 | 步骤 7 |
-| 9 | `MountedBehaviorEngine` 扩展 — 同步下发 motion + audio | 步骤 5, 8 |
+| 步骤 | 内容 | 依赖 | 状态 |
+|:---|:---|:---|:---:|
+| 7 | Renderer 音频播放器 — miniaudio + libvorbis（OGG） | Renderer C++ | ✅ 已实现（`AudioManager`） |
+| 8 | `play_audio`/`stop_audio`/`set_volume` 指令实现 | 步骤 7 | ✅ 已实现（错误码 7001/7002/7003） |
+| 9 | `MountedBehaviorEngine` 扩展 — 同步下发 motion + audio | 步骤 5, 8 | ⚠️ 控制器侧待实现 |
+| 10 | `audio_mapping.json` + `AudioMappingManager` + UI | 步骤 8 | ⚠️ 控制器侧待实现（`AudioMapping` record 仅定义） |
 
-**Phase 3b 交付物**：交互时同时播放动作和语音。
+**Phase 3b 当前状态**：渲染器侧 `AudioManager` 已实现（miniaudio + libvorbis，OGG 播放），`play_audio`/`stop_audio`/`set_volume` 命令已接入 `CommandHandlers.cpp`。控制器侧音频映射管理（`AudioMappingManager`、`audio_mapping.json` 持久化、UI）及 `MountedBehaviorEngine` 的「motion + audio 同步下发」扩展待实现。
+
+**Phase 3b 交付物**：交互时同时播放动作和语音（渲染器侧能力就绪，待控制器侧打通映射与下发逻辑）。
 
 ### Phase 3c — 口型同步 + 文案
 

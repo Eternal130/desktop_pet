@@ -12,11 +12,11 @@ controller/
     │   ├── java/com/desktoppet/
     │   │   ├── App.java                  # JavaFX Application entry
     │   │   ├── Launcher.java             # Fat-JAR entry (JPMS workaround)
-    │   │   ├── core/                     # Business logic (14 files)
+    │   │   ├── core/                     # Business logic (15 files)
     │   │   ├── model/                    # Data models — ALL Java Records (21 files)
     │   │   ├── network/                  # WebSocket server + protocol (3 files)
-    │   │   ├── ui/                       # JavaFX controllers (7 files)
-    │   │   └── util/                     # ProcessManager
+    │   │   ├── ui/                       # JavaFX controllers (8 files)
+    │   │   └── util/                     # ProcessManager + AutoLaunchManager (2 files)
     │   ├── resources/
     │   │   ├── fxml/                     # 6 FXML layouts
     │   │   ├── css/                      # style.css + 6 theme CSS files
@@ -27,7 +27,7 @@ controller/
             ├── core/                     # 10 unit tests
             ├── network/                  # 3 tests (incl. real WS server)
             ├── ui/                       # 3 TestFX headless tests
-            ├── util/                     # 1 test
+            ├── util/                     # 2 tests (ProcessManager, AutoLaunchManager)
             └── integration/              # 1 E2E smoke test
 ```
 
@@ -43,6 +43,8 @@ controller/
 | Add WS message type | `network/Protocol.java` + `network/MessageDispatcher.java` | Must match C++ `Protocol.hpp` |
 | Add instance management | `core/InstanceConfigManager.java`, `core/PetStateManager.java` | Per-pet config in `instances/{uuid}.json` |
 | Manage renderer process | `util/ProcessManager.java` | Start/stop/restart with crash recovery |
+| Auto-launch on OS startup | `util/AutoLaunchManager.java` | Windows registry / Linux .desktop autostart |
+| Switch graphics backend | `InstanceConfig.graphicsBackend` + `resolveRendererPath()` | Compile-time renderer variant (OpenGL/Vulkan) |
 
 ## KEY DEPENDENCIES
 

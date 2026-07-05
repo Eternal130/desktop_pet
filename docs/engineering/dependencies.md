@@ -10,17 +10,19 @@
 | 库 | 版本 | 用途 | 集成方式 | 阶段 |
 |:---|:---|:---|:---|:---:|
 | Cubism Native SDK | 5-r.5-beta.3.1 | Live2D 模型加载与渲染（兼容 Cubism 5 / 5.3） | 预编译库 + 框架源码（third_party/CubismSdkForNative/） | **MVP** |
-| GLFW | 3.4 | 窗口创建与输入事件处理 | SDK 内置源码编译（Samples/OpenGL/thirdParty/glfw/） | **MVP** |
-| GLEW | 2.3.1 | OpenGL 扩展函数加载 | SDK 内置源码编译（Samples/OpenGL/thirdParty/glew/） | **MVP** |
+| GLFW | 3.4 | 窗口创建与输入事件处理（`platform/WindowManager.cpp` 被 GL/Vulkan 共享） | SDK 内置源码编译（Samples/OpenGL/thirdParty/glfw/），缺失时自动下载 | **MVP** |
+| GLEW | 2.2.0 | OpenGL 扩展函数加载（仅 OpenGL 后端） | SDK 内置源码编译（Samples/OpenGL/thirdParty/glew/），缺失时自动下载 | **MVP** |
+| Vulkan SDK | 系统（≥ 1.2） | Vulkan 渲染后端（Instance/Device/Swapchain/Render/Present），仅 `-DUSE_VULKAN=ON` 时需要 | 系统安装（`find_package(Vulkan REQUIRED)`） | **Phase 2.x** |
 | stb_image | — | 纹理图片加载辅助 | SDK 内置 Header-only（Samples/OpenGL/thirdParty/stb/） | **MVP** |
 | nlohmann/json | 3.12.0 | JSON 序列化 / 反序列化 | Header-only（renderer/third_party/nlohmann/） | **Phase 1** |
 | IXWebSocket | 11.4.6 | WebSocket 客户端（本地通信，不启用 TLS），渲染引擎启动后主动连接控制面板 | 源码编译（renderer/third_party/ixwebsocket/，CMake subdirectory） | **Phase 1** |
 | Google Test | 1.17.0 | C++ 单元测试框架 | 源码编译（renderer/third_party/googletest/，CMake subdirectory） | **Phase 1** |
-| OpenAL Soft | 1.25.1 | 音频播放与混合 | 系统包（`libopenal-dev`） | **Phase 3** |
+| miniaudio | 单文件 | 音频播放引擎（`AudioManager` 封装，OGG 解码 + 播放 + 音量控制） | Single-header vendored（renderer/third_party/miniaudio.h） | **Phase 3b** |
+| libogg + libvorbis | 1.3.5 / 1.3.7 | OGG/Vorbis 音频解码（配合 miniaudio 播放 OGG 文件） | CMake FetchContent 拉取 | **Phase 3b** |
 
-> **说明**：GLFW、GLEW、stb_image 三个库使用 Cubism SDK 内置的版本（位于 `Samples/OpenGL/thirdParty/`），与 SDK 保持版本一致性。渲染引擎自身的 `renderer/third_party/` 目录仅包含项目额外引入的依赖（nlohmann/json、IXWebSocket、Google Test）。
+> **说明**：GLFW、GLEW、stb_image 三个库使用 Cubism SDK 内置的版本（位于 `Samples/OpenGL/thirdParty/`），与 SDK 保持版本一致性（缺失时构建脚本自动下载）。渲染引擎自身的 `renderer/third_party/` 目录包含项目额外引入的依赖：nlohmann/json、IXWebSocket、Google Test、miniaudio（single-header）。Vulkan SDK 为系统级安装（仅 Vulkan 后端），libogg/libvorbis 通过 CMake FetchContent 拉取。
 >
-> **日志方案**：渲染引擎使用 Cubism SDK 内置的 `LAppPal::PrintLogLn` 函数作为日志输出（基于 `CubismFramework::CubismLogFunction` 回调），未引入独立日志库。后期可考虑将日志回调转发到 spdlog 以获得文件输出和日志轮转能力。
+> **日志方案**：渲染引擎使用 Cubism SDK 内置的 `LAppPal::PrintLogLn` 函数作为日志输出（基于 `CubismFramework::CubismLogFunction` 回调），**未引入 spdlog**（项目反模式：禁止 spdlog，统一用 `LAppPal::PrintLogLn`）。
 
 **音频库选型决策（OpenAL Soft vs SDL\_mixer）**：
 
@@ -33,6 +35,8 @@
 | 3D 音频 | 原生支持（桌面宠物不需要，但无额外开销） | 不支持 |
 
 **结论**：选择 **OpenAL Soft**。桌面宠物音频需求简单（音效播放 + 口型同步），OpenAL 依赖更轻量且 API 风格与 OpenGL 一致。Live2D 模型内置音频通常为 WAV 格式，已满足需求；如后续需支持 MP3/OGG，可引入 dr\_libs（header-only 单文件）辅助解码，无需引入完整的 SDL 依赖栈。
+
+> **实现更新（Phase 3b，已落地）**：最终实现**未采用 OpenAL Soft 或 SDL\_mixer**，改为 **miniaudio（single-header）+ libvorbis（OGG 解码）**。理由：(1) miniaudio 单文件 vendored，零系统依赖，跨 Windows/Linux 编译更简单；(2) 桌面宠物音频需求为 OGG 单声道播放 + 音量控制 + 口型同步时间戳，miniaudio 配合 libvorbis 已满足；(3) 避免 OpenAL 系统包（`libopenal-dev`）在 Windows/MinGW 下的打包复杂度。渲染器侧 `AudioManager` 已实现 `play_audio`/`stop_audio`/`set_volume` 三指令（错误码 7001/7002/7003），**控制器侧 `AudioMappingManager` 与 UI 待实现**。上述 OpenAL vs SDL\_mixer 对比保留作为历史选型记录。
 
 ---
 
@@ -97,8 +101,8 @@ third_party/CubismSdkForNative/
 │   ├── include/
 │   │   └── Live2DCubismCore.h      # 唯一头文件（纯 C API）
 │   ├── lib/                        # 静态库（按平台/架构组织）
-│   │   ├── linux/x86_64/           # ← 本项目 MVP 使用
-│   │   ├── windows/x86_64/         # ← 后期 Windows 版使用
+│   │   ├── linux/x86_64/           # ← 本项目 Linux 版使用
+│   │   ├── windows/x86_64/         # ← 本项目 Windows 版使用（当前已支持）
 │   │   └── ...                     # android/, ios/, macos/, experimental/
 │   └── dll/                        # 动态库（同上结构）
 │       └── linux/x86_64/           # libLive2DCubismCore.so
@@ -180,7 +184,7 @@ target_include_directories(desktop-pet-renderer PRIVATE
 | 宏 | 说明 |
 |:---|:---|
 | `CSM_TARGET_LINUX_GL` | Linux + OpenGL 渲染目标 |
-| `CSM_TARGET_WIN_GL` | Windows + OpenGL 渲染目标（后期使用） |
+| `CSM_TARGET_WIN_GL` | Windows + OpenGL 渲染目标（当前已支持） |
 | `USE_RENDER_TARGET` | 启用离屏渲染到纹理（可选） |
 | `USE_MODEL_RENDER_TARGET` | 启用每模型独立渲染目标（可选） |
 
@@ -189,9 +193,9 @@ target_include_directories(desktop-pet-renderer PRIVATE
 | 平台 | 架构 | 静态库路径 | 动态库路径 |
 |:---|:---|:---|:---|
 | Linux (MVP) | x86_64 | `Core/lib/linux/x86_64/libLive2DCubismCore.a` | `Core/dll/linux/x86_64/libLive2DCubismCore.so` |
-| Windows (后期) | x86_64 | `Core/lib/windows/x86_64/` | `Core/dll/windows/x86_64/` |
+| Windows (当前) | x86_64 | `Core/lib/windows/x86_64/` | `Core/dll/windows/x86_64/Live2DCubismCore.dll` |
 
-> 本项目 MVP 使用**静态链接**方式集成 Core，简化分发打包。后期 Windows 版本视需要可切换为动态链接。
+> 本项目 Linux 版使用**静态链接**方式集成 Core，简化分发打包；Windows 版分发时使用动态库 `Live2DCubismCore.dll`（随 `build/bin/` 一起输出）。
 
 ### 3.6 示例模型资源
 

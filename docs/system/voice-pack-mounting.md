@@ -1002,10 +1002,12 @@ message GraphData {
 |:---|:---|:---|:---:|
 | 7 | Renderer 音频播放器 — miniaudio + libvorbis（OGG） | Renderer C++ | ✅ 已实现（`AudioManager`） |
 | 8 | `play_audio`/`stop_audio`/`set_volume` 指令实现 | 步骤 7 | ✅ 已实现（错误码 7001/7002/7003） |
-| 9 | `MountedBehaviorEngine` 扩展 — 同步下发 motion + audio | 步骤 5, 8 | ⚠️ 控制器侧待实现 |
+| 9 | `MountedBehaviorEngine` 扩展 — 同步下发 motion + audio | 步骤 5, 8 | ✅ 已实现 |
 | 10 | `audio_mapping.json` + `AudioMappingManager` + UI | 步骤 8 | ⚠️ 控制器侧待实现（`AudioMapping` record 仅定义） |
 
-**Phase 3b 当前状态**：渲染器侧 `AudioManager` 已实现（miniaudio + libvorbis，OGG 播放），`play_audio`/`stop_audio`/`set_volume` 命令已接入 `CommandHandlers.cpp`。控制器侧音频映射管理（`AudioMappingManager`、`audio_mapping.json` 持久化、UI）及 `MountedBehaviorEngine` 的「motion + audio 同步下发」扩展待实现。
+**步骤 9 说明**：motion+audio 同步通过 `play_motion_ext` 的 `audio_path` 字段实现（`MountedBehaviorEngine.java:76-79`）；audio-only action 通过独立 `play_audio` 命令（`buildAudioOnlyCommand`）下发。
+
+**Phase 3b 当前状态**：渲染器侧 `AudioManager` 已实现（miniaudio + libvorbis，OGG 播放），`play_audio`/`stop_audio`/`set_volume` 命令已接入 `CommandHandlers.cpp`。控制器侧 `MountedBehaviorEngine` motion+audio 同步已实现（`play_motion_ext` 携带 `audio_path`），audio-only action 的 `play_audio` 通道已实现（`buildAudioOnlyCommand`）。音量/静音控制已实现（`set_volume` 指令）。`AudioMappingManager`/`audio_mapping.json`（步骤 10）待实现。
 
 **Phase 3b 交付物**：交互时同时播放动作和语音（渲染器侧能力就绪，待控制器侧打通映射与下发逻辑）。
 

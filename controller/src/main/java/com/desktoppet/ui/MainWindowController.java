@@ -1496,16 +1496,7 @@ public class MainWindowController {
             wsServer.sendToInstance(id, Protocol.serialize(
                     Protocol.createCommand("set_volume", volumePayload)));
 
-            if (instance.getLayoutOffsetX() != 0.0
-                    || instance.getLayoutOffsetY() != 0.0
-                    || instance.getLayoutScale() != 1.0) {
-                JsonObject layoutPayload = new JsonObject();
-                layoutPayload.addProperty("offset_x", instance.getLayoutOffsetX());
-                layoutPayload.addProperty("offset_y", instance.getLayoutOffsetY());
-                layoutPayload.addProperty("scale", instance.getLayoutScale());
-                wsServer.sendToInstance(id, Protocol.serialize(
-                        Protocol.createCommand("set_layout", layoutPayload)));
-            }
+            sendLayout(instance);
 
             renderSidebar();
             if (currentInstance == instance) renderDetail();
@@ -1797,6 +1788,19 @@ public class MainWindowController {
         }
     }
 
+    // 渲染器 load_model 会创建全新的 LAppModel(默认 offset=0/scale=1),任何触发 load_model 的路径之后都必须调用此方法重新应用用户调过的 layout。
+    private void sendLayout(PetInstance instance) {
+        if (instance.getLayoutOffsetX() != 0.0
+                || instance.getLayoutOffsetY() != 0.0
+                || instance.getLayoutScale() != 1.0) {
+            JsonObject layoutPayload = new JsonObject();
+            layoutPayload.addProperty("offset_x", instance.getLayoutOffsetX());
+            layoutPayload.addProperty("offset_y", instance.getLayoutOffsetY());
+            layoutPayload.addProperty("scale", instance.getLayoutScale());
+            sendInstanceCommand(instance, "set_layout", layoutPayload);
+        }
+    }
+
     private void sendSerializedCommand(PetInstance instance, String serializedJson) {
         int id = instance.getId();
         if (wsServer != null && wsServer.hasActiveConnection(id)) {
@@ -1856,6 +1860,7 @@ public class MainWindowController {
         JsonObject payload = new JsonObject();
         payload.addProperty("model_path", selected);
         sendInstanceCommand(currentInstance, "load_model", payload);
+        sendLayout(currentInstance);
         refreshModelInfo();
         refreshVoicePackList();
         renderSidebar();

@@ -135,6 +135,16 @@ public class TrayManager {
     }
 
     private Image createTrayImage() {
+        try {
+            var url = getClass().getResource("/icons/tray-icon.png");
+            if (url != null) {
+                return Toolkit.getDefaultToolkit().getImage(url);
+            }
+            log.info("No custom tray icon found at /icons/tray-icon.png, using fallback");
+        } catch (Exception e) {
+            log.warn("Failed to load tray icon, falling back to generated", e);
+        }
+        // fallback: blue circle
         java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(
             16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();

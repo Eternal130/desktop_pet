@@ -64,11 +64,15 @@
                         <VBox spacing="20" HBox.hgrow="ALWAYS">
                             <VBox spacing="10">
                                 <Label text="✦ 快捷动作触发" styleClass="section-title"/>
-                                <GridPane fx:id="motionGrid" hgap="12" vgap="12"/>
+                                <ScrollPane fitToWidth="true" prefHeight="250" maxHeight="250" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED">
+                                    <FlowPane fx:id="motionGrid" hgap="12" vgap="12"/>
+                                </ScrollPane>
                             </VBox>
                             <VBox spacing="10">
                                 <Label fx:id="expressionTitle" text="✦ 表情控制 当前: F01" styleClass="section-title"/>
-                                <HBox fx:id="expressionRow" spacing="10" styleClass="expression-row"/>
+                                <ScrollPane fitToWidth="true" prefHeight="120" maxHeight="120" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED">
+                                    <FlowPane fx:id="expressionRow" hgap="10" vgap="10" styleClass="expression-row"/>
+                                </ScrollPane>
                             </VBox>
                         </VBox>
                     </HBox>

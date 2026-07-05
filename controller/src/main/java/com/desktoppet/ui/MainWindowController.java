@@ -44,6 +44,7 @@ import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -63,9 +64,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -108,6 +111,7 @@ public class MainWindowController {
 
     private PetInstance currentInstance;
     private ModelInfo currentModelInfo;
+    private Set<String> currentVoicePackGroupNames = Set.of();
     private boolean updatingUI;
     private double dragOffsetX;
     private double dragOffsetY;
@@ -165,9 +169,9 @@ public class MainWindowController {
     @FXML private Label modelNameCard;
     @FXML private ComboBox<String> modelSelectCombo;
     @FXML private Label statsLabel;
-    @FXML private GridPane motionGrid;
+    @FXML private FlowPane motionGrid;
     @FXML private Label expressionTitle;
-    @FXML private HBox expressionRow;
+    @FXML private FlowPane expressionRow;
     @FXML private Slider opacitySlider;
     @FXML private Label opacityValueLabel;
     @FXML private Slider volumeSlider;
@@ -770,6 +774,7 @@ public class MainWindowController {
         }
         saveInstanceConfig(currentInstance);
         initMountedEngine(currentInstance);
+        renderDetail();
     }
 
     private void renderSidebar() {
@@ -853,11 +858,29 @@ public class MainWindowController {
                 modelSelectCombo.setValue(model);
             }
 
-            if (currentModelInfo != null) {
-                int motionCount = currentModelInfo.motionGroups().size();
-                int exprCount = currentModelInfo.expressions().size();
-                int hitCount = currentModelInfo.hitAreas().size();
-                statsLabel.setText(motionCount + " 动作组 · " + exprCount + " 表情 · " + hitCount + " 触控区");
+            // Ensure engine exists before reading group names (resolve from disk, no renderer needed)
+            int instanceId = currentInstance.getId();
+            if (!mountedEngines.containsKey(instanceId) && currentInstance.getVoicePack() != null) {
+                initMountedEngine(currentInstance);
+            }
+            MountedBehaviorEngine currentEngine = mountedEngines.get(instanceId);
+            currentVoicePackGroupNames = (currentEngine != null) ? currentEngine.groupNames() : Set.of();
+
+            if (currentModelInfo != null || !currentVoicePackGroupNames.isEmpty()) {
+                Set<String> allMotions = new LinkedHashSet<>();
+                if (currentModelInfo != null && currentModelInfo.motionGroups() != null) {
+                    allMotions.addAll(currentModelInfo.motionGroups().keySet());
+                }
+                allMotions.addAll(currentVoicePackGroupNames);
+
+                Set<String> allExpressions = new LinkedHashSet<>();
+                if (currentModelInfo != null && currentModelInfo.expressions() != null) {
+                    allExpressions.addAll(currentModelInfo.expressions());
+                }
+                allExpressions.addAll(currentVoicePackGroupNames);
+
+                int hitCount = (currentModelInfo != null) ? currentModelInfo.hitAreas().size() : 0;
+                statsLabel.setText(allMotions.size() + " 动作组 · " + allExpressions.size() + " 表情 · " + hitCount + " 触控区");
             } else {
                 statsLabel.setText("— 动作组 · — 表情 · — 触控区");
             }
@@ -911,15 +934,24 @@ public class MainWindowController {
     private void buildMotionGrid(ModelInfo info) {
         motionGrid.getChildren().clear();
 
-        if (info == null || info.motionGroups().isEmpty()) {
+        Map<String, Integer> mergedGroups = new LinkedHashMap<>();
+        if (info != null && info.motionGroups() != null) {
+            mergedGroups.putAll(info.motionGroups());
+        }
+        for (String vpGroup : currentVoicePackGroupNames) {
+            if (!mergedGroups.containsKey(vpGroup)) {
+                mergedGroups.put(vpGroup, 1);
+            }
+        }
+
+        if (mergedGroups.isEmpty()) {
             Label placeholder = new Label("未检测到动作组");
             placeholder.getStyleClass().add("setting-label");
-            motionGrid.add(placeholder, 0, 0);
+            motionGrid.getChildren().add(placeholder);
             return;
         }
 
-        int i = 0;
-        for (var entry : info.motionGroups().entrySet()) {
+        for (var entry : mergedGroups.entrySet()) {
             String name = entry.getKey();
             int count = entry.getValue();
             String icon = MOTION_ICONS.getOrDefault(name.toLowerCase(), DEFAULT_MOTION_ICON);
@@ -940,24 +972,31 @@ public class MainWindowController {
             btn.getChildren().addAll(iconLabel, nameLabel, countLabel);
             btn.setOnMouseClicked(event -> onMotionTriggered(name));
 
-            int row = i / 2;
-            int col = i % 2;
-            motionGrid.add(btn, col, row);
-            i++;
+            motionGrid.getChildren().add(btn);
         }
     }
 
     private void buildExpressionButtons(ModelInfo info) {
         expressionRow.getChildren().clear();
 
-        if (info == null || info.expressions().isEmpty()) {
+        List<String> mergedExpressions = new ArrayList<>();
+        if (info != null && info.expressions() != null) {
+            mergedExpressions.addAll(info.expressions());
+        }
+        for (String vpGroup : currentVoicePackGroupNames) {
+            if (!mergedExpressions.contains(vpGroup)) {
+                mergedExpressions.add(vpGroup);
+            }
+        }
+
+        if (mergedExpressions.isEmpty()) {
             Label placeholder = new Label("无表情数据");
             placeholder.getStyleClass().add("setting-label");
             expressionRow.getChildren().add(placeholder);
             return;
         }
 
-        for (String exp : info.expressions()) {
+        for (String exp : mergedExpressions) {
             Button button = new Button(exp);
             button.getStyleClass().add("exp-btn");
             button.setOnAction(event -> onExpressionClicked(exp));
@@ -986,6 +1025,21 @@ public class MainWindowController {
         if (currentInstance == null) {
             return;
         }
+
+        if (currentVoicePackGroupNames.contains(expName)) {
+            MountedBehaviorEngine engine = mountedEngines.get(currentInstance.getId());
+            if (engine != null) {
+                String cmd = engine.buildMotionCommand(expName);
+                if (cmd != null) {
+                    Scheduler sch = schedulers.get(currentInstance.getId());
+                    if (sch != null) sch.pause();
+                    sendSerializedCommand(currentInstance, cmd);
+                    currentInstance.addLog("✦ 播放语音包动作: " + expName);
+                    return;
+                }
+            }
+        }
+
         currentInstance.setCurrentExpression(expName);
         JsonObject payload = new JsonObject();
         payload.addProperty("expression_id", expName);
@@ -998,6 +1052,21 @@ public class MainWindowController {
         if (currentInstance == null) {
             return;
         }
+
+        if (currentVoicePackGroupNames.contains(groupName)) {
+            MountedBehaviorEngine engine = mountedEngines.get(currentInstance.getId());
+            if (engine != null) {
+                String cmd = engine.buildMotionCommand(groupName);
+                if (cmd != null) {
+                    Scheduler sch = schedulers.get(currentInstance.getId());
+                    if (sch != null) sch.pause();
+                    sendSerializedCommand(currentInstance, cmd);
+                    currentInstance.addLog("✦ 触发语音包动作: " + groupName);
+                    return;
+                }
+            }
+        }
+
         JsonObject payload = new JsonObject();
         payload.addProperty("group", groupName);
         payload.addProperty("index", 0);
@@ -1498,7 +1567,8 @@ public class MainWindowController {
             }
 
             if (!isIdle && instance.isConnected()) {
-                triggerIdleMotion(instance);
+                Scheduler sch = schedulers.get(id);
+                if (sch != null) sch.resume();
             }
         }));
 
@@ -1511,6 +1581,8 @@ public class MainWindowController {
             if (engine != null && engine.hasGroupForArea(areaId)) {
                 String cmd = engine.buildMotionCommand(areaId);
                 if (cmd != null) {
+                    Scheduler sch = schedulers.get(id);
+                    if (sch != null) sch.pause();
                     wsServer.sendToInstance(id, cmd);
                     instance.addLog("▶ 语音包动作: " + areaId);
                     return;
@@ -1656,7 +1728,12 @@ public class MainWindowController {
         if (!Files.isDirectory(vpDir)) {
             return null;
         }
-        return MetaMkoParser.parse(vpDir);
+        try {
+            return MetaMkoParser.parse(vpDir);
+        } catch (Throwable t) {
+            log.warn("Failed to parse voice pack '{}': {}", voicePackName, t.getMessage());
+            return null;
+        }
     }
 
     private void sendHitAreasToRenderer(PetInstance instance, String modelName) {
@@ -1717,6 +1794,14 @@ public class MainWindowController {
             Envelope cmd = Protocol.createCommand(action, payload);
             wsServer.sendToInstance(id, Protocol.serialize(cmd));
             instance.addLog("→ " + action);
+        }
+    }
+
+    private void sendSerializedCommand(PetInstance instance, String serializedJson) {
+        int id = instance.getId();
+        if (wsServer != null && wsServer.hasActiveConnection(id)) {
+            wsServer.sendToInstance(id, serializedJson);
+            instance.addLog("→ play_motion_ext");
         }
     }
 

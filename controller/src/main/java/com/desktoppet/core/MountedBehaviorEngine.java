@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 public class MountedBehaviorEngine {
 
@@ -57,6 +58,8 @@ public class MountedBehaviorEngine {
         }
 
         VoicePackAction chosen = motionActions.get(random.nextInt(motionActions.size()));
+        log.info("buildMotionCommand areaId={} motion={} audio={} lipSync={}",
+                areaId, chosen.motionPath(), chosen.audioPath(), chosen.lipSyncPath());
 
         Path basePath = voicePack.basePath();
         if (basePath == null) {
@@ -76,6 +79,10 @@ public class MountedBehaviorEngine {
         if (chosen.audioPath() != null && !chosen.audioPath().isEmpty()) {
             String audioAbsPath = basePath.resolve(chosen.audioPath()).toString();
             payload.addProperty("audio_path", audioAbsPath);
+        }
+
+        if (chosen.lipSyncPath() != null && !chosen.lipSyncPath().isEmpty()) {
+            payload.addProperty("lip_sync_path", basePath.resolve(chosen.lipSyncPath()).toString());
         }
 
         Envelope command = Protocol.createCommand("play_motion_ext", payload);
@@ -151,5 +158,13 @@ public class MountedBehaviorEngine {
             }
         }
         return false;
+    }
+
+    /** Returns the set of voice pack group codes (area IDs). Empty if no voice pack loaded. */
+    public Set<String> groupNames() {
+        if (voicePack == null || voicePack.groups() == null) {
+            return Set.of();
+        }
+        return voicePack.groups().keySet();
     }
 }

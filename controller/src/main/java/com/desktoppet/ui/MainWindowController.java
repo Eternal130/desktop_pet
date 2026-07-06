@@ -9,12 +9,15 @@ import com.desktoppet.core.InteractionHandler;
 import com.desktoppet.core.MetaMkoParser;
 import com.desktoppet.core.MountedBehaviorEngine;
 import com.desktoppet.core.VoicePackScanner;
+import com.desktoppet.core.ResourceStatsCollector;
+import com.desktoppet.model.ControllerStats;
 import com.desktoppet.model.Envelope;
 import com.desktoppet.model.InstanceConfig;
 import com.desktoppet.model.ModelInfo;
 import com.desktoppet.model.ModelConfig;
 import com.desktoppet.model.PanelConfig;
 import com.desktoppet.model.PetInstance;
+import com.desktoppet.model.RendererStats;
 import com.desktoppet.model.VoicePackInfo;
 import com.desktoppet.network.MessageDispatcher;
 import com.desktoppet.network.PetWebSocketServer;
@@ -22,6 +25,7 @@ import com.desktoppet.network.Protocol;
 import com.desktoppet.util.ProcessManager;
 import com.desktoppet.util.AutoLaunchManager;
 import com.google.gson.JsonObject;
+import oshi.SystemInfo;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
@@ -71,6 +75,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 public class MainWindowController {
     private static final Logger log = LoggerFactory.getLogger(MainWindowController.class);
@@ -95,6 +103,22 @@ public class MainWindowController {
     private String closeAction = "exit";
     private boolean confirmOnExit = false;
     private boolean autoLaunchSystem = false;
+
+    // --- Resource monitor (T4) ---
+    // monitor-executor is a daemon single-threaded ScheduledExecutorService.
+    // All MonitorDataModel mutations hop through fxRunner so the executor and
+    // WS threads never touch UI state directly (project anti-pattern; see
+    // .omo/plans/resource-monitor.md T4 for the threading contract).
+    private static final long MONITOR_POLL_INTERVAL_MS = 2_000L;
+    private static final long MONITOR_STALE_THRESHOLD_MS = 10_000L;
+    private ScheduledExecutorService monitorExecutor;
+    private ResourceStatsCollector resourceStatsCollector;
+    int currentMonitoredInstanceId = -1;
+    // Volatile: read by the executor tick, written by the WS handler and
+    // instance-switch hook on different threads.
+    volatile long lastStatsStateReceivedMs;
+    MonitorDataModel monitorModel;
+    Consumer<Runnable> fxRunner = r -> Platform.runLater(r);
 
     private static final Map<String, String> MOTION_ICONS = Map.ofEntries(
             Map.entry("idle", "✨"),
@@ -201,6 +225,7 @@ public class MainWindowController {
         themeCombo.setValue("深紫梦幻");
 
         initSharedWebSocketServer();
+        initMonitorInfrastructure();
 
         opacitySlider.valueProperty().addListener((obs, oldValue, newValue) -> {
             if (updatingUI || currentInstance == null) {
@@ -676,6 +701,7 @@ public class MainWindowController {
 
     private void selectInstance(PetInstance instance) {
         currentInstance = instance;
+        onMonitoredInstanceChanged(instance);
         if (welcomePane != null) {
             welcomePane.setVisible(false);
             welcomePane.setManaged(false);
@@ -1450,6 +1476,11 @@ public class MainWindowController {
                                                    MessageDispatcher dispatcher) {
         int id = instance.getId();
 
+        // Resource monitor: register stats_state on every per-instance
+        // dispatcher. Only currentMonitoredInstanceId is polled, so only that
+        // renderer emits; others are registered-but-idle. Plan T4.
+        registerStatsStateHandler(dispatcher);
+
         InteractionHandler interactionHandler = new InteractionHandler(msg -> {
             if (wsServer != null && wsServer.hasActiveConnection(id)) {
                 wsServer.sendToInstance(id, msg);
@@ -2029,6 +2060,7 @@ public class MainWindowController {
 
     public void performFullShutdown() {
         saveState();
+        stopMonitorPolling();
 
         for (PetInstance instance : instances) {
             if (instance.isRunning()) {
@@ -2046,6 +2078,108 @@ public class MainWindowController {
             }
         }
         Platform.exit();
+    }
+
+    // ===== Resource monitor (plan T4) =====
+
+    private void initMonitorInfrastructure() {
+        monitorModel = new MonitorDataModel();
+        monitorExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "monitor-executor");
+            t.setDaemon(true);
+            return t;
+        });
+        try {
+            resourceStatsCollector = new ResourceStatsCollector(new SystemInfo());
+        } catch (RuntimeException e) {
+            log.warn("ResourceStatsCollector init failed; controller stats disabled: {}", e.getMessage());
+        }
+        dispatchers.values().forEach(this::registerStatsStateHandler);
+    }
+
+    void registerStatsStateHandler(MessageDispatcher dispatcher) {
+        dispatcher.registerEventHandler(Protocol.EVENT_STATS_STATE, this::handleStatsState);
+    }
+
+    // WS-server thread entry: parse here, mutate model on the FX thread only.
+    private void handleStatsState(Envelope env) {
+        try {
+            RendererStats rs = RendererStats.fromJson(env.payload());
+            lastStatsStateReceivedMs = System.currentTimeMillis();
+            fxRunner.accept(() -> {
+                if (monitorModel != null) {
+                    monitorModel.mergeRenderer(rs);
+                }
+            });
+        } catch (RuntimeException e) {
+            log.warn("stats_state parse failed: {}", e.getMessage());
+        }
+    }
+
+    public void startMonitorPolling() {
+        if (monitorExecutor == null || monitorExecutor.isShutdown()) {
+            return;
+        }
+        if (currentInstance != null) {
+            currentMonitoredInstanceId = currentInstance.getId();
+        }
+        lastStatsStateReceivedMs = System.currentTimeMillis();
+        monitorExecutor.scheduleAtFixedRate(
+                this::monitorTick, 0, MONITOR_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
+        log.info("Monitor polling started for instance {}", currentMonitoredInstanceId);
+    }
+
+    public void stopMonitorPolling() {
+        if (monitorExecutor != null) {
+            monitorExecutor.shutdownNow();
+            log.info("Monitor polling stopped");
+        }
+    }
+
+    private void monitorTick() {
+        try {
+            ResourceStatsCollector collector = resourceStatsCollector;
+            if (collector != null) {
+                ControllerStats cs = collector.collectControllerStats();
+                fxRunner.accept(() -> {
+                    if (monitorModel != null) {
+                        monitorModel.mergeController(cs);
+                    }
+                });
+            }
+            int targetId = currentMonitoredInstanceId;
+            if (wsServer != null && targetId >= 0) {
+                Envelope cmd = Protocol.createCommand(Protocol.ACTION_GET_STATS, new JsonObject());
+                wsServer.sendToInstance(targetId, Protocol.serialize(cmd));
+            }
+            long now = System.currentTimeMillis();
+            if (MonitorDataModel.isStaleAt(now, lastStatsStateReceivedMs, MONITOR_STALE_THRESHOLD_MS)) {
+                fxRunner.accept(() -> {
+                    if (monitorModel != null) {
+                        monitorModel.markStale();
+                    }
+                });
+            }
+        } catch (RuntimeException e) {
+            log.warn("Monitor tick failed: {}", e.getMessage());
+        }
+    }
+
+    void onMonitoredInstanceChanged(PetInstance instance) {
+        currentMonitoredInstanceId = instance != null ? instance.getId() : -1;
+        lastStatsStateReceivedMs = System.currentTimeMillis();
+        if (monitorModel != null) {
+            fxRunner.accept(monitorModel::clearHistory);
+        }
+    }
+
+    void initMonitorForTest() {
+        monitorModel = new MonitorDataModel();
+        monitorExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "monitor-executor");
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     private Stage primaryStage() {

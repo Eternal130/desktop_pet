@@ -68,6 +68,13 @@
             <version>${protobuf.version}</version>
         </dependency>
 
+        <!-- System metrics (JVM CPU/RSS sampling for resource monitor) -->
+        <dependency>
+            <groupId>com.github.oshi</groupId>
+            <artifactId>oshi-core</artifactId>
+            <version>6.6.5</version>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

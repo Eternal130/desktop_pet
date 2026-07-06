@@ -8,6 +8,8 @@ module com.desktoppet {
     requires ch.qos.logback.classic;
     requires ch.qos.logback.core;
     requires com.google.protobuf;
+    requires com.github.oshi;
+    requires java.management;
     exports com.desktoppet;
     exports com.desktoppet.core;
     exports com.desktoppet.network;

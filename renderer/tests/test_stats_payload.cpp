@@ -42,7 +42,7 @@ TEST(StatsPayloadTest, FullyPopulatedPayloadHasContractKeysAndValues) {
     ps.rssBytes   = 104857600ULL;
 
     GpuMetrics gm;
-    gm.gpuUtilizationPercent = 73u;
+    gm.gpuUtilizationPercent = 73.5;
     gm.vramUsedBytes         = 536870912ULL;
     gm.vramTotalBytes        = 8589934592ULL;
     gm.gpuName               = "Test GPU";
@@ -52,7 +52,7 @@ TEST(StatsPayloadTest, FullyPopulatedPayloadHasContractKeysAndValues) {
     expectExactKeySet(payload);
     EXPECT_DOUBLE_EQ(payload["cpu_percent"].get<double>(), 42.5);
     EXPECT_EQ(payload["rss_bytes"].get<uint64_t>(), 104857600ULL);
-    EXPECT_EQ(payload["gpu_percent"].get<uint32_t>(), 73u);
+    EXPECT_DOUBLE_EQ(payload["gpu_percent"].get<double>(), 73.5);
     EXPECT_EQ(payload["gpu_name"].get<std::string>(), "Test GPU");
     EXPECT_EQ(payload["vram_used_bytes"].get<uint64_t>(), 536870912ULL);
     EXPECT_EQ(payload["vram_total_bytes"].get<uint64_t>(), 8589934592ULL);

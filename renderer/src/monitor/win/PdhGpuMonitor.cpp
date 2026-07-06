@@ -126,22 +126,18 @@ GpuMetrics PdhGpuMonitor::sample() {
     bool anyValid = false;
     for (size_t i = 0; i < m_counterCount; ++i) {
         if (!m_counters[i]) continue;
-        DWORD status = 0;
         PDH_FMT_COUNTERVALUE value{};
         const PDH_STATUS rst = PdhGetFormattedCounterValue(
-            m_counters[i], PDH_FMT_DOUBLE, &status, &value);
-        if (rst == ERROR_SUCCESS && status == ERROR_SUCCESS) {
-            const double v = value.doubleValue;
-            if (v > 0.0) {
-                total += v;
-                anyValid = true;
-            }
+            m_counters[i], PDH_FMT_DOUBLE, nullptr, &value);
+        if (rst == ERROR_SUCCESS) {
+            total += value.doubleValue;
+            anyValid = true;
         }
     }
 
     if (anyValid) {
-        if (total > 100.0) total = 100.0; // multi-engine sum can exceed 100
-        m.gpuUtilizationPercent = static_cast<uint32_t>(total + 0.5);
+        if (total > 100.0) total = 100.0;
+        m.gpuUtilizationPercent = total;
     }
     return m;
 }

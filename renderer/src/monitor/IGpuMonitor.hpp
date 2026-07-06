@@ -15,7 +15,7 @@ namespace Monitor {
  * byte-for-byte consistent with controller model/RendererStats.java.
  */
 struct GpuMetrics {
-    std::optional<uint32_t> gpuUtilizationPercent;
+    std::optional<double> gpuUtilizationPercent;
     std::optional<uint64_t> vramUsedBytes;
     std::optional<uint64_t> vramTotalBytes;
     std::string gpuName;

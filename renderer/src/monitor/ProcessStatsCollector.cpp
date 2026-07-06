@@ -1,12 +1,11 @@
 #include "monitor/ProcessStatsCollector.hpp"
+#include "LAppPal.hpp"
 
 #include <chrono>
 
 #if defined(_WIN32)
 #  include <windows.h>
 #  include <psapi.h>
-#else
-#  include "LAppPal.hpp"
 #endif
 
 namespace Monitor {
@@ -25,10 +24,27 @@ ProcessStats ProcessStatsCollector::sample() {
     ProcessStats out;
 
 #if defined(_WIN32)
-    // ── RSS via WorkingSetSize ─────────────────────────────────────────
-    PROCESS_MEMORY_COUNTERS pmc;
-    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
-        out.rssBytes = static_cast<uint64_t>(pmc.WorkingSetSize);
+    {
+        struct PmcEx2 {
+            DWORD cb; DWORD PageFaultCount;
+            SIZE_T PeakWorkingSetSize, WorkingSetSize;
+            SIZE_T QuotaPeakPagedPoolUsage, QuotaPagedPoolUsage;
+            SIZE_T QuotaPeakNonPagedPoolUsage, QuotaNonPagedPoolUsage;
+            SIZE_T PagefileUsage, PeakPagefileUsage, PrivateUsage, PrivateWorkingSetSize;
+            ULONGLONG SharedCommitUsage;
+        };
+        PmcEx2 pmc2{};
+        pmc2.cb = sizeof(pmc2);
+        if (GetProcessMemoryInfo(GetCurrentProcess(),
+                reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc2), sizeof(pmc2))
+            && pmc2.PrivateWorkingSetSize > 0) {
+            out.rssBytes = static_cast<uint64_t>(pmc2.PrivateWorkingSetSize);
+        } else {
+            PROCESS_MEMORY_COUNTERS pmc{};
+            if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+                out.rssBytes = static_cast<uint64_t>(pmc.WorkingSetSize);
+            }
+        }
     }
 
     // ── CPU% via GetProcessTimes delta ─────────────────────────────────

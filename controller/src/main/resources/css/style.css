@@ -482,6 +482,7 @@
 .toggle-switch {
     -fx-cursor: hand;
     -fx-label-padding: 0;
+    -fx-text-fill: #B8B5D0;
 }
 
 .toggle-switch > .box {

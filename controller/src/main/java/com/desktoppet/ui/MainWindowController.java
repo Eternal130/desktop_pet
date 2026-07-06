@@ -312,6 +312,7 @@ public class MainWindowController {
         clipSliderToBounds(idleSlider);
         clipSliderToBounds(fpsSlider);
         setupToggleSwitch(autoStartCheck);
+        setupToggleSwitch(muteCheckBox);
 
         dragDirectBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
         dragPhysicsBtn.pseudoClassStateChanged(SEG_ACTIVE, false);

@@ -7,8 +7,13 @@
 #include "LAppPal.hpp"
 #include "LAppDefine.hpp"
 #include "AudioManager.hpp"
+#include "monitor/GpuMonitorFactory.hpp"
+#include "monitor/IGpuMonitor.hpp"
+#include "monitor/ProcessStatsCollector.hpp"
+#include "monitor/StatsPayload.hpp"
 #include <GLFW/glfw3.h>
 #include <algorithm>
+#include <memory>
 #include <string>
 
 namespace Network {
@@ -345,6 +350,26 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
     handler.registerCommand("shutdown", [delegate](const Envelope& cmd, auto sendResponse) {
         sendResponse(createResponse(cmd.id, "shutdown", true));
         glfwSetWindowShouldClose(delegate->GetWindow(), GLFW_TRUE);
+    });
+
+    handler.registerCommand(ACTION_GET_STATS, [](const Envelope& cmd, auto sendResponse) {
+        // Runs on the main render thread (dispatched from PollNetworkMessages
+        // in LAppDelegate::Run after drainMessages), so PDH/DXGI/psapi calls
+        // are safe here — never from the WebSocket callback thread.
+        static Monitor::ProcessStatsCollector processCollector;
+        static std::unique_ptr<Monitor::IGpuMonitor> gpu = Monitor::createGpuMonitor();
+        static bool gpuInitialized = gpu && gpu->initialize();
+
+        const Monitor::ProcessStats ps = processCollector.sample();
+        Monitor::GpuMetrics gpuMetrics;
+        const Monitor::GpuMetrics* gpuPtr = nullptr;
+        if (gpuInitialized) {
+            gpuMetrics = gpu->sample();
+            gpuPtr = &gpuMetrics;
+        }
+
+        nlohmann::json payload = Monitor::buildStatsPayload(ps, gpuPtr);
+        sendResponse(createEvent(EVENT_STATS_STATE, payload));
     });
 }
 

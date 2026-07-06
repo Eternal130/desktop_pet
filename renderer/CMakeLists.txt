@@ -18,6 +18,9 @@ set(APP_NAME desktop-pet-renderer)
 # === Backend selection ===
 option(USE_VULKAN "Use Vulkan renderer instead of OpenGL" OFF)
 
+# === Resource monitor ===
+option(ENABLE_GPU_MONITOR "Enable GPU/VRAM monitoring (PDH+DXGI on Windows, stub on Linux)" ON)
+
 # === Paths (common) ===
 set(SDK_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/CubismSdkForNative)
 set(CORE_PATH ${SDK_ROOT_PATH}/Core)
@@ -194,6 +197,14 @@ target_sources(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/WindowManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/WindowManager.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/IGraphicsBackend.hpp
+    # Resource monitor (always compiled; platform backend selected below)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/IGpuMonitor.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/ProcessStatsCollector.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/ProcessStatsCollector.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/StatsPayload.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/StatsPayload.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/GpuMonitorFactory.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/GpuMonitorFactory.cpp
 )
 
 # Backend-specific source files
@@ -212,6 +223,27 @@ else()
         ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/OpenGLBackend.hpp
     )
     target_compile_definitions(${APP_NAME} PRIVATE USE_OPENGL)
+endif()
+
+# ── GPU monitor platform backend ───────────────────────────────────
+if(ENABLE_GPU_MONITOR)
+    if(WIN32)
+        target_sources(${APP_NAME}
+          PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/win/PdhGpuMonitor.hpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/win/PdhGpuMonitor.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/win/DxgiVramMonitor.hpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/win/DxgiVramMonitor.cpp
+        )
+        target_compile_definitions(${APP_NAME} PRIVATE GPU_MONITOR_WIN)
+    elseif(UNIX)
+        target_sources(${APP_NAME}
+          PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/linux/StubGpuMonitor.hpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/linux/StubGpuMonitor.cpp
+        )
+        target_compile_definitions(${APP_NAME} PRIVATE GPU_MONITOR_LINUX)
+    endif()
 endif()
 
 target_include_directories(${APP_NAME}
@@ -245,6 +277,17 @@ else()
     )
 endif()
 
+# Windows-only system libs required by the GPU monitor and process stats
+# collector (pdh: GPU%; psapi: WorkingSetSize; dxgi+dxguid: VRAM + adapter).
+if(WIN32)
+    target_link_libraries(${APP_NAME}
+      psapi
+      pdh
+      dxgi
+      dxguid
+    )
+endif()
+
 # === Post-build: copy resources, shaders, and DLL ===
 if(USE_VULKAN)
     add_custom_command(
@@ -263,4 +306,36 @@ else()
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${FRAMEWORK_SHADER_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/FrameworkShaders
       COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll $<TARGET_FILE_DIR:${APP_NAME}>
     )
+endif()
+
+# === Tests (Google Test via FetchContent) ==========================
+option(BUILD_TESTS "Build the renderer_tests target and register with CTest" ON)
+if(BUILD_TESTS)
+    enable_testing()
+
+    FetchContent_Declare(
+      googletest
+      GIT_REPOSITORY https://github.com/google/googletest.git
+      GIT_TAG v1.14.0
+      GIT_SHALLOW TRUE
+    )
+    set(gtest_force_shared_rt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+
+    add_executable(renderer_tests
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_stats_payload.cpp
+      # Implementation files needed by the tests:
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/StatsPayload.cpp
+    )
+
+    target_include_directories(renderer_tests
+      PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+    )
+
+    target_link_libraries(renderer_tests PRIVATE GTest::gtest_main)
+
+    include(GoogleTest)
+    gtest_discover_tests(renderer_tests)
 endif()

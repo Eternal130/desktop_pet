@@ -2134,7 +2134,11 @@ public class MainWindowController {
 
     public void startMonitorPolling() {
         if (monitorExecutor == null || monitorExecutor.isShutdown()) {
-            return;
+            monitorExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "monitor-executor");
+                t.setDaemon(true);
+                return t;
+            });
         }
         if (currentInstance != null) {
             currentMonitoredInstanceId = currentInstance.getId();

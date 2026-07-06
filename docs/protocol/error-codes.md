@@ -83,3 +83,15 @@
 | 7003 | `play_audio` 时音频文件不存在 | `"audio file not found: <path>"` |
 
 > **即发即忘模式**：Phase 3b 音频播放不上报完成事件，控制面板无法收到播放结束通知（无错误码也无事件）。`stop_audio` 无论引擎状态如何均返回 `success: true`。
+
+---
+
+## 八、资源监视相关（9000-9099）
+
+> 以下错误码对应资源监视模块（`renderer/src/monitor/`），协议常量 `ERROR_STATS_COLLECTION_FAILED`。相关指令详见 [Commands §11 `get_stats`](./commands.md#11-get_stats--请求资源占用快照资源监视)，事件详见 [Events §11 `stats_state`](./events.md#11-stats_state--资源占用快照)。
+
+| 错误码 | 触发场景 | 伴随消息 |
+|:---:|:---|:---|
+| 9001 | 资源采集失败（部分或全部指标不可用） | `"Resource stats collection failed"` |
+
+> **当前实现的失败表达方式**：`get_stats` handler 在 GPU 监视器未初始化或单项采集失败时，**不返回 9001**，而是照常 emit `stats_state` 事件，将不可用字段在 payload 中置为 `null`（详见 [stats_state payload 字段表](./events.md#11-stats_state--资源占用快照)）。9001 为预留错误码，用于未来采集层全面失败时在 Response 中返回。

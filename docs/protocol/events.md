@@ -234,4 +234,68 @@ Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit(
 | `audio_started` | ❌ 未实现 | 早期设计草案，Phase 3b 实现时改为即发即忘，不上报 |
 | `audio_ended` | ❌ 未实现 | 同上 |
 
-> **事件总览**：当前渲染器实际发出的事件共 12 个——`ready`、`model_loaded`、`model_load_failed`、`motion_started`、`motion_finished`（两种 payload 变体）、`hit`、`drag_start`、`drag_end`、`layout_changed`、`window_resized`、`layout_state`（`get_layout` 命令的响应事件）、`error`。
+> **事件总览**：当前渲染器实际发出的事件共 13 个——`ready`、`model_loaded`、`model_load_failed`、`motion_started`、`motion_finished`（两种 payload 变体）、`hit`、`drag_start`、`drag_end`、`layout_changed`、`window_resized`、`layout_state`（`get_layout` 命令的响应事件）、`stats_state`（`get_stats` 命令的响应事件）、`error`。
+
+---
+
+## 11. `stats_state` — 资源占用快照
+
+渲染器进程资源占用快照，作为 [`get_stats`](./commands.md#11-get_stats--请求资源占用快照资源监视) 命令的响应事件发送（每收到一条 `get_stats` 即 emit 一条 `stats_state`）。
+
+**Payload**：
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `cpu_percent` | number | 渲染器进程 CPU 利用率百分比（`0.0`-`100.0`，多线程时可大于 100）。**始终可用** |
+| `rss_bytes` | number | 渲染器进程常驻内存（RSS），字节数。**始终可用** |
+| `gpu_percent` | number\|null | GPU 利用率百分比。Windows 经 PDH（`\\GPU Engine(*)\\Utilization Percentage`，按 `pid_<本进程>` 前缀过滤求和）采集；Linux Stub 或采集失败时为 `null` |
+| `gpu_name` | string\|null | GPU 适配器名称（如 `"NVIDIA GeForce RTX 3060"`，Windows 取自 `DXGI_ADAPTER_DESC.Description`）。GPU 监视器未初始化时为 `null`；Linux Stub 初始化失败时同样为 `null` |
+| `vram_used_bytes` | number\|null | 已用显存，字节数。Windows 经 DXGI `IDXGIAdapter3::QueryVideoMemoryInfo` 的 `CurrentUsage`（per-process）采集；Linux Stub 或采集失败时为 `null`。⚠️ **Vulkan 变体数值依赖 WDDM 驱动报告**，`vkAllocateMemory` 的分配能否被 DXGI 计入是驱动相关的，可能偏低或为 0（已知限制，非回归） |
+| `vram_total_bytes` | number\|null | 显存总量，字节数（`DXGI_ADAPTER_DESC.DedicatedVideoMemory`）。同上可空 |
+| `timestamp_ms` | number | 渲染器侧采集时间戳（Unix 毫秒）。**始终可用** |
+
+**示例**（Windows，全字段）：
+
+```json
+{
+  "type": "event", "action": "stats_state",
+  "id": "...",
+  "payload": {
+    "cpu_percent": 12.5,
+    "rss_bytes": 89128960,
+    "gpu_percent": 35.0,
+    "gpu_name": "NVIDIA GeForce RTX 3060",
+    "vram_used_bytes": 104857600,
+    "vram_total_bytes": 8589934592,
+    "timestamp_ms": 1719990000000
+  },
+  "timestamp": ...
+}
+```
+
+**示例**（Linux Stub，GPU 字段全 `null`）：
+
+```json
+{
+  "type": "event", "action": "stats_state",
+  "id": "...",
+  "payload": {
+    "cpu_percent": 8.2,
+    "rss_bytes": 72351744,
+    "gpu_percent": null,
+    "gpu_name": null,
+    "vram_used_bytes": null,
+    "vram_total_bytes": null,
+    "timestamp_ms": 1719990000000
+  },
+  "timestamp": ...
+}
+```
+
+**控制面板预期行为**：
+- WebSocket server 线程收到 → 反序列化为 `RendererStats` record（`fromJson` 接受字段缺失或显式 `null` 两种 null 表达形式）
+- 经 `Platform.runLater` 切到 JavaFX 线程更新 `MonitorDataModel`（线程边界遵循 `AppOrchestrator` 的 WS→FX 模式）
+- `null` 字段在 UI 显示"—"/"不可用"（灰色）
+- 陈旧判定：超过 10 秒（5 个轮询周期）未收到 `stats_state`，"最后更新"Label 显示"⚠ 数据陈旧"，恢复接收时清除
+
+> **`id` 不用于 request-response 匹配**：`stats_state` 是事件而非 Response，其 `id` 由渲染器新建（`createEvent` 生成），**不复用** `get_stats` 的 `id`。控制面板按 action 类型路由，不按 `id` 匹配 pending request。

@@ -294,3 +294,31 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 | `7002` | `AudioManager` 未初始化 | `"Audio engine not initialized"` |
 
 > 两个字段均为可选，控制面板按需传入；字段不存在时对应属性保持不变。
+
+---
+
+## 11. `get_stats` — 请求资源占用快照（资源监视）
+
+请求渲染器上报当前进程的资源占用快照（CPU、内存、GPU 利用率、显存），用于控制面板"资源监视"页面实时显示渲染引擎侧指标。控制面板以固定周期（默认 2 秒）轮询发送。
+
+**回执**：✗ 无 Response（资源数据通过 [`stats_state`](./events.md#11-stats_state--资源占用快照) 事件回传——复用 `get_layout`/`layout_state` 的"走事件绕过空 payload Response"先例，因 `createResponse` 的 payload 固定为空对象，无法承载指标数据）
+
+**Payload**：空对象 `{}`
+
+**示例**：
+
+```json
+{
+  "type": "command", "action": "get_stats",
+  "id": "...", "payload": {}, "timestamp": ...
+}
+```
+
+**渲染器处理流程**：
+1. 在主渲染线程采集进程 CPU/RSS（`ProcessStatsCollector`）与 GPU 利用率/显存（`IGpuMonitor`）。handler 经 `LAppDelegate::Run` 的 `PollNetworkMessages` → `drainMessages` 派发，**主线程执行**，不从 WebSocket 回调线程调用任何系统采集 API（PDH/DXGI/psapi，项目铁律）。
+2. 构造 payload（字段见 [Events — `stats_state`](./events.md#11-stats_state--资源占用快照)）。GPU 监视器未初始化（如 Linux Stub）时 4 个 GPU 相关字段（`gpu_percent`、`gpu_name`、`vram_used_bytes`、`vram_total_bytes`）置为 `null`；已初始化但单项采集失败时对应字段置 `null`。CPU/RSS/时间戳始终可用。
+3. 发送 `stats_state` 事件（`sendResponse(createEvent("stats_state", payload))`）。
+
+> **不发送 Response**：handler 不调用 `createResponse`，仅 emit 事件。控制面板应在 `MessageDispatcher` 注册 `stats_state` 事件 handler 接收数据，**不应**为 `get_stats` 挂 pending request 等待 Response（10 秒超时后会落空）。
+
+> **平台差异**：Windows 经 PDH（GPU%）+ DXGI（VRAM，per-process `QueryVideoMemoryInfo`）采集；Linux 为 Stub，`IGpuMonitor::initialize()` 返回 false，4 个 GPU 字段恒为 `null`。Vulkan 变体的 VRAM 数值依赖 WDDM 驱动报告，可能偏低或为 0（已知限制，非回归）。

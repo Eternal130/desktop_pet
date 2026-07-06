@@ -4,7 +4,6 @@ import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.RadioButton;
 import javafx.scene.control.Slider;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -24,6 +23,7 @@ public class SettingsPageController {
     private static final Logger log = LoggerFactory.getLogger(SettingsPageController.class);
 
     private static final PseudoClass THEME_ACTIVE = PseudoClass.getPseudoClass("theme-active");
+    private static final PseudoClass SEG_ACTIVE = PseudoClass.getPseudoClass("seg-active");
 
     private static final Map<String, String[]> THEME_COLORS = new LinkedHashMap<>();
     static {
@@ -45,8 +45,8 @@ public class SettingsPageController {
     @FXML private Label panelOpacityValueLabel;
     @FXML private CheckBox autoLaunchCheckBox;
     @FXML private CheckBox startMinimizedCheckBox;
-    @FXML private RadioButton closeExitRadio;
-    @FXML private RadioButton closeHideRadio;
+    @FXML private Button closeExitBtn;
+    @FXML private Button closeHideBtn;
     @FXML private CheckBox confirmOnExitCheckBox;
 
     private MainWindowController mainController;
@@ -71,9 +71,11 @@ public class SettingsPageController {
             autoLaunchCheckBox.setSelected(autoLaunchSystem);
             startMinimizedCheckBox.setSelected(startMinimized);
             if ("hide_to_tray".equals(closeAction)) {
-                closeHideRadio.setSelected(true);
+                closeHideBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
+                closeExitBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
             } else {
-                closeExitRadio.setSelected(true);
+                closeExitBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
+                closeHideBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
             }
             confirmOnExitCheckBox.setSelected(confirmOnExit);
         } finally {
@@ -134,20 +136,24 @@ public class SettingsPageController {
             if (mainController != null) mainController.applyStartMinimized(val);
         });
 
-        closeExitRadio.selectedProperty().addListener((obs, old, val) -> {
-            if (updatingUI) return;
-            if (val && mainController != null) mainController.applyCloseAction("exit");
-        });
-
-        closeHideRadio.selectedProperty().addListener((obs, old, val) -> {
-            if (updatingUI) return;
-            if (val && mainController != null) mainController.applyCloseAction("hide_to_tray");
-        });
-
         confirmOnExitCheckBox.selectedProperty().addListener((obs, old, val) -> {
             if (updatingUI) return;
             if (mainController != null) mainController.applyConfirmOnExit(val);
         });
+    }
+
+    @FXML
+    private void onCloseExit() {
+        closeExitBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
+        closeHideBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
+        if (mainController != null) mainController.applyCloseAction("exit");
+    }
+
+    @FXML
+    private void onCloseHide() {
+        closeHideBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
+        closeExitBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
+        if (mainController != null) mainController.applyCloseAction("hide_to_tray");
     }
 
     private void buildThemeCards() {

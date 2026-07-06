@@ -65,12 +65,11 @@
         <!-- Close button behavior -->
         <VBox spacing="8">
             <Label text="关闭按钮行为" styleClass="setting-label"/>
-            <HBox spacing="12">
-                <fx:define>
-                    <ToggleGroup fx:id="closeActionToggleGroup"/>
-                </fx:define>
-                <RadioButton fx:id="closeExitRadio" text="直接退出" toggleGroup="$closeActionToggleGroup"/>
-                <RadioButton fx:id="closeHideRadio" text="隐藏到托盘" toggleGroup="$closeActionToggleGroup"/>
+            <HBox>
+                <HBox spacing="0" styleClass="seg-control">
+                    <Button fx:id="closeExitBtn" text="直接退出" styleClass="seg-btn" onAction="#onCloseExit"/>
+                    <Button fx:id="closeHideBtn" text="隐藏到托盘" styleClass="seg-btn" onAction="#onCloseHide"/>
+                </HBox>
             </HBox>
         </VBox>
 

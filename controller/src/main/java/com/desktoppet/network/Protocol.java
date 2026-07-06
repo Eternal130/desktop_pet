@@ -14,6 +14,11 @@ public class Protocol {
 
     private static final Gson GSON = new Gson();
 
+    // Protocol action/event/error constants (must mirror renderer/src/network/Protocol.hpp)
+    public static final String ACTION_GET_STATS = "get_stats";
+    public static final String EVENT_STATS_STATE = "stats_state";
+    public static final int ERROR_STATS_COLLECTION_FAILED = 9001;
+
     private Protocol() {
     }
 

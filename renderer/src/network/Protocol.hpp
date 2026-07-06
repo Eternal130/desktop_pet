@@ -19,6 +19,11 @@ struct Envelope {
     std::string error_message;
 };
 
+// Protocol action/event/error constants (must mirror controller network/Protocol.java)
+inline constexpr const char* ACTION_GET_STATS = "get_stats";
+inline constexpr const char* EVENT_STATS_STATE = "stats_state";
+inline constexpr int ERROR_STATS_COLLECTION_FAILED = 9001;
+
 std::string serialize(const Envelope& env);
 std::optional<Envelope> deserialize(const std::string& json_str);
 Envelope createCommand(const std::string& action, const nlohmann::json& payload = {});

@@ -141,6 +141,8 @@ public class MainWindowController {
     private double dragOffsetY;
     private SettingsPageController settingsPageController;
     private Node settingsPageNode;
+    private MonitorPageController monitorPageController;
+    private Node monitorPageNode;
     private VBox welcomePane;
     private Label envOpenglStatus;
     private Label envOpenglDetail;
@@ -357,6 +359,19 @@ public class MainWindowController {
             settingsPageNode.setManaged(false);
         } catch (IOException e) {
             log.error("Failed to load settings page", e);
+        }
+
+        // Load monitor page (resource-monitor plan T5)
+        try {
+            FXMLLoader monitorLoader = new FXMLLoader(getClass().getResource("/fxml/monitor-page.fxml"));
+            monitorPageNode = monitorLoader.load();
+            monitorPageController = monitorLoader.getController();
+            monitorPageController.setMainWindowController(this);
+            contentStackPane.getChildren().add(monitorPageNode);
+            monitorPageNode.setVisible(false);
+            monitorPageNode.setManaged(false);
+        } catch (IOException e) {
+            log.error("Failed to load monitor page", e);
         }
 
         // Build welcome pane
@@ -2109,6 +2124,7 @@ public class MainWindowController {
             fxRunner.accept(() -> {
                 if (monitorModel != null) {
                     monitorModel.mergeRenderer(rs);
+                    refreshMonitorPageIfVisible();
                 }
             });
         } catch (RuntimeException e) {
@@ -2144,6 +2160,7 @@ public class MainWindowController {
                 fxRunner.accept(() -> {
                     if (monitorModel != null) {
                         monitorModel.mergeController(cs);
+                        refreshMonitorPageIfVisible();
                     }
                 });
             }
@@ -2157,6 +2174,9 @@ public class MainWindowController {
                 fxRunner.accept(() -> {
                     if (monitorModel != null) {
                         monitorModel.markStale();
+                        if (monitorPageNode != null && monitorPageNode.isVisible() && monitorPageController != null) {
+                            monitorPageController.markStale();
+                        }
                     }
                 });
             }
@@ -2171,6 +2191,17 @@ public class MainWindowController {
         if (monitorModel != null) {
             fxRunner.accept(monitorModel::clearHistory);
         }
+        if (monitorPageController != null) {
+            fxRunner.accept(monitorPageController::clear);
+        }
+    }
+
+    private void refreshMonitorPageIfVisible() {
+        if (monitorPageNode == null || !monitorPageNode.isVisible()
+                || monitorPageController == null || monitorModel == null) {
+            return;
+        }
+        monitorPageController.refresh(monitorModel.getLatestSnapshot());
     }
 
     void initMonitorForTest() {
@@ -2365,6 +2396,10 @@ public class MainWindowController {
             settingsPageNode.setVisible(false);
             settingsPageNode.setManaged(false);
         }
+        if (monitorPageNode != null) {
+            monitorPageNode.setVisible(false);
+            monitorPageNode.setManaged(false);
+        }
         updateContentPaneVisibility();
     }
 
@@ -2386,7 +2421,35 @@ public class MainWindowController {
             welcomePane.setVisible(false);
             welcomePane.setManaged(false);
         }
+        if (monitorPageNode != null) {
+            monitorPageNode.setVisible(false);
+            monitorPageNode.setManaged(false);
+        }
         settingsPageNode.setVisible(true);
         settingsPageNode.setManaged(true);
+    }
+
+    @FXML
+    public void onOpenMonitor() {
+        if (monitorPageController == null || monitorPageNode == null) {
+            return;
+        }
+        mainScrollPane.setVisible(false);
+        mainScrollPane.setManaged(false);
+        if (welcomePane != null) {
+            welcomePane.setVisible(false);
+            welcomePane.setManaged(false);
+        }
+        if (settingsPageNode != null) {
+            settingsPageNode.setVisible(false);
+            settingsPageNode.setManaged(false);
+        }
+        monitorPageNode.setVisible(true);
+        monitorPageNode.setManaged(true);
+        startMonitorPolling();
+        MonitorDataModel model = monitorModel;
+        if (model != null && model.getLatestSnapshot() != null) {
+            monitorPageController.refresh(model.getLatestSnapshot());
+        }
     }
 }

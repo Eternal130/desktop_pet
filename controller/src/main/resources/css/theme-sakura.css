@@ -358,6 +358,61 @@
     -fx-padding: 20 24;
 }
 
+.monitor-panel {
+    -fx-background-color: #FFF5F7;
+    -fx-background-radius: 20;
+    -fx-border-color: rgba(233, 30, 99, 0.15);
+    -fx-border-width: 1;
+    -fx-border-radius: 20;
+    -fx-padding: 16 18;
+}
+
+.monitor-column-header {
+    -fx-text-fill: #E91E63;
+    -fx-font-size: 16px;
+    -fx-font-weight: 700;
+}
+
+.metric-card {
+    -fx-background-color: rgba(0, 0, 0, 0.04);
+    -fx-background-radius: 10;
+    -fx-padding: 8 10;
+}
+
+.metric-label {
+    -fx-text-fill: #A08090;
+    -fx-font-size: 12px;
+}
+
+.metric-value {
+    -fx-text-fill: #E91E63;
+    -fx-font-size: 14px;
+    -fx-font-weight: 700;
+    -fx-font-family: "Consolas", "JetBrains Mono", "Courier New", monospace;
+}
+
+.metric-chart {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-padding: 0;
+    -fx-min-height: 60;
+    -fx-pref-height: 70;
+}
+
+.metric-chart .chart-plot-background {
+    -fx-background-color: transparent;
+}
+
+.metric-chart .chart-series-line {
+    -fx-stroke: #E91E63;
+    -fx-stroke-width: 1.5px;
+}
+
+.stale-label {
+    -fx-text-fill: #FF8A00;
+    -fx-font-weight: 700;
+}
+
 .setting-label {
     -fx-text-fill: #A08090;
     -fx-font-size: 13px;

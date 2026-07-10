@@ -114,6 +114,11 @@ public class MainWindowController {
     private static final long MONITOR_STALE_THRESHOLD_MS = 10_000L;
     private ScheduledExecutorService monitorExecutor;
     private ScheduledFuture<?> monitorTask;
+    private final ScheduledExecutorService restartExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "restart-scheduler");
+        t.setDaemon(true);
+        return t;
+    });
     private ResourceStatsCollector resourceStatsCollector;
     int currentMonitoredInstanceId = -1;
     // Volatile: read by the executor tick, written by the WS handler and
@@ -1344,6 +1349,7 @@ public class MainWindowController {
         registerInstanceEventHandlers(instance, dispatcher);
 
         ProcessManager pm = new ProcessManager(rendererPath, WS_PORT);
+        wsServer.registerToken(instance.getId(), pm.getAuthToken());
 
         pm.setShutdownCommandSender(() ->
             wsServer.sendToInstance(instance.getId(),
@@ -1405,22 +1411,14 @@ public class MainWindowController {
         restartAttempts.put(instance.getId(), attempts + 1);
         instance.addLog("↺ 将在 " + delayMs / 1000 + "s 后重启 (第" + (attempts + 1) + "次)");
 
-        CompletableFuture.runAsync(() -> {
-            try {
-                Thread.sleep(delayMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        restartExecutor.schedule(() -> Platform.runLater(() -> {
+            if (instances.stream().noneMatch(i -> i.getId() == instance.getId())) {
                 return;
             }
-            Platform.runLater(() -> {
-                if (instances.stream().noneMatch(i -> i.getId() == instance.getId())) {
-                    return;
-                }
-                if (!"running".equals(instance.getStatus())) {
-                    startInstance(instance);
-                }
-            });
-        });
+            if (!"running".equals(instance.getStatus())) {
+                startInstance(instance);
+            }
+        }), delayMs, TimeUnit.MILLISECONDS);
     }
 
     private void stopInstance(PetInstance instance) {
@@ -1436,9 +1434,11 @@ public class MainWindowController {
         if (pm != null && pm.isRunning()) {
             pm.setExitCallback(null);
             pm.stopRenderer();
+            pm.shutdown();
             instance.addLog("◆ 实例「" + instance.getLabel() + "」已停止");
         }
         wsServer.closeInstance(id);
+        wsServer.removeToken(id);
         instance.setStatus("stopped");
         instance.setConnected(false);
         restartAttempts.remove(id);
@@ -2076,26 +2076,30 @@ public class MainWindowController {
         saveState();
         stopMonitorPolling();
 
-        Thread shutdownThread = new Thread(() -> {
-            for (PetInstance instance : instances) {
-                if (instance.isRunning()) {
-                    stopInstance(instance);
+        CompletableFuture.runAsync(() -> {
+            try {
+                for (PetInstance instance : instances) {
+                    if (instance.isRunning()) {
+                        stopInstance(instance);
+                    }
                 }
-            }
-            schedulers.values().forEach(Scheduler::shutdown);
-            schedulers.clear();
-            dispatchers.clear();
-            if (wsServer != null) {
-                try {
-                    wsServer.stop(1000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                schedulers.values().forEach(Scheduler::shutdown);
+                schedulers.clear();
+                dispatchers.clear();
+                restartExecutor.shutdownNow();
+                if (wsServer != null) {
+                    try {
+                        wsServer.stop(1000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
+            } catch (Exception e) {
+                log.error("Error during shutdown", e);
+            } finally {
+                Platform.exit();
             }
-            Platform.exit();
-        }, "shutdown");
-        shutdownThread.setDaemon(true);
-        shutdownThread.start();
+        });
     }
 
     // ===== Resource monitor (plan T4) =====

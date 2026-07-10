@@ -14,6 +14,7 @@
 | 1002 | — | 模型格式不兼容（保留） | — |
 | 1003 | — | 纹理加载失败（保留） | — |
 | 1004 | — | Cubism SDK 初始化失败（保留） | — |
+| 1005 | — | `set_hit_areas` 时 `hit_areas` 缺失或非数组 | `"hit_areas array is required"` |
 
 ---
 
@@ -46,6 +47,7 @@
 | 4001 | 坐标超出屏幕范围 |
 | 4002 | 窗口创建失败 |
 | 4003 | OpenGL 上下文创建失败 |
+| 4004 | `set_size` 时 width/height 非正 |
 
 ---
 
@@ -65,8 +67,9 @@
 
 | 错误码 | 触发场景 |
 |:---:|:---|
-| 6001 | 内部处理异常（保留） |
+| 6001 | handler 处理器抛出异常（`MessageHandler::dispatch` catch 块） |
 | 6002 | 消息序列化失败（保留） |
+| 6003 | `set_fps` 时 fps 值非法 | `"fps must be 0 (adaptive) or 1-120"` |
 
 > 该段为预留段，当前未启用。
 
@@ -95,3 +98,13 @@
 | 9001 | 资源采集失败（部分或全部指标不可用） | `"Resource stats collection failed"` |
 
 > **当前实现的失败表达方式**：`get_stats` handler 在 GPU 监视器未初始化或单项采集失败时，**不返回 9001**，而是照常 emit `stats_state` 事件，将不可用字段在 payload 中置为 `null`（详见 [stats_state payload 字段表](./events.md#11-stats_state--资源占用快照)）。9001 为预留错误码，用于未来采集层全面失败时在 Response 中返回。
+
+---
+
+## 九、布局相关（8000-8099）
+
+> 对应用户布局偏移指令 `set_layout` / `get_layout` / `reset_layout`。
+
+| 错误码 | 触发场景 | 伴随消息 |
+|:---:|:---|:---|
+| 8001 | `set_layout` / `get_layout` 时无模型加载 | `"No model loaded"` |

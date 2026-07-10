@@ -322,3 +322,155 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 > **不发送 Response**：handler 不调用 `createResponse`，仅 emit 事件。控制面板应在 `MessageDispatcher` 注册 `stats_state` 事件 handler 接收数据，**不应**为 `get_stats` 挂 pending request 等待 Response（10 秒超时后会落空）。
 
 > **平台差异**：Windows 经 PDH（GPU%）+ DXGI（VRAM，per-process `QueryVideoMemoryInfo`）采集；Linux 为 Stub，`IGpuMonitor::initialize()` 返回 false，4 个 GPU 字段恒为 `null`。Vulkan 变体的 VRAM 数值依赖 WDDM 驱动报告，可能偏低或为 0（已知限制，非回归）。
+
+---
+
+## 12. `set_size` — 设置窗口尺寸
+
+设置渲染器窗口尺寸。窗口居中调整（保持中心点不变，同步调整窗口左上角坐标）。
+
+**回执**：✓ 需要 Response
+
+**Payload**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|:---|:---|:---:|:---|:---|
+| `width` | int | ✓ | — | 窗口宽度（像素，正值）。实际值钳制到 100-2000 范围 |
+| `height` | int | ✓ | — | 窗口高度（像素，正值）。实际值钳制到 100-2000 范围 |
+
+**渲染器处理流程**：
+1. 校验 `width`、`height` 均为正值，否则返回错误 `4004`
+2. 将宽高钳制到 100-2000 范围
+3. 调整窗口尺寸，保持窗口中心点不变（同步调整窗口位置坐标）
+4. 发送 Response（`success: true`）
+
+**错误码**：
+
+| error_code | 触发场景 | error_message |
+|:---:|:---|:---|
+| `4004` | `width` 或 `height` 非正（≤ 0） | — |
+
+---
+
+## 13. `set_fps` — 设置目标帧率
+
+设置渲染引擎目标帧率，支持自适应模式与固定帧率模式。
+
+**回执**：✓ 需要 Response
+
+**Payload**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|:---|:---|:---:|:---|:---|
+| `fps` | number | ✓ | — | 目标帧率。`0` = 自适应模式（15-60fps 浮动），`1`-`120` = 固定帧率 |
+
+**渲染器处理流程**：
+1. 校验 `fps` 合法（等于 `0`，或落在 `1`-`120` 闭区间），否则返回错误 `6003`
+2. 应用帧率模式（自适应 / 固定）
+3. 发送 Response（`success: true`）
+
+**错误码**：
+
+| error_code | 触发场景 | error_message |
+|:---:|:---|:---|
+| `6003` | `fps` 为负数、落入 `(0, 1)` 开区间的小数，或大于 `120` | `"fps must be 0 (adaptive) or 1-120"` |
+
+---
+
+## 14. `set_hit_areas` — 设置点击区域
+
+配置模型点击检测区域名称列表。渲染器使用这些名称与 Cubism 模型的 HitArea 定义匹配，实现点击命中检测。
+
+**回执**：✓ 需要 Response
+
+**Payload**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|:---|:---|:---:|:---|:---|
+| `hit_areas` | string[] | ✓ | — | 点击区域名称数组（如 `["Head", "Body"]`）。名称需与模型 `.model3.json` 中的 HitArea 定义一致 |
+
+**渲染器处理流程**：
+1. 校验 `hit_areas` 字段存在且为 JSON 数组，否则返回错误 `1005`
+2. 更新内部点击区域配置
+3. 发送 Response（`success: true`）
+
+**错误码**：
+
+| error_code | 触发场景 | error_message |
+|:---:|:---|:---|
+| `1005` | `hit_areas` 缺失或非数组类型 | `"hit_areas array is required"` |
+
+---
+
+## 15. `set_layout` — 设置用户布局
+
+设置模型用户布局偏移（手动位置与缩放调整）。与 stub 状态的 [`set_scale`](#6-set_scale--设置模型缩放) 不同，`set_layout` 通过 `LAppModel::SetUserLayout` 实际生效。
+
+**回执**：✓ 需要 Response
+
+**Payload**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|:---|:---|:---:|:---|:---|
+| `offset_x` | float | 否 | 当前值 | 水平偏移量 |
+| `offset_y` | float | 否 | 当前值 | 垂直偏移量 |
+| `scale` | float | 否 | 当前值 | 缩放比例 |
+
+> 三个字段均为可选，仅传入的字段更新对应属性，未传入字段保持当前值不变。
+
+**渲染器处理流程**：
+1. 校验已加载模型，否则返回错误 `8001`
+2. 合并传入的布局参数（未传入字段保留当前值）
+3. 应用新布局
+4. 发送 Response（`success: true`）
+
+**错误码**：
+
+| error_code | 触发场景 | error_message |
+|:---:|:---|:---|
+| `8001` | 当前无模型加载 | `"No model loaded"` |
+
+---
+
+## 16. `get_layout` — 查询用户布局
+
+查询当前模型的用户布局参数。数据通过 `layout_state` 事件回传（`get_stats`/`stats_state` 复用了此"走事件绕过空 payload Response"先例，因 `createResponse` 的 payload 固定为空对象，无法承载布局数据）。
+
+**回执**：✗ 无 Response（布局数据通过 `layout_state` 事件回传）
+
+**Payload**：空对象 `{}`
+
+**事件**：发送 `layout_state` 事件，payload 字段：
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `offset_x` | float | 水平偏移量 |
+| `offset_y` | float | 垂直偏移量 |
+| `scale` | float | 缩放比例 |
+
+**渲染器处理流程**：
+1. 校验已加载模型，否则返回错误 `8001`
+2. 读取当前用户布局参数
+3. 发送 `layout_state` 事件
+
+> **不发送 Response**：handler 不调用 `createResponse`，仅 emit 事件。控制面板应在 `MessageDispatcher` 注册 `layout_state` 事件 handler 接收数据，不应为 `get_layout` 挂 pending request 等待 Response（10 秒超时后会落空）。
+
+**错误码**：
+
+| error_code | 触发场景 | error_message |
+|:---:|:---|:---|
+| `8001` | 当前无模型加载 | `"No model loaded"` |
+
+---
+
+## 17. `reset_layout` — 重置用户布局
+
+将模型用户布局重置为默认值（`offset_x`、`offset_y`、`scale` 恢复初始状态）。
+
+**回执**：✓ 需要 Response
+
+**Payload**：空对象 `{}`
+
+**渲染器处理流程**：
+1. 重置用户布局参数为默认值
+2. 发送 Response（`success: true`）

@@ -35,6 +35,18 @@ static void OnMotionFinishedStatic(Csm::ACubismMotion* motion) {
     }
 }
 
+static bool isValidModelName(const std::string& name) {
+    if (name.empty() || name.size() > 256) return false;
+    if (name.find("..") != std::string::npos) return false;
+    if (name.find('/') != std::string::npos || name.find('\\') != std::string::npos) return false;
+    if (name.front() == '~') return false;
+    return true;
+}
+
+static bool isSafeFilePath(const std::string& path) {
+    return path.find("..") == std::string::npos;
+}
+
 void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
 
     handler.registerCommand("hello", [](const Envelope& cmd, auto sendResponse) {
@@ -49,6 +61,14 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
              auto* emitter = delegate->GetEventEmitter();
              if (emitter) {
                  emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", "model_path is required"}});
+             }
+             return;
+         }
+         if (!isValidModelName(modelPath)) {
+             sendResponse(createResponse(cmd.id, "load_model", false, 1001, "model_path contains invalid characters"));
+             auto* emitter = delegate->GetEventEmitter();
+             if (emitter) {
+                 emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", "model_path contains invalid characters"}});
              }
              return;
          }
@@ -118,6 +138,10 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             sendResponse(createResponse(cmd.id, "play_motion_ext", false, 3001, "motion_path is required"));
             return;
         }
+        if (!isSafeFilePath(motionPath)) {
+            sendResponse(createResponse(cmd.id, "play_motion_ext", false, 3002, "motion_path contains unsafe traversal"));
+            return;
+        }
         if (!LAppPal::FileExists(motionPath)) {
             sendResponse(createResponse(cmd.id, "play_motion_ext", false, 3002, "motion file not found: " + motionPath));
             return;
@@ -150,7 +174,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             auto* audio = delegate->GetAudioManager();
             if (audio && audio->IsInitialized()) {
                 audio->StopAll();
-                if (LAppPal::FileExists(audioPath)) {
+                if (isSafeFilePath(audioPath) && LAppPal::FileExists(audioPath)) {
                     audio->Play(audioPath);
                 } else {
                     LAppPal::PrintLogLn("[CommandHandlers] audio file not found: %s", audioPath.c_str());
@@ -159,7 +183,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         }
 
         std::string lipSyncPath = cmd.payload.value("lip_sync_path", "");
-        if (!lipSyncPath.empty() && LAppPal::FileExists(lipSyncPath)) {
+        if (!lipSyncPath.empty() && isSafeFilePath(lipSyncPath) && LAppPal::FileExists(lipSyncPath)) {
             model->StartLipSyncFromFile(lipSyncPath);
         }
 
@@ -199,7 +223,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         int width = cmd.payload.value("width", 0);
         int height = cmd.payload.value("height", 0);
         if (width <= 0 || height <= 0) {
-            sendResponse(createResponse(cmd.id, "set_size", false, 6001, "width and height must be positive"));
+            sendResponse(createResponse(cmd.id, "set_size", false, 4004, "width and height must be positive"));
             return;
         }
         width = std::max(100, std::min(width, 2000));
@@ -228,7 +252,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
 
     handler.registerCommand("set_hit_areas", [](const Envelope& cmd, auto sendResponse) {
         if (!cmd.payload.contains("hit_areas") || !cmd.payload["hit_areas"].is_array()) {
-            sendResponse(createResponse(cmd.id, "set_hit_areas", false, 4001, "hit_areas array is required"));
+            sendResponse(createResponse(cmd.id, "set_hit_areas", false, 1005, "hit_areas array is required"));
             return;
         }
 
@@ -247,7 +271,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
     handler.registerCommand("set_fps", [delegate](const Envelope& cmd, auto sendResponse) {
         double fps = cmd.payload.value("fps", 0.0);
         if (fps < 0.0 || (fps > 0.0 && fps < 1.0) || fps > 120.0) {
-            sendResponse(createResponse(cmd.id, "set_fps", false, 5001, "fps must be 0 (adaptive) or 1-120"));
+            sendResponse(createResponse(cmd.id, "set_fps", false, 6003, "fps must be 0 (adaptive) or 1-120"));
             return;
         }
         delegate->SetTargetFps(fps);
@@ -258,6 +282,10 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         std::string audioPath = cmd.payload.value("audio_path", "");
         if (audioPath.empty()) {
             sendResponse(createResponse(cmd.id, "play_audio", false, 7001, "audio_path is required"));
+            return;
+        }
+        if (!isSafeFilePath(audioPath)) {
+            sendResponse(createResponse(cmd.id, "play_audio", false, 7003, "audio_path contains unsafe traversal"));
             return;
         }
         auto* audio = delegate->GetAudioManager();

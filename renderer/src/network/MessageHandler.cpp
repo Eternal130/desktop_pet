@@ -30,9 +30,9 @@ std::optional<Envelope> MessageHandler::dispatch(const Envelope& msg) {
         });
         return std::nullopt;
     } catch (const std::exception& ex) {
-        return createResponse(msg.id, msg.action, false, 5003, std::string("Handler exception for action ") + msg.action + ": " + ex.what());
+        return createResponse(msg.id, msg.action, false, 6001, std::string("Handler exception for action ") + msg.action + ": " + ex.what());
     } catch (...) {
-        return createResponse(msg.id, msg.action, false, 5003, "Handler exception for action " + msg.action);
+        return createResponse(msg.id, msg.action, false, 6001, "Handler exception for action " + msg.action);
     }
 }
 

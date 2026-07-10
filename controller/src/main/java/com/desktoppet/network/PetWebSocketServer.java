@@ -25,7 +25,7 @@ public class PetWebSocketServer extends WebSocketServer {
     private volatile BiConsumer<Integer, String> messageCallback;
 
     public PetWebSocketServer(int port) {
-        super(new InetSocketAddress(port));
+        super(new InetSocketAddress("127.0.0.1", port));
     }
 
     @Override

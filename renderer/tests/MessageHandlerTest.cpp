@@ -46,21 +46,20 @@ TEST(MessageHandlerTest, DispatchRoutesToMatchingHandlerWhenMultipleRegistered) 
     EXPECT_FALSE(secondResult.has_value());
 }
 
-TEST(MessageHandlerTest, DispatchUnknownActionReturnsErrorEventWith5003) {
+TEST(MessageHandlerTest, DispatchUnknownActionReturnsErrorResponseWith5003) {
     Network::MessageHandler handler;
 
     const auto result = handler.dispatch(Network::createCommand("unknown_action", {{"x", 1}}));
 
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->type, "event");
-    EXPECT_EQ(result->action, "error");
-    ASSERT_TRUE(result->payload.contains("error_code"));
-    ASSERT_TRUE(result->payload.contains("error_message"));
-    EXPECT_EQ(result->payload.at("error_code").get<int>(), 5003);
-    EXPECT_EQ(result->payload.at("error_message").get<std::string>(), "Unknown action: unknown_action");
+    EXPECT_EQ(result->type, "response");
+    EXPECT_EQ(result->action, "unknown_action");
+    EXPECT_FALSE(result->success);
+    EXPECT_EQ(result->error_code, 5003);
+    EXPECT_EQ(result->error_message, "Unknown action: unknown_action");
 }
 
-TEST(MessageHandlerTest, DispatchHandlerExceptionReturnsErrorEventWithoutCrash) {
+TEST(MessageHandlerTest, DispatchHandlerExceptionReturnsErrorResponseWith6001) {
     Network::MessageHandler handler;
     handler.registerCommand("play_motion", [](const Network::Envelope&, std::function<void(const Network::Envelope&)>) {
         throw std::runtime_error("boom");
@@ -69,11 +68,11 @@ TEST(MessageHandlerTest, DispatchHandlerExceptionReturnsErrorEventWithoutCrash) 
     const auto result = handler.dispatch(Network::createCommand("play_motion", {{"motion", "wave"}}));
 
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->type, "event");
-    EXPECT_EQ(result->action, "error");
-    ASSERT_TRUE(result->payload.contains("error_code"));
-    ASSERT_TRUE(result->payload.contains("error_message"));
-    EXPECT_TRUE(result->payload.at("error_message").get<std::string>().find("play_motion") != std::string::npos);
+    EXPECT_EQ(result->type, "response");
+    EXPECT_EQ(result->action, "play_motion");
+    EXPECT_FALSE(result->success);
+    EXPECT_EQ(result->error_code, 6001);
+    EXPECT_TRUE(result->error_message.find("play_motion") != std::string::npos);
 }
 
 TEST(MessageHandlerTest, DispatchResponseMessageReturnsNullopt) {

@@ -3,7 +3,7 @@
 > 本文档描述容错恢复、配置文件、日志体系、启动流程和扩展性预留。
 > 整体架构参见 [架构总览](../README.md)，工具链与版本详见 [工程化](../engineering/README.md)。
 >
-> **实现状态**：MVP、Phase 1（WebSocket 通信）、Phase 2（控制面板 + 多实例管理）已完成。Phase 3a（语音包挂载 Java 侧）已完成。容错恢复（崩溃重启、断连缓存）已在 `AppOrchestrator` 中实现。配置文件已扩展为多文件分层结构（config.json、panel.json、instances/*.json、mount.json、hit_area_cache.json）。
+> **实现状态**：MVP、Phase 1（WebSocket 通信）、Phase 2（控制面板 + 多实例管理）已完成。Phase 3a（语音包挂载 Java 侧）已完成。容错恢复（崩溃重启、断连缓存）已在 `MainWindowController` 中实现。配置文件已扩展为多文件分层结构（config.json、panel.json、instances/*.json、mount.json、hit_area_cache.json）。
 
 ---
 

@@ -20,9 +20,9 @@ MVP 阶段渲染引擎独立运行，模型路径硬编码。加载失败时的�
 
 ## 二、渲染器崩溃恢复 ✅ 已实现
 
-由 `AppOrchestrator` 负责渲染器进程的监控与自动重启，实现指数退避策略：
+由 `MainWindowController` 负责渲染器进程的监控与自动重启，实现指数退避策略：
 
-**重启参数**（定义于 `AppOrchestrator`）：
+**重启参数**（定义于 `MainWindowController`）：
 
 | 参数 | 值 | 说明 |
 |:---|:---|:---|
@@ -50,7 +50,7 @@ ProcessManager 检测到渲染器进程退出（非零退出码）
           渲染引擎连接 WebSocket Server → 发送 ready 事件
                │
                ▼
-          AppOrchestrator 收到 ready → 发送 load_model + set_position
+           MainWindowController 收到 ready → 发送 load_model + set_position
                │
                ▼
           load_model 成功回执 → 重置 restartAttempts = 0, 更新 lastSuccessfulStartTime
@@ -73,7 +73,7 @@ ProcessManager 检测到渲染器进程退出（非零退出码）
 | 重连策略 | IXWebSocket 内置自动重连（指数退避） |
 | 重连成功 | 重新发送 `ready` 事件，由控制面板重发状态同步指令 |
 
-**控制面板（Server）断连处理**（`AppOrchestrator` 实现）：
+**控制面板（Server）断连处理**（`MainWindowController` 实现）：
 
 | 阶段 | 行为 |
 |:---|:---|

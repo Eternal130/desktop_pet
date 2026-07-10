@@ -60,7 +60,7 @@ EventEmitter 上报事件到控制面板
   payload: { area_id, x, y, button }
      │
      ▼
-AppOrchestrator 中注册的 hit 事件处理器
+MainWindowController 中注册的 hit 事件处理器
      │
      ▼
 InteractionHandler.handleHitEvent()
@@ -121,6 +121,6 @@ InteractionHandler.handleHitEvent()
 
 - **释放后行为**：窗口停在释放位置，不做贴边吸附或重力下落
 - **拖拽动作**：拖拽期间不播放特殊动作，保持当前动作继续
-- **位置记录**（✅ 已实现）：每次拖拽结束后，`AppOrchestrator` 从 `drag_end` 事件提取 `window_x`/`window_y`，通过 `ConfigManager.save()` 持久化位置
-- **拖拽状态防护**（✅ 已实现）：`AppOrchestrator` 维护 `isDragging` 标志。仅在收到 `drag_start` 设置标志后，后续的 `drag_end` 才会触发位置持久化。防止简单点击（未拖拽）被误判为 `drag_end` 并覆盖位置
+- **位置记录**（✅ 已实现）：每次拖拽结束后，`MainWindowController` 从 `drag_end` 事件提取 `window_x`/`window_y`，通过 `ConfigManager.save()` 持久化位置
+- **拖拽状态防护**（✅ 已实现）：`MainWindowController` 维护 `isDragging` 标志。仅在收到 `drag_start` 设置标志后，后续的 `drag_end` 才会触发位置持久化。防止简单点击（未拖拽）被误判为 `drag_end` 并覆盖位置
 - **wasDragging 捕获**：渲染器端在 `LAppDelegate` 中，先捕获 `_isDragging` 状态再将其置 `false`，确保 `drag_end` 事件仅在真正拖拽后发出

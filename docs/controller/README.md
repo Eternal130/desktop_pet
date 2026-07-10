@@ -31,7 +31,7 @@
 
 使用 JavaFX 21 构建用户界面，采用 FXML + CSS 分离布局与样式。主窗口为 **Tab 式布局**，每个 Tab 由独立 FXML + Controller 管理：
 
-- **主窗口（MainWindowController + `main-window.fxml`）**：Tab 容器，管理 Dashboard/Settings/Actions/Advanced 四个 Tab 页的加载与切换。`App.java` 继承 `javafx.application.Application`，作为 JavaFX 生命周期入口，在 `start()` 中创建 `AppOrchestrator`。同时承载 **欢迎页**（`welcomePane`，由 `buildWelcomePane()` 动态构建）：无实例时全屏显示，包含图标/标题/副标题 + **环境检测面板**（检测 OpenGL 渲染器、Vulkan 渲染器、Java、Cubism Core、模型资源、WebSocket 端口是否就绪），每个检测项展示 `● 已就绪 / ● 未找到` 状态与详情
+- **主窗口（MainWindowController + `main-window.fxml`）**：Tab 容器，管理 Dashboard/Settings/Actions/Advanced 四个 Tab 页的加载与切换。`App.java` 继承 `javafx.application.Application`，作为 JavaFX 生命周期入口，在 `start()` 中创建 `MainWindowController`。同时承载 **欢迎页**（`welcomePane`，由 `buildWelcomePane()` 动态构建）：无实例时全屏显示，包含图标/标题/副标题 + **环境检测面板**（检测 OpenGL 渲染器、Vulkan 渲染器、Java、Cubism Core、模型资源、WebSocket 端口是否就绪），每个检测项展示 `● 已就绪 / ● 未找到` 状态与详情
 - **Dashboard Tab（DashboardTabController + `tab-dashboard.fxml`）**：宠物当前状态显示（连接状态、当前模型、动作组信息）、模型切换（ComboBox 选择可用模型）、渲染器重启按钮、运行时日志（ListView）
 - **Settings Tab（SettingsTabController + `tab-settings.fxml`）**：行为配置——拖拽模式切换（ToggleGroup: direct/physics）、闲时动作间隔（Spinner）、帧率模式（自适应/固定，Spinner 15-120fps）、窗口透明度（Slider）、开机自启（CheckBox）、HitArea 映射表（TableView）、语音包选择（ComboBox）
 - **Actions Tab（ActionsTabController + `tab-actions.fxml`）**：动作/表情手动触发——动作组/索引/优先级选择（ComboBox），快捷动作按钮（FlowPane），表情切换（FlowPane）
@@ -41,7 +41,7 @@
 - **渲染后端选择**：设置页与状态栏提供 OpenGL/Vulkan 切换按钮（`backendOpenGLBtn` / `backendVulkanBtn`，`SEG_ACTIVE` 伪类标识当前后端）。切换后写入当前实例 `InstanceConfig.graphicsBackend`，并通过后端感知的 `resolveRendererPath()` 选择对应可执行文件
 - **系统托盘（TrayManager）**：使用 `java.awt.SystemTray` API（JavaFX 未提供原生托盘支持）。关闭窗口时隐藏到托盘而非退出（`Platform.setImplicitExit(false)`），双击托盘图标切换窗口可见性，右键菜单包含 显示/隐藏、设置、退出
 - **宠物管理**：模型切换（ComboBox 选择模型目录）、模型导入、**实例删除**（`deleteInstance()` 弹出 `Alert.AlertType.CONFIRMATION` 确认对话框，默认聚焦 CANCEL 按钮以防误删；确认后停止渲染进程、删除实例配置文件、从列表移除并持久化面板状态）
-- **语音包管理（Phase 3a ✅）**：Settings Tab 中提供语音包选择 ComboBox，挂载/卸载操作通过 `AppOrchestrator` 协调
+- **语音包管理（Phase 3a ✅）**：Settings Tab 中提供语音包选择 ComboBox，挂载/卸载操作通过 `MainWindowController` 协调
 - **音频管理（Phase 3b）**：音频播放由渲染器侧 `AudioManager`（miniaudio + libvorbis）完成，已接入 `play_audio`/`stop_audio`/`set_volume` 指令（错误码 7001/7002/7003）✅。控制器侧音频映射管理（`AudioMappingManager`）与音频管理 UI **待实现**——目前仅定义了 `AudioMapping` 记录（`motionGroup` + `audioPath`，标注 Phase 3 stub）
 
 **UI 架构要点**：
@@ -58,7 +58,7 @@
 
 ### 2.2 业务逻辑层
 
-- **生命周期编排器（AppOrchestrator）**：**控制面板的核心中枢**，负责启动/关闭的完整编排：配置加载 → WebSocket Server 启动 → 事件处理器注册 → 渲染器进程启动 → 握手 → 模型加载 → 位置恢复。同时负责崩溃恢复（指数退避重启）和断连处理（关键指令缓存）。`scheduleRestart()` 内置防僵尸 guard，防止重复重启。详见 [启动流程](../system/startup.md)
+- **主窗口控制器（MainWindowController）**：**控制面板的核心中枢**，负责启动/关闭的完整编排：配置加载 → WebSocket Server 启动 → 事件处理器注册 → 渲染器进程启动 → 握手 → 模型加载 → 位置恢复。同时负责崩溃恢复（指数退避重启）和断连处理（关键指令缓存）。支持多实例管理（每实例独立渲染器进程、独立端口、独立配置）。详见 [启动流程](../system/startup.md)
 - **状态管理器（PetStateManager）**：维护宠物运行时状态。使用 `ReentrantReadWriteLock` 保证线程安全，`getState()` 返回不可变的 `PetState` 快照（Java Record）。当前不实现心情/活力等养成属性，架构预留权重打分扩展
 - **交互处理器（InteractionHandler）**：接收渲染器上报的 `hit` 事件，查询模型行为映射配置，决定后续响应（构建 `play_motion` 指令并通过 `Protocol.createCommand()` 序列化发送）。内置默认映射（`head→TapHead`、`body→TapBody`），支持大小写容错（渲染器发送小写 key，配置使用 PascalCase）
 - **定时任务（Scheduler）**：使用 `java.util.concurrent.ScheduledExecutorService` 实现定时闲时动作触发。支持 `pause()`/`resume()`（断连时暂停、重连后恢复）、`setIdleMotions()` 动态更新动作池、`updateInterval()` 修改触发间隔
@@ -106,14 +106,14 @@
 - **PetWebSocketServer**：封装服务端启动、单连接管理（`activeConnection` 跟踪，新连接自动替换旧连接）、消息收发。使用独立线程处理网络 I/O，通过 `setMessageCallback` / `setConnectionCallback` 回调转发消息和连接状态变化
 - **MessageDispatcher**：按消息 `type` 分路由——`response` 类型通过 `CompletableFuture` 匹配 `id` 完成回执（`expectResponse()` + `orTimeout()`），`event` 类型按 `action` 路由到注册的 `Consumer<Envelope>` 处理器。未注册 action 记录 WARN 日志，处理器异常隔离不传播
 - **Protocol**：封装 Envelope 格式的序列化/反序列化（Gson）。**关键约定**：response 的 `success`/`error_code`/`error_message` 字段位于 JSON **顶层**（与 C++ 端保持一致），不在 `payload` 内。提供 `createCommand()`/`createEvent()`/`createResponse()` 工厂方法和 UUID 生成
-- **连接管理**：监测渲染引擎连接状态，断开时通知 `AppOrchestrator`。详见 [容错与错误处理](../system/fault-tolerance.md)
+- **连接管理**：监测渲染引擎连接状态，断开时通知 `MainWindowController`。详见 [容错与错误处理](../system/fault-tolerance.md)
 
 ### 2.6 进程管理器（ProcessManager）
 
 负责渲染器进程的生命周期管理：
 
 - 使用 `ProcessBuilder` 启动渲染器可执行文件，工作目录设为渲染器二进制所在目录（确保 `Resources/` 路径正确解析）
-- 通过 `Process.onExit()` 监听进程退出，通知 `AppOrchestrator`。非零退出码视为崩溃，触发自动重启流程
+- 通过 `Process.onExit()` 监听进程退出，通知 `MainWindowController`。非零退出码视为崩溃，触发自动重启流程
 - 停止流程：先通过回调发送 `shutdown` 指令 → 轮询等待进程退出（100ms 间隔，最长 5 秒）→ 超时后 `Process.destroyForcibly()` 强制终止
 - 支持通过 `ProcessBuilderFactory` 函数式接口注入构造器，便于单元测试 mock
 

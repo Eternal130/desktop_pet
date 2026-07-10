@@ -31,20 +31,20 @@
 
 ---
 
-## 二、控制面板启动流程 ✅ 已实现（AppOrchestrator 编排）
+## 二、控制面板启动流程 ✅ 已实现（MainWindowController 编排）
 
 ```plain
 1. App.java (JavaFX Application) 启动
    │
-   ├─> 2. start() 中创建 AppOrchestrator 实例
+   ├─> 2. start() 中创建 MainWindowController 实例
    │
-   ├─> 3. AppOrchestrator.startup() 开始编排：
+   ├─> 3. MainWindowController.startup() 开始编排：
    │      │
    │      ├─> 3a. ConfigManager.load() 加载配置（~/.config/desktop-pet/config.json）
    │      │       └─ 首次运行 → 创建默认配置文件
    │      │       └─ JSON 损坏 → 使用默认值，WARN 日志
    │      │
-   │      ├─> 3b. PetWebSocketServer 启动（监听端口 9000）
+   │      ├─> 3b. PetWebSocketServer 启动（监听端口 9001）
    │      │
    │      ├─> 3c. 注册事件处理器到 MessageDispatcher
    │      │       ├─ ready → 发送 load_model + set_position
@@ -61,12 +61,12 @@
    │      └─> 3e. 等待渲染器连接和 ready 事件（异步）
    │
    ├─> 4. 渲染器初始化（同 MVP 步骤 2-4）
-   │      └─> 作为 WebSocket Client 连接 ws://localhost:9000
+   │      └─> 作为 WebSocket Client 连接 ws://localhost:9001
    │
    ├─> 5. 渲染器发送 ready 事件
    │      │
-   │      ├─> AppOrchestrator 发送 load_model（配置中的当前模型短名称）
-   │      ├─> AppOrchestrator 发送 set_position（配置中的窗口位置）
+   │      ├─> MainWindowController 发送 load_model（配置中的当前模型短名称）
+   │      ├─> MainWindowController 发送 set_position（配置中的窗口位置）
    │      └─> flushPendingCommands()（重发缓存指令）
    │
    └─> 6. load_model 成功回执 → ModelInfoParser 解析模型 → Scheduler.start() → 正常运行
@@ -107,10 +107,10 @@ Phase 2 引入多实例管理后，配置采用分层结构：
 
 ---
 
-## 四、关闭流程（AppOrchestrator.shutdown()）
+## 四、关闭流程（MainWindowController.shutdown()）
 
 ```plain
-App.stop() → AppOrchestrator.shutdown()
+App.stop() → MainWindowController.shutdown()
    │
    ├─> 1. Scheduler.shutdown() — 停止闲时动作触发
    ├─> 2. ConfigManager.save() — 持久化当前配置

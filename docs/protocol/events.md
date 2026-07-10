@@ -294,7 +294,7 @@ Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit(
 
 **控制面板预期行为**：
 - WebSocket server 线程收到 → 反序列化为 `RendererStats` record（`fromJson` 接受字段缺失或显式 `null` 两种 null 表达形式）
-- 经 `Platform.runLater` 切到 JavaFX 线程更新 `MonitorDataModel`（线程边界遵循 `AppOrchestrator` 的 WS→FX 模式）
+- 经 `Platform.runLater` 切到 JavaFX 线程更新 `MonitorDataModel`（线程边界遵循 `MainWindowController` 的 WS→FX 模式）
 - `null` 字段在 UI 显示"—"/"不可用"（灰色）
 - 陈旧判定：超过 10 秒（5 个轮询周期）未收到 `stats_state`，"最后更新"Label 显示"⚠ 数据陈旧"，恢复接收时清除
 

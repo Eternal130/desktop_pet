@@ -333,7 +333,7 @@ Bundle
 
 | 类 | 修改内容 |
 |:---|:---|
-| `AppOrchestrator` | 启动时加载挂载配置，初始化 `MountedBehaviorEngine` |
+| `MainWindowController` | 启动时加载挂载配置，初始化 `MountedBehaviorEngine` |
 | `InteractionHandler` | 当存在挂载语音包时，委托给 `MountedBehaviorEngine` 处理 |
 | `Scheduler` | 扩展 idle motion 来源——优先使用语音包的 idle motions |
 | `ModelScanner` | 新增 `scanAvailableVoicePacks()` 方法 |

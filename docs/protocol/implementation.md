@@ -56,4 +56,4 @@
 | `MessageDispatcher` | `network/MessageDispatcher.java` | response → `CompletableFuture` 匹配 id；event → `Consumer<Envelope>` 按 action 路由 |
 | `MessageDispatcher.expectResponse()` | 同上 | 注册 `CompletableFuture<Envelope>`，支持 `Duration` 超时，超时后自动清理 |
 | `PetWebSocketServer` | `network/PetWebSocketServer.java` | 单连接管理，`sendMessage()` / `setMessageCallback()` / `setConnectionCallback()` |
-| `AppOrchestrator` | `core/AppOrchestrator.java` | 生命周期编排，事件处理器注册，`sendOrCache()` 断连策略 |
+| `MainWindowController` | `ui/MainWindowController.java` | 生命周期编排，事件处理器注册，`sendOrCache()` 断连策略 |

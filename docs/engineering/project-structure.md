@@ -76,10 +76,10 @@ controller/                               # Java 控制面板
     │   ├── java/
     │   │   ├── module-info.java           # Java 模块声明（JPMS）
     │   │   └── com/desktoppet/
-    │   │       ├── App.java               # 应用入口（JavaFX Application，调用 AppOrchestrator）
+    │   │       ├── App.java               # 应用入口（JavaFX Application，创建 MainWindowController）
     │   │       ├── Launcher.java          # 非模块化启动入口（绕过 JPMS 限制）
     │   │       ├── ui/                    # UI 层（JavaFX，Tab 式布局）
-    │   │       │   ├── MainWindowController    # 主窗口 Tab 容器（main-window.fxml）
+    │   │       │   ├── MainWindowController    # 主窗口 Tab 容器（main-window.fxml）+ 生命周期编排中枢（启动/关闭/崩溃恢复/多实例）
     │   │       │   ├── DashboardTabController  # Dashboard Tab（状态/模型切换/日志）
     │   │       │   ├── SettingsTabController   # Settings Tab（行为配置/语音包选择）
     │   │       │   ├── ActionsTabController    # Actions Tab（动作/表情手动触发）
@@ -87,7 +87,6 @@ controller/                               # Java 控制面板
     │   │       │   ├── SettingsPanelController # 设置面板（独立 Stage，兼容旧入口）
     │   │       │   └── TrayManager             # 系统托盘集成（java.awt.SystemTray）
     │   │       ├── core/                  # 业务逻辑层
-    │   │       │   ├── AppOrchestrator    # 生命周期编排器（启动/关闭/崩溃恢复的中枢）
     │   │       │   ├── PetStateManager    # 宠物运行时状态管理（线程安全，ReentrantReadWriteLock）
     │   │       │   ├── InteractionHandler # 交互事件处理（hit→play_motion 指令生成）
     │   │       │   ├── Scheduler          # 定时闲时动作触发（ScheduledExecutorService）

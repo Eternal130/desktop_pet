@@ -8,6 +8,7 @@ compile_commands.json
 # Caches
 .cache/
 renderer/.cache/
+.gradle/
 
 # Downloaded third-party dependencies (use setup scripts to download)
 third_party/CubismSdkForNative/Samples/OpenGL/thirdParty/glew/

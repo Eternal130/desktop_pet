@@ -17,10 +17,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PetWebSocketServerTest {
 
+    private static final String TEST_TOKEN = "test-token-12345";
+
     @Test
     void startAndStop_noCrash() {
         int port = findFreePort();
         PetWebSocketServer server = new PetWebSocketServer(port);
+        server.registerToken(1, TEST_TOKEN);
 
         assertDoesNotThrow(server::start);
         assertDoesNotThrow(() -> server.stop(1_000));
@@ -30,6 +33,7 @@ class PetWebSocketServerTest {
     void clientConnect_callsConnectionCallback() throws Exception {
         int port = findFreePort();
         PetWebSocketServer server = new PetWebSocketServer(port);
+        server.registerToken(1, TEST_TOKEN);
         CountDownLatch connectedLatch = new CountDownLatch(1);
         server.setConnectionCallback((instanceId, connected) -> {
             if (connected) {
@@ -53,6 +57,7 @@ class PetWebSocketServerTest {
     void clientDisconnect_callsConnectionCallback() throws Exception {
         int port = findFreePort();
         PetWebSocketServer server = new PetWebSocketServer(port);
+        server.registerToken(1, TEST_TOKEN);
         CountDownLatch disconnectedLatch = new CountDownLatch(1);
         server.setConnectionCallback((instanceId, connected) -> {
             if (!connected) {
@@ -78,6 +83,7 @@ class PetWebSocketServerTest {
     void sendMessage_clientReceivesIt() throws Exception {
         int port = findFreePort();
         PetWebSocketServer server = new PetWebSocketServer(port);
+        server.registerToken(1, TEST_TOKEN);
         CountDownLatch connectedLatch = new CountDownLatch(1);
         server.setConnectionCallback((instanceId, connected) -> {
             if (connected) {
@@ -107,6 +113,7 @@ class PetWebSocketServerTest {
     void clientSends_messageCallbackInvoked() throws Exception {
         int port = findFreePort();
         PetWebSocketServer server = new PetWebSocketServer(port);
+        server.registerToken(1, TEST_TOKEN);
         AtomicReference<String> captured = new AtomicReference<>();
         CountDownLatch messageLatch = new CountDownLatch(1);
         server.setMessageCallback((instanceId, message) -> {
@@ -136,6 +143,7 @@ class PetWebSocketServerTest {
     void singleConnectionPolicy_newConnectionReplacesOld() throws Exception {
         int port = findFreePort();
         PetWebSocketServer server = new PetWebSocketServer(port);
+        server.registerToken(1, TEST_TOKEN);
         TestWebSocketClient client1 = null;
         TestWebSocketClient client2 = null;
 
@@ -208,7 +216,7 @@ class PetWebSocketServerTest {
         private final AtomicReference<String> lastMessage = new AtomicReference<>();
 
         private TestWebSocketClient(int port) throws URISyntaxException {
-            super(new URI("ws://127.0.0.1:" + port + "/?instance_id=1"));
+            super(new URI("ws://127.0.0.1:" + port + "/?instance_id=1&token=" + TEST_TOKEN));
         }
 
         @Override

@@ -87,6 +87,7 @@ public class MainWindowTest extends ApplicationTest {
         PetInstance instance = new PetInstance("test-mute", "TestMute", "Haru", "stopped", false, "");
         int instanceId = instance.getId();
         setPrivateField(controller, "currentInstance", instance);
+        testServer.registerToken(instanceId, "test-token");
 
         CapturingClient client = new CapturingClient(port, instanceId);
         try {
@@ -148,7 +149,7 @@ public class MainWindowTest extends ApplicationTest {
         final AtomicReference<String> lastMessage = new AtomicReference<>();
 
         CapturingClient(int port, int instanceId) throws java.net.URISyntaxException {
-            super(new URI("ws://127.0.0.1:" + port + "/?instance_id=" + instanceId));
+            super(new URI("ws://127.0.0.1:" + port + "/?instance_id=" + instanceId + "&token=test-token"));
         }
 
         @Override

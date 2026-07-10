@@ -42,6 +42,7 @@ public class E2ESmokeTest {
 
         // Start WebSocket server
         server = new PetWebSocketServer(port);
+        server.registerToken(1, "test-token");
         dispatcher = new MessageDispatcher();
         server.setMessageCallback((instanceId, msg) -> {
             Protocol.deserialize(msg).ifPresent(dispatcher::dispatch);
@@ -71,7 +72,7 @@ public class E2ESmokeTest {
 
         // Connect test client (simulating renderer)
         rendererClient = new TestRendererClient(
-            new URI("ws://localhost:" + port + "/?instance_id=1"),
+            new URI("ws://localhost:" + port + "/?instance_id=1&token=test-token"),
             msg -> {
                 receivedCommands.add(msg);
                 Protocol.deserialize(msg).ifPresent(env -> {
@@ -84,11 +85,11 @@ public class E2ESmokeTest {
         rendererClient.connectBlocking(3, TimeUnit.SECONDS);
         assertTrue(rendererClient.isOpen(), "Client should be connected");
 
-        // Register ready handler on server side (simulating AppOrchestrator behavior)
+        // Register ready handler on server side (simulating MainWindowController behavior)
         CountDownLatch readyLatch = new CountDownLatch(1);
         dispatcher.registerEventHandler("ready", envelope -> {
             readyLatch.countDown();
-            // Send load_model command (like AppOrchestrator does)
+            // Send load_model command (like MainWindowController does)
             JsonObject payload = new JsonObject();
             payload.addProperty("model_path", "Hiyori");
             var cmd = Protocol.createCommand("load_model", payload);
@@ -120,7 +121,7 @@ public class E2ESmokeTest {
         CountDownLatch playMotionLatch = new CountDownLatch(1);
 
         rendererClient = new TestRendererClient(
-            new URI("ws://localhost:" + port + "/?instance_id=1"),
+            new URI("ws://localhost:" + port + "/?instance_id=1&token=test-token"),
             msg -> {
                 receivedCommands.add(msg);
                 Protocol.deserialize(msg).ifPresent(env -> {
@@ -133,7 +134,7 @@ public class E2ESmokeTest {
         rendererClient.connectBlocking(3, TimeUnit.SECONDS);
         assertTrue(rendererClient.isOpen(), "Client should be connected");
 
-        // Set up InteractionHandler on server side (simulating AppOrchestrator)
+        // Set up InteractionHandler on server side (simulating MainWindowController)
         InteractionHandler handler = new InteractionHandler(msg -> server.sendToInstance(1, msg));
         dispatcher.registerEventHandler("hit", handler::handleHitEvent);
 
@@ -165,7 +166,7 @@ public class E2ESmokeTest {
         CountDownLatch setPositionLatch = new CountDownLatch(1);
 
         rendererClient = new TestRendererClient(
-            new URI("ws://localhost:" + port + "/?instance_id=1"),
+            new URI("ws://localhost:" + port + "/?instance_id=1&token=test-token"),
             msg -> {
                 receivedCommands.add(msg);
                 Protocol.deserialize(msg).ifPresent(env -> {

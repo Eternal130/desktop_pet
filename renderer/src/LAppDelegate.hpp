@@ -104,6 +104,8 @@ private:
     std::string _wsUrl;
     bool _wasEverConnected;
     std::chrono::steady_clock::time_point _connectionStartTime;
+    std::chrono::steady_clock::time_point _disconnectStartTime;
+    bool _disconnectTimerActive;
 
     std::string _startupModel;
     int _startupX;

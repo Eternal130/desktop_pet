@@ -322,6 +322,8 @@ LAppDelegate::LAppDelegate():
     _wsUrl("ws://localhost:9000"),
     _wasEverConnected(false),
     _connectionStartTime(std::chrono::steady_clock::now()),
+    _disconnectStartTime(),
+    _disconnectTimerActive(false),
     _startupX(0),
     _startupY(0),
     _hasStartupPos(false),
@@ -685,6 +687,7 @@ void LAppDelegate::PollNetworkMessages()
         if (!_networkReady)
         {
             _networkReady = true;
+            _disconnectTimerActive = false;
             if (_eventEmitter)
             {
                 _eventEmitter->emit("ready", {{"version", "1.0.0"}, {"capabilities", nlohmann::json::array({"live2d"})}});
@@ -697,6 +700,8 @@ void LAppDelegate::PollNetworkMessages()
         if (_networkReady)
         {
             _networkReady = false;
+            _disconnectStartTime = std::chrono::steady_clock::now();
+            _disconnectTimerActive = true;
             LAppPal::PrintLogLn("[Network] Connection lost, waiting for reconnection...");
         }
 
@@ -707,6 +712,16 @@ void LAppDelegate::PollNetworkMessages()
             if (elapsed > 10)
             {
                 LAppPal::PrintLogLn("[Network] Connection timeout (%llds), exiting...", elapsed);
+                _windowManager->SetShouldClose();
+            }
+        }
+        else if (_disconnectTimerActive)
+        {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - _disconnectStartTime).count();
+            if (elapsed > 30)
+            {
+                LAppPal::PrintLogLn("[Network] Reconnection failed (%llds), exiting...", elapsed);
                 _windowManager->SetShouldClose();
             }
         }

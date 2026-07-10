@@ -43,10 +43,8 @@ desktop_pet/
 |--------|------|----------|------|
 | `App` | Java | `controller/.../App.java` | JavaFX Application entry |
 | `Launcher` | Java | `controller/.../Launcher.java` | Fat-JAR entry (JPMS workaround) |
-| `AppOrchestrator` | Java | `controller/.../core/AppOrchestrator.java` | Lifecycle hub: startup, shutdown, crash recovery |
-| `PetStateManager` | Java | `controller/.../core/PetStateManager.java` | Thread-safe runtime state (ReentrantReadWriteLock) |
 | `MessageDispatcher` | Java | `controller/.../network/MessageDispatcher.java` | Routes WS messages by type+action, CompletableFuture responses |
-| `MainWindowController` | Java | `controller/.../ui/MainWindowController.java` | Tab container, wires AppOrchestrator |
+| `MainWindowController` | Java | `controller/.../ui/MainWindowController.java` | Tab container, lifecycle hub, multi-instance management |
 | `ProcessManager` | Java | `controller/.../util/ProcessManager.java` | Renderer process lifecycle (start/stop/restart) |
 | `AutoLaunchManager` | Java | `controller/.../util/AutoLaunchManager.java` | OS-specific auto-launch (Windows registry / Linux .desktop) |
 | `LAppDelegate` | C++ | `renderer/src/LAppDelegate.hpp` | Engine singleton: lifecycle, main loop, window |

@@ -60,7 +60,7 @@ controller/
 
 - **All data models are Java Records** — no POJOs, no Lombok, no getters/setters boilerplate
 - **Gson `@SerializedName`** maps `snake_case` JSON config keys to `camelCase` Record fields
-- **`AppOrchestrator`** is the lifecycle hub — startup/shutdown/crash recovery all flow through it
+- **`MainWindowController`** is the lifecycle hub — startup/shutdown/crash recovery all flow through it (multi-instance management)
 - **`PetStateManager`** uses `ReentrantReadWriteLock` for thread-safe state snapshots
 - **`ProcessManager`** uses injectable `ProcessBuilderFactory` for testability
 - **UI controllers** follow JavaFX FXML pattern — `@FXML` annotated methods, `initialize()` for setup

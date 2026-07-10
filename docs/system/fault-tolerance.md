@@ -83,16 +83,27 @@ ProcessManager 检测到渲染器进程退出（非零退出码）
 | 进程存活 | 等待渲染引擎重新连接（网络抖动场景） |
 | 进程退出 | 判定为渲染引擎崩溃，触发自动重启流程（见第二节） |
 
-**断连期间指令缓存策略**（`sendOrCache` 方法）：
+**断连期间指令缓存策略**（`sendOrCache` 方法，完整策略详见 [协议 - 实现参考](../protocol/implementation.md)）：
 
 | 指令类型 | 断连时行为 | 原因 |
 |:---|:---|:---|
 | `load_model` | ✅ 缓存到 `ConcurrentLinkedQueue` | 关键指令，重连后必须恢复模型 |
 | `set_position` | ✅ 缓存 | 关键指令，重连后恢复窗口位置 |
 | `set_opacity` | ✅ 缓存 | 关键指令，重连后恢复透明度 |
+| `set_size` | ✅ 缓存 | 关键指令，重连后恢复窗口尺寸 |
+| `set_fps` | ✅ 缓存 | 关键指令，重连后恢复帧率设置 |
+| `set_hit_areas` | ✅ 缓存 | 关键指令，重连后恢复命中区域配置 |
+| `set_layout` | ✅ 缓存 | 关键指令，重连后恢复用户布局 |
+| `set_volume` | ✅ 缓存 | 关键指令，重连后恢复音量/静音状态 |
 | `play_motion` | ❌ 丢弃（DEBUG 日志） | 非关键，过时的动作指令无意义 |
+| `play_motion_ext` | ❌ 丢弃 | 过时的外部动作指令无意义 |
 | `set_expression` | ❌ 丢弃 | 非关键 |
 | `stop_motion` | ❌ 丢弃 | 非关键 |
+| `play_audio` | ❌ 丢弃 | 过时的音频播放无意义 |
+| `stop_audio` | ❌ 丢弃 | 非关键 |
+| `get_layout` | ❌ 丢弃 | 查询指令，响应已过期 |
+| `reset_layout` | ❌ 丢弃 | 一次性操作，重连后由 `set_layout` 恢复 |
+| `get_stats` | ❌ 丢弃 | 轮询指令，重连后重新发起 |
 
 **重连后恢复流程**：收到 `ready` 事件后，先执行 `load_model` + `set_position`，再调用 `flushPendingCommands()` 按缓存顺序重放所有关键指令，最后 `Scheduler.resume()` 恢复闲时动作触发。
 

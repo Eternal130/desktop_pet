@@ -95,31 +95,32 @@
 | `network/WebSocketClient.cpp/.hpp` | IXWebSocket 客户端封装（连接/断连/消息收发） |
 | `network/Protocol.cpp/.hpp` | Envelope 协议序列化/反序列化（nlohmann/json），含 `generateId()`、`createCommand()`/`createEvent()`/`createResponse()` 工厂方法 |
 | `network/MessageHandler.cpp/.hpp` | 消息路由（按 `action` 分发 command，过滤 response，未知 action 返回错误码 5003） |
-| `network/CommandHandlers.cpp/.hpp` | 指令处理器注册（共 19 条指令，见下表） |
-| `network/EventEmitter.cpp/.hpp` | 事件上报（`ready`、`model_loaded`/`model_load_failed`、`motion_started`/`motion_finished`、`hit`、`drag_start`/`drag_end`、`layout_changed`、`window_resized` 等，共 ~11 条） |
+| `network/CommandHandlers.cpp/.hpp` | 指令处理器注册（共 20 条指令，见下表） |
+| `network/EventEmitter.cpp/.hpp` | 事件上报（`ready`、`model_loaded`/`model_load_failed`、`motion_started`/`motion_finished`、`hit`、`drag_start`/`drag_end`、`layout_changed`、`window_resized`、`layout_state`、`stats_state`、`error`，共 13 条） |
 
-**已注册指令（19 条）**：
+**已注册指令（20 条）**：
 
 | 指令 | 功能 | 备注 |
 |:---|:---|:---|
 | `hello` | 握手心跳 | 连接建立确认 |
 | `load_model` | 加载/切换模型 | 错误码 1001 |
 | `play_motion` | 播放内置动作（组+索引） | 错误码 2001（无模型） |
-| `play_motion_ext` | 播放外置语音包动作 | Phase 3a，错误码 3001/3002/3003 |
+| `play_motion_ext` | 播放外置语音包动作 | Phase 3a，错误码 3001/3002/3003/3004 |
 | `stop_motion` | 停止当前动作 | — |
 | `set_expression` | 设置表情 | — |
 | `set_position` | 设置模型在窗口内位置 | — |
 | `set_scale` | 设置模型缩放 | **⚠️ stub（仅日志，未实现缩放）** |
-| `set_size` | 设置窗口尺寸 | 错误码 6001 |
+| `set_size` | 设置窗口尺寸 | 错误码 4004 |
 | `set_opacity` | 设置窗口透明度 | — |
-| `set_hit_areas` | 设置命中区域 | 错误码 4001 |
-| `set_fps` | 设置帧率（0=自适应，1-120=固定） | 错误码 5001 |
-| `play_audio` | 播放音频文件 | Phase 3b，错误码 7001/7002/7003 |
+| `set_hit_areas` | 设置命中区域 | 错误码 1005 |
+| `set_fps` | 设置帧率（0=自适应，1-120=固定） | 错误码 6003 |
+| `play_audio` | 播放音频文件 | Phase 3b，错误码 7001/7002/7003/7004 |
 | `stop_audio` | 停止所有音频 | Phase 3b |
 | `set_volume` | 设置主音量 | Phase 3b，错误码 7002 |
 | `set_layout` | 设置模型布局参数 | 错误码 8001 |
 | `get_layout` | 查询模型布局参数 | 错误码 8001 |
 | `reset_layout` | 重置布局到默认 | — |
+| `get_stats` | 请求资源占用快照 | 经 `stats_state` 事件回传（不走 Response） |
 | `shutdown` | 关闭渲染器 | — |
 
 > **线程安全**：WebSocket 回调在后台线程执行，**禁止**在回调中直接调用 OpenGL/Vulkan API。指令通过消息队列传递到主线程处理（每帧最多处理 50 条，队列上限 1000 条），`glfwPostEmptyEvent()` 用于唤醒主循环。

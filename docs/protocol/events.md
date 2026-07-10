@@ -299,3 +299,88 @@ Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit(
 - 陈旧判定：超过 10 秒（5 个轮询周期）未收到 `stats_state`，"最后更新"Label 显示"⚠ 数据陈旧"，恢复接收时清除
 
 > **`id` 不用于 request-response 匹配**：`stats_state` 是事件而非 Response，其 `id` 由渲染器新建（`createEvent` 生成），**不复用** `get_stats` 的 `id`。控制面板按 action 类型路由，不按 `id` 匹配 pending request。
+
+---
+
+## 12. `layout_changed` — 用户布局变更
+
+用户通过交互（Shift+拖拽模型、Shift+滚轮缩放）改变模型布局后，渲染器发送当前布局参数。
+
+**Payload**：
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `offset_x` | float | 水平偏移量 |
+| `offset_y` | float | 垂直偏移量 |
+| `scale` | float | 缩放比例 |
+
+**示例**：
+
+```json
+{
+  "type": "event", "action": "layout_changed",
+  "id": "...", "payload": { "offset_x": 0.1, "offset_y": -0.05, "scale": 1.2 },
+  "timestamp": ...
+}
+```
+
+**控制面板预期行为**：提取 `offset_x`/`offset_y`/`scale` → 更新实例的布局属性 → 持久化到配置文件（下次启动时通过 `set_layout` 恢复）。
+
+> **触发场景**：渲染器在 `LAppDelegate` 中检测到 Shift+鼠标拖拽结束（模型拖拽）或 Shift+滚轮缩放时发出。与 `set_layout` 指令形成双向同步——控制面板可通过指令设置布局，用户交互变更也会通过此事件回传。
+
+---
+
+## 13. `window_resized` — 窗口尺寸变更
+
+用户通过交互（Ctrl+滚轮）缩放窗口后，渲染器发送新的窗口尺寸与位置。
+
+**Payload**：
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `window_width` | int | 新窗口宽度（像素） |
+| `window_height` | int | 新窗口高度（像素） |
+| `window_x` | int | 新窗口左上角 X 坐标（屏幕坐标系，保持中心点不变） |
+| `window_y` | int | 新窗口左上角 Y 坐标 |
+
+**示例**：
+
+```json
+{
+  "type": "event", "action": "window_resized",
+  "id": "...", "payload": { "window_width": 400, "window_height": 600, "window_x": 1200, "window_y": 300 },
+  "timestamp": ...
+}
+```
+
+**控制面板预期行为**：提取 `window_width`/`window_height`/`window_x`/`window_y` → 更新实例的窗口尺寸与位置属性 → 持久化到配置文件（下次启动时通过 `set_size` 和 `set_position` 恢复）。
+
+> **窗口居中缩放**：渲染器在调整窗口尺寸时保持中心点不变（同步调整窗口左上角坐标），因此 payload 中同时包含尺寸和位置。
+
+---
+
+## 14. `layout_state` — 当前布局参数查询响应
+
+作为 [`get_layout`](./commands.md#16-get_layout--查询用户布局) 命令的响应事件发送（每收到一条 `get_layout` 即 emit 一条 `layout_state`）。复用 `get_stats`/`stats_state` 的"走事件绕过空 payload Response"模式——因 `createResponse` 的 payload 固定为空对象，无法承载布局数据。
+
+**Payload**：
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `offset_x` | float | 水平偏移量 |
+| `offset_y` | float | 垂直偏移量 |
+| `scale` | float | 缩放比例 |
+
+**示例**：
+
+```json
+{
+  "type": "event", "action": "layout_state",
+  "id": "...", "payload": { "offset_x": 0.0, "offset_y": 0.0, "scale": 1.0 },
+  "timestamp": ...
+}
+```
+
+> **与 `layout_changed` 的区别**：`layout_changed` 由用户交互触发（被动通知），`layout_state` 由控制面板主动查询触发（请求-响应）。两者 payload 结构相同，但语义不同。
+
+> **`id` 不用于 request-response 匹配**：`layout_state` 是事件而非 Response，其 `id` 由渲染器新建（`createEvent` 生成），**不复用** `get_layout` 的 `id`。控制面板按 action 类型路由，不按 `id` 匹配 pending request。

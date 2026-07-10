@@ -37,7 +37,7 @@
 | 3001 | `play_motion_ext` 时 `motion_path` 为空 | `"motion_path is required"` |
 | 3002 | `play_motion_ext` 时动作文件不存在 | `"motion file not found: <path>"` |
 | 3003 | 动作被优先级守卫拒绝或加载失败 | `"Motion rejected by priority guard or failed to load"` |
-| 3004 | `play_motion_ext` 时路径包含不安全字符（绝对路径、`..`、`~`等） | `"motion_path contains unsafe traversal"` |
+| 3004 | `play_motion_ext` 时路径包含不安全字符（`..`、`~` 等） | `"motion_path contains unsafe traversal"` |
 
 ---
 
@@ -85,7 +85,7 @@
 | 7001 | `play_audio` 时 `audio_path` 为空 | `"audio_path is required"` |
 | 7002 | `play_audio` 或 `set_volume` 时 `AudioManager` 未初始化 | `"Audio engine not initialized"` |
 | 7003 | `play_audio` 时音频文件不存在 | `"audio file not found: <path>"` |
-| 7004 | `play_audio` 时路径包含不安全字符（绝对路径、`..`、`~`等） | `"audio_path contains unsafe traversal"` |
+| 7004 | `play_audio` 时路径包含不安全字符（`..`、`~` 等） | `"audio_path contains unsafe traversal"` |
 
 > **即发即忘模式**：Phase 3b 音频播放不上报完成事件，控制面板无法收到播放结束通知（无错误码也无事件）。`stop_audio` 无论引擎状态如何均返回 `success: true`。
 

@@ -219,7 +219,7 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |:---|:---|:---:|:---|:---|
-| `motion_path` | string | ✓ | — | 动作文件绝对路径（`.motion3.json`）。缺失返回 `3001`，文件不存在返回 `3002` |
+| `motion_path` | string | ✓ | — | 动作文件绝对路径（`.motion3.json`）。缺失返回 `3001`，路径不安全返回 `3004`，文件不存在返回 `3002` |
 | `priority` | int | 否 | `2` | 动作优先级（同 [play_motion 优先级常量](#2-play_motion--播放动作)） |
 | `fade_in` | float | 否 | `1.0` | 淡入时长（秒） |
 | `fade_out` | float | 否 | `1.0` | 淡出时长（秒） |
@@ -227,11 +227,12 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 
 **渲染器处理**：
 1. 校验 `motion_path` 非空，否则返回 `3001`
-2. 校验文件存在，否则返回 `3002`
-3. 校验已加载模型，否则返回 `2001`
-4. 加载并播放动作；若被优先级守卫拒绝或加载失败，返回 `3003`
-5. 若附带 `audio_path` 且 `AudioManager` 已初始化：停止当前音频 → 播放指定音频（文件不存在则仅记录日志）
-6. 返回 Response（`success: true`）
+2. 校验路径安全性（拒绝含 `..`、`~` 等穿越字符的路径），否则返回 `3004`
+3. 校验文件存在，否则返回 `3002`
+4. 校验已加载模型，否则返回 `2001`
+5. 加载并播放动作；若被优先级守卫拒绝或加载失败，返回 `3003`
+6. 若附带 `audio_path` 且 `AudioManager` 已初始化：停止当前音频 → 播放指定音频（文件不存在则仅记录日志）
+7. 返回 Response（`success: true`）
 
 **事件**：动作开始时不发送 `motion_started`；动作播放完成时发送 `motion_finished` 事件，**payload 与 `play_motion` 不同**——使用 `{ "motion_path": "<原路径>" }` 而非 `{ "group", "index" }`。详见 [Events §10](./events.md#10-phase-3-事件)。
 
@@ -257,6 +258,7 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 | `7001` | `audio_path` 为空 | `"audio_path is required"` |
 | `7002` | `AudioManager` 未初始化 | `"Audio engine not initialized"` |
 | `7003` | 音频文件不存在 | `"audio file not found: <path>"` |
+| `7004` | `audio_path` 路径包含不安全字符（`..`、`~` 等） | `"audio_path contains unsafe traversal"` |
 
 > **即发即忘**：音频播放完成不上报事件（无 `audio_started`/`audio_ended` 事件，见 [Events §10](./events.md#10-phase-3-事件)）。
 

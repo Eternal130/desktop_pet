@@ -61,6 +61,30 @@ public class Scheduler {
         paused = false;
     }
 
+    /**
+     * Fires the idle callback immediately, clears paused state, and resets the
+     * periodic timer — unlike {@link #resume()} which only clears the flag.
+     */
+    public synchronized void triggerNow() {
+        if (!running) {
+            return;
+        }
+        paused = false;
+
+        List<String> motions = idleMotions;
+        if (!motions.isEmpty()) {
+            String motion = motions.get(random.nextInt(motions.size()));
+            try {
+                onTrigger.accept(motion);
+            } catch (Exception e) {
+                log.error("Trigger error: {}", e.getMessage(), e);
+            }
+        }
+
+        cancelCurrentTask();
+        scheduleTask();
+    }
+
     public void setIdleMotions(List<String> motions) {
         idleMotions = new ArrayList<>(Objects.requireNonNull(motions, "motions must not be null"));
     }

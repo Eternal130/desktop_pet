@@ -96,6 +96,27 @@ class SchedulerTest {
     }
 
     @Test
+    void triggerNow_firesImmediately_evenWhenPaused() throws InterruptedException {
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+        Scheduler scheduler = new Scheduler(executor);
+        CountDownLatch triggered = new CountDownLatch(1);
+
+        try {
+            scheduler.start(5000, List.of("Idle"), motion -> triggered.countDown());
+            scheduler.pause();
+            assertTrue(scheduler.isPaused());
+
+            scheduler.triggerNow();
+
+            assertTrue(triggered.await(500, TimeUnit.MILLISECONDS),
+                    "triggerNow should fire callback immediately even when paused");
+            assertFalse(scheduler.isPaused(), "triggerNow should clear paused state");
+        } finally {
+            scheduler.shutdown();
+        }
+    }
+
+    @Test
     void setIdleMotions_changesMotionPool() throws InterruptedException {
         ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
         Scheduler scheduler = new Scheduler(executor);

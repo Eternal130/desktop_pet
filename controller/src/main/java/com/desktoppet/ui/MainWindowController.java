@@ -1605,7 +1605,7 @@ public class MainWindowController {
 
             if (!isIdle && instance.isConnected()) {
                 Scheduler sch = schedulers.get(id);
-                if (sch != null) sch.resume();
+                if (sch != null) sch.triggerNow();
             }
         }));
 

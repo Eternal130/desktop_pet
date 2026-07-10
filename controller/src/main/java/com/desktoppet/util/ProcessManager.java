@@ -9,6 +9,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 /**
@@ -30,9 +32,15 @@ public class ProcessManager {
     private final int wsPort;
     private final ProcessBuilderFactory processBuilderFactory;
 
-    private Process process;
-    private Runnable shutdownCommandSender;
-    private Consumer<Integer> exitCallback;
+    private final ExecutorService logExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "renderer-log");
+        t.setDaemon(true);
+        return t;
+    });
+
+    private volatile Process process;
+    private volatile Runnable shutdownCommandSender;
+    private volatile Consumer<Integer> exitCallback;
 
     /**
      * Default constructor — uses relative path to renderer binary and port 9000.
@@ -119,7 +127,7 @@ public class ProcessManager {
         process = pb.start();
         log.info("Renderer started (pid={})", process.pid());
 
-        Thread logThread = new Thread(() -> {
+        logExecutor.submit(() -> {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream()))) {
                 String line;
@@ -129,9 +137,6 @@ public class ProcessManager {
             } catch (IOException ignored) {
             }
         });
-        logThread.setDaemon(true);
-        logThread.setName("renderer-log");
-        logThread.start();
 
         process.onExit().thenAccept(p -> {
             int exitCode = p.exitValue();

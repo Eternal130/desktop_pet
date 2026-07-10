@@ -77,6 +77,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -112,6 +113,7 @@ public class MainWindowController {
     private static final long MONITOR_POLL_INTERVAL_MS = 2_000L;
     private static final long MONITOR_STALE_THRESHOLD_MS = 10_000L;
     private ScheduledExecutorService monitorExecutor;
+    private ScheduledFuture<?> monitorTask;
     private ResourceStatsCollector resourceStatsCollector;
     int currentMonitoredInstanceId = -1;
     // Volatile: read by the executor tick, written by the WS handler and
@@ -595,9 +597,6 @@ public class MainWindowController {
         if (!hasInstances && welcomePane != null) {
             refreshEnvironmentStatus();
         }
-    }
-
-    public void setOrchestrator(Object orchestrator) {
     }
 
     public void setPanelStateManager(PanelStateManager manager) {
@@ -2077,22 +2076,26 @@ public class MainWindowController {
         saveState();
         stopMonitorPolling();
 
-        for (PetInstance instance : instances) {
-            if (instance.isRunning()) {
-                stopInstance(instance);
+        Thread shutdownThread = new Thread(() -> {
+            for (PetInstance instance : instances) {
+                if (instance.isRunning()) {
+                    stopInstance(instance);
+                }
             }
-        }
-        schedulers.values().forEach(Scheduler::shutdown);
-        schedulers.clear();
-        dispatchers.clear();
-        if (wsServer != null) {
-            try {
-                wsServer.stop(1000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            schedulers.values().forEach(Scheduler::shutdown);
+            schedulers.clear();
+            dispatchers.clear();
+            if (wsServer != null) {
+                try {
+                    wsServer.stop(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
-        }
-        Platform.exit();
+            Platform.exit();
+        }, "shutdown");
+        shutdownThread.setDaemon(true);
+        shutdownThread.start();
     }
 
     // ===== Resource monitor (plan T4) =====
@@ -2140,11 +2143,14 @@ public class MainWindowController {
                 return t;
             });
         }
+        if (monitorTask != null && !monitorTask.isDone()) {
+            monitorTask.cancel(false);
+        }
         if (currentInstance != null) {
             currentMonitoredInstanceId = currentInstance.getId();
         }
         lastStatsStateReceivedMs = System.currentTimeMillis();
-        monitorExecutor.scheduleAtFixedRate(
+        monitorTask = monitorExecutor.scheduleAtFixedRate(
                 this::monitorTick, 0, MONITOR_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
         log.info("Monitor polling started for instance {}", currentMonitoredInstanceId);
     }

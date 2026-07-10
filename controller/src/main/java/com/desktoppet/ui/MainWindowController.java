@@ -34,6 +34,7 @@ import javafx.geometry.Pos;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
@@ -2060,12 +2061,30 @@ public class MainWindowController {
             return;
         }
         if (confirmOnExit) {
+            ButtonType exitButton = new ButtonType("退出", ButtonBar.ButtonData.OK_DONE);
+            ButtonType cancelButton = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
+
             Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-            alert.setTitle("退出确认");
+            alert.setTitle("关闭确认");
             alert.setHeaderText(null);
-            alert.setContentText("确定要退出桌面宠物吗？");
+            alert.setContentText("您可以选择退出程序或最小化到系统托盘。");
+
+            ButtonType minimizeButton = null;
+            if (SystemTray.isSupported()) {
+                minimizeButton = new ButtonType("最小化到托盘", ButtonBar.ButtonData.LEFT);
+                alert.getButtonTypes().setAll(exitButton, minimizeButton, cancelButton);
+            } else {
+                alert.getButtonTypes().setAll(exitButton, cancelButton);
+            }
+
+            alert.getDialogPane().lookupButton(cancelButton).requestFocus();
+
             Optional<ButtonType> result = alert.showAndWait();
-            if (result.isEmpty() || result.get() != ButtonType.OK) {
+            if (result.isEmpty() || result.get() == cancelButton) {
+                return;
+            }
+            if (minimizeButton != null && result.get() == minimizeButton) {
+                primaryStage().hide();
                 return;
             }
         }

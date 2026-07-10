@@ -14,8 +14,8 @@
 | 参数 | 值 | 说明 |
 |:---|:---|:---|
 | 协议 | `ws://` | 本地通信，未启用 TLS |
-| 地址 | `ws://localhost:9000` | — |
-| 端口 | **9000** | — |
+| 地址 | `ws://localhost:9001` | — |
+| 端口 | **9001** | — |
 | Server 端 | 控制面板 | WebSocket Server，监听端口等待渲染引擎连接 |
 | Client 端 | 渲染引擎 | WebSocket Client，启动后主动连接控制面板 |
 | 帧类型 | Text Frame | 仅使用 WebSocket 文本帧，不使用 Binary Frame |

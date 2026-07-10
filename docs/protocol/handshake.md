@@ -19,9 +19,9 @@
 控制面板                                     渲染引擎
     │                                           │
     │  启动 WebSocket Server                     │
-    │  监听 ws://localhost:9000                  │
+    │  监听 ws://localhost:9001                  │
     │                                           │
-    │                            连接 ws://localhost:9000
+    │                            连接 ws://localhost:9001
     │                                           │
     │◄──────────── TCP 连接建立 ────────────────│
     │                                           │

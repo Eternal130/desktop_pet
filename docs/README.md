@@ -17,7 +17,7 @@
 | 点击检测（HitArea → 即时动画反馈） | ✅ 已完成 | — | ✅ 事件上报到控制面板 | — | — |
 | 窗口拖拽移动 | ✅ 已完成 | — | ✅ 位置上报与持久化 | — | — |
 | 自适应帧率 | ✅ 已完成 | — | ✅ 可选固定帧率 | — | — |
-| WebSocket 通信 | ✗ | ✅ 已完成（端口 9000） | — | — | — |
+| WebSocket 通信 | ✗ | ✅ 已完成（端口 9001） | — | — | — |
 | Java 控制面板 | ✗ | — | ✅ 已完成（Tab 式 UI + 多实例） | — | — |
 | 多实例管理 | ✗ | — | ✅ 已完成 | — | — |
 | 外置语音包挂载 | ✗ | — | — | — | ✅ Phase 3a 已完成（Java 侧扫描/解析/挂载/行为引擎 + 渲染器 `play_motion_ext`） |
@@ -111,7 +111,7 @@
 | 通信模块（渲染引擎端） | C++ | 同上 | IXWebSocket 11.4.6（Client）、nlohmann/json 3.12.0 | ✅ Phase 1 |
 | 控制面板 | Java 21 LTS | OpenJDK 21 / Maven ≥ 3.9 | JavaFX 21 (OpenJFX 21.0.5)、Java-WebSocket 1.6.0（Server）、Gson 2.13.2、SLF4J 2.0.17 + Logback 1.5.32、protobuf-java 4.29.3 | ✅ Phase 2 + Phase 3a |
 | 音频模块（渲染器侧） | C++ | 同上 | miniaudio（single-header vendored）、libogg 1.3.5 + libvorbis 1.3.7（CMake FetchContent） | ✅ Phase 3b 渲染器侧已实现，控制器侧待实现 |
-| 通信协议 | — | — | WebSocket（端口 9000）+ JSON Envelope | ✅ Phase 1 |
+| 通信协议 | — | — | WebSocket（端口 9001）+ JSON Envelope | ✅ Phase 1 |
 | 目标平台 | — | — | Ubuntu 22.04 LTS（X11）+ Windows 10+（Win32 / MinGW）；GPU 支持 OpenGL 3.3+ 或 Vulkan 1.2+（Vulkan 后端） | ✅ MVP + Windows 扩展 |
 
 > 完整版本与选型决策详见 [工程化](./engineering/README.md)。
@@ -172,7 +172,7 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 
 | 方面       | 设计决策                    | 当前状态 | 阶段 |
 | :------- | :---------------------- | :--- | :---: |
-| **通信**   | WebSocket + JSON 协议，Envelope 格式，端口 9000 | ✅ 已实现 | Phase 1 |
+| **通信**   | WebSocket + JSON 协议，Envelope 格式，端口 9001 | ✅ 已实现 | Phase 1 |
 | **整体架构** | Java 控制面板（Server）+ C++ 渲染引擎（Client）分离 | ✅ 已实现 | Phase 2 |
 | **控制面板 UI** | Tab 式布局（Dashboard/Settings/Actions/Advanced），支持多宠物实例管理 | ✅ 已实现 | Phase 2 |
 | **多实例** | 每个宠物实例独立配置（`instances/{uuid}.json`），面板统一管理（`panel.json`） | ✅ 已实现 | Phase 2 |

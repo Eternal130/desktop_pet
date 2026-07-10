@@ -20,7 +20,7 @@
 | 源文件 | 职责 |
 |:---|:---|
 | `LAppDelegate.cpp/.hpp` | 引擎主类（单例），管理主循环、事件分发、子系统生命周期 |
-| `LAppDefine.cpp/.hpp` | 全局常量定义（窗口尺寸、WebSocket 端口 9000、资源路径等） |
+| `LAppDefine.cpp/.hpp` | 全局常量定义（窗口尺寸、WebSocket 端口 9001、资源路径等） |
 | `LAppPal.cpp/.hpp` | 平台抽象层（文件 I/O、时间获取、日志输出 `PrintLogLn`） |
 | `AudioManager.cpp/.hpp` | miniaudio + libvorbis 音频播放引擎（OGG 解码播放，详见 [音频播放架构](./audio.md) 与本文档 1.7 音频层） |
 
@@ -88,7 +88,7 @@
 
 ### 1.6 通信层 (Network Layer) ✅ Phase 1 已实现
 
-提供 WebSocket 客户端，启动后主动连接控制面板的 WebSocket 服务端（端口 9000）。接收控制面板下发的指令并解析执行，将渲染器事件上报给控制面板。
+提供 WebSocket 客户端，启动后主动连接控制面板的 WebSocket 服务端（端口 9001）。接收控制面板下发的指令并解析执行，将渲染器事件上报给控制面板。
 
 | 源文件 | 职责 |
 |:---|:---|

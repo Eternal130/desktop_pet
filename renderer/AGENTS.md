@@ -92,13 +92,14 @@ renderer/
 ## CLI ARGUMENTS
 
 ```
-desktop-pet-renderer --port 9000 --instance-id 0 --model Hiyori --x 100 --y 200 --width 400 --height 500
+desktop-pet-renderer --port 9001 --instance-id 0 --token <hex> --model Hiyori --x 100 --y 200 --width 400 --height 500
 ```
 
 | Arg | Default | Notes |
 |-----|---------|-------|
-| `--port` | 9000 | WebSocket server port to connect to |
+| `--port` | 9001 | WebSocket server port to connect to |
 | `--instance-id` | 0 | Instance ID for WS URL query param |
+| `--token` | (none) | Per-process auth token for WS connection validation |
 | `--model` | (none) | Startup model name (e.g., "Hiyori") |
 | `--x`, `--y` | -1 | Window position (-1 = default) |
 | `--width`, `--height` | -1 | Window size (-1 = default) |

@@ -6,7 +6,7 @@
 
 ## OVERVIEW
 
-Live2D desktop pet application. JavaFX control panel (Java 21) orchestrates a C++ rendering engine via WebSocket (JSON protocol, port 9000). Controller is WS Server; renderer is WS Client.
+Live2D desktop pet application. JavaFX control panel (Java 21) orchestrates a C++ rendering engine via WebSocket (JSON protocol, port 9001). Controller is WS Server; renderer is WS Client.
 
 ## STRUCTURE
 
@@ -127,4 +127,4 @@ cmake --build build/renderer_vulkan --config Release -j
 - AudioManager.cpp/hpp: Implemented (miniaudio + libvorbis, OGG playback). `play_audio`/`stop_audio`/`set_volume` commands wired (error codes 7001/7002/7003).
 - Dual platform: Ubuntu/X11 (original MVP) + Windows/MinGW (current). `build.py` builds both OpenGL and Vulkan variants.
 - Build artifacts: `build/bin/desktop-pet-renderer.exe`, `build/bin/desktop-pet-controller.jar`
-- Renderer CLI args: `--port`, `--instance-id`, `--model`, `--x`, `--y`, `--width`, `--height`
+- Renderer CLI args: `--port`, `--instance-id`, `--model`, `--token`, `--x`, `--y`, `--width`, `--height`

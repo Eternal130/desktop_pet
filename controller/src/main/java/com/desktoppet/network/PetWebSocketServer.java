@@ -20,6 +20,7 @@ public class PetWebSocketServer extends WebSocketServer {
 
     private final Map<Integer, WebSocket> instanceConnections = new ConcurrentHashMap<>();
     private final Map<WebSocket, Integer> connectionInstances = new ConcurrentHashMap<>();
+    private final Map<Integer, String> expectedTokens = new ConcurrentHashMap<>();
 
     private volatile BiConsumer<Integer, Boolean> connectionCallback;
     private volatile BiConsumer<Integer, String> messageCallback;
@@ -30,10 +31,27 @@ public class PetWebSocketServer extends WebSocketServer {
 
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
+        // Reject browser connections — DNS rebinding defense.
+        // Browsers always send an Origin header; native WS clients (IXWebSocket) do not.
+        String origin = handshake.getFieldValue("Origin");
+        if (origin != null && !origin.isEmpty()) {
+            log.warn("Connection with Origin header rejected (possible DNS rebinding): {}", origin);
+            conn.close(4001, "browser connections not allowed");
+            return;
+        }
+
         Integer instanceId = parseInstanceId(handshake.getResourceDescriptor());
         if (instanceId == null) {
             log.warn("Renderer connected without instance_id, closing: {}", conn.getRemoteSocketAddress());
             conn.close(4000, "missing instance_id query parameter");
+            return;
+        }
+
+        String token = parseQueryParam(handshake.getResourceDescriptor(), "token");
+        String expectedToken = expectedTokens.get(instanceId);
+        if (expectedToken == null || !expectedToken.equals(token)) {
+            log.warn("Renderer connected with invalid token for instance {}, closing", instanceId);
+            conn.close(4002, "invalid or missing auth token");
             return;
         }
 
@@ -117,23 +135,33 @@ public class PetWebSocketServer extends WebSocketServer {
         this.connectionCallback = callback;
     }
 
+    public void registerToken(int instanceId, String token) {
+        expectedTokens.put(instanceId, token);
+    }
+
+    public void removeToken(int instanceId) {
+        expectedTokens.remove(instanceId);
+    }
+
     static Integer parseInstanceId(String resourceDescriptor) {
-        if (resourceDescriptor == null) {
+        String value = parseQueryParam(resourceDescriptor, "instance_id");
+        if (value == null) return null;
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    static String parseQueryParam(String resourceDescriptor, String key) {
+        if (resourceDescriptor == null) return null;
         int queryStart = resourceDescriptor.indexOf('?');
-        if (queryStart < 0) {
-            return null;
-        }
+        if (queryStart < 0) return null;
         String query = resourceDescriptor.substring(queryStart + 1);
         for (String param : query.split("&")) {
             String[] kv = param.split("=", 2);
-            if (kv.length == 2 && "instance_id".equals(kv[0])) {
-                try {
-                    return Integer.parseInt(kv[1]);
-                } catch (NumberFormatException e) {
-                    return null;
-                }
+            if (kv.length == 2 && key.equals(kv[0])) {
+                return kv[1];
             }
         }
         return null;

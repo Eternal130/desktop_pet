@@ -7,10 +7,13 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.security.SecureRandom;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -38,15 +41,17 @@ public class ProcessManager {
         return t;
     });
 
+    private final String authToken = generateSecureToken();
+
     private volatile Process process;
     private volatile Runnable shutdownCommandSender;
     private volatile Consumer<Integer> exitCallback;
 
     /**
-     * Default constructor — uses relative path to renderer binary and port 9000.
+     * Default constructor — uses relative path to renderer binary and port 9001.
      */
     public ProcessManager() {
-        this("../renderer/build/bin/desktop-pet-renderer/desktop-pet-renderer", 9000);
+        this("../renderer/build/bin/desktop-pet-renderer/desktop-pet-renderer", 9001);
     }
 
     /**
@@ -92,7 +97,9 @@ public class ProcessManager {
                 "--port",
                 String.valueOf(wsPort),
                 "--instance-id",
-                String.valueOf(instanceId)
+                String.valueOf(instanceId),
+                "--token",
+                authToken
         ));
         if (modelName != null && !modelName.isEmpty()) {
             command.add("--model");
@@ -170,17 +177,13 @@ public class ProcessManager {
         }
 
         // Step 2: Wait up to 5 seconds for natural exit
-        boolean exited = false;
-        long deadline = System.currentTimeMillis() + 5_000;
-        while (System.currentTimeMillis() < deadline && process.isAlive()) {
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
+        boolean exited;
+        try {
+            exited = process.waitFor(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            exited = !process.isAlive();
         }
-        exited = !process.isAlive();
 
         // Step 3: Force-kill if still alive
         if (!exited) {
@@ -204,5 +207,25 @@ public class ProcessManager {
      */
     public Optional<Process> getProcess() {
         return Optional.ofNullable(process);
+    }
+
+    /**
+     * Returns the per-instance auth token used for WebSocket connection validation.
+     */
+    public String getAuthToken() {
+        return authToken;
+    }
+
+    /**
+     * Shuts down internal executors. Call after stopRenderer() when discarding this instance.
+     */
+    public void shutdown() {
+        logExecutor.shutdownNow();
+    }
+
+    private static String generateSecureToken() {
+        byte[] bytes = new byte[32];
+        new SecureRandom().nextBytes(bytes);
+        return HexFormat.of().formatHex(bytes);
     }
 }

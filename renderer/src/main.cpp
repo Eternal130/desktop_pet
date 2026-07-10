@@ -22,6 +22,7 @@ int main(int argc, char* argv[])
     int wsPort = 9000;
     int instanceId = 0;
     std::string startupModel;
+    std::string authToken;
     int startupX = -1, startupY = -1;
     int startupWidth = -1, startupHeight = -1;
 
@@ -40,6 +41,11 @@ int main(int argc, char* argv[])
         else if (std::strcmp(argv[i], "--model") == 0 && i + 1 < argc)
         {
             startupModel = argv[i + 1];
+            i++;
+        }
+        else if (std::strcmp(argv[i], "--token") == 0 && i + 1 < argc)
+        {
+            authToken = argv[i + 1];
             i++;
         }
         else if (std::strcmp(argv[i], "--x") == 0 && i + 1 < argc)
@@ -66,6 +72,9 @@ int main(int argc, char* argv[])
 
     std::string wsUrl = "ws://localhost:" + std::to_string(wsPort)
                       + "/?instance_id=" + std::to_string(instanceId);
+    if (!authToken.empty()) {
+        wsUrl += "&token=" + authToken;
+    }
 
     LAppDelegate* delegate = LAppDelegate::GetInstance();
     delegate->SetWsUrl(wsUrl);

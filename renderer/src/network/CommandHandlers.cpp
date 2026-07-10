@@ -44,7 +44,9 @@ static bool isValidModelName(const std::string& name) {
 }
 
 static bool isSafeFilePath(const std::string& path) {
-    return path.find("..") == std::string::npos;
+    if (path.empty() || path.size() > 512) return false;
+    if (path.find("..") != std::string::npos) return false;
+    return true;
 }
 
 void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
@@ -139,7 +141,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             return;
         }
         if (!isSafeFilePath(motionPath)) {
-            sendResponse(createResponse(cmd.id, "play_motion_ext", false, 3002, "motion_path contains unsafe traversal"));
+            sendResponse(createResponse(cmd.id, "play_motion_ext", false, 3004, "motion_path contains unsafe traversal"));
             return;
         }
         if (!LAppPal::FileExists(motionPath)) {
@@ -285,7 +287,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             return;
         }
         if (!isSafeFilePath(audioPath)) {
-            sendResponse(createResponse(cmd.id, "play_audio", false, 7003, "audio_path contains unsafe traversal"));
+            sendResponse(createResponse(cmd.id, "play_audio", false, 7004, "audio_path contains unsafe traversal"));
             return;
         }
         auto* audio = delegate->GetAudioManager();

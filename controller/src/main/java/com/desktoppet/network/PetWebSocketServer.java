@@ -32,10 +32,10 @@ public class PetWebSocketServer extends WebSocketServer {
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
         // Reject browser connections — DNS rebinding defense.
-        // Browsers always send an Origin header; native WS clients (IXWebSocket) do not.
+        // Browsers send Origin like "https://evil.com"; IXWebSocket sends "ws://host:port".
         String origin = handshake.getFieldValue("Origin");
-        if (origin != null && !origin.isEmpty()) {
-            log.warn("Connection with Origin header rejected (possible DNS rebinding): {}", origin);
+        if (origin != null && (origin.startsWith("http://") || origin.startsWith("https://"))) {
+            log.warn("Connection with browser Origin header rejected (possible DNS rebinding): {}", origin);
             conn.close(4001, "browser connections not allowed");
             return;
         }

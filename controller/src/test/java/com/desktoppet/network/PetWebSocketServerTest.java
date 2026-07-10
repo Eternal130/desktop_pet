@@ -169,6 +169,26 @@ class PetWebSocketServerTest {
         }
     }
 
+    @Test
+    void browserOriginConnection_rejected() throws Exception {
+        int port = findFreePort();
+        PetWebSocketServer server = new PetWebSocketServer(port);
+        server.registerToken(1, TEST_TOKEN);
+
+        TestWebSocketClient client = null;
+        try {
+            startServer(server);
+            client = new TestWebSocketClient(port, java.util.Map.of("Origin", "https://evil.com"));
+            client.connectBlocking(2, TimeUnit.SECONDS);
+
+            assertTrue(client.closeLatch.await(2, TimeUnit.SECONDS));
+            assertEquals(4001, client.closeCode.get());
+        } finally {
+            closeClient(client);
+            stopServer(server);
+        }
+    }
+
     private static int findFreePort() {
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
@@ -214,9 +234,15 @@ class PetWebSocketServerTest {
         private final CountDownLatch messageLatch = new CountDownLatch(1);
         private final CountDownLatch closeLatch = new CountDownLatch(1);
         private final AtomicReference<String> lastMessage = new AtomicReference<>();
+        private final java.util.concurrent.atomic.AtomicInteger closeCode =
+                new java.util.concurrent.atomic.AtomicInteger(-1);
 
         private TestWebSocketClient(int port) throws URISyntaxException {
             super(new URI("ws://127.0.0.1:" + port + "/?instance_id=1&token=" + TEST_TOKEN));
+        }
+
+        private TestWebSocketClient(int port, java.util.Map<String, String> headers) throws URISyntaxException {
+            super(new URI("ws://127.0.0.1:" + port + "/?instance_id=1&token=" + TEST_TOKEN), headers);
         }
 
         @Override
@@ -231,6 +257,7 @@ class PetWebSocketServerTest {
 
         @Override
         public void onClose(int code, String reason, boolean remote) {
+            closeCode.set(code);
             closeLatch.countDown();
         }
 

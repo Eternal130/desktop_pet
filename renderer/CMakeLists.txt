@@ -374,6 +374,7 @@ if(BUILD_TESTS)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_stats_payload.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/ProtocolTest.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/MessageHandlerTest.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/SubtitleColorTest.cpp
       # Implementation files needed by the tests:
       ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/StatsPayload.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/network/Protocol.cpp

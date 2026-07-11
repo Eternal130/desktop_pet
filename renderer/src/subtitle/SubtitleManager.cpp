@@ -215,6 +215,8 @@ void SubtitleManager::SetText(const std::string& text, const SubtitleStyle& styl
     st->Shadow         = style.shadowDepth;
     st->Alignment      = style.alignment;       // ASS numpad layout
     st->MarginV        = style.marginV;
+    st->MarginL        = 0;                     // full width — no left margin
+    st->MarginR        = 0;                     // full width — no right margin
 
     // Single event spanning [startMs, startMs+durationMs), styled by index 0.
     // ass_alloc_event returns the new event index (int), not a pointer.
@@ -373,6 +375,8 @@ void SubtitleManager::SetDefaultStyle(const SubtitleStyle& style)
     st->Shadow         = style.shadowDepth;
     st->Alignment      = style.alignment;
     st->MarginV        = style.marginV;
+    st->MarginL        = 0;
+    st->MarginR        = 0;
 }
 
 const SubtitleStyle& SubtitleManager::GetDefaultStyle() const

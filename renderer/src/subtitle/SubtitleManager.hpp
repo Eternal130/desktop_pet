@@ -4,6 +4,10 @@
 #include <vector>
 #include <cstdint>
 
+#ifndef USE_VULKAN
+#include <GL/glew.h>
+#endif
+
 // Forward declaration. NOTE: IGraphicsBackend is at GLOBAL scope in this
 // codebase (see graphics/IGraphicsBackend.hpp) — it is NOT inside a
 // `graphics` namespace, so we forward-declare it globally.
@@ -125,7 +129,7 @@ public:
     const std::vector<OverlayQuad>& GetOverlayQuads() const { return m_quads; }
 
     /**
-     * @brief Draw the current overlays (stub — actual GL/VK drawing lands in T7/T8).
+     * @brief Draw the current overlays (GL path implemented in T7, VK path in T8).
      */
     void DrawOverlays();
 
@@ -148,4 +152,15 @@ private:
 
     // Current overlay quads (one per ASS_Image node from the last changed frame).
     std::vector<OverlayQuad> m_quads;
+
+#ifndef USE_VULKAN
+    bool m_glInitialized;
+    GLuint m_shaderProgram;
+    GLuint m_vao;
+    GLuint m_vbo;
+
+    void InitGlOverlay();
+    void DrawGlOverlays();
+    void CheckGlError(const char* context);
+#endif
 };

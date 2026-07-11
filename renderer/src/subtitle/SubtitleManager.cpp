@@ -9,6 +9,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 
 // ---------------------------------------------------------------------------
 // Construction / destruction
@@ -22,6 +23,12 @@ SubtitleManager::SubtitleManager()
     , m_backend(nullptr)
     , m_windowWidth(0)
     , m_windowHeight(0)
+#ifndef USE_VULKAN
+    , m_glInitialized(false)
+    , m_shaderProgram(0)
+    , m_vao(0)
+    , m_vbo(0)
+#endif
 {
 }
 
@@ -96,6 +103,22 @@ bool SubtitleManager::Init(IGraphicsBackend* backend, int windowWidth, int windo
 
 void SubtitleManager::Uninit()
 {
+#ifndef USE_VULKAN
+    if (m_shaderProgram != 0) {
+        glDeleteProgram(m_shaderProgram);
+        m_shaderProgram = 0;
+    }
+    if (m_vbo != 0) {
+        glDeleteBuffers(1, &m_vbo);
+        m_vbo = 0;
+    }
+    if (m_vao != 0) {
+        glDeleteVertexArrays(1, &m_vao);
+        m_vao = 0;
+    }
+    m_glInitialized = false;
+#endif
+
     // Textures first — they depend on m_backend, not on libass.
     CleanupTextures();
 
@@ -317,16 +340,199 @@ void SubtitleManager::CleanupTextures()
 }
 
 // ---------------------------------------------------------------------------
-// DrawOverlays — stub (real GL/VK drawing lands in T7/T8)
+// DrawOverlays — dispatches to backend-specific path
 // ---------------------------------------------------------------------------
 
 void SubtitleManager::DrawOverlays()
 {
-    // Intentional stub: actual drawing is implemented in T7 (OpenGL overlay)
-    // and T8 (Vulkan overlay). Logged at info level so callers can confirm
-    // wiring without spamming — only logs when there's something to draw.
-    if (!m_quads.empty()) {
-        LAppPal::PrintLogLn("[SubtitleManager] DrawOverlays: %zu quad(s)",
-                            m_quads.size());
+#ifndef USE_VULKAN
+    DrawGlOverlays();
+#else
+    // Vulkan path — implemented in T8.
+#endif
+}
+
+#ifdef USE_VULKAN
+// No GL overlay implementation in Vulkan builds.
+#else
+
+// ---------------------------------------------------------------------------
+// OpenGL overlay path (T7)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr const char* kVertSrc = R"GLSL(#version 330 core
+in vec2 aPos;
+in vec2 aUV;
+out vec2 vUV;
+uniform vec2 uScreenSize;
+void main() {
+    vec2 ndc = vec2(
+        (aPos.x / uScreenSize.x) * 2.0 - 1.0,
+        1.0 - (aPos.y / uScreenSize.y) * 2.0
+    );
+    gl_Position = vec4(ndc, 0.0, 1.0);
+    vUV = aUV;
+}
+)GLSL";
+
+constexpr const char* kFragSrc = R"GLSL(#version 330 core
+in vec2 vUV;
+uniform sampler2D uTex;
+out vec4 FragColor;
+void main() {
+    FragColor = texture(uTex, vUV);
+}
+)GLSL";
+
+GLuint CompileShader(GLenum type, const char* src)
+{
+    GLuint sh = glCreateShader(type);
+    glShaderSource(sh, 1, &src, nullptr);
+    glCompileShader(sh);
+    GLint ok = GL_FALSE;
+    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+    if (ok != GL_TRUE) {
+        GLint logLen = 0;
+        glGetShaderiv(sh, GL_INFO_LOG_LENGTH, &logLen);
+        std::vector<char> log(static_cast<size_t>(std::max(logLen, 1)));
+        glGetShaderInfoLog(sh, logLen, nullptr, log.data());
+        LAppPal::PrintLogLn("[SubtitleManager] shader compile failed: %s", log.data());
+        glDeleteShader(sh);
+        return 0;
+    }
+    return sh;
+}
+
+} // namespace
+
+void SubtitleManager::InitGlOverlay()
+{
+    if (m_glInitialized) return;
+
+    GLuint vs = CompileShader(GL_VERTEX_SHADER, kVertSrc);
+    if (vs == 0) { m_glInitialized = true; return; }
+    GLuint fs = CompileShader(GL_FRAGMENT_SHADER, kFragSrc);
+    if (fs == 0) { glDeleteShader(vs); m_glInitialized = true; return; }
+
+    GLuint prog = glCreateProgram();
+    glBindAttribLocation(prog, 0, "aPos");
+    glBindAttribLocation(prog, 1, "aUV");
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glLinkProgram(prog);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    GLint linked = GL_FALSE;
+    glGetProgramiv(prog, GL_LINK_STATUS, &linked);
+    if (linked != GL_TRUE) {
+        GLint logLen = 0;
+        glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &logLen);
+        std::vector<char> log(static_cast<size_t>(std::max(logLen, 1)));
+        glGetProgramInfoLog(prog, logLen, nullptr, log.data());
+        LAppPal::PrintLogLn("[SubtitleManager] program link failed: %s", log.data());
+        glDeleteProgram(prog);
+        m_glInitialized = true;
+        return;
+    }
+    m_shaderProgram = prog;
+
+    glGenVertexArrays(1, &m_vao);
+    glGenBuffers(1, &m_vbo);
+
+    glBindVertexArray(m_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+    // 6 vertices * 4 floats (x, y, u, v) = 96 bytes, rewritten each draw.
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 6 * 4, nullptr, GL_DYNAMIC_DRAW);
+
+    GLsizei stride = 4 * static_cast<GLsizei>(sizeof(float));
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<void*>(sizeof(float) * 2));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    m_glInitialized = true;
+    LAppPal::PrintLogLn("[SubtitleManager] GL overlay shader+VAO initialized");
+    CheckGlError("InitGlOverlay");
+}
+
+void SubtitleManager::DrawGlOverlays()
+{
+    if (m_quads.empty()) return;
+    if (!m_glInitialized) InitGlOverlay();
+    if (m_shaderProgram == 0) return;
+
+    GLint prevProgram = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prevProgram);
+    GLboolean prevBlend = glIsEnabled(GL_BLEND);
+    GLboolean prevDepthTest = glIsEnabled(GL_DEPTH_TEST);
+
+    glUseProgram(m_shaderProgram);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    // Premultiplied alpha: textures already have RGB scaled by A.
+    glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA,
+                        GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+    GLint screenSizeLoc = glGetUniformLocation(m_shaderProgram, "uScreenSize");
+    glUniform2f(screenSizeLoc,
+                static_cast<float>(m_windowWidth),
+                static_cast<float>(m_windowHeight));
+
+    GLint texLoc = glGetUniformLocation(m_shaderProgram, "uTex");
+    glUniform1i(texLoc, 0);
+    glActiveTexture(GL_TEXTURE0);
+
+    glBindVertexArray(m_vao);
+
+    for (const auto& quad : m_quads) {
+        if (quad.textureHandle == 0) continue;
+
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(quad.textureHandle));
+
+        const float x0 = static_cast<float>(quad.dstX);
+        const float y0 = static_cast<float>(quad.dstY);
+        const float x1 = static_cast<float>(quad.dstX + quad.width);
+        const float y1 = static_cast<float>(quad.dstY + quad.height);
+
+        const float vertices[] = {
+            x0, y0, 0.0f, 0.0f,
+            x1, y0, 1.0f, 0.0f,
+            x0, y1, 0.0f, 1.0f,
+            x1, y0, 1.0f, 0.0f,
+            x1, y1, 1.0f, 1.0f,
+            x0, y1, 0.0f, 1.0f,
+        };
+
+        glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+    }
+
+    glBindVertexArray(0);
+    glUseProgram(0);
+
+    if (!prevBlend) glDisable(GL_BLEND);
+    if (prevDepthTest) glEnable(GL_DEPTH_TEST);
+
+    CheckGlError("DrawGlOverlays");
+}
+
+void SubtitleManager::CheckGlError(const char* context)
+{
+    const GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        LAppPal::PrintLogLn("[SubtitleManager] GL error after %s: 0x%04X",
+                            context, static_cast<unsigned int>(err));
     }
 }
+
+#endif // USE_VULKAN / else

@@ -133,6 +133,23 @@ public class Protocol {
         return createCommand("set_subtitle_style", payload);
     }
 
+    public static Envelope setSubtitleAdjustMode(boolean enabled) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("enabled", enabled);
+        return createCommand("set_subtitle_adjust_mode", payload);
+    }
+
+    public static Envelope setSubtitleLayout(double offsetX, double offsetY,
+            int areaWidth, int areaHeight, double fontSize) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("offset_x", offsetX);
+        payload.addProperty("offset_y", offsetY);
+        payload.addProperty("area_width", areaWidth);
+        payload.addProperty("area_height", areaHeight);
+        payload.addProperty("font_size", fontSize);
+        return createCommand("set_subtitle_layout", payload);
+    }
+
     public static String generateId() {
         return UUID.randomUUID().toString();
     }

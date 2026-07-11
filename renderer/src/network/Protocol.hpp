@@ -28,6 +28,8 @@ inline constexpr int ERROR_STATS_COLLECTION_FAILED = 9001;
 inline constexpr const char* ACTION_SHOW_SUBTITLE = "show_subtitle";
 inline constexpr const char* ACTION_HIDE_SUBTITLE = "hide_subtitle";
 inline constexpr const char* ACTION_SET_SUBTITLE_STYLE = "set_subtitle_style";
+inline constexpr const char* ACTION_SET_SUBTITLE_ADJUST_MODE = "set_subtitle_adjust_mode";
+inline constexpr const char* ACTION_SET_SUBTITLE_LAYOUT = "set_subtitle_layout";
 
 // Subtitle error codes (10000-10099)
 inline constexpr int ERROR_SUBTITLE_TEXT_REQUIRED = 10001;

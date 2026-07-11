@@ -55,7 +55,7 @@
 | `Network::MessageHandler` | `MessageHandler.hpp` | 按 action 注册 `CommandHandler`，dispatch 时过滤 response（返回 nullopt），未知 action 返回 Response（error_code 5003） |
 | `Network::EventEmitter` | `EventEmitter.hpp` | 封装 `createEvent()` + `serialize()` + 发送回调 |
 | `Network::WebSocketClient` | `WebSocketClient.hpp` | IXWebSocket 封装，线程安全消息队列（上限 1000 条），`drainMessages(maxCount)` 批量取出（默认全部，渲染主循环传入 50 实现每帧上限），45 秒 Ping 间隔，断连自动重连（指数退避，上限 30 秒） |
-| `Network::RegisterCommandHandlers()` | `CommandHandlers.cpp` | 注册所有 command handler（共 23 条，详见 [Commands](./commands.md)） |
+| `Network::RegisterCommandHandlers()` | `CommandHandlers.cpp` | 注册所有 command handler（共 25 条，详见 [Commands](./commands.md)） |
 
 ---
 

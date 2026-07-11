@@ -593,3 +593,70 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 | error_code | 触发场景 | error_message |
 |:---:|:---|:---|
 | `10002` | 字幕引擎未初始化 | `"Subtitle engine not initialized"` |
+
+---
+
+## 21. `set_subtitle_adjust_mode` — 进入/退出字幕调整模式
+
+切换渲染器的字幕调整模式。进入调整模式时，渲染器启用字幕区域边框预览显示，便于控制面板侧的用户可视化调整字幕位置与区域；退出时关闭边框预览。
+
+**回执**：✓ 需要 Response
+
+**Payload**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|:---|:---|:---:|:---|:---|
+| `enabled` | bool | ✓ | — | `true` = 进入字幕调整模式（启用边框预览），`false` = 退出 |
+
+**示例**：
+
+```json
+{
+  "type": "command", "action": "set_subtitle_adjust_mode",
+  "id": "...", "payload": { "enabled": true },
+  "timestamp": ...
+}
+```
+
+**渲染器处理流程**：
+1. 切换内部 `_subtitleAdjustMode` 标志
+2. `true` 时启用字幕区域边框预览显示，`false` 时关闭
+3. 发送 Response（`success: true`）
+
+> 本指令恒成功，无错误码。
+
+---
+
+## 22. `set_subtitle_layout` — 设置字幕布局
+
+设置字幕的位置偏移、渲染区域与字号，写入 `SubtitleManager`。即使 `SubtitleManager` 尚未初始化也接受指令——参数会被缓存，待初始化后生效。
+
+**回执**：✓ 需要 Response
+
+**Payload**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|:---|:---|:---:|:---|:---|
+| `offset_x` | double | ✓ | — | 字幕水平偏移（像素） |
+| `offset_y` | double | ✓ | — | 字幕垂直偏移（像素） |
+| `area_width` | int | ✓ | — | 字幕区域宽度（像素，`0` = 自动） |
+| `area_height` | int | ✓ | — | 字幕区域高度（像素，`0` = 自动） |
+| `font_size` | double | ✓ | — | 字号（ASS points） |
+
+**示例**：
+
+```json
+{
+  "type": "command", "action": "set_subtitle_layout",
+  "id": "...", "payload": { "offset_x": 100, "offset_y": 50, "area_width": 300, "area_height": 200, "font_size": 36.0 },
+  "timestamp": ...
+}
+```
+
+**渲染器处理流程**：
+1. 设置 `SubtitleManager` 的位置偏移、区域尺寸与字号
+2. 使用 `area_width`/`area_height` 调用 `ass_set_frame_size` 更新字幕渲染区域
+3. 若 `SubtitleManager` 尚未初始化，缓存参数待后续初始化时应用
+4. 发送 Response（`success: true`）
+
+> 本指令恒成功，无错误码（即使 `SubtitleManager` 未初始化也缓存参数并返回成功）。

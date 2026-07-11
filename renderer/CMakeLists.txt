@@ -293,6 +293,7 @@ target_include_directories(${APP_NAME}
     ${COMMON_SRC_PATH}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+    ${libass_src_SOURCE_DIR}/libass
 )
 
 if(USE_VULKAN)
@@ -307,6 +308,7 @@ if(USE_VULKAN)
       ${Vulkan_LIBRARIES}
       ixwebsocket::ixwebsocket
       vorbisfile
+      ass freetype harfbuzz fribidi
     )
 else()
     target_link_libraries(${APP_NAME}
@@ -315,6 +317,7 @@ else()
       ${OPENGL_LIBRARIES}
       ixwebsocket::ixwebsocket
       vorbisfile
+      ass freetype harfbuzz fribidi
     )
 endif()
 
@@ -326,6 +329,8 @@ if(WIN32)
       pdh
       dxgi
       dxguid
+      gdi32
+      dwrite
     )
 endif()
 

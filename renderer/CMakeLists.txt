@@ -235,6 +235,8 @@ target_sources(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/CommandHandlers.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/subtitle/SubtitleManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/subtitle/SubtitleManager.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/WindowManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/WindowManager.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/IGraphicsBackend.hpp

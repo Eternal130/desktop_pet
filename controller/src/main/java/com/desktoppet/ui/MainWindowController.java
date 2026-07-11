@@ -18,6 +18,7 @@ import com.desktoppet.model.ModelConfig;
 import com.desktoppet.model.PanelConfig;
 import com.desktoppet.model.PetInstance;
 import com.desktoppet.model.RendererStats;
+import com.desktoppet.model.SubtitleStyle;
 import com.desktoppet.model.VoicePackInfo;
 import com.desktoppet.network.MessageDispatcher;
 import com.desktoppet.network.PetWebSocketServer;
@@ -1853,6 +1854,23 @@ public class MainWindowController {
         if (wsServer != null && wsServer.hasActiveConnection(id)) {
             wsServer.sendToInstance(id, serializedJson);
             instance.addLog("→ play_motion_ext");
+        }
+    }
+
+    /**
+     * Sends a show_subtitle command to the current instance's renderer. Subtitles are
+     * time-sensitive — dropped (not cached) when disconnected, matching play_motion.
+     */
+    public void sendSubtitle(String text, long durationMs) {
+        PetInstance instance = currentInstance;
+        if (instance == null) {
+            return;
+        }
+        int id = instance.getId();
+        if (wsServer != null && wsServer.hasActiveConnection(id)) {
+            Envelope cmd = Protocol.showSubtitle(text, SubtitleStyle.defaultStyle(), durationMs);
+            wsServer.sendToInstance(id, Protocol.serialize(cmd));
+            instance.addLog("→ show_subtitle");
         }
     }
 

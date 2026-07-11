@@ -452,6 +452,14 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
         (_windowManager->IsKeyPressed(GLFW_KEY_LEFT_SHIFT) ||
          _windowManager->IsKeyPressed(GLFW_KEY_RIGHT_SHIFT)))
     {
+        if (_subtitleAdjustMode && _subtitleManager && _subtitleManager->IsInitialized()) {
+            if (action == GLFW_PRESS) {
+                _subtitleDragLastX = _mouseX;
+                _subtitleDragLastY = _mouseY;
+            }
+            return;
+        }
+
         if (GLFW_PRESS == action)
         {
             _isModelDragging = true;
@@ -509,6 +517,19 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
         return;
     }
 
+    if (_subtitleAdjustMode && _subtitleManager && _subtitleManager->IsInitialized()) {
+        if (glfwGetMouseButton(_windowManager->GetWindow(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+            float dx = _mouseX - _subtitleDragLastX;
+            float dy = _mouseY - _subtitleDragLastY;
+            float ndcDx =  dx * 2.0f / static_cast<float>(_windowHeight);
+            float ndcDy = -dy * 2.0f / static_cast<float>(_windowHeight);
+            _subtitleManager->AdjustSubtitleOffset(ndcDx, ndcDy);
+            _subtitleDragLastX = _mouseX;
+            _subtitleDragLastY = _mouseY;
+        }
+        return;
+    }
+
     if (_isModelDragging)
     {
         float dx = _mouseX - _modelDragLastX;
@@ -553,6 +574,12 @@ void LAppDelegate::OnScrollCallback(GLFWwindow* window, double xoffset, double y
     if (shiftPressed)
     {
         float factor = 1.0f + static_cast<float>(yoffset) * 0.1f;
+
+        if (_subtitleAdjustMode && _subtitleManager && _subtitleManager->IsInitialized()) {
+            _subtitleManager->AdjustSubtitleFontSize(factor);
+            return;
+        }
+
         LAppModel* model = LAppLive2DManager::GetInstance()->GetModel(0);
         if (model)
         {

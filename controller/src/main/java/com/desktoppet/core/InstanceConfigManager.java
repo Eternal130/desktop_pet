@@ -105,6 +105,15 @@ public class InstanceConfigManager {
         window.addProperty("layout_scale", config.layoutScale());
         root.add("window", window);
 
+        JsonObject subtitle = new JsonObject();
+        subtitle.addProperty("offset_x", config.subtitleOffsetX());
+        subtitle.addProperty("offset_y", config.subtitleOffsetY());
+        subtitle.addProperty("area_width", config.subtitleAreaWidth());
+        subtitle.addProperty("area_height", config.subtitleAreaHeight());
+        subtitle.addProperty("font_size", config.subtitleFontSize());
+        subtitle.addProperty("style_preset", config.subtitleStylePreset());
+        root.add("subtitle", subtitle);
+
         JsonObject behavior = new JsonObject();
         behavior.addProperty("drag_mode", config.dragMode());
         behavior.addProperty("idle_interval", config.idleInterval());
@@ -162,6 +171,14 @@ public class InstanceConfigManager {
         double layoutOffsetY = getDouble(windowObj, "layout_offset_y", d.layoutOffsetY());
         double layoutScale = getDouble(windowObj, "layout_scale", d.layoutScale());
 
+        JsonObject subtitleObj = getObject(root, "subtitle");
+        double subtitleOffsetX = getDouble(subtitleObj, "offset_x", d.subtitleOffsetX());
+        double subtitleOffsetY = getDouble(subtitleObj, "offset_y", d.subtitleOffsetY());
+        int subtitleAreaWidth = getInt(subtitleObj, "area_width", d.subtitleAreaWidth());
+        int subtitleAreaHeight = getInt(subtitleObj, "area_height", d.subtitleAreaHeight());
+        double subtitleFontSize = getDouble(subtitleObj, "font_size", d.subtitleFontSize());
+        String subtitleStylePreset = getString(subtitleObj, "style_preset", d.subtitleStylePreset());
+
         return new InstanceConfig(
             id, label, rendererPath, graphicsBackend,
             modelName, modelScale,
@@ -170,7 +187,10 @@ public class InstanceConfigManager {
             autoStart, currentExpression, voicePack,
             getDouble(root, "volume", 1.0),
             getBoolean(root, "muted", false),
-            layoutOffsetX, layoutOffsetY, layoutScale
+            layoutOffsetX, layoutOffsetY, layoutScale,
+            subtitleOffsetX, subtitleOffsetY,
+            subtitleAreaWidth, subtitleAreaHeight,
+            subtitleFontSize, subtitleStylePreset
         );
     }
 

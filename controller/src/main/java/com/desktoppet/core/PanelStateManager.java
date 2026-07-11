@@ -121,7 +121,8 @@ public class PanelStateManager {
                         null,
                         1.0,
                         false,
-                        0.0, 0.0, 1.0
+                        0.0, 0.0, 1.0,
+                        0.0, 0.0, 0, 0, 48.0, "默认"
                     );
                     instanceConfigManager.save(instConfig);
                     instanceIds.add(id);

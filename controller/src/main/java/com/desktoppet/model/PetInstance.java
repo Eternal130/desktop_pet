@@ -40,6 +40,12 @@ public class PetInstance {
     private final DoubleProperty layoutOffsetX;
     private final DoubleProperty layoutOffsetY;
     private final DoubleProperty layoutScale;
+    private final DoubleProperty subtitleOffsetX;
+    private final DoubleProperty subtitleOffsetY;
+    private final IntegerProperty subtitleAreaWidth;
+    private final IntegerProperty subtitleAreaHeight;
+    private final DoubleProperty subtitleFontSize;
+    private final StringProperty subtitleStylePreset;
     private final ObservableList<String> logs;
 
     public PetInstance(String configId, String label, String model, String status,
@@ -69,6 +75,12 @@ public class PetInstance {
         this.layoutOffsetX = new SimpleDoubleProperty(0.0);
         this.layoutOffsetY = new SimpleDoubleProperty(0.0);
         this.layoutScale = new SimpleDoubleProperty(1.0);
+        this.subtitleOffsetX = new SimpleDoubleProperty(0.0);
+        this.subtitleOffsetY = new SimpleDoubleProperty(0.0);
+        this.subtitleAreaWidth = new SimpleIntegerProperty(0);
+        this.subtitleAreaHeight = new SimpleIntegerProperty(0);
+        this.subtitleFontSize = new SimpleDoubleProperty(48.0);
+        this.subtitleStylePreset = new SimpleStringProperty("默认");
         this.logs = FXCollections.observableArrayList();
     }
 
@@ -101,6 +113,12 @@ public class PetInstance {
         instance.setLayoutOffsetX(config.layoutOffsetX());
         instance.setLayoutOffsetY(config.layoutOffsetY());
         instance.setLayoutScale(config.layoutScale());
+        instance.setSubtitleOffsetX(config.subtitleOffsetX());
+        instance.setSubtitleOffsetY(config.subtitleOffsetY());
+        instance.setSubtitleAreaWidth(config.subtitleAreaWidth());
+        instance.setSubtitleAreaHeight(config.subtitleAreaHeight());
+        instance.setSubtitleFontSize(config.subtitleFontSize());
+        instance.setSubtitleStylePreset(config.subtitleStylePreset());
         instance.setGraphicsBackend(config.graphicsBackend());
         return instance;
     }
@@ -117,7 +135,10 @@ public class PetInstance {
                 getVoicePack(),
                 getVolume(),
                 isMuted(),
-                getLayoutOffsetX(), getLayoutOffsetY(), getLayoutScale()
+                getLayoutOffsetX(), getLayoutOffsetY(), getLayoutScale(),
+                getSubtitleOffsetX(), getSubtitleOffsetY(),
+                getSubtitleAreaWidth(), getSubtitleAreaHeight(),
+                getSubtitleFontSize(), getSubtitleStylePreset()
         );
     }
 
@@ -260,6 +281,30 @@ public class PetInstance {
 
     public double getLayoutScale() { return layoutScale.get(); }
     public void setLayoutScale(double v) { layoutScale.set(v); }
+
+    public double getSubtitleOffsetX() { return subtitleOffsetX.get(); }
+    public void setSubtitleOffsetX(double v) { subtitleOffsetX.set(v); }
+    public DoubleProperty subtitleOffsetXProperty() { return subtitleOffsetX; }
+
+    public double getSubtitleOffsetY() { return subtitleOffsetY.get(); }
+    public void setSubtitleOffsetY(double v) { subtitleOffsetY.set(v); }
+    public DoubleProperty subtitleOffsetYProperty() { return subtitleOffsetY; }
+
+    public int getSubtitleAreaWidth() { return subtitleAreaWidth.get(); }
+    public void setSubtitleAreaWidth(int v) { subtitleAreaWidth.set(v); }
+    public IntegerProperty subtitleAreaWidthProperty() { return subtitleAreaWidth; }
+
+    public int getSubtitleAreaHeight() { return subtitleAreaHeight.get(); }
+    public void setSubtitleAreaHeight(int v) { subtitleAreaHeight.set(v); }
+    public IntegerProperty subtitleAreaHeightProperty() { return subtitleAreaHeight; }
+
+    public double getSubtitleFontSize() { return subtitleFontSize.get(); }
+    public void setSubtitleFontSize(double v) { subtitleFontSize.set(v); }
+    public DoubleProperty subtitleFontSizeProperty() { return subtitleFontSize; }
+
+    public String getSubtitleStylePreset() { return subtitleStylePreset.get(); }
+    public void setSubtitleStylePreset(String v) { subtitleStylePreset.set(v); }
+    public StringProperty subtitleStylePresetProperty() { return subtitleStylePreset; }
 
     public ObservableList<String> getLogs() { return logs; }
 }

@@ -24,7 +24,13 @@ public record InstanceConfig(
     boolean muted,
     double layoutOffsetX,
     double layoutOffsetY,
-    double layoutScale
+    double layoutScale,
+    double subtitleOffsetX,
+    double subtitleOffsetY,
+    int subtitleAreaWidth,
+    int subtitleAreaHeight,
+    double subtitleFontSize,
+    String subtitleStylePreset
 ) {
     public static InstanceConfig defaults() {
         return new InstanceConfig(
@@ -44,7 +50,8 @@ public record InstanceConfig(
             null,
             1.0,
             false,
-            0.0, 0.0, 1.0
+            0.0, 0.0, 1.0,
+            0.0, 0.0, 0, 0, 48.0, "默认"
         );
     }
 
@@ -67,7 +74,10 @@ public record InstanceConfig(
             d.voicePack(),
             d.volume(),
             d.muted(),
-            d.layoutOffsetX(), d.layoutOffsetY(), d.layoutScale()
+            d.layoutOffsetX(), d.layoutOffsetY(), d.layoutScale(),
+            d.subtitleOffsetX(), d.subtitleOffsetY(),
+            d.subtitleAreaWidth(), d.subtitleAreaHeight(),
+            d.subtitleFontSize(), d.subtitleStylePreset()
         );
     }
 }

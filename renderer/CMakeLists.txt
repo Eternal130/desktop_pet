@@ -111,6 +111,9 @@ set(HB_HAVE_CAIRO OFF CACHE BOOL "" FORCE)
 set(HB_HAVE_ICU OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(harfbuzz)
 
+# === FriBidi (for libass subtitle rendering) ===
+add_subdirectory(third_party/fribidi)
+
 
 # === Compiler settings ===
 set(CMAKE_CXX_STANDARD 17)

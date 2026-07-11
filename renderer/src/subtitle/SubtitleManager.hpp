@@ -133,6 +133,7 @@ public:
     void SetSubtitleLayout(float offsetX, float offsetY, int areaWidth, int areaHeight, double fontSize);
     void AdjustSubtitleOffset(float dxNdc, float dyNdc);
     void AdjustSubtitleFontSize(double factor);
+    void AdjustSubtitleArea(int deltaWidth, int deltaHeight);
     void SetAdjustMode(bool enabled);
     void SetDefaultStyle(const SubtitleStyle& style);
     const SubtitleStyle& GetDefaultStyle() const;

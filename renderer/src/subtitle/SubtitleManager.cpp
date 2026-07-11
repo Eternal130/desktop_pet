@@ -310,6 +310,19 @@ void SubtitleManager::AdjustSubtitleFontSize(double factor)
     LAppPal::PrintLogLn("[SubtitleManager] FontSize adjusted to %.1f", m_fontSize);
 }
 
+void SubtitleManager::AdjustSubtitleArea(int deltaWidth, int deltaHeight)
+{
+    m_areaWidth += deltaWidth;
+    m_areaHeight += deltaHeight;
+    if (m_areaWidth < 50) m_areaWidth = 50;
+    if (m_areaHeight < 30) m_areaHeight = 30;
+    if (m_renderer) {
+        int fw = m_areaWidth > 0 ? m_areaWidth : m_windowWidth;
+        int fh = m_areaHeight > 0 ? m_areaHeight : m_windowHeight;
+        ass_set_frame_size(static_cast<ASS_Renderer*>(m_renderer), fw, fh);
+    }
+}
+
 void SubtitleManager::SetAdjustMode(bool enabled)
 {
     m_adjustMode = enabled;

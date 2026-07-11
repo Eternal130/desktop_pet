@@ -102,6 +102,8 @@ private:
     bool _subtitleAdjustMode = false;
     float _subtitleDragLastX = 0.0f;
     float _subtitleDragLastY = 0.0f;
+    float _subtitleAreaDragLastX = 0.0f;
+    float _subtitleAreaDragLastY = 0.0f;
 
     Network::WebSocketClient* _wsClient;
     Network::MessageHandler* _messageHandler;

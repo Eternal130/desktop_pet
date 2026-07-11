@@ -448,6 +448,18 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
         return;
     }
 
+    if (_subtitleAdjustMode && _subtitleManager && _subtitleManager->IsInitialized()
+        && button == GLFW_MOUSE_BUTTON_RIGHT
+        && (_windowManager->IsKeyPressed(GLFW_KEY_LEFT_SHIFT)
+            || _windowManager->IsKeyPressed(GLFW_KEY_RIGHT_SHIFT)))
+    {
+        if (action == GLFW_PRESS) {
+            _subtitleAreaDragLastX = _mouseX;
+            _subtitleAreaDragLastY = _mouseY;
+        }
+        return;
+    }
+
     if (GLFW_MOUSE_BUTTON_LEFT == button &&
         (_windowManager->IsKeyPressed(GLFW_KEY_LEFT_SHIFT) ||
          _windowManager->IsKeyPressed(GLFW_KEY_RIGHT_SHIFT)))
@@ -514,6 +526,19 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
         GetCursorPos(&pt);
         _windowManager->SetWindowPosition(pt.x - static_cast<int>(_dragStartX),
                                         pt.y - static_cast<int>(_dragStartY));
+        return;
+    }
+
+    if (_subtitleAdjustMode && _subtitleManager && _subtitleManager->IsInitialized()
+        && glfwGetMouseButton(_windowManager->GetWindow(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS
+        && (_windowManager->IsKeyPressed(GLFW_KEY_LEFT_SHIFT)
+            || _windowManager->IsKeyPressed(GLFW_KEY_RIGHT_SHIFT)))
+    {
+        float dx = _mouseX - _subtitleAreaDragLastX;
+        float dy = _mouseY - _subtitleAreaDragLastY;
+        _subtitleManager->AdjustSubtitleArea(static_cast<int>(dx), static_cast<int>(dy));
+        _subtitleAreaDragLastX = _mouseX;
+        _subtitleAreaDragLastY = _mouseY;
         return;
     }
 

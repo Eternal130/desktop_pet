@@ -35,6 +35,9 @@ inline constexpr const char* ACTION_SET_SUBTITLE_LAYOUT = "set_subtitle_layout";
 inline constexpr int ERROR_SUBTITLE_TEXT_REQUIRED = 10001;
 inline constexpr int ERROR_SUBTITLE_NOT_INITIALIZED = 10002;
 
+// Subtitle events
+inline constexpr const char* EVENT_SUBTITLE_LAYOUT_CHANGED = "subtitle_layout_changed";
+
 std::string serialize(const Envelope& env);
 std::optional<Envelope> deserialize(const std::string& json_str);
 Envelope createCommand(const std::string& action, const nlohmann::json& payload = {});

@@ -1722,6 +1722,21 @@ public class MainWindowController {
             saveInstanceConfig(instance);
         }));
 
+        dispatcher.registerEventHandler("subtitle_layout_changed", envelope -> Platform.runLater(() -> {
+            if (envelope.payload() == null) return;
+            double offsetX = envelope.payload().has("offset_x") ? envelope.payload().get("offset_x").getAsDouble() : 0;
+            double offsetY = envelope.payload().has("offset_y") ? envelope.payload().get("offset_y").getAsDouble() : 0;
+            int areaW = envelope.payload().has("area_width") ? envelope.payload().get("area_width").getAsInt() : 0;
+            int areaH = envelope.payload().has("area_height") ? envelope.payload().get("area_height").getAsInt() : 0;
+            double fontSize = envelope.payload().has("font_size") ? envelope.payload().get("font_size").getAsDouble() : 48.0;
+            instance.setSubtitleOffsetX(offsetX);
+            instance.setSubtitleOffsetY(offsetY);
+            instance.setSubtitleAreaWidth(areaW);
+            instance.setSubtitleAreaHeight(areaH);
+            instance.setSubtitleFontSize(fontSize);
+            saveInstanceConfig(instance);
+        }));
+
         dispatcher.registerEventHandler("window_resized", envelope -> Platform.runLater(() -> {
             if (envelope.payload().has("window_width") && envelope.payload().has("window_height")) {
                 int w = envelope.payload().get("window_width").getAsInt();

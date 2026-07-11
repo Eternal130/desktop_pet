@@ -113,6 +113,8 @@ bool SubtitleManager::Init(IGraphicsBackend* backend, int windowWidth, int windo
     m_detectChange = 0;
     m_defaultStyle = SubtitleStyle();
     m_fontSize = m_defaultStyle.fontSize;
+    m_offsetX = static_cast<float>(windowWidth) * 0.5f;
+    m_offsetY = static_cast<float>(windowHeight) * 0.5f;
 
     LAppPal::PrintLogLn("[SubtitleManager] Initialized (%dx%d)", windowWidth, windowHeight);
     return true;
@@ -266,8 +268,10 @@ void SubtitleManager::SetSubtitleLayout(float offsetX, float offsetY,
                                         int areaWidth, int areaHeight,
                                         double fontSize)
 {
-    m_offsetX = offsetX;
-    m_offsetY = offsetY;
+    if (offsetX != 0.0f || offsetY != 0.0f) {
+        m_offsetX = offsetX;
+        m_offsetY = offsetY;
+    }
     m_areaWidth = areaWidth;
     m_areaHeight = areaHeight;
     m_fontSize = fontSize;

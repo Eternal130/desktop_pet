@@ -539,6 +539,15 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
         _subtitleManager->AdjustSubtitleArea(static_cast<int>(dx), static_cast<int>(dy));
         _subtitleAreaDragLastX = _mouseX;
         _subtitleAreaDragLastY = _mouseY;
+        if (_eventEmitter && _eventEmitter->isActive()) {
+            _eventEmitter->emit(Network::EVENT_SUBTITLE_LAYOUT_CHANGED, {
+                {"offset_x", _subtitleManager->GetOffsetX()},
+                {"offset_y", _subtitleManager->GetOffsetY()},
+                {"area_width", _subtitleManager->GetAreaWidth()},
+                {"area_height", _subtitleManager->GetAreaHeight()},
+                {"font_size", _subtitleManager->GetFontSize()}
+            });
+        }
         return;
     }
 
@@ -551,6 +560,15 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
             _subtitleManager->AdjustSubtitleOffset(ndcDx, ndcDy);
             _subtitleDragLastX = _mouseX;
             _subtitleDragLastY = _mouseY;
+            if (_eventEmitter && _eventEmitter->isActive()) {
+                _eventEmitter->emit(Network::EVENT_SUBTITLE_LAYOUT_CHANGED, {
+                    {"offset_x", _subtitleManager->GetOffsetX()},
+                    {"offset_y", _subtitleManager->GetOffsetY()},
+                    {"area_width", _subtitleManager->GetAreaWidth()},
+                    {"area_height", _subtitleManager->GetAreaHeight()},
+                    {"font_size", _subtitleManager->GetFontSize()}
+                });
+            }
         }
         return;
     }
@@ -602,6 +620,15 @@ void LAppDelegate::OnScrollCallback(GLFWwindow* window, double xoffset, double y
 
         if (_subtitleAdjustMode && _subtitleManager && _subtitleManager->IsInitialized()) {
             _subtitleManager->AdjustSubtitleFontSize(factor);
+            if (_eventEmitter && _eventEmitter->isActive()) {
+                _eventEmitter->emit(Network::EVENT_SUBTITLE_LAYOUT_CHANGED, {
+                    {"offset_x", _subtitleManager->GetOffsetX()},
+                    {"offset_y", _subtitleManager->GetOffsetY()},
+                    {"area_width", _subtitleManager->GetAreaWidth()},
+                    {"area_height", _subtitleManager->GetAreaHeight()},
+                    {"font_size", _subtitleManager->GetFontSize()}
+                });
+            }
             return;
         }
 

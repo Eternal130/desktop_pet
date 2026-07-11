@@ -1618,12 +1618,22 @@ public class MainWindowController {
 
             MountedBehaviorEngine engine = mountedEngines.get(id);
             if (engine != null && engine.hasGroupForArea(areaId)) {
-                String cmd = engine.buildMotionCommand(areaId);
+                MountedBehaviorEngine.BehaviorResult behResult = engine.buildBehaviorCommand(areaId);
+                String cmd = behResult != null ? behResult.commandJson() : null;
                 if (cmd != null) {
                     Scheduler sch = schedulers.get(id);
                     if (sch != null) sch.pause();
                     wsServer.sendToInstance(id, cmd);
                     instance.addLog("▶ 语音包动作: " + areaId);
+
+                    if (behResult.subtitleText() != null && !behResult.subtitleText().isEmpty()
+                            && wsServer != null && wsServer.hasActiveConnection(id)) {
+                        long duration = behResult.audioDurationMs() > 0 ? behResult.audioDurationMs() : 5000L;
+                        Envelope subCmd = Protocol.showSubtitle(
+                            behResult.subtitleText(), SubtitleStyle.defaultStyle(), duration);
+                        wsServer.sendToInstance(id, Protocol.serialize(subCmd));
+                        instance.addLog("💬 字幕: " + behResult.subtitleText());
+                    }
                     return;
                 }
             }
@@ -1631,6 +1641,10 @@ public class MainWindowController {
             InteractionHandler handler = interactionHandlers.get(id);
             if (handler != null) {
                 handler.handleHitEvent(envelope);
+                if (wsServer != null && wsServer.hasActiveConnection(id)) {
+                    Envelope subCmd = Protocol.showSubtitle("？", SubtitleStyle.defaultStyle(), 3000);
+                    wsServer.sendToInstance(id, Protocol.serialize(subCmd));
+                }
             }
         }));
 

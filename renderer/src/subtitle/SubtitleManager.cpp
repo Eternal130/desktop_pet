@@ -204,7 +204,7 @@ void SubtitleManager::SetText(const std::string& text, const SubtitleStyle& styl
     }
 
     st->FontName       = strdup(style.fontName.c_str());
-    st->FontSize       = style.fontSize;
+    st->FontSize       = m_fontSize;
     st->PrimaryColour  = style.primaryColor;   // already AABBGGRR
     st->OutlineColour  = style.outlineColor;   // already AABBGGRR
     st->BackColour     = style.shadowColor;     // shadow color (AABBGGRR)
@@ -225,7 +225,7 @@ void SubtitleManager::SetText(const std::string& text, const SubtitleStyle& styl
     ev->Text     = strdup(text.c_str());
 
     m_defaultStyle = style;
-    m_fontSize = style.fontSize;
+    m_defaultStyle.fontSize = m_fontSize;
 
     LAppPal::PrintLogLn("[SubtitleManager] SetText: '%s' @%lldms +%lldms",
                         text.c_str(),
@@ -299,6 +299,7 @@ void SubtitleManager::AdjustSubtitleOffset(float dxNdc, float dyNdc)
 void SubtitleManager::AdjustSubtitleFontSize(double factor)
 {
     m_fontSize = std::clamp(m_fontSize * factor, 8.0, 200.0);
+    m_defaultStyle.fontSize = m_fontSize;
 
     if (m_track != nullptr) {
         auto* track = static_cast<ASS_Track*>(m_track);
@@ -351,7 +352,8 @@ void SubtitleManager::SetDefaultStyle(const SubtitleStyle& style)
         st->FontName = nullptr;
     }
     st->FontName       = strdup(style.fontName.c_str());
-    st->FontSize       = style.fontSize;
+    m_fontSize = style.fontSize;
+    st->FontSize       = m_fontSize;
     st->PrimaryColour  = style.primaryColor;
     st->OutlineColour  = style.outlineColor;
     st->BackColour     = style.shadowColor;

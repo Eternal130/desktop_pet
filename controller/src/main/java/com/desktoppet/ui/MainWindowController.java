@@ -378,7 +378,7 @@ public class MainWindowController {
         setupToggleSwitch(autoStartCheck);
         setupToggleSwitch(muteCheckBox);
         setupToggleSwitch(subtitleAdjustCheck);
-        subtitleStyleCombo.getItems().addAll("默认", "阴影", "气泡框", "极简");
+        subtitleStyleCombo.getItems().addAll("默认", "阴影", "气泡框", "极简", "樱花粉", "赛博霓虹", "星空紫", "橙焰活力", "和风墨韵");
 
         dragDirectBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
         dragPhysicsBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
@@ -904,8 +904,14 @@ public class MainWindowController {
         if (preset == null) return SubtitleStyle.defaultStyle();
         return switch (preset) {
             case "阴影" -> new SubtitleStyle("Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 2.0, 0x00000000L, 3.0, 2, 30);
-            case "气泡框" -> new SubtitleStyle("Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0, 0x00000000L, 0.0, 2, 30);
+            case "气泡框" -> new SubtitleStyle("Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0, 0x99000000L, 2.0, 2, 30);
             case "极简" -> new SubtitleStyle("Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0, 0x00000000L, 0.0, 2, 30);
+            // 颜色为 RRGGBBTT 格式, TT=00 不透明 (如 0x00FFFFFF = 白色不透明)
+            case "樱花粉" -> new SubtitleStyle("ZCOOL KuaiLe", 50.0, 0x00FF69B4L, 0x00FFFFFFL, 3.0, 0x66FFB6C1L, 2.0, 2, 30);
+            case "赛博霓虹" -> new SubtitleStyle("Orbitron", 46.0, 0x0000FFFFL, 0x00FF00FFL, 2.5, 0x9900FFFFL, 4.0, 2, 30);
+            case "星空紫" -> new SubtitleStyle("Source Han Serif CN", 48.0, 0x00B19CD9L, 0x004B0082L, 2.0, 0x809370DBL, 3.0, 2, 30);
+            case "橙焰活力" -> new SubtitleStyle("Source Han Sans CN", 52.0, 0x00FF8C00L, 0x00FFFFFFL, 3.0, 0x66FF4500L, 2.5, 2, 30);
+            case "和风墨韵" -> new SubtitleStyle("Source Han Serif CN", 46.0, 0x002F4F4FL, 0x00F5F5DCL, 1.5, 0x808B4513L, 2.0, 2, 30);
             default -> SubtitleStyle.defaultStyle(); // "默认" = white text, black outline
         };
     }
@@ -1691,7 +1697,7 @@ public class MainWindowController {
             if (handler != null) {
                 handler.handleHitEvent(envelope);
                 if (wsServer != null && wsServer.hasActiveConnection(id)) {
-                    Envelope subCmd = Protocol.showSubtitle("？", SubtitleStyle.defaultStyle(), 3000);
+                    Envelope subCmd = Protocol.showSubtitle("？", mapPresetToStyle(instance.getSubtitleStylePreset()), 3000);
                     wsServer.sendToInstance(id, Protocol.serialize(subCmd));
                 }
             }
@@ -1946,7 +1952,7 @@ public class MainWindowController {
         }
         int id = instance.getId();
         if (wsServer != null && wsServer.hasActiveConnection(id)) {
-            Envelope cmd = Protocol.showSubtitle(text, SubtitleStyle.defaultStyle(), durationMs);
+            Envelope cmd = Protocol.showSubtitle(text, mapPresetToStyle(instance.getSubtitleStylePreset()), durationMs);
             wsServer.sendToInstance(id, Protocol.serialize(cmd));
             instance.addLog("→ show_subtitle");
         }

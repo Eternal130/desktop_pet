@@ -191,6 +191,16 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             model->StartLipSyncFromFile(lipSyncPath);
         }
 
+        std::string subtitleText = cmd.payload.value("subtitle_text", "");
+        if (!subtitleText.empty()) {
+            auto* subtitleMgr = delegate->GetSubtitleManager();
+            if (subtitleMgr != nullptr && subtitleMgr->IsInitialized()) {
+                int64_t subtitleDuration = cmd.payload.value("subtitle_duration", 5000LL);
+                int64_t startMs = static_cast<int64_t>(glfwGetTime() * 1000.0);
+                subtitleMgr->SetText(subtitleText, subtitleMgr->GetDefaultStyle(), startMs, subtitleDuration);
+            }
+        }
+
         sendResponse(createResponse(cmd.id, "play_motion_ext", true));
     });
 

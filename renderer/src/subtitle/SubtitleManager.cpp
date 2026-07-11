@@ -272,14 +272,17 @@ void SubtitleManager::SetSubtitleLayout(float offsetX, float offsetY,
     m_areaHeight = areaHeight;
     m_fontSize = fontSize;
 
+    const int fw = areaWidth > 0 ? areaWidth : m_windowWidth;
+    const int fh = areaHeight > 0 ? areaHeight : m_windowHeight;
+
     if (m_renderer != nullptr) {
-        const int fw = areaWidth > 0 ? areaWidth : m_windowWidth;
-        const int fh = areaHeight > 0 ? areaHeight : m_windowHeight;
         ass_set_frame_size(static_cast<ASS_Renderer*>(m_renderer), fw, fh);
     }
 
     if (m_track != nullptr) {
         auto* track = static_cast<ASS_Track*>(m_track);
+        track->PlayResX = fw;
+        track->PlayResY = fh;
         if (track->n_styles > 0) {
             track->styles[0].FontSize = fontSize;
         }
@@ -321,6 +324,11 @@ void SubtitleManager::AdjustSubtitleArea(int deltaWidth, int deltaHeight)
         int fw = m_areaWidth > 0 ? m_areaWidth : m_windowWidth;
         int fh = m_areaHeight > 0 ? m_areaHeight : m_windowHeight;
         ass_set_frame_size(static_cast<ASS_Renderer*>(m_renderer), fw, fh);
+        if (m_track) {
+            auto* track = static_cast<ASS_Track*>(m_track);
+            track->PlayResX = fw;
+            track->PlayResY = fh;
+        }
     }
 }
 

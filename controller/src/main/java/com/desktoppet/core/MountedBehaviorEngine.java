@@ -81,6 +81,12 @@ public class MountedBehaviorEngine {
         float fadeIn = chosen.fadeInMs() / 1000.0f;
         float fadeOut = chosen.fadeOutMs() / 1000.0f;
 
+        String subtitleText = chosen.doc();
+        long audioDurationMs = 5000L;
+        if (chosen.audioPath() != null && !chosen.audioPath().isEmpty()) {
+            audioDurationMs = estimateOggDurationMs(basePath.resolve(chosen.audioPath()));
+        }
+
         JsonObject payload = new JsonObject();
         payload.addProperty("motion_path", absolutePath);
         payload.addProperty("priority", group.priority());
@@ -96,15 +102,13 @@ public class MountedBehaviorEngine {
             payload.addProperty("lip_sync_path", basePath.resolve(chosen.lipSyncPath()).toString());
         }
 
+        if (subtitleText != null && !subtitleText.isEmpty()) {
+            payload.addProperty("subtitle_text", subtitleText);
+            payload.addProperty("subtitle_duration", audioDurationMs);
+        }
+
         Envelope command = Protocol.createCommand("play_motion_ext", payload);
         String commandJson = Protocol.serialize(command);
-
-        String subtitleText = chosen.doc();
-
-        long audioDurationMs = 5000L;
-        if (chosen.audioPath() != null && !chosen.audioPath().isEmpty()) {
-            audioDurationMs = estimateOggDurationMs(basePath.resolve(chosen.audioPath()));
-        }
 
         return new BehaviorResult(commandJson, subtitleText, audioDurationMs);
     }

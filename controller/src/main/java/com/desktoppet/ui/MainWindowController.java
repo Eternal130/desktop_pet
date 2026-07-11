@@ -1683,15 +1683,6 @@ public class MainWindowController {
                     if (sch != null) sch.pause();
                     wsServer.sendToInstance(id, cmd);
                     instance.addLog("▶ 语音包动作: " + areaId);
-
-                    if (behResult.subtitleText() != null && !behResult.subtitleText().isEmpty()
-                            && wsServer != null && wsServer.hasActiveConnection(id)) {
-                        long duration = behResult.audioDurationMs() > 0 ? behResult.audioDurationMs() : 5000L;
-                        Envelope subCmd = Protocol.showSubtitle(
-                            behResult.subtitleText(), SubtitleStyle.defaultStyle(), duration);
-                        wsServer.sendToInstance(id, Protocol.serialize(subCmd));
-                        instance.addLog("💬 字幕: " + behResult.subtitleText());
-                    }
                     return;
                 }
             }

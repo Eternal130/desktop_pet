@@ -87,12 +87,8 @@ bool SubtitleManager::Init(IGraphicsBackend* backend, int windowWidth, int windo
     m_renderer = rnd;
 
     ass_set_frame_size(rnd, windowWidth, windowHeight);
-    LAppPal::PrintLogLn("[SubtitleManager DIAG] Init ass_set_frame_size(%d,%d)", windowWidth, windowHeight);
-    // default_font=nullptr, default_family="Microsoft YaHei",
-    // provider=AUTODETECT, config=nullptr, update=1.
     ass_set_fonts(rnd, nullptr, "Microsoft YaHei",
                   ASS_FONTPROVIDER_AUTODETECT, nullptr, 1);
-    LAppPal::PrintLogLn("[SubtitleManager DIAG] ass_set_fonts(Microsoft YaHei, AUTODETECT)");
 
     auto* trk = ass_new_track(lib);
     if (trk == nullptr) {
@@ -249,16 +245,10 @@ void SubtitleManager::SetText(const std::string& text, const SubtitleStyle& styl
     m_defaultStyle = style;
     m_defaultStyle.fontSize = m_fontSize;
 
-    // Log text as hex for encoding diagnostics
-    std::string hex;
-    for (size_t i = 0; i < text.size() && i < 300; i++) {
-        char buf[4];
-        snprintf(buf, sizeof(buf), "%02x", static_cast<unsigned char>(text[i]));
-        hex += buf;
-    }
-    LAppPal::PrintLogLn("[SubtitleManager] SetText: len=%zu PlayRes=%dx%d area=%dx%d fontSize=%.1f hex=%s",
-                        text.size(), track->PlayResX, track->PlayResY,
-                        m_areaWidth, m_areaHeight, m_fontSize, hex.c_str());
+    LAppPal::PrintLogLn("[SubtitleManager] SetText: '%s' @%lldms +%lldms",
+                        text.c_str(),
+                        static_cast<long long>(startMs),
+                        static_cast<long long>(durationMs));
 }
 
 void SubtitleManager::Hide()
@@ -282,7 +272,12 @@ void SubtitleManager::Resize(int width, int height)
     const int fw = m_areaWidth > 0 ? m_areaWidth : width;
     const int fh = m_areaHeight > 0 ? m_areaHeight : height;
     ass_set_frame_size(static_cast<ASS_Renderer*>(m_renderer), fw, fh);
-    LAppPal::PrintLogLn("[SubtitleManager DIAG] Resize ass_set_frame_size(%d,%d) [window=%dx%d area=%dx%d]", fw, fh, width, height, m_areaWidth, m_areaHeight);
+
+    auto* track = static_cast<ASS_Track*>(m_track);
+    track->PlayResX = fw;
+    track->PlayResY = fh;
+
+    LAppPal::PrintLogLn("[SubtitleManager] Resized to %dx%d (frame %dx%d)", width, height, fw, fh);
 }
 
 void SubtitleManager::SetSubtitleLayout(float offsetX, float offsetY,
@@ -302,7 +297,6 @@ void SubtitleManager::SetSubtitleLayout(float offsetX, float offsetY,
 
     if (m_renderer != nullptr) {
         ass_set_frame_size(static_cast<ASS_Renderer*>(m_renderer), fw, fh);
-        LAppPal::PrintLogLn("[SubtitleManager DIAG] SetLayout ass_set_frame_size(%d,%d)", fw, fh);
     }
 
     if (m_track != nullptr) {
@@ -350,7 +344,6 @@ void SubtitleManager::AdjustSubtitleArea(int deltaWidth, int deltaHeight)
         int fw = m_areaWidth > 0 ? m_areaWidth : m_windowWidth;
         int fh = m_areaHeight > 0 ? m_areaHeight : m_windowHeight;
         ass_set_frame_size(static_cast<ASS_Renderer*>(m_renderer), fw, fh);
-        LAppPal::PrintLogLn("[SubtitleManager DIAG] AdjustArea ass_set_frame_size(%d,%d)", fw, fh);
         if (m_track) {
             auto* track = static_cast<ASS_Track*>(m_track);
             track->PlayResX = fw;
@@ -420,26 +413,6 @@ bool SubtitleManager::Render(int64_t nowMs)
                                        nowMs, &m_detectChange);
 
     if (m_detectChange != 0) {
-        auto* trk = static_cast<ASS_Track*>(m_track);
-        ASS_Style* st0 = (trk->n_styles > 0) ? &trk->styles[0] : nullptr;
-        LAppPal::PrintLogLn("[SubtitleManager] Render DUMP: WrapStyle=%d PlayRes=%dx%d n_styles=%d n_events=%d",
-            trk->WrapStyle, trk->PlayResX, trk->PlayResY, trk->n_styles, trk->n_events);
-        if (st0) {
-            LAppPal::PrintLogLn("[SubtitleManager] Style0: FontSize=%.1f MarginL=%d MarginR=%d MarginV=%d Alignment=%d ScaleX=%.1f ScaleY=%.1f",
-                st0->FontSize, st0->MarginL, st0->MarginR, st0->MarginV, st0->Alignment, st0->ScaleX, st0->ScaleY);
-        }
-        int nNodes = 0;
-        int minY = 999999, maxY = 0, minX = 999999, maxX = 0;
-        for (ASS_Image* i = imgs; i != nullptr; i = i->next) {
-            nNodes++;
-            if (i->dst_y < minY) minY = i->dst_y;
-            if (i->dst_y + i->h > maxY) maxY = i->dst_y + i->h;
-            if (i->dst_x < minX) minX = i->dst_x;
-            if (i->dst_x + i->w > maxX) maxX = i->dst_x + i->w;
-            LAppPal::PrintLogLn("[SubtitleManager]   node[%d]: dst=(%d,%d) %dx%d", nNodes-1, i->dst_x, i->dst_y, i->w, i->h);
-        }
-        LAppPal::PrintLogLn("[SubtitleManager] Render: %d nodes, X[%d,%d] Y[%d,%d], frame=%dx%d",
-            nNodes, minX, maxX, minY, maxY, m_areaWidth > 0 ? m_areaWidth : m_windowWidth, m_areaHeight > 0 ? m_areaHeight : m_windowHeight);
         CleanupTextures();
         ConvertAssImageToTextures(imgs);
         return true;

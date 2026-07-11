@@ -114,6 +114,22 @@ FetchContent_MakeAvailable(harfbuzz)
 # === FriBidi (for libass subtitle rendering) ===
 add_subdirectory(third_party/fribidi)
 
+# === libass (subtitle rendering engine) ===
+# libass ships with Meson/Autotools only — no CMakeLists.txt.
+# FetchContent the source, then build via our vendored CMakeLists.txt in
+# third_party/libass-cmake/. That CMakeLists.txt locates the fetched source
+# files through the libass_src_SOURCE_DIR variable (propagated to
+# subdirectories by CMake's variable scope). No file(COPY) needed — avoids
+# FetchContent auto-detecting a stale CMakeLists.txt on reconfigure.
+FetchContent_Declare(libass_src
+    GIT_REPOSITORY https://github.com/libass/libass.git
+    GIT_TAG 0.17.5
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(libass_src)
+
+add_subdirectory(third_party/libass-cmake ${CMAKE_BINARY_DIR}/libass-build)
+
 
 # === Compiler settings ===
 set(CMAKE_CXX_STANDARD 17)

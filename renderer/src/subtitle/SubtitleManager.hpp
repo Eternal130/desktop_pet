@@ -130,6 +130,19 @@ public:
      */
     const std::vector<OverlayQuad>& GetOverlayQuads() const { return m_quads; }
 
+    void SetSubtitleLayout(float offsetX, float offsetY, int areaWidth, int areaHeight, double fontSize);
+    void AdjustSubtitleOffset(float dxNdc, float dyNdc);
+    void AdjustSubtitleFontSize(double factor);
+    void SetAdjustMode(bool enabled);
+    void SetDefaultStyle(const SubtitleStyle& style);
+    const SubtitleStyle& GetDefaultStyle() const;
+    bool IsAdjustMode() const { return m_adjustMode; }
+    float GetOffsetX() const { return m_offsetX; }
+    float GetOffsetY() const { return m_offsetY; }
+    int GetAreaWidth() const { return m_areaWidth; }
+    int GetAreaHeight() const { return m_areaHeight; }
+    double GetFontSize() const { return m_fontSize; }
+
     /**
      * @brief Draw the current overlays (GL path implemented in T7, VK path in T8).
      */
@@ -154,6 +167,15 @@ private:
 
     // Current overlay quads (one per ASS_Image node from the last changed frame).
     std::vector<OverlayQuad> m_quads;
+
+    float m_offsetX = 0.0f;
+    float m_offsetY = 0.0f;
+    int m_areaWidth = 0;
+    int m_areaHeight = 0;
+    double m_fontSize = 48.0;
+    bool m_adjustMode = false;
+    SubtitleStyle m_defaultStyle;
+    uint64_t m_borderTexture = 0;
 
 #ifndef USE_VULKAN
     bool m_glInitialized;

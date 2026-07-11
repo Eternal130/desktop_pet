@@ -111,6 +111,8 @@ bool SubtitleManager::Init(IGraphicsBackend* backend, int windowWidth, int windo
     m_windowWidth = windowWidth;
     m_windowHeight = windowHeight;
     m_detectChange = 0;
+    m_defaultStyle = SubtitleStyle();
+    m_fontSize = m_defaultStyle.fontSize;
 
     LAppPal::PrintLogLn("[SubtitleManager] Initialized (%dx%d)", windowWidth, windowHeight);
     return true;
@@ -138,6 +140,10 @@ void SubtitleManager::Uninit()
 #endif
 
     // Textures first — they depend on m_backend, not on libass.
+    if (m_borderTexture != 0 && m_backend != nullptr) {
+        m_backend->DeleteTexture(m_borderTexture);
+        m_borderTexture = 0;
+    }
     CleanupTextures();
 
     if (m_track != nullptr) {
@@ -218,6 +224,9 @@ void SubtitleManager::SetText(const std::string& text, const SubtitleStyle& styl
     // strdup: libass takes ownership and frees on ass_free_track.
     ev->Text     = strdup(text.c_str());
 
+    m_defaultStyle = style;
+    m_fontSize = style.fontSize;
+
     LAppPal::PrintLogLn("[SubtitleManager] SetText: '%s' @%lldms +%lldms",
                         text.c_str(),
                         static_cast<long long>(startMs),
@@ -239,16 +248,109 @@ void SubtitleManager::Resize(int width, int height)
         return;
     }
 
-    ass_set_frame_size(static_cast<ASS_Renderer*>(m_renderer), width, height);
-
-    auto* track = static_cast<ASS_Track*>(m_track);
-    track->PlayResX = width;
-    track->PlayResY = height;
-
     m_windowWidth = width;
     m_windowHeight = height;
 
-    LAppPal::PrintLogLn("[SubtitleManager] Resized to %dx%d", width, height);
+    const int fw = m_areaWidth > 0 ? m_areaWidth : width;
+    const int fh = m_areaHeight > 0 ? m_areaHeight : height;
+    ass_set_frame_size(static_cast<ASS_Renderer*>(m_renderer), fw, fh);
+
+    auto* track = static_cast<ASS_Track*>(m_track);
+    track->PlayResX = fw;
+    track->PlayResY = fh;
+
+    LAppPal::PrintLogLn("[SubtitleManager] Resized to %dx%d (frame %dx%d)", width, height, fw, fh);
+}
+
+void SubtitleManager::SetSubtitleLayout(float offsetX, float offsetY,
+                                        int areaWidth, int areaHeight,
+                                        double fontSize)
+{
+    m_offsetX = offsetX;
+    m_offsetY = offsetY;
+    m_areaWidth = areaWidth;
+    m_areaHeight = areaHeight;
+    m_fontSize = fontSize;
+
+    if (m_renderer != nullptr) {
+        const int fw = areaWidth > 0 ? areaWidth : m_windowWidth;
+        const int fh = areaHeight > 0 ? areaHeight : m_windowHeight;
+        ass_set_frame_size(static_cast<ASS_Renderer*>(m_renderer), fw, fh);
+    }
+
+    if (m_track != nullptr) {
+        auto* track = static_cast<ASS_Track*>(m_track);
+        if (track->n_styles > 0) {
+            track->styles[0].FontSize = fontSize;
+        }
+    }
+
+    LAppPal::PrintLogLn("[SubtitleManager] SetLayout: offset=(%.0f,%.0f) area=%dx%d font=%.1f",
+                        offsetX, offsetY, areaWidth, areaHeight, fontSize);
+}
+
+void SubtitleManager::AdjustSubtitleOffset(float dxNdc, float dyNdc)
+{
+    const float halfH = m_windowHeight > 0 ? (m_windowHeight / 2.0f) : 0.0f;
+    m_offsetX += dxNdc * halfH;
+    m_offsetY += -dyNdc * halfH;
+}
+
+void SubtitleManager::AdjustSubtitleFontSize(double factor)
+{
+    m_fontSize = std::clamp(m_fontSize * factor, 8.0, 200.0);
+
+    if (m_track != nullptr) {
+        auto* track = static_cast<ASS_Track*>(m_track);
+        if (track->n_styles > 0) {
+            track->styles[0].FontSize = m_fontSize;
+        }
+    }
+
+    LAppPal::PrintLogLn("[SubtitleManager] FontSize adjusted to %.1f", m_fontSize);
+}
+
+void SubtitleManager::SetAdjustMode(bool enabled)
+{
+    m_adjustMode = enabled;
+
+    if (enabled) {
+        SetText("字幕预览\\NSubtitle Preview", m_defaultStyle, 0, INT64_MAX);
+    } else {
+        Hide();
+    }
+
+    LAppPal::PrintLogLn("[SubtitleManager] AdjustMode %s", enabled ? "ON" : "OFF");
+}
+
+void SubtitleManager::SetDefaultStyle(const SubtitleStyle& style)
+{
+    m_defaultStyle = style;
+
+    if (m_track == nullptr) return;
+
+    auto* track = static_cast<ASS_Track*>(m_track);
+    if (track->n_styles == 0) return;
+
+    ASS_Style* st = &track->styles[0];
+    if (st->FontName != nullptr) {
+        free(st->FontName);
+        st->FontName = nullptr;
+    }
+    st->FontName       = strdup(style.fontName.c_str());
+    st->FontSize       = style.fontSize;
+    st->PrimaryColour  = style.primaryColor;
+    st->OutlineColour  = style.outlineColor;
+    st->BackColour     = style.shadowColor;
+    st->Outline        = style.outlineWidth;
+    st->Shadow         = style.shadowDepth;
+    st->Alignment      = style.alignment;
+    st->MarginV        = style.marginV;
+}
+
+const SubtitleStyle& SubtitleManager::GetDefaultStyle() const
+{
+    return m_defaultStyle;
 }
 
 // ---------------------------------------------------------------------------
@@ -683,7 +785,7 @@ void SubtitleManager::InitVkOverlay()
 
 void SubtitleManager::DrawVkOverlays()
 {
-    if (m_quads.empty()) return;
+    if (m_quads.empty() && !m_adjustMode) return;
     if (!m_vkInitialized) InitVkOverlay();
     if (m_graphicsPipeline == VK_NULL_HANDLE) return;
     if (m_backend == nullptr) return;
@@ -781,10 +883,12 @@ void SubtitleManager::DrawVkOverlays()
         vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_pipelineLayout, 0, 1, &descSet, 0, nullptr);
 
-        const float x0 = static_cast<float>(quad.dstX);
-        const float y0 = static_cast<float>(quad.dstY);
-        const float x1 = static_cast<float>(quad.dstX + quad.width);
-        const float y1 = static_cast<float>(quad.dstY + quad.height);
+        const float ox = m_offsetX;
+        const float oy = m_offsetY;
+        const float x0 = static_cast<float>(quad.dstX) + ox;
+        const float y0 = static_cast<float>(quad.dstY) + oy;
+        const float x1 = static_cast<float>(quad.dstX + quad.width) + ox;
+        const float y1 = static_cast<float>(quad.dstY + quad.height) + oy;
 
         const float vertices[] = {
             x0, y0, 0.0f, 0.0f,
@@ -802,6 +906,71 @@ void SubtitleManager::DrawVkOverlays()
 
         vkCmdDraw(cmdBuf, 6, 1, 0, 0);
         setIndex++;
+    }
+
+    if (m_adjustMode) {
+        if (m_borderTexture == 0 && m_backend != nullptr) {
+            uint8_t px[4] = { 204, 204, 0, 204 };
+            m_borderTexture = m_backend->CreateTexture(px, 1, 1, 4);
+        }
+        if (m_borderTexture != 0) {
+            VkImageView borderView = vkBackend->GetTextureImageView(m_borderTexture);
+            if (borderView != VK_NULL_HANDLE && setIndex < 64) {
+                VkDescriptorSetAllocateInfo bdsInfo{};
+                bdsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+                bdsInfo.descriptorPool = m_descriptorPool;
+                bdsInfo.descriptorSetCount = 1;
+                bdsInfo.pSetLayouts = &m_descriptorSetLayout;
+
+                VkDescriptorSet borderSet = VK_NULL_HANDLE;
+                if (vkAllocateDescriptorSets(device, &bdsInfo, &borderSet) == VK_SUCCESS) {
+                    VkDescriptorImageInfo bimgInfo{};
+                    bimgInfo.sampler = m_sampler;
+                    bimgInfo.imageView = borderView;
+                    bimgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+                    VkWriteDescriptorSet bwrite{};
+                    bwrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                    bwrite.dstSet = borderSet;
+                    bwrite.dstBinding = 0;
+                    bwrite.dstArrayElement = 0;
+                    bwrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                    bwrite.descriptorCount = 1;
+                    bwrite.pImageInfo = &bimgInfo;
+
+                    vkUpdateDescriptorSets(device, 1, &bwrite, 0, nullptr);
+                    vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            m_pipelineLayout, 0, 1, &borderSet, 0, nullptr);
+
+                    const int bw = m_areaWidth > 0 ? m_areaWidth : m_windowWidth;
+                    const int bh = m_areaHeight > 0 ? m_areaHeight : m_windowHeight;
+                    const float bx = m_offsetX;
+                    const float by = m_offsetY;
+                    const float bt = 2.0f;
+
+                    auto drawEdge = [&](float ex0, float ey0, float ex1, float ey1) {
+                        const float verts[] = {
+                            ex0, ey0, 0.0f, 0.0f,
+                            ex1, ey0, 1.0f, 0.0f,
+                            ex0, ey1, 0.0f, 1.0f,
+                            ex1, ey0, 1.0f, 0.0f,
+                            ex1, ey1, 1.0f, 1.0f,
+                            ex0, ey1, 0.0f, 1.0f,
+                        };
+                        void* d = nullptr;
+                        vkMapMemory(device, m_vertexBufferMemory, 0, sizeof(verts), 0, &d);
+                        std::memcpy(d, verts, sizeof(verts));
+                        vkUnmapMemory(device, m_vertexBufferMemory);
+                        vkCmdDraw(cmdBuf, 6, 1, 0, 0);
+                    };
+
+                    drawEdge(bx, by, bx + static_cast<float>(bw), by + bt);
+                    drawEdge(bx, by + static_cast<float>(bh) - bt, bx + static_cast<float>(bw), by + static_cast<float>(bh));
+                    drawEdge(bx, by, bx + bt, by + static_cast<float>(bh));
+                    drawEdge(bx + static_cast<float>(bw) - bt, by, bx + static_cast<float>(bw), by + static_cast<float>(bh));
+                }
+            }
+        }
     }
 
     vkCmdEndRendering(cmdBuf);
@@ -967,7 +1136,7 @@ void SubtitleManager::InitGlOverlay()
 
 void SubtitleManager::DrawGlOverlays()
 {
-    if (m_quads.empty()) return;
+    if (m_quads.empty() && !m_adjustMode) return;
     if (!m_glInitialized) InitGlOverlay();
     if (m_shaderProgram == 0) return;
 
@@ -999,10 +1168,12 @@ void SubtitleManager::DrawGlOverlays()
 
         glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(quad.textureHandle));
 
-        const float x0 = static_cast<float>(quad.dstX);
-        const float y0 = static_cast<float>(quad.dstY);
-        const float x1 = static_cast<float>(quad.dstX + quad.width);
-        const float y1 = static_cast<float>(quad.dstY + quad.height);
+        const float ox = m_offsetX;
+        const float oy = m_offsetY;
+        const float x0 = static_cast<float>(quad.dstX) + ox;
+        const float y0 = static_cast<float>(quad.dstY) + oy;
+        const float x1 = static_cast<float>(quad.dstX + quad.width) + ox;
+        const float y1 = static_cast<float>(quad.dstY + quad.height) + oy;
 
         const float vertices[] = {
             x0, y0, 0.0f, 0.0f,
@@ -1017,6 +1188,34 @@ void SubtitleManager::DrawGlOverlays()
         glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
 
         glDrawArrays(GL_TRIANGLES, 0, 6);
+    }
+
+    if (m_adjustMode) {
+        if (m_borderTexture == 0 && m_backend != nullptr) {
+            uint8_t px[4] = { 204, 204, 0, 204 };
+            m_borderTexture = m_backend->CreateTexture(px, 1, 1, 4);
+        }
+        if (m_borderTexture != 0) {
+            glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(m_borderTexture));
+
+            const int bw = m_areaWidth > 0 ? m_areaWidth : m_windowWidth;
+            const int bh = m_areaHeight > 0 ? m_areaHeight : m_windowHeight;
+            const float bx0 = m_offsetX;
+            const float by0 = m_offsetY;
+            const float bx1 = m_offsetX + static_cast<float>(bw);
+            const float by1 = m_offsetY + static_cast<float>(bh);
+
+            const float borderVerts[] = {
+                bx0, by0, 0.0f, 0.0f,
+                bx1, by0, 0.0f, 0.0f,
+                bx1, by1, 0.0f, 0.0f,
+                bx0, by1, 0.0f, 0.0f,
+            };
+
+            glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(borderVerts), borderVerts);
+            glDrawArrays(GL_LINE_LOOP, 0, 4);
+        }
     }
 
     glBindVertexArray(0);

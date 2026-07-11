@@ -5,6 +5,7 @@
 #include "ass.h"
 
 #include "LAppPal.hpp"
+#include "LAppDelegate.hpp"
 #include "graphics/IGraphicsBackend.hpp"
 
 #ifdef USE_VULKAN
@@ -76,6 +77,10 @@ bool SubtitleManager::Init(IGraphicsBackend* backend, int windowWidth, int windo
         return false;
     }
     m_library = lib;
+
+    std::string exePath = LAppDelegate::GetInstance()->GetExecuteAbsolutePath();
+    std::string fontsDir = exePath + "fonts/";
+    ass_set_fonts_dir(lib, fontsDir.c_str());
 
     auto* rnd = ass_renderer_init(lib);
     if (rnd == nullptr) {

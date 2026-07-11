@@ -26,6 +26,7 @@ set(SDK_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/CubismSdkForNative)
 set(CORE_PATH ${SDK_ROOT_PATH}/Core)
 set(FRAMEWORK_PATH ${SDK_ROOT_PATH}/Framework)
 set(RES_PATH ${SDK_ROOT_PATH}/Samples/Resources)
+set(FONTS_PATH ${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts)
 set(COMMON_SRC_PATH ${SDK_ROOT_PATH}/Samples/Common)
 
 # === Paths (backend-specific) ===
@@ -344,6 +345,7 @@ if(USE_VULKAN)
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${RES_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/Resources/Models
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/SampleShaders/compiledShaders $<TARGET_FILE_DIR:${APP_NAME}>/SampleShaders
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/FrameworkShaders/compiledShaders $<TARGET_FILE_DIR:${APP_NAME}>/FrameworkShaders
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${FONTS_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/fonts
       COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll $<TARGET_FILE_DIR:${APP_NAME}>
     )
 else()
@@ -352,6 +354,7 @@ else()
       POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${RES_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/Resources/Models
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${FRAMEWORK_SHADER_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/FrameworkShaders
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${FONTS_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/fonts
       COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll $<TARGET_FILE_DIR:${APP_NAME}>
     )
 endif()

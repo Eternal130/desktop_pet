@@ -861,6 +861,15 @@ void VulkanBackend::ReleaseGraphics()
 
     CleanupSwapchain();
     DestroyReadbackBuffer();
+
+    for (auto& [id, tex] : _textureMap)
+    {
+        if (tex.imageView != VK_NULL_HANDLE) vkDestroyImageView(_device, tex.imageView, nullptr);
+        if (tex.image != VK_NULL_HANDLE) vkDestroyImage(_device, tex.image, nullptr);
+        if (tex.memory != VK_NULL_HANDLE) vkFreeMemory(_device, tex.memory, nullptr);
+    }
+    _textureMap.clear();
+
     vkDestroyFence(_device, _inFlightFence, nullptr);
     vkDestroySemaphore(_device, _imageAvailableSemaphore, nullptr);
 
@@ -895,15 +904,245 @@ VkImageView VulkanBackend::GetSwapchainImageView() const
 
 uint64_t VulkanBackend::CreateTexture(const void* data, int width, int height, int channels)
 {
-    // Vulkan path uses LAppTextureManager::CreateTextureFromPngFile(VkFormat, ...) overloads.
-    // This IGraphicsBackend method is only called by the OpenGL code path.
-    return 0;
+    if (data == nullptr || width <= 0 || height <= 0)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] CreateTexture: invalid input (data=%p w=%d h=%d)",
+            data, width, height);
+        return 0;
+    }
+
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
+
+    // --- Create VkImage ---
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = static_cast<uint32_t>(width);
+    imageInfo.extent.height = static_cast<uint32_t>(height);
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.flags = 0;
+
+    TextureData tex{};
+    if (vkCreateImage(_device, &imageInfo, nullptr, &tex.image) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] CreateTexture: failed to create VkImage");
+        return 0;
+    }
+
+    // --- Allocate + bind device-local memory ---
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(_device, tex.image, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (allocInfo.memoryTypeIndex == UINT32_MAX)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] CreateTexture: no suitable device-local memory type");
+        vkDestroyImage(_device, tex.image, nullptr);
+        return 0;
+    }
+
+    if (vkAllocateMemory(_device, &allocInfo, nullptr, &tex.memory) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] CreateTexture: failed to allocate image memory");
+        vkDestroyImage(_device, tex.image, nullptr);
+        return 0;
+    }
+    vkBindImageMemory(_device, tex.image, tex.memory, 0);
+
+    // --- Create staging buffer (host-visible + host-coherent) ---
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = imageSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(_device, &bufferInfo, nullptr, &stagingBuffer) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] CreateTexture: failed to create staging buffer");
+        vkFreeMemory(_device, tex.memory, nullptr);
+        vkDestroyImage(_device, tex.image, nullptr);
+        return 0;
+    }
+
+    VkMemoryRequirements stagingReq;
+    vkGetBufferMemoryRequirements(_device, stagingBuffer, &stagingReq);
+
+    VkMemoryAllocateInfo stagingAlloc{};
+    stagingAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    stagingAlloc.allocationSize = stagingReq.size;
+    stagingAlloc.memoryTypeIndex = FindMemoryType(stagingReq.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (stagingAlloc.memoryTypeIndex == UINT32_MAX)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] CreateTexture: no suitable host-visible memory type");
+        vkDestroyBuffer(_device, stagingBuffer, nullptr);
+        vkFreeMemory(_device, tex.memory, nullptr);
+        vkDestroyImage(_device, tex.image, nullptr);
+        return 0;
+    }
+
+    if (vkAllocateMemory(_device, &stagingAlloc, nullptr, &stagingMemory) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] CreateTexture: failed to allocate staging memory");
+        vkDestroyBuffer(_device, stagingBuffer, nullptr);
+        vkFreeMemory(_device, tex.memory, nullptr);
+        vkDestroyImage(_device, tex.image, nullptr);
+        return 0;
+    }
+    vkBindBufferMemory(_device, stagingBuffer, stagingMemory, 0);
+
+    // --- Map + copy pixel data into staging buffer ---
+    void* mappedData = nullptr;
+    if (vkMapMemory(_device, stagingMemory, 0, imageSize, 0, &mappedData) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] CreateTexture: failed to map staging memory");
+        vkFreeMemory(_device, stagingMemory, nullptr);
+        vkDestroyBuffer(_device, stagingBuffer, nullptr);
+        vkFreeMemory(_device, tex.memory, nullptr);
+        vkDestroyImage(_device, tex.image, nullptr);
+        return 0;
+    }
+    std::memcpy(mappedData, data, static_cast<size_t>(imageSize));
+    vkUnmapMemory(_device, stagingMemory);
+
+    // --- Record upload commands ---
+    VkCommandBuffer cmdBuf = BeginSingleTimeCommands();
+
+    // Layout transition: UNDEFINED -> TRANSFER_DST_OPTIMAL
+    VkImageMemoryBarrier layoutToDst{};
+    layoutToDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    layoutToDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    layoutToDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    layoutToDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    layoutToDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    layoutToDst.image = tex.image;
+    layoutToDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    layoutToDst.subresourceRange.baseMipLevel = 0;
+    layoutToDst.subresourceRange.levelCount = 1;
+    layoutToDst.subresourceRange.baseArrayLayer = 0;
+    layoutToDst.subresourceRange.layerCount = 1;
+    layoutToDst.srcAccessMask = 0;
+    layoutToDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmdBuf,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+        0, nullptr, 0, nullptr, 1, &layoutToDst);
+
+    // Copy staging buffer -> image
+    VkBufferImageCopy copyRegion{};
+    copyRegion.bufferOffset = 0;
+    copyRegion.bufferRowLength = 0;
+    copyRegion.bufferImageHeight = 0;
+    copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.imageSubresource.mipLevel = 0;
+    copyRegion.imageSubresource.baseArrayLayer = 0;
+    copyRegion.imageSubresource.layerCount = 1;
+    copyRegion.imageOffset = {0, 0, 0};
+    copyRegion.imageExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+
+    vkCmdCopyBufferToImage(cmdBuf, stagingBuffer, tex.image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+    // Layout transition: TRANSFER_DST_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
+    VkImageMemoryBarrier layoutToShader{};
+    layoutToShader.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    layoutToShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    layoutToShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    layoutToShader.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    layoutToShader.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    layoutToShader.image = tex.image;
+    layoutToShader.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    layoutToShader.subresourceRange.baseMipLevel = 0;
+    layoutToShader.subresourceRange.levelCount = 1;
+    layoutToShader.subresourceRange.baseArrayLayer = 0;
+    layoutToShader.subresourceRange.layerCount = 1;
+    layoutToShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    layoutToShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmdBuf,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+        0, nullptr, 0, nullptr, 1, &layoutToShader);
+
+    SubmitCommand(cmdBuf); // internally calls vkQueueWaitIdle
+
+    // --- Cleanup staging buffer (image memory is now device-local) ---
+    vkDestroyBuffer(_device, stagingBuffer, nullptr);
+    vkFreeMemory(_device, stagingMemory, nullptr);
+
+    // --- Create VkImageView ---
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = tex.image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+    viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+    viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+    viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    if (vkCreateImageView(_device, &viewInfo, nullptr, &tex.imageView) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] CreateTexture: failed to create VkImageView");
+        vkFreeMemory(_device, tex.memory, nullptr);
+        vkDestroyImage(_device, tex.image, nullptr);
+        return 0;
+    }
+
+    // --- Register in texture map, return handle ---
+    uint64_t handle = _nextTextureId++;
+    _textureMap[handle] = tex;
+
+    LAppPal::PrintLogLn("[VulkanBackend] CreateTexture: %dx%d handle=%llu",
+        width, height, static_cast<unsigned long long>(handle));
+    return handle;
 }
 
 void VulkanBackend::DeleteTexture(uint64_t handle)
 {
-    // Vulkan path uses CubismImageVulkan::Destroy(device) directly.
-    // This IGraphicsBackend method is only called by the OpenGL code path.
+    auto it = _textureMap.find(handle);
+    if (it == _textureMap.end())
+    {
+        return;
+    }
+
+    const TextureData& tex = it->second;
+    if (tex.imageView != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(_device, tex.imageView, nullptr);
+    }
+    if (tex.image != VK_NULL_HANDLE)
+    {
+        vkDestroyImage(_device, tex.image, nullptr);
+    }
+    if (tex.memory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(_device, tex.memory, nullptr);
+    }
+    _textureMap.erase(it);
 }
 
 bool VulkanBackend::IsPixelTransparent(int x, int y, int windowHeight)

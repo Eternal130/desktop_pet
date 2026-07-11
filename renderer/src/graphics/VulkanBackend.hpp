@@ -5,6 +5,7 @@
 #include "IGraphicsBackend.hpp"
 #include <vulkan/vulkan.h>
 #include <vector>
+#include <unordered_map>
 
 // Merges VulkanManager + SwapchainManager from Cubism SDK Vulkan Demo.
 // Implements IGraphicsBackend for LAppDelegate.
@@ -84,6 +85,15 @@ private:
     // Pixel readback (click-through detection)
     VkBuffer _readbackBuffer = VK_NULL_HANDLE;
     VkDeviceMemory _readbackBufferMemory = VK_NULL_HANDLE;
+
+    // Subtitle overlay textures (RGBA uploads via staging buffer)
+    struct TextureData {
+        VkImage image = VK_NULL_HANDLE;
+        VkImageView imageView = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+    };
+    std::unordered_map<uint64_t, TextureData> _textureMap;
+    uint64_t _nextTextureId = 1; // 0 = invalid handle
 
     QueueFamilyIndices _queueFamilyIndices;
 

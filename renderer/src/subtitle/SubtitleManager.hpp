@@ -6,6 +6,8 @@
 
 #ifndef USE_VULKAN
 #include <GL/glew.h>
+#else
+#include <vulkan/vulkan.h>
 #endif
 
 // Forward declaration. NOTE: IGraphicsBackend is at GLOBAL scope in this
@@ -162,5 +164,21 @@ private:
     void InitGlOverlay();
     void DrawGlOverlays();
     void CheckGlError(const char* context);
+#endif
+
+#ifdef USE_VULKAN
+    bool m_vkInitialized;
+    VkDescriptorSetLayout m_descriptorSetLayout;
+    VkPipelineLayout m_pipelineLayout;
+    VkPipeline m_graphicsPipeline;
+    VkDescriptorPool m_descriptorPool;
+    VkBuffer m_vertexBuffer;
+    VkDeviceMemory m_vertexBufferMemory;
+    VkSampler m_sampler;
+
+    void InitVkOverlay();
+    void DrawVkOverlays();
+    void CleanupVkOverlay();
+    uint32_t FindVkMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags props);
 #endif
 };

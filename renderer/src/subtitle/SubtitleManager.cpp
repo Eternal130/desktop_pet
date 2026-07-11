@@ -7,6 +7,11 @@
 #include "LAppPal.hpp"
 #include "graphics/IGraphicsBackend.hpp"
 
+#ifdef USE_VULKAN
+#include "graphics/VulkanBackend.hpp"
+#include "SubtitleShadersVK.hpp"
+#endif
+
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
@@ -28,6 +33,16 @@ SubtitleManager::SubtitleManager()
     , m_shaderProgram(0)
     , m_vao(0)
     , m_vbo(0)
+#endif
+#ifdef USE_VULKAN
+    , m_vkInitialized(false)
+    , m_descriptorSetLayout(VK_NULL_HANDLE)
+    , m_pipelineLayout(VK_NULL_HANDLE)
+    , m_graphicsPipeline(VK_NULL_HANDLE)
+    , m_descriptorPool(VK_NULL_HANDLE)
+    , m_vertexBuffer(VK_NULL_HANDLE)
+    , m_vertexBufferMemory(VK_NULL_HANDLE)
+    , m_sampler(VK_NULL_HANDLE)
 #endif
 {
 }
@@ -117,6 +132,9 @@ void SubtitleManager::Uninit()
         m_vao = 0;
     }
     m_glInitialized = false;
+#endif
+#ifdef USE_VULKAN
+    CleanupVkOverlay();
 #endif
 
     // Textures first — they depend on m_backend, not on libass.
@@ -348,12 +366,496 @@ void SubtitleManager::DrawOverlays()
 #ifndef USE_VULKAN
     DrawGlOverlays();
 #else
-    // Vulkan path — implemented in T8.
+    DrawVkOverlays();
 #endif
 }
 
 #ifdef USE_VULKAN
-// No GL overlay implementation in Vulkan builds.
+
+// ---------------------------------------------------------------------------
+// Vulkan overlay path (T8)
+// ---------------------------------------------------------------------------
+
+uint32_t SubtitleManager::FindVkMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags props)
+{
+    auto* vkBackend = static_cast<VulkanBackend*>(m_backend);
+    if (vkBackend == nullptr) return UINT32_MAX;
+
+    VkPhysicalDevice physDev = vkBackend->GetPhysicalDevice();
+    VkPhysicalDeviceMemoryProperties memProps;
+    vkGetPhysicalDeviceMemoryProperties(physDev, &memProps);
+
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; i++)
+    {
+        if ((typeFilter & (1u << i)) &&
+            (memProps.memoryTypes[i].propertyFlags & props) == props)
+        {
+            return i;
+        }
+    }
+    return UINT32_MAX;
+}
+
+void SubtitleManager::InitVkOverlay()
+{
+    if (m_vkInitialized) return;
+    if (m_backend == nullptr) return;
+
+    auto* vkBackend = static_cast<VulkanBackend*>(m_backend);
+    VkDevice device = vkBackend->GetDevice();
+
+    // --- Descriptor set layout: 1 combined image sampler, binding 0, fragment ---
+    VkDescriptorSetLayoutBinding layoutBinding{};
+    layoutBinding.binding = 0;
+    layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    layoutBinding.descriptorCount = 1;
+    layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    layoutBinding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutCreateInfo dsLayoutInfo{};
+    dsLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    dsLayoutInfo.bindingCount = 1;
+    dsLayoutInfo.pBindings = &layoutBinding;
+
+    if (vkCreateDescriptorSetLayout(device, &dsLayoutInfo, nullptr,
+                                    &m_descriptorSetLayout) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[SubtitleManager] vkCreateDescriptorSetLayout failed");
+        m_vkInitialized = true; // prevent retry loop
+        return;
+    }
+
+    // --- Pipeline layout: descriptor set + 8-byte push constant (vertex stage) ---
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushRange.offset = 0;
+    pushRange.size = 8; // sizeof(vec2) screenSize
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_descriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushRange;
+
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
+                               &m_pipelineLayout) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[SubtitleManager] vkCreatePipelineLayout failed");
+        m_vkInitialized = true;
+        return;
+    }
+
+    // --- Graphics pipeline (dynamic rendering, no RenderPass) ---
+    VkShaderModule vertModule = VK_NULL_HANDLE;
+    VkShaderModule fragModule = VK_NULL_HANDLE;
+
+    VkShaderModuleCreateInfo vertInfo{};
+    vertInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    vertInfo.codeSize = kSubtitleVertSpvWordCount * sizeof(uint32_t);
+    vertInfo.pCode = kSubtitleVertSpv;
+    if (vkCreateShaderModule(device, &vertInfo, nullptr, &vertModule) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[SubtitleManager] vkCreateShaderModule (vert) failed");
+        m_vkInitialized = true;
+        return;
+    }
+
+    VkShaderModuleCreateInfo fragInfo{};
+    fragInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    fragInfo.codeSize = kSubtitleFragSpvWordCount * sizeof(uint32_t);
+    fragInfo.pCode = kSubtitleFragSpv;
+    if (vkCreateShaderModule(device, &fragInfo, nullptr, &fragModule) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[SubtitleManager] vkCreateShaderModule (frag) failed");
+        vkDestroyShaderModule(device, vertModule, nullptr);
+        m_vkInitialized = true;
+        return;
+    }
+
+    VkPipelineShaderStageCreateInfo shaderStages[2] = {};
+    shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    shaderStages[0].module = vertModule;
+    shaderStages[0].pName = "main";
+    shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    shaderStages[1].module = fragModule;
+    shaderStages[1].pName = "main";
+
+    VkVertexInputBindingDescription bindingDesc{};
+    bindingDesc.binding = 0;
+    bindingDesc.stride = 4 * sizeof(float);
+    bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attrDescs[2] = {};
+    attrDescs[0].location = 0;
+    attrDescs[0].binding = 0;
+    attrDescs[0].format = VK_FORMAT_R32G32_SFLOAT;
+    attrDescs[0].offset = 0;
+    attrDescs[1].location = 1;
+    attrDescs[1].binding = 0;
+    attrDescs[1].format = VK_FORMAT_R32G32_SFLOAT;
+    attrDescs[1].offset = 2 * sizeof(float);
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
+    vertexInputInfo.vertexAttributeDescriptionCount = 2;
+    vertexInputInfo.pVertexAttributeDescriptions = attrDescs;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // Premultiplied alpha: src=ONE, dst=ONE_MINUS_SRC_ALPHA
+    VkPipelineColorBlendAttachmentState blendAttachment{};
+    blendAttachment.blendEnable = VK_TRUE;
+    blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &blendAttachment;
+
+    VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = 2;
+    dynamicState.pDynamicStates = dynamicStates;
+
+    VkPipelineRenderingCreateInfo renderingInfo{};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    VkFormat colorFormat = vkBackend->GetImageFormat();
+    renderingInfo.colorAttachmentCount = 1;
+    renderingInfo.pColorAttachmentFormats = &colorFormat;
+    renderingInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
+    renderingInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.pNext = &renderingInfo;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStages;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = m_pipelineLayout;
+    pipelineInfo.renderPass = VK_NULL_HANDLE;
+    pipelineInfo.subpass = 0;
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+    pipelineInfo.basePipelineIndex = -1;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo,
+                                  nullptr, &m_graphicsPipeline) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[SubtitleManager] vkCreateGraphicsPipelines failed");
+        vkDestroyShaderModule(device, vertModule, nullptr);
+        vkDestroyShaderModule(device, fragModule, nullptr);
+        m_vkInitialized = true;
+        return;
+    }
+
+    vkDestroyShaderModule(device, vertModule, nullptr);
+    vkDestroyShaderModule(device, fragModule, nullptr);
+
+    // --- Descriptor pool: 64 combined-image-sampler sets ---
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = 64;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = 64;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[SubtitleManager] vkCreateDescriptorPool failed");
+        m_vkInitialized = true;
+        return;
+    }
+
+    // --- Vertex buffer: host-visible, 6 verts x 4 floats = 96 bytes ---
+    VkBufferCreateInfo vbInfo{};
+    vbInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    vbInfo.size = 6 * 4 * sizeof(float);
+    vbInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    vbInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(device, &vbInfo, nullptr, &m_vertexBuffer) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[SubtitleManager] vkCreateBuffer (vertex) failed");
+        m_vkInitialized = true;
+        return;
+    }
+
+    VkMemoryRequirements vbMemReq;
+    vkGetBufferMemoryRequirements(device, m_vertexBuffer, &vbMemReq);
+
+    uint32_t vbMemType = FindVkMemoryType(vbMemReq.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (vbMemType == UINT32_MAX)
+    {
+        LAppPal::PrintLogLn("[SubtitleManager] FindVkMemoryType (vertex buffer) failed");
+        m_vkInitialized = true;
+        return;
+    }
+
+    VkMemoryAllocateInfo vbAllocInfo{};
+    vbAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    vbAllocInfo.allocationSize = vbMemReq.size;
+    vbAllocInfo.memoryTypeIndex = vbMemType;
+
+    if (vkAllocateMemory(device, &vbAllocInfo, nullptr, &m_vertexBufferMemory) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[SubtitleManager] vkAllocateMemory (vertex buffer) failed");
+        vkDestroyBuffer(device, m_vertexBuffer, nullptr);
+        m_vertexBuffer = VK_NULL_HANDLE;
+        m_vkInitialized = true;
+        return;
+    }
+    vkBindBufferMemory(device, m_vertexBuffer, m_vertexBufferMemory, 0);
+
+    // --- Sampler: linear filtering, clamp-to-edge, no mipmaps ---
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_TRANSPARENT_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &m_sampler) != VK_SUCCESS)
+    {
+        LAppPal::PrintLogLn("[SubtitleManager] vkCreateSampler failed");
+        m_vkInitialized = true;
+        return;
+    }
+
+    m_vkInitialized = true;
+    LAppPal::PrintLogLn("[SubtitleManager] VK overlay pipeline initialized");
+}
+
+void SubtitleManager::DrawVkOverlays()
+{
+    if (m_quads.empty()) return;
+    if (!m_vkInitialized) InitVkOverlay();
+    if (m_graphicsPipeline == VK_NULL_HANDLE) return;
+    if (m_backend == nullptr) return;
+
+    auto* vkBackend = static_cast<VulkanBackend*>(m_backend);
+    VkDevice device = vkBackend->GetDevice();
+
+    // Reset descriptor pool to reclaim sets from prior frames.
+    vkResetDescriptorPool(device, m_descriptorPool, 0);
+
+    // Begin our own command buffer + dynamic rendering pass (loadOp=LOAD
+    // preserves the model render). After Step 2 (Cubism OnUpdate) the GPU
+    // is idle because SubmitCommand calls vkQueueWaitIdle.
+    VkCommandBuffer cmdBuf = vkBackend->BeginSingleTimeCommands();
+
+    VkRenderingAttachmentInfoKHR colorAttachment{};
+    colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+    colorAttachment.imageView = vkBackend->GetSwapchainImageView();
+    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+    VkRenderingInfoKHR renderingInfo{};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
+    renderingInfo.renderArea.offset = {0, 0};
+    renderingInfo.renderArea.extent = vkBackend->GetSwapchainExtent();
+    renderingInfo.layerCount = 1;
+    renderingInfo.colorAttachmentCount = 1;
+    renderingInfo.pColorAttachments = &colorAttachment;
+
+    vkCmdBeginRendering(cmdBuf, &renderingInfo);
+
+    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+
+    struct { float w, h; } pushConstants = {
+        static_cast<float>(m_windowWidth),
+        static_cast<float>(m_windowHeight)
+    };
+    vkCmdPushConstants(cmdBuf, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
+                       0, sizeof(pushConstants), &pushConstants);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(m_windowWidth);
+    viewport.height = static_cast<float>(m_windowHeight);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmdBuf, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent.width = static_cast<uint32_t>(m_windowWidth);
+    scissor.extent.height = static_cast<uint32_t>(m_windowHeight);
+    vkCmdSetScissor(cmdBuf, 0, 1, &scissor);
+
+    VkDeviceSize offsets[] = { 0 };
+    vkCmdBindVertexBuffers(cmdBuf, 0, 1, &m_vertexBuffer, offsets);
+
+    uint32_t setIndex = 0;
+    for (const auto& quad : m_quads)
+    {
+        if (quad.textureHandle == 0) continue;
+
+        VkImageView imageView = vkBackend->GetTextureImageView(quad.textureHandle);
+        if (imageView == VK_NULL_HANDLE) continue;
+
+        VkDescriptorSetAllocateInfo dsAllocInfo{};
+        dsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        dsAllocInfo.descriptorPool = m_descriptorPool;
+        dsAllocInfo.descriptorSetCount = 1;
+        dsAllocInfo.pSetLayouts = &m_descriptorSetLayout;
+
+        VkDescriptorSet descSet = VK_NULL_HANDLE;
+        if (vkAllocateDescriptorSets(device, &dsAllocInfo, &descSet) != VK_SUCCESS)
+        {
+            LAppPal::PrintLogLn("[SubtitleManager] vkAllocateDescriptorSets failed (set %u)", setIndex);
+            break;
+        }        VkDescriptorImageInfo imageInfo{};
+        imageInfo.sampler = m_sampler;
+        imageInfo.imageView = imageView;
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descSet;
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+
+        vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_pipelineLayout, 0, 1, &descSet, 0, nullptr);
+
+        const float x0 = static_cast<float>(quad.dstX);
+        const float y0 = static_cast<float>(quad.dstY);
+        const float x1 = static_cast<float>(quad.dstX + quad.width);
+        const float y1 = static_cast<float>(quad.dstY + quad.height);
+
+        const float vertices[] = {
+            x0, y0, 0.0f, 0.0f,
+            x1, y0, 1.0f, 0.0f,
+            x0, y1, 0.0f, 1.0f,
+            x1, y0, 1.0f, 0.0f,
+            x1, y1, 1.0f, 1.0f,
+            x0, y1, 0.0f, 1.0f,
+        };
+
+        void* data = nullptr;
+        vkMapMemory(device, m_vertexBufferMemory, 0, sizeof(vertices), 0, &data);
+        std::memcpy(data, vertices, sizeof(vertices));
+        vkUnmapMemory(device, m_vertexBufferMemory);
+
+        vkCmdDraw(cmdBuf, 6, 1, 0, 0);
+        setIndex++;
+    }
+
+    vkCmdEndRendering(cmdBuf);
+    vkBackend->SubmitCommand(cmdBuf);
+}
+
+void SubtitleManager::CleanupVkOverlay()
+{
+    if (m_backend == nullptr) {
+        m_vkInitialized = false;
+        return;
+    }
+
+    auto* vkBackend = static_cast<VulkanBackend*>(m_backend);
+    VkDevice device = vkBackend->GetDevice();
+    if (device == VK_NULL_HANDLE) {
+        m_vkInitialized = false;
+        return;
+    }
+
+    vkDeviceWaitIdle(device);
+
+    if (m_sampler != VK_NULL_HANDLE) {
+        vkDestroySampler(device, m_sampler, nullptr);
+        m_sampler = VK_NULL_HANDLE;
+    }
+    if (m_vertexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, m_vertexBuffer, nullptr);
+        m_vertexBuffer = VK_NULL_HANDLE;
+    }
+    if (m_vertexBufferMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, m_vertexBufferMemory, nullptr);
+        m_vertexBufferMemory = VK_NULL_HANDLE;
+    }
+    if (m_descriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device, m_descriptorPool, nullptr);
+        m_descriptorPool = VK_NULL_HANDLE;
+    }
+    if (m_graphicsPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, m_graphicsPipeline, nullptr);
+        m_graphicsPipeline = VK_NULL_HANDLE;
+    }
+    if (m_pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
+        m_pipelineLayout = VK_NULL_HANDLE;
+    }
+    if (m_descriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device, m_descriptorSetLayout, nullptr);
+        m_descriptorSetLayout = VK_NULL_HANDLE;
+    }
+
+    m_vkInitialized = false;
+}
+
 #else
 
 // ---------------------------------------------------------------------------

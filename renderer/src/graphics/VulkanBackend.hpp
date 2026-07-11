@@ -50,6 +50,10 @@ public:
     int32_t GetSwapchainImageCount() const { return static_cast<int32_t>(_swapchainImageCount); }
     VkFormat GetSwapchainImageFormat() const { return _swapchainImageFormat; }
 
+    // Returns the VkImageView for a subtitle overlay texture handle (T8).
+    // Returns VK_NULL_HANDLE if handle is not found.
+    VkImageView GetTextureImageView(uint64_t handle) const;
+
     void RecreateSwapchain();
     bool IsSwapchainInvalid() const { return _isSwapchainInvalid; }
     void SetSwapchainInvalid(bool flag) { _isSwapchainInvalid = flag; }

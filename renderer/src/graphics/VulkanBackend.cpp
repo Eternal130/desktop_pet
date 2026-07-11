@@ -1145,6 +1145,16 @@ void VulkanBackend::DeleteTexture(uint64_t handle)
     _textureMap.erase(it);
 }
 
+VkImageView VulkanBackend::GetTextureImageView(uint64_t handle) const
+{
+    auto it = _textureMap.find(handle);
+    if (it != _textureMap.end())
+    {
+        return it->second.imageView;
+    }
+    return VK_NULL_HANDLE;
+}
+
 bool VulkanBackend::IsPixelTransparent(int x, int y, int windowHeight)
 {
     VkImage swapchainImage = GetSwapchainImage();

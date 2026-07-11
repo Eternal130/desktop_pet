@@ -343,7 +343,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             return;
         }
 
-        SubtitleStyle style;
+        SubtitleStyle style = subtitleMgr->GetDefaultStyle();
         if (cmd.payload.contains("font_name"))      style.fontName     = cmd.payload["font_name"].get<std::string>();
         if (cmd.payload.contains("font_size"))      style.fontSize     = cmd.payload["font_size"].get<double>();
         if (cmd.payload.contains("primary_color"))  style.primaryColor = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["primary_color"].get<uint32_t>());
@@ -386,9 +386,34 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         if (cmd.payload.contains("alignment"))      style.alignment    = cmd.payload["alignment"].get<int>();
         if (cmd.payload.contains("marginV"))        style.marginV      = cmd.payload["marginV"].get<int>();
 
-        subtitleMgr->SetText("", style, static_cast<int64_t>(glfwGetTime() * 1000.0), 0LL);
+        subtitleMgr->SetDefaultStyle(style);
         LAppPal::PrintLogLn("[CommandHandlers] set_subtitle_style: default style updated");
         sendResponse(createResponse(cmd.id, ACTION_SET_SUBTITLE_STYLE, true));
+    });
+
+    handler.registerCommand(ACTION_SET_SUBTITLE_ADJUST_MODE, [delegate](const Envelope& cmd, auto sendResponse) {
+        bool enabled = cmd.payload.value("enabled", false);
+        delegate->SetSubtitleAdjustMode(enabled);
+        auto* subtitleMgr = delegate->GetSubtitleManager();
+        if (subtitleMgr != nullptr && subtitleMgr->IsInitialized()) {
+            subtitleMgr->SetAdjustMode(enabled);
+        }
+        LAppPal::PrintLogLn("[CommandHandlers] set_subtitle_adjust_mode: %s", enabled ? "ON" : "OFF");
+        sendResponse(createResponse(cmd.id, ACTION_SET_SUBTITLE_ADJUST_MODE, true));
+    });
+
+    handler.registerCommand(ACTION_SET_SUBTITLE_LAYOUT, [delegate](const Envelope& cmd, auto sendResponse) {
+        float offsetX = cmd.payload.value("offset_x", 0.0f);
+        float offsetY = cmd.payload.value("offset_y", 0.0f);
+        int areaWidth = cmd.payload.value("area_width", 0);
+        int areaHeight = cmd.payload.value("area_height", 0);
+        double fontSize = cmd.payload.value("font_size", 48.0);
+
+        auto* subtitleMgr = delegate->GetSubtitleManager();
+        if (subtitleMgr != nullptr && subtitleMgr->IsInitialized()) {
+            subtitleMgr->SetSubtitleLayout(offsetX, offsetY, areaWidth, areaHeight, fontSize);
+        }
+        sendResponse(createResponse(cmd.id, ACTION_SET_SUBTITLE_LAYOUT, true));
     });
 
     handler.registerCommand("set_layout", [](const Envelope& cmd, auto sendResponse) {

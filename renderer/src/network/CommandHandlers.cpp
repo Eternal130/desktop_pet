@@ -7,6 +7,8 @@
 #include "LAppPal.hpp"
 #include "LAppDefine.hpp"
 #include "AudioManager.hpp"
+#include "subtitle/SubtitleManager.hpp"
+#include "subtitle/SubtitleColorUtils.hpp"
 #include "monitor/GpuMonitorFactory.hpp"
 #include "monitor/IGpuMonitor.hpp"
 #include "monitor/ProcessStatsCollector.hpp"
@@ -327,6 +329,66 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             audio->SetMuted(muted);
         }
         sendResponse(createResponse(cmd.id, "set_volume", true));
+    });
+
+    handler.registerCommand(ACTION_SHOW_SUBTITLE, [delegate](const Envelope& cmd, auto sendResponse) {
+        std::string text = cmd.payload.value("text", "");
+        if (text.empty()) {
+            sendResponse(createResponse(cmd.id, ACTION_SHOW_SUBTITLE, false, ERROR_SUBTITLE_TEXT_REQUIRED, "text is required"));
+            return;
+        }
+        auto* subtitleMgr = delegate->GetSubtitleManager();
+        if (subtitleMgr == nullptr || !subtitleMgr->IsInitialized()) {
+            sendResponse(createResponse(cmd.id, ACTION_SHOW_SUBTITLE, false, ERROR_SUBTITLE_NOT_INITIALIZED, "Subtitle engine not initialized"));
+            return;
+        }
+
+        SubtitleStyle style;
+        if (cmd.payload.contains("font_name"))      style.fontName     = cmd.payload["font_name"].get<std::string>();
+        if (cmd.payload.contains("font_size"))      style.fontSize     = cmd.payload["font_size"].get<double>();
+        if (cmd.payload.contains("primary_color"))  style.primaryColor = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["primary_color"].get<uint32_t>());
+        if (cmd.payload.contains("outline_color"))  style.outlineColor = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["outline_color"].get<uint32_t>());
+        if (cmd.payload.contains("outline_width"))  style.outlineWidth = cmd.payload["outline_width"].get<double>();
+        if (cmd.payload.contains("shadow_color"))   style.shadowColor  = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["shadow_color"].get<uint32_t>());
+        if (cmd.payload.contains("shadow_depth"))   style.shadowDepth  = cmd.payload["shadow_depth"].get<double>();
+        if (cmd.payload.contains("alignment"))      style.alignment    = cmd.payload["alignment"].get<int>();
+        if (cmd.payload.contains("marginV"))        style.marginV      = cmd.payload["marginV"].get<int>();
+
+        int64_t durationMs = cmd.payload.value("duration", 0LL);
+        int64_t startMs    = static_cast<int64_t>(glfwGetTime() * 1000.0);
+
+        subtitleMgr->SetText(text, style, startMs, durationMs);
+        sendResponse(createResponse(cmd.id, ACTION_SHOW_SUBTITLE, true));
+    });
+
+    handler.registerCommand(ACTION_HIDE_SUBTITLE, [delegate](const Envelope& cmd, auto sendResponse) {
+        auto* subtitleMgr = delegate->GetSubtitleManager();
+        if (subtitleMgr != nullptr && subtitleMgr->IsInitialized()) {
+            subtitleMgr->Hide();
+        }
+        sendResponse(createResponse(cmd.id, ACTION_HIDE_SUBTITLE, true));
+    });
+
+    handler.registerCommand(ACTION_SET_SUBTITLE_STYLE, [delegate](const Envelope& cmd, auto sendResponse) {
+        auto* subtitleMgr = delegate->GetSubtitleManager();
+        if (subtitleMgr == nullptr || !subtitleMgr->IsInitialized()) {
+            sendResponse(createResponse(cmd.id, ACTION_SET_SUBTITLE_STYLE, false, ERROR_SUBTITLE_NOT_INITIALIZED, "Subtitle engine not initialized"));
+            return;
+        }
+        SubtitleStyle style;
+        if (cmd.payload.contains("font_name"))      style.fontName     = cmd.payload["font_name"].get<std::string>();
+        if (cmd.payload.contains("font_size"))      style.fontSize     = cmd.payload["font_size"].get<double>();
+        if (cmd.payload.contains("primary_color"))  style.primaryColor = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["primary_color"].get<uint32_t>());
+        if (cmd.payload.contains("outline_color"))  style.outlineColor = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["outline_color"].get<uint32_t>());
+        if (cmd.payload.contains("outline_width"))  style.outlineWidth = cmd.payload["outline_width"].get<double>();
+        if (cmd.payload.contains("shadow_color"))   style.shadowColor  = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["shadow_color"].get<uint32_t>());
+        if (cmd.payload.contains("shadow_depth"))   style.shadowDepth  = cmd.payload["shadow_depth"].get<double>();
+        if (cmd.payload.contains("alignment"))      style.alignment    = cmd.payload["alignment"].get<int>();
+        if (cmd.payload.contains("marginV"))        style.marginV      = cmd.payload["marginV"].get<int>();
+
+        subtitleMgr->SetText("", style, static_cast<int64_t>(glfwGetTime() * 1000.0), 0LL);
+        LAppPal::PrintLogLn("[CommandHandlers] set_subtitle_style: default style updated");
+        sendResponse(createResponse(cmd.id, ACTION_SET_SUBTITLE_STYLE, true));
     });
 
     handler.registerCommand("set_layout", [](const Envelope& cmd, auto sendResponse) {

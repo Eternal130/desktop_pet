@@ -24,6 +24,15 @@ inline constexpr const char* ACTION_GET_STATS = "get_stats";
 inline constexpr const char* EVENT_STATS_STATE = "stats_state";
 inline constexpr int ERROR_STATS_COLLECTION_FAILED = 9001;
 
+// Subtitle actions
+inline constexpr const char* ACTION_SHOW_SUBTITLE = "show_subtitle";
+inline constexpr const char* ACTION_HIDE_SUBTITLE = "hide_subtitle";
+inline constexpr const char* ACTION_SET_SUBTITLE_STYLE = "set_subtitle_style";
+
+// Subtitle error codes (10000-10099)
+inline constexpr int ERROR_SUBTITLE_TEXT_REQUIRED = 10001;
+inline constexpr int ERROR_SUBTITLE_NOT_INITIALIZED = 10002;
+
 std::string serialize(const Envelope& env);
 std::optional<Envelope> deserialize(const std::string& json_str);
 Envelope createCommand(const std::string& action, const nlohmann::json& payload = {});

@@ -896,8 +896,10 @@ void SubtitleManager::DrawVkOverlays()
         vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_pipelineLayout, 0, 1, &descSet, 0, nullptr);
 
-        const float ox = m_offsetX;
-        const float oy = m_offsetY;
+        const float halfW = (m_areaWidth > 0 ? static_cast<float>(m_areaWidth) : static_cast<float>(m_windowWidth)) * 0.5f;
+        const float halfH = (m_areaHeight > 0 ? static_cast<float>(m_areaHeight) : static_cast<float>(m_windowHeight)) * 0.5f;
+        const float ox = m_offsetX - halfW;
+        const float oy = m_offsetY - halfH;
         const float x0 = static_cast<float>(quad.dstX) + ox;
         const float y0 = static_cast<float>(quad.dstY) + oy;
         const float x1 = static_cast<float>(quad.dstX + quad.width) + ox;
@@ -957,8 +959,8 @@ void SubtitleManager::DrawVkOverlays()
 
                     const int bw = m_areaWidth > 0 ? m_areaWidth : m_windowWidth;
                     const int bh = m_areaHeight > 0 ? m_areaHeight : m_windowHeight;
-                    const float bx = m_offsetX;
-                    const float by = m_offsetY;
+                    const float bx = m_offsetX - static_cast<float>(bw) * 0.5f;
+                    const float by = m_offsetY - static_cast<float>(bh) * 0.5f;
                     const float bt = 2.0f;
 
                     auto drawEdge = [&](float ex0, float ey0, float ex1, float ey1) {
@@ -1181,8 +1183,10 @@ void SubtitleManager::DrawGlOverlays()
 
         glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(quad.textureHandle));
 
-        const float ox = m_offsetX;
-        const float oy = m_offsetY;
+        const float halfW = (m_areaWidth > 0 ? static_cast<float>(m_areaWidth) : static_cast<float>(m_windowWidth)) * 0.5f;
+        const float halfH = (m_areaHeight > 0 ? static_cast<float>(m_areaHeight) : static_cast<float>(m_windowHeight)) * 0.5f;
+        const float ox = m_offsetX - halfW;
+        const float oy = m_offsetY - halfH;
         const float x0 = static_cast<float>(quad.dstX) + ox;
         const float y0 = static_cast<float>(quad.dstY) + oy;
         const float x1 = static_cast<float>(quad.dstX + quad.width) + ox;
@@ -1213,10 +1217,10 @@ void SubtitleManager::DrawGlOverlays()
 
             const int bw = m_areaWidth > 0 ? m_areaWidth : m_windowWidth;
             const int bh = m_areaHeight > 0 ? m_areaHeight : m_windowHeight;
-            const float bx0 = m_offsetX;
-            const float by0 = m_offsetY;
-            const float bx1 = m_offsetX + static_cast<float>(bw);
-            const float by1 = m_offsetY + static_cast<float>(bh);
+            const float bx0 = m_offsetX - static_cast<float>(bw) * 0.5f;
+            const float by0 = m_offsetY - static_cast<float>(bh) * 0.5f;
+            const float bx1 = bx0 + static_cast<float>(bw);
+            const float by1 = by0 + static_cast<float>(bh);
 
             const float borderVerts[] = {
                 bx0, by0, 0.0f, 0.0f,

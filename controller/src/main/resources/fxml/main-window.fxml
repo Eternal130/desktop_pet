@@ -158,6 +158,17 @@
                                 <CheckBox fx:id="autoStartCheck" styleClass="toggle-switch"/>
                             </VBox>
                         </HBox>
+
+                        <HBox spacing="32" alignment="CENTER_LEFT">
+                            <VBox spacing="8">
+                                <Label text="字幕调整" styleClass="setting-label"/>
+                                <CheckBox fx:id="subtitleAdjustCheck" styleClass="toggle-switch"/>
+                            </VBox>
+                            <VBox spacing="8" HBox.hgrow="ALWAYS">
+                                <Label text="字幕风格" styleClass="setting-label"/>
+                                <ComboBox fx:id="subtitleStyleCombo" maxWidth="1.7976931348623157E308" styleClass="model-select"/>
+                            </VBox>
+                        </HBox>
                     </VBox>
 
                     <VBox styleClass="log-panel" VBox.vgrow="ALWAYS" minHeight="150">

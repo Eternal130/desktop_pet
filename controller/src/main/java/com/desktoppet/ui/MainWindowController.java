@@ -225,6 +225,8 @@ public class MainWindowController {
     @FXML private TextField posXField;
     @FXML private TextField posYField;
     @FXML private CheckBox autoStartCheck;
+    @FXML private CheckBox subtitleAdjustCheck;
+    @FXML private ComboBox<String> subtitleStyleCombo;
     @FXML private ComboBox<String> voicePackCombo;
     @FXML private ListView<String> logListView;
     @FXML private StackPane contentStackPane;
@@ -343,12 +345,40 @@ public class MainWindowController {
             currentInstance.setAutoStart(newValue);
         });
 
+        subtitleAdjustCheck.selectedProperty().addListener((obs, oldValue, val) -> {
+            if (updatingUI || currentInstance == null) {
+                return;
+            }
+            int id = currentInstance.getId();
+            if (wsServer != null && wsServer.hasActiveConnection(id)) {
+                Envelope cmd = Protocol.setSubtitleAdjustMode(val);
+                wsServer.sendToInstance(id, Protocol.serialize(cmd));
+                currentInstance.addLog(val ? "▶ 字幕调整模式开启" : "▶ 字幕调整模式关闭");
+            }
+        });
+
+        subtitleStyleCombo.valueProperty().addListener((obs, oldValue, val) -> {
+            if (updatingUI || currentInstance == null || val == null) {
+                return;
+            }
+            currentInstance.setSubtitleStylePreset(val);
+            saveInstanceConfig(currentInstance);
+            int id = currentInstance.getId();
+            if (wsServer != null && wsServer.hasActiveConnection(id)) {
+                SubtitleStyle style = mapPresetToStyle(val);
+                Envelope cmd = Protocol.setSubtitleStyle(style);
+                wsServer.sendToInstance(id, Protocol.serialize(cmd));
+            }
+        });
+
         clipSliderToBounds(opacitySlider);
         clipSliderToBounds(volumeSlider);
         clipSliderToBounds(idleSlider);
         clipSliderToBounds(fpsSlider);
         setupToggleSwitch(autoStartCheck);
         setupToggleSwitch(muteCheckBox);
+        setupToggleSwitch(subtitleAdjustCheck);
+        subtitleStyleCombo.getItems().addAll("默认", "阴影", "气泡框", "极简");
 
         dragDirectBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
         dragPhysicsBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
@@ -870,6 +900,16 @@ public class MainWindowController {
         updateContentPaneVisibility();
     }
 
+    private SubtitleStyle mapPresetToStyle(String preset) {
+        if (preset == null) return SubtitleStyle.defaultStyle();
+        return switch (preset) {
+            case "阴影" -> new SubtitleStyle("Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 2.0, 0x00000000L, 3.0, 2, 30);
+            case "气泡框" -> new SubtitleStyle("Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0, 0x00000000L, 0.0, 2, 30);
+            case "极简" -> new SubtitleStyle("Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0, 0x00000000L, 0.0, 2, 30);
+            default -> SubtitleStyle.defaultStyle(); // "默认" = white text, black outline
+        };
+    }
+
     private void renderDetail() {
         if (currentInstance == null) {
             return;
@@ -969,6 +1009,9 @@ public class MainWindowController {
             posXField.setText(String.valueOf(currentInstance.getPosX()));
             posYField.setText(String.valueOf(currentInstance.getPosY()));
             autoStartCheck.setSelected(currentInstance.isAutoStart());
+
+            subtitleAdjustCheck.setSelected(false); // Always start off — user toggles manually
+            subtitleStyleCombo.setValue(currentInstance.getSubtitleStylePreset());
 
             String vp = currentInstance.getVoicePack();
             voicePackCombo.setValue(vp != null ? vp : "(无)");

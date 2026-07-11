@@ -89,6 +89,28 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libvorbis)
 
+# === FreeType (for libass subtitle rendering) ===
+FetchContent_Declare(freetype
+    GIT_REPOSITORY https://github.com/FreeType/freetype.git
+    GIT_TAG VER-2-13-3
+    GIT_SHALLOW TRUE
+)
+set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(freetype)
+
+# === HarfBuzz (for libass subtitle rendering) ===
+FetchContent_Declare(harfbuzz
+    GIT_REPOSITORY https://github.com/harfbuzz/harfbuzz.git
+    GIT_TAG 10.4.0
+    GIT_SHALLOW TRUE
+)
+set(HB_HAVE_FREETYPE OFF CACHE BOOL "" FORCE)
+set(HB_HAVE_GLIB OFF CACHE BOOL "" FORCE)
+set(HB_HAVE_GOBJECT OFF CACHE BOOL "" FORCE)
+set(HB_HAVE_CAIRO OFF CACHE BOOL "" FORCE)
+set(HB_HAVE_ICU OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(harfbuzz)
+
 
 # === Compiler settings ===
 set(CMAKE_CXX_STANDARD 17)

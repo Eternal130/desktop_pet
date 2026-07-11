@@ -476,3 +476,120 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 **渲染器处理流程**：
 1. 重置用户布局参数为默认值
 2. 发送 Response（`success: true`）
+
+---
+
+## 18. `show_subtitle` — 显示字幕
+
+在渲染窗口叠加显示一条字幕，接入 `SubtitleManager`（libass）。字幕带样式显示，支持自动消失或常驻直到手动隐藏。v1 不上报字幕消失事件。
+
+**回执**：✓ 需要 Response
+
+**Payload**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|:---|:---|:---:|:---|:---|
+| `text` | string | ✓ | — | 字幕文本内容。缺失返回 `10001` |
+| `duration` | int64 | 否 | `0` | 显示时长（毫秒）。`0` = 不自动隐藏，需调用 `hide_subtitle` 手动清除 |
+| `font_name` | string | 否 | `"Microsoft YaHei"` | 字体名称 |
+| `font_size` | double | 否 | `48.0` | 字号 |
+| `primary_color` | uint32 | 否 | `0x00FFFFFF` | 文字颜色，AABBGGRR 格式（不透明白） |
+| `outline_color` | uint32 | 否 | `0x00000000` | 描边颜色，AABBGGRR 格式（不透明黑） |
+| `outline_width` | double | 否 | `2.0` | 描边宽度 |
+| `shadow_color` | uint32 | 否 | `0x00000000` | 阴影颜色，AABBGGRR 格式 |
+| `shadow_depth` | double | 否 | `0.0` | 阴影深度（`0.0` = 无阴影） |
+| `alignment` | int | 否 | `2` | ASS 数字键盘布局对齐（`1`=左下 … `2`=中下 … `9`=右上） |
+
+> **颜色格式**：控制面板发送 RRGGBBTT（`TT` 为透明度，`0x00`=不透明，`0xFF`=全透明），渲染器内部转换为 ASS 的 AABBGGRR。详见 [错误码 §十](./error-codes.md#十字幕相关10000-10099)。
+
+**示例**：
+
+```json
+{
+  "type": "command", "action": "show_subtitle",
+  "id": "...", "payload": { "text": "你好世界", "duration": 3000 },
+  "timestamp": ...
+}
+```
+
+**渲染器处理流程**：
+1. 校验 `text` 非空，否则返回错误 `10001`
+2. 校验字幕引擎（`SubtitleManager`）已初始化，否则返回错误 `10002`
+3. 将样式参数应用到 ASS 轨道 style 0，注入字幕事件
+4. 若 `duration > 0`，调度定时器到期后自动隐藏
+5. 发送 Response（`success: true`）
+
+**错误码**：
+
+| error_code | 触发场景 | error_message |
+|:---:|:---|:---|
+| `10001` | `text` 为空或缺失 | `"text is required"` |
+| `10002` | 字幕引擎未初始化 | `"Subtitle engine not initialized"` |
+
+> **v1 限制**：不发送 `subtitle_shown`/`subtitle_hidden` 事件。控制面板若需知道字幕何时消失，应自行用 `duration` 计时。
+
+---
+
+## 19. `hide_subtitle` — 隐藏字幕
+
+立即清除当前显示的所有字幕（调用 `SubtitleManager::Hide()`，刷新全部 ASS 事件）。若无字幕在显示，静默成功。
+
+**回执**：✓ 需要 Response
+
+**Payload**：空对象 `{}`
+
+**示例**：
+
+```json
+{
+  "type": "command", "action": "hide_subtitle",
+  "id": "...", "payload": {}, "timestamp": ...
+}
+```
+
+**渲染器处理**：刷新 ASS 事件队列，清除所有可见字幕。无论引擎状态如何均返回 `success: true`。
+
+---
+
+## 20. `set_subtitle_style` — 设置字幕默认样式
+
+更新字幕的默认样式参数（写入 ASS 轨道 style 0）。后续 `show_subtitle` 若不携带样式覆盖字段，则使用此默认样式。
+
+**回执**：✓ 需要 Response
+
+**Payload**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|:---|:---|:---:|:---|:---|
+| `font_name` | string | 否 | `"Microsoft YaHei"` | 字体名称 |
+| `font_size` | double | 否 | `48.0` | 字号 |
+| `primary_color` | uint32 | 否 | `0x00FFFFFF` | 文字颜色，AABBGGRR 格式 |
+| `outline_color` | uint32 | 否 | `0x00000000` | 描边颜色，AABBGGRR 格式 |
+| `outline_width` | double | 否 | `2.0` | 描边宽度 |
+| `shadow_color` | uint32 | 否 | `0x00000000` | 阴影颜色，AABBGGRR 格式 |
+| `shadow_depth` | double | 否 | `0.0` | 阴影深度 |
+| `alignment` | int | 否 | `2` | ASS 数字键盘布局对齐 |
+| `margin_v` | double | 否 | `40.0` | 垂直边距（像素） |
+
+> 所有字段均为可选，仅传入的字段更新对应属性，未传入字段保持当前值不变。
+
+**示例**：
+
+```json
+{
+  "type": "command", "action": "set_subtitle_style",
+  "id": "...", "payload": { "font_size": 36.0, "primary_color": 255 },
+  "timestamp": ...
+}
+```
+
+**渲染器处理流程**：
+1. 校验字幕引擎已初始化，否则返回错误 `10002`
+2. 合并传入的样式参数到 ASS 轨道 style 0（未传入字段保留当前值）
+3. 发送 Response（`success: true`）
+
+**错误码**：
+
+| error_code | 触发场景 | error_message |
+|:---:|:---|:---|
+| `10002` | 字幕引擎未初始化 | `"Subtitle engine not initialized"` |

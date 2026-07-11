@@ -110,3 +110,16 @@
 | 错误码 | 触发场景 | 伴随消息 |
 |:---:|:---|:---|
 | 8001 | `set_layout` / `get_layout` 时无模型加载 | `"No model loaded"` |
+
+---
+
+## 十、字幕相关（10000-10099）
+
+> 对应字幕模块（`SubtitleManager`，libass）。相关指令详见 [Commands §18–20](./commands.md#18-show_subtitle--显示字幕)。
+
+| 错误码 | 触发场景 | 伴随消息 |
+|:---:|:---|:---|
+| 10001 | `show_subtitle` 时 `text` 为空或缺失 | `"text is required"` |
+| 10002 | `show_subtitle` 或 `set_subtitle_style` 时字幕引擎（`SubtitleManager`）未初始化 | `"Subtitle engine not initialized"` |
+
+> **v1 限制**：`hide_subtitle` 无论引擎状态如何均返回 `success: true`，不触发 10002。

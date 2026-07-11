@@ -21,6 +21,7 @@
 | `set_hit_areas` | ✅ 缓存 | 重连后恢复命中区域配置 |
 | `set_layout` | ✅ 缓存 | 重连后恢复用户布局偏移 |
 | `set_volume` | ✅ 缓存 | 重连后恢复音量/静音状态 |
+| `set_subtitle_style` | ✅ 缓存 | 重连后恢复字幕默认样式 |
 | `play_motion` | ❌ 丢弃 | 过时的动作指令无意义 |
 | `play_motion_ext` | ❌ 丢弃 | 过时的外部动作指令无意义 |
 | `set_expression` | ❌ 丢弃 | 非关键，重连后由业务逻辑重设 |
@@ -28,6 +29,8 @@
 | `set_scale` | ❌ 丢弃 | 未完整实现，非关键 |
 | `play_audio` | ❌ 丢弃 | 过时的音频播放无意义 |
 | `stop_audio` | ❌ 丢弃 | 非关键 |
+| `show_subtitle` | ❌ 丢弃 | 过时的字幕显示无意义（时效性） |
+| `hide_subtitle` | ❌ 丢弃 | 过时的字幕隐藏无意义（时效性） |
 | `get_layout` | ❌ 丢弃 | 查询指令，响应已过期 |
 | `reset_layout` | ❌ 丢弃 | 一次性操作，重连后由缓存的 `set_layout` 恢复状态 |
 | `get_stats` | ❌ 丢弃 | 轮询指令，重连后由控制面板重新发起轮询 |
@@ -52,7 +55,7 @@
 | `Network::MessageHandler` | `MessageHandler.hpp` | 按 action 注册 `CommandHandler`，dispatch 时过滤 response（返回 nullopt），未知 action 返回 Response（error_code 5003） |
 | `Network::EventEmitter` | `EventEmitter.hpp` | 封装 `createEvent()` + `serialize()` + 发送回调 |
 | `Network::WebSocketClient` | `WebSocketClient.hpp` | IXWebSocket 封装，线程安全消息队列（上限 1000 条），`drainMessages(maxCount)` 批量取出（默认全部，渲染主循环传入 50 实现每帧上限），45 秒 Ping 间隔，断连自动重连（指数退避，上限 30 秒） |
-| `Network::RegisterCommandHandlers()` | `CommandHandlers.cpp` | 注册所有 command handler（共 20 条，详见 [Commands](./commands.md)） |
+| `Network::RegisterCommandHandlers()` | `CommandHandlers.cpp` | 注册所有 command handler（共 23 条，详见 [Commands](./commands.md)） |
 
 ---
 

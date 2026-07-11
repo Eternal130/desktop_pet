@@ -1589,6 +1589,21 @@ public class MainWindowController {
 
             sendLayout(instance);
 
+            if (wsServer != null && wsServer.hasActiveConnection(id)) {
+                Envelope layoutCmd = Protocol.setSubtitleLayout(
+                    instance.getSubtitleOffsetX(),
+                    instance.getSubtitleOffsetY(),
+                    instance.getSubtitleAreaWidth(),
+                    instance.getSubtitleAreaHeight(),
+                    instance.getSubtitleFontSize()
+                );
+                wsServer.sendToInstance(id, Protocol.serialize(layoutCmd));
+
+                SubtitleStyle style = mapPresetToStyle(instance.getSubtitleStylePreset());
+                Envelope styleCmd = Protocol.setSubtitleStyle(style);
+                wsServer.sendToInstance(id, Protocol.serialize(styleCmd));
+            }
+
             renderSidebar();
             if (currentInstance == instance) renderDetail();
         }));

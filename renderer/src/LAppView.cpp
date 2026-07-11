@@ -11,6 +11,7 @@
 #include "LAppLive2DManager.hpp"
 #include "LAppDefine.hpp"
 #include "TouchManager_Common.hpp"
+#include "subtitle/SubtitleManager.hpp"
 
 #ifdef USE_VULKAN
 #include "graphics/VulkanBackend.hpp"
@@ -110,6 +111,13 @@ void LAppView::Render()
     live2DManager->SetViewMatrix(_viewMatrix);
     live2DManager->OnUpdate();
 
+    // Step 2.5: Subtitle overlay draw — MUST be between model draw (Step 2)
+    // and the PRESENT_SRC_KHR layout transition (Step 3). DrawVkOverlays is
+    // self-contained: it begins its own command buffer + dynamic rendering pass.
+    if (_subtitleManager != nullptr && _subtitleManager->IsInitialized()) {
+        _subtitleManager->DrawOverlays();
+    }
+
     // Step 3: Layout transition to PRESENT_SRC_KHR
     cmdBuf = vkBackend->BeginSingleTimeCommands();
     ChangeEndLayout(cmdBuf);
@@ -118,6 +126,10 @@ void LAppView::Render()
     LAppLive2DManager* live2DManager = LAppLive2DManager::GetInstance();
     live2DManager->SetViewMatrix(_viewMatrix);
     live2DManager->OnUpdate();
+
+    if (_subtitleManager != nullptr && _subtitleManager->IsInitialized()) {
+        _subtitleManager->DrawOverlays();
+    }
 #endif
 }
 

@@ -29,6 +29,7 @@
 #include "network/CommandHandlers.hpp"
 #include "network/Protocol.hpp"
 #include "AudioManager.hpp"
+#include "subtitle/SubtitleManager.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -138,6 +139,13 @@ bool LAppDelegate::Initialize()
         LAppPal::PrintLogLn("[LAppDelegate] Audio engine init failed, continuing without audio");
     }
 
+    _subtitleManager = new SubtitleManager();
+    if (_subtitleManager && !_subtitleManager->Init(_graphicsBackend, _windowWidth, _windowHeight)) {
+        LAppPal::PrintLogLn("[LAppDelegate] SubtitleManager Init failed -- subtitles disabled");
+    }
+    // Wire the subtitle manager into the view so it can draw overlays inside Render()
+    _view->SetSubtitleManager(_subtitleManager);
+
     InitializeNetwork();
 
     return true;
@@ -145,6 +153,12 @@ bool LAppDelegate::Initialize()
 
 void LAppDelegate::Release()
 {
+    if (_subtitleManager != nullptr) {
+        _subtitleManager->Uninit();
+        delete _subtitleManager;
+        _subtitleManager = nullptr;
+    }
+
     if (_audioManager) { _audioManager->Uninit(); }
     delete _audioManager; _audioManager = nullptr;
 
@@ -179,6 +193,9 @@ void LAppDelegate::Run()
             _view->Initialize(width, height);
             // モデルのレンダーターゲットのサイズ変更
             LAppLive2DManager::GetInstance()->SetRenderTargetSize(width, height);
+            if (_subtitleManager != nullptr && _subtitleManager->IsInitialized()) {
+                _subtitleManager->Resize(width, height);
+            }
             _windowWidth = width;
             _windowHeight = height;
 #ifdef USE_VULKAN
@@ -236,6 +253,14 @@ void LAppDelegate::Run()
 
         //描画更新
         _view->Render();
+
+        // libass CPU-side render: updates subtitle textures for the next frame.
+        // NOTE: This is NOT the GPU draw -- the GPU overlay draw happens inside
+        // _view->Render() via DrawOverlays() between the model draw and the
+        // PRESENT_SRC_KHR layout transition. This call just refreshes textures.
+        if (_subtitleManager != nullptr && _subtitleManager->IsInitialized()) {
+            _subtitleManager->Render(static_cast<int64_t>(glfwGetTime() * 1000.0));
+        }
 
         if (!_isDragging && !_captured)
         {
@@ -330,7 +355,8 @@ LAppDelegate::LAppDelegate():
     _startupWidth(0),
     _startupHeight(0),
     _hasStartupSize(false),
-    _audioManager(nullptr)
+    _audioManager(nullptr),
+    _subtitleManager(nullptr)
 {
     _executeAbsolutePath = "";
     _view = new LAppView();

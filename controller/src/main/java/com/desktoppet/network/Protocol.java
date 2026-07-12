@@ -112,6 +112,13 @@ public class Protocol {
         payload.addProperty("shadow_depth", style.shadowDepth());
         payload.addProperty("alignment", style.alignment());
         payload.addProperty("marginV", style.marginV());
+        payload.addProperty("edge_blur", style.edgeBlur());
+        payload.addProperty("font_weight", style.fontWeight());
+        payload.addProperty("letter_spacing", style.letterSpacing());
+        payload.addProperty("bg_box_enabled", style.bgBoxEnabled());
+        payload.addProperty("bg_box_color", style.bgBoxColor());
+        payload.addProperty("bg_box_padding_x", style.bgBoxPaddingX());
+        payload.addProperty("bg_box_padding_y", style.bgBoxPaddingY());
         return createCommand("show_subtitle", payload);
     }
 
@@ -130,6 +137,13 @@ public class Protocol {
         payload.addProperty("shadow_depth", style.shadowDepth());
         payload.addProperty("alignment", style.alignment());
         payload.addProperty("marginV", style.marginV());
+        payload.addProperty("edge_blur", style.edgeBlur());
+        payload.addProperty("font_weight", style.fontWeight());
+        payload.addProperty("letter_spacing", style.letterSpacing());
+        payload.addProperty("bg_box_enabled", style.bgBoxEnabled());
+        payload.addProperty("bg_box_color", style.bgBoxColor());
+        payload.addProperty("bg_box_padding_x", style.bgBoxPaddingX());
+        payload.addProperty("bg_box_padding_y", style.bgBoxPaddingY());
         return createCommand("set_subtitle_style", payload);
     }
 

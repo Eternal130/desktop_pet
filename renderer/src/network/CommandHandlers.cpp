@@ -363,6 +363,13 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         if (cmd.payload.contains("shadow_depth"))   style.shadowDepth  = cmd.payload["shadow_depth"].get<double>();
         if (cmd.payload.contains("alignment"))      style.alignment    = cmd.payload["alignment"].get<int>();
         if (cmd.payload.contains("marginV"))        style.marginV      = cmd.payload["marginV"].get<int>();
+        if (cmd.payload.contains("edge_blur"))       style.edgeBlur      = cmd.payload["edge_blur"].get<double>();
+        if (cmd.payload.contains("font_weight"))     style.fontWeight    = cmd.payload["font_weight"].get<int>();
+        if (cmd.payload.contains("letter_spacing"))  style.letterSpacing = cmd.payload["letter_spacing"].get<double>();
+        if (cmd.payload.contains("bg_box_enabled"))  style.bgBoxEnabled  = cmd.payload["bg_box_enabled"].get<bool>();
+        if (cmd.payload.contains("bg_box_color"))    style.bgBoxColor    = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["bg_box_color"].get<uint32_t>());
+        if (cmd.payload.contains("bg_box_padding_x")) style.bgBoxPaddingX = cmd.payload["bg_box_padding_x"].get<double>();
+        if (cmd.payload.contains("bg_box_padding_y")) style.bgBoxPaddingY = cmd.payload["bg_box_padding_y"].get<double>();
 
         int64_t durationMs = cmd.payload.value("duration", 0LL);
         int64_t startMs    = static_cast<int64_t>(glfwGetTime() * 1000.0);
@@ -395,6 +402,13 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         if (cmd.payload.contains("shadow_depth"))   style.shadowDepth  = cmd.payload["shadow_depth"].get<double>();
         if (cmd.payload.contains("alignment"))      style.alignment    = cmd.payload["alignment"].get<int>();
         if (cmd.payload.contains("marginV"))        style.marginV      = cmd.payload["marginV"].get<int>();
+        if (cmd.payload.contains("edge_blur"))       style.edgeBlur      = cmd.payload["edge_blur"].get<double>();
+        if (cmd.payload.contains("font_weight"))     style.fontWeight    = cmd.payload["font_weight"].get<int>();
+        if (cmd.payload.contains("letter_spacing"))  style.letterSpacing = cmd.payload["letter_spacing"].get<double>();
+        if (cmd.payload.contains("bg_box_enabled"))  style.bgBoxEnabled  = cmd.payload["bg_box_enabled"].get<bool>();
+        if (cmd.payload.contains("bg_box_color"))    style.bgBoxColor    = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["bg_box_color"].get<uint32_t>());
+        if (cmd.payload.contains("bg_box_padding_x")) style.bgBoxPaddingX = cmd.payload["bg_box_padding_x"].get<double>();
+        if (cmd.payload.contains("bg_box_padding_y")) style.bgBoxPaddingY = cmd.payload["bg_box_padding_y"].get<double>();
 
         subtitleMgr->SetDefaultStyle(style);
         LAppPal::PrintLogLn("[CommandHandlers] set_subtitle_style: default style updated");

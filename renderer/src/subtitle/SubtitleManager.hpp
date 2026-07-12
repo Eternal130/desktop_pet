@@ -32,6 +32,15 @@ struct SubtitleStyle {
     double shadowDepth = 0.0;              // 0 = no shadow
     int alignment = 2;                     // ASS numpad: 2 = bottom-center
     int marginV = 30;
+    // — Phase 1: modern text effects —
+    double edgeBlur = 0.0;          // \blur<N> Gaussian blur on text edges. 0 = disabled.
+    int fontWeight = -1;            // -1=don't inject, 0=normal(\b0), 1=bold(\b1)
+    double letterSpacing = 0.0;     // \fsp<N> letter spacing in pixels. 0 = disabled.
+    // — Phase 2: background box —
+    bool bgBoxEnabled = false;      // Draw a translucent box behind text.
+    uint32_t bgBoxColor = 0x80000000; // AABBGGRR, default 50% opaque black
+    double bgBoxPaddingX = 12.0;    // Horizontal padding in pixels.
+    double bgBoxPaddingY = 6.0;     // Vertical padding in pixels.
 };
 
 /**
@@ -152,6 +161,7 @@ public:
 private:
     void CleanupTextures();
     void ConvertAssImageToTextures(void* imgs);  // ASS_Image* (kept opaque)
+    void EnsureBgBoxTexture(const SubtitleStyle& style);
 
     // libass state — void* keeps ass.h out of this header.
     void* m_library;     // ASS_Library*
@@ -177,6 +187,8 @@ private:
     bool m_adjustMode = false;
     SubtitleStyle m_defaultStyle;
     uint64_t m_borderTexture = 0;
+    uint64_t m_bgBoxTexture = 0;       // 1×1 premultiplied RGBA texture for background box
+    uint32_t m_bgBoxColorCached = 0xFFFFFFFF; // Last bgBoxColor uploaded (0xFFFFFFFF = sentinel = force rebuild)
 
 #ifndef USE_VULKAN
     bool m_glInitialized;

@@ -15,7 +15,36 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
+#include <climits>
 #include <algorithm>
+
+// Formats a double for ASS override tags: 48.0 → "48", 0.8 → "0.8", 2.5 → "2.5"
+static std::string FormatTagNumber(double v) {
+    char buf[32];
+    if (v == static_cast<int>(v)) {
+        std::snprintf(buf, sizeof(buf), "%d", static_cast<int>(v));
+    } else {
+        std::snprintf(buf, sizeof(buf), "%.1f", v);
+    }
+    return std::string(buf);
+}
+
+// Builds ASS override tag string from SubtitleStyle's modern fields.
+// Returns "" if no tags needed.
+static std::string BuildOverrideTags(const SubtitleStyle& s) {
+    std::string tags = "\\fad(150,100)";
+    if (s.edgeBlur > 0.0)
+        tags += "\\blur" + FormatTagNumber(s.edgeBlur);
+    if (s.fontWeight == 0)
+        tags += "\\b0";
+    else if (s.fontWeight == 1)
+        tags += "\\b1";
+    if (s.letterSpacing != 0.0)
+        tags += "\\fsp" + FormatTagNumber(s.letterSpacing);
+
+    return "{" + tags + "}";
+}
 
 // ---------------------------------------------------------------------------
 // Construction / destruction
@@ -149,6 +178,10 @@ void SubtitleManager::Uninit()
         m_backend->DeleteTexture(m_borderTexture);
         m_borderTexture = 0;
     }
+    if (m_bgBoxTexture != 0 && m_backend) {
+        m_backend->DeleteTexture(m_bgBoxTexture);
+        m_bgBoxTexture = 0;
+    }
     CleanupTextures();
 
     if (m_track != nullptr) {
@@ -237,6 +270,8 @@ void SubtitleManager::SetText(const std::string& text, const SubtitleStyle& styl
     st->MarginL        = 0;                     // full width — no left margin
     st->MarginR        = 0;                     // full width — no right margin
 
+    EnsureBgBoxTexture(style);
+
     // Single event spanning [startMs, startMs+durationMs), styled by index 0.
     // ass_alloc_event returns the new event index (int), not a pointer.
     const int evIdx = ass_alloc_event(track);
@@ -245,7 +280,9 @@ void SubtitleManager::SetText(const std::string& text, const SubtitleStyle& styl
     ev->Duration = durationMs;
     ev->Style    = 0;
     // strdup: libass takes ownership and frees on ass_free_track.
-    ev->Text     = strdup(spaced.c_str());
+    std::string overrideTags = BuildOverrideTags(style);
+    std::string styledText = overrideTags.empty() ? spaced : (overrideTags + spaced);
+    ev->Text     = strdup(styledText.c_str());
 
     m_defaultStyle = style;
     m_defaultStyle.fontSize = m_fontSize;
@@ -396,6 +433,48 @@ void SubtitleManager::SetDefaultStyle(const SubtitleStyle& style)
     st->MarginV        = style.marginV;
     st->MarginL        = 0;
     st->MarginR        = 0;
+
+    EnsureBgBoxTexture(style);
+}
+
+void SubtitleManager::EnsureBgBoxTexture(const SubtitleStyle& style) {
+    if (!m_backend) return;
+
+    // If background box is disabled, clean up any existing texture.
+    if (!style.bgBoxEnabled) {
+        if (m_bgBoxTexture != 0) {
+            m_backend->DeleteTexture(m_bgBoxTexture);
+            m_bgBoxTexture = 0;
+        }
+        m_bgBoxColorCached = 0xFFFFFFFF;
+        return;
+    }
+
+    // If color unchanged and texture exists, skip rebuild.
+    if (style.bgBoxColor == m_bgBoxColorCached && m_bgBoxTexture != 0)
+        return;
+
+    // Delete old texture if any.
+    if (m_bgBoxTexture != 0)
+        m_backend->DeleteTexture(m_bgBoxTexture);
+
+    // Create 1×1 premultiplied-alpha RGBA pixel from AABBGGRR color.
+    // ASS color: lowest byte = TT (transparency), then B, G, R.
+    const uint32_t c = style.bgBoxColor;
+    const int a = 0xFF - static_cast<int>(c & 0xFF);       // TT → opacity (0xFF = fully opaque)
+    const int b = static_cast<int>((c >> 8) & 0xFF);
+    const int g = static_cast<int>((c >> 16) & 0xFF);
+    const int r = static_cast<int>((c >> 24) & 0xFF);
+
+    uint8_t pixel[4] = {
+        static_cast<uint8_t>((r * a) / 255),  // premultiplied R
+        static_cast<uint8_t>((g * a) / 255),  // premultiplied G
+        static_cast<uint8_t>((b * a) / 255),  // premultiplied B
+        static_cast<uint8_t>(a)                // A
+    };
+
+    m_bgBoxTexture = m_backend->CreateTexture(pixel, 1, 1, 4);
+    m_bgBoxColorCached = style.bgBoxColor;
 }
 
 const SubtitleStyle& SubtitleManager::GetDefaultStyle() const
@@ -895,6 +974,77 @@ void SubtitleManager::DrawVkOverlays()
     vkCmdBindVertexBuffers(cmdBuf, 0, 1, &m_vertexBuffer, offsets);
 
     uint32_t setIndex = 0;
+
+    // — Phase 2: Draw background box behind text if enabled —
+    if (m_defaultStyle.bgBoxEnabled && m_bgBoxTexture != 0 && !m_quads.empty()) {
+        int minX = INT_MAX, minY = INT_MAX, maxX = INT_MIN, maxY = INT_MIN;
+        for (const auto& q : m_quads) {
+            if (q.dstX < minX) minX = q.dstX;
+            if (q.dstY < minY) minY = q.dstY;
+            if (q.dstX + q.width > maxX) maxX = q.dstX + q.width;
+            if (q.dstY + q.height > maxY) maxY = q.dstY + q.height;
+        }
+
+        const float padX = static_cast<float>(m_defaultStyle.bgBoxPaddingX);
+        const float padY = static_cast<float>(m_defaultStyle.bgBoxPaddingY);
+
+        const float halfW = (m_areaWidth > 0 ? static_cast<float>(m_areaWidth) : static_cast<float>(m_windowWidth)) * 0.5f;
+        const float halfH = (m_areaHeight > 0 ? static_cast<float>(m_areaHeight) : static_cast<float>(m_windowHeight)) * 0.5f;
+        const float ox = m_offsetX - halfW;
+        const float oy = m_offsetY - halfH;
+
+        const float bx0 = static_cast<float>(minX) - padX + ox;
+        const float by0 = static_cast<float>(minY) - padY + oy;
+        const float bx1 = static_cast<float>(maxX) + padX + ox;
+        const float by1 = static_cast<float>(maxY) + padY + oy;
+
+        VkImageView bgView = vkBackend->GetTextureImageView(m_bgBoxTexture);
+        if (bgView != VK_NULL_HANDLE) {
+            VkDescriptorSetAllocateInfo bgDsInfo{};
+            bgDsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            bgDsInfo.descriptorPool = m_descriptorPool;
+            bgDsInfo.descriptorSetCount = 1;
+            bgDsInfo.pSetLayouts = &m_descriptorSetLayout;
+
+            VkDescriptorSet bgSet = VK_NULL_HANDLE;
+            if (vkAllocateDescriptorSets(device, &bgDsInfo, &bgSet) == VK_SUCCESS) {
+                VkDescriptorImageInfo bgImgInfo{};
+                bgImgInfo.sampler = m_sampler;
+                bgImgInfo.imageView = bgView;
+                bgImgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+                VkWriteDescriptorSet bgWrite{};
+                bgWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                bgWrite.dstSet = bgSet;
+                bgWrite.dstBinding = 0;
+                bgWrite.dstArrayElement = 0;
+                bgWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                bgWrite.descriptorCount = 1;
+                bgWrite.pImageInfo = &bgImgInfo;
+
+                vkUpdateDescriptorSets(device, 1, &bgWrite, 0, nullptr);
+                vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        m_pipelineLayout, 0, 1, &bgSet, 0, nullptr);
+
+                const float bgVerts[] = {
+                    bx0, by0, 0.0f, 0.0f,
+                    bx1, by0, 1.0f, 0.0f,
+                    bx0, by1, 0.0f, 1.0f,
+                    bx1, by0, 1.0f, 0.0f,
+                    bx1, by1, 1.0f, 1.0f,
+                    bx0, by1, 0.0f, 1.0f,
+                };
+
+                void* bgData = nullptr;
+                vkMapMemory(device, m_vertexBufferMemory, 0, sizeof(bgVerts), 0, &bgData);
+                std::memcpy(bgData, bgVerts, sizeof(bgVerts));
+                vkUnmapMemory(device, m_vertexBufferMemory);
+                vkCmdDraw(cmdBuf, 6, 1, 0, 0);
+                setIndex++;
+            }
+        }
+    }
+
     for (const auto& quad : m_quads)
     {
         if (quad.textureHandle == 0) continue;
@@ -1213,6 +1363,48 @@ void SubtitleManager::DrawGlOverlays()
     glActiveTexture(GL_TEXTURE0);
 
     glBindVertexArray(m_vao);
+
+    // — Phase 2: Draw background box behind text if enabled —
+    if (m_defaultStyle.bgBoxEnabled && m_bgBoxTexture != 0 && !m_quads.empty()) {
+        // Compute bounding box from all text quads.
+        int minX = INT_MAX, minY = INT_MAX, maxX = INT_MIN, maxY = INT_MIN;
+        for (const auto& q : m_quads) {
+            if (q.dstX < minX) minX = q.dstX;
+            if (q.dstY < minY) minY = q.dstY;
+            if (q.dstX + q.width > maxX) maxX = q.dstX + q.width;
+            if (q.dstY + q.height > maxY) maxY = q.dstY + q.height;
+        }
+
+        const float padX = static_cast<float>(m_defaultStyle.bgBoxPaddingX);
+        const float padY = static_cast<float>(m_defaultStyle.bgBoxPaddingY);
+
+        // Use the same offset convention as text quads (pixel coordinates;
+        // the vertex shader converts pixel → NDC via uScreenSize uniform).
+        const float halfW = (m_areaWidth > 0 ? static_cast<float>(m_areaWidth) : static_cast<float>(m_windowWidth)) * 0.5f;
+        const float halfH = (m_areaHeight > 0 ? static_cast<float>(m_areaHeight) : static_cast<float>(m_windowHeight)) * 0.5f;
+        const float ox = m_offsetX - halfW;
+        const float oy = m_offsetY - halfH;
+
+        const float bx0 = static_cast<float>(minX) - padX + ox;
+        const float by0 = static_cast<float>(minY) - padY + oy;
+        const float bx1 = static_cast<float>(maxX) + padX + ox;
+        const float by1 = static_cast<float>(maxY) + padY + oy;
+
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(m_bgBoxTexture));
+
+        const float boxVerts[] = {
+            bx0, by1,  0.0f, 0.0f,
+            bx0, by0,  0.0f, 1.0f,
+            bx1, by1,  1.0f, 0.0f,
+            bx1, by1,  1.0f, 0.0f,
+            bx0, by0,  0.0f, 1.0f,
+            bx1, by0,  1.0f, 1.0f,
+        };
+
+        glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(boxVerts), boxVerts);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+    }
 
     for (const auto& quad : m_quads) {
         if (quad.textureHandle == 0) continue;

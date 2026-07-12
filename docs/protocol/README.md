@@ -5,7 +5,9 @@
 > 本文档定义控制面板与渲染引擎之间的 WebSocket 通信协议，作为双端开发的接口契约。
 > 整体架构参见 [架构总览](../README.md)，实现库选型参见 [第三方库选型](../engineering/dependencies.md)。
 >
-> **子文档**：[Commands](./commands.md) | [Events](./events.md) | [握手流程](./handshake.md) | [错误码](./error-codes.md) | [实现参考](./implementation.md)
+> **📖 主接口参考**：[接口规格](./interface.md)（自包含完整文档 · 类型约定 + 全部命令/事件字段表 + 交互模式 + 代码偏差汇总）
+>
+> **子文档**：[接口规格](./interface.md) | [Commands](./commands.md) | [Events](./events.md) | [握手流程](./handshake.md) | [错误码](./error-codes.md) | [实现参考](./implementation.md)
 
 ---
 

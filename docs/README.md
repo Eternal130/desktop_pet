@@ -205,6 +205,7 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | [性能设计](./renderer/performance.md) | 自适应帧率、资源优化策略 | ✅ MVP 已实现 |
 | [控制面板设计](./controller/README.md) | Java 控制面板模块详细设计、多实例管理、语音包挂载、闲时行为策略 | ✅ Phase 2 + Phase 3a 已实现 |
 | [通信协议](./protocol/README.md) | WebSocket 协议规范、消息格式 | ✅ Phase 1 已实现 |
+| [协议 - 接口规格](./protocol/interface.md) | 自包含完整接口规格：类型约定 + 全部命令/事件字段表 + 交互模式 | ✅ Phase 1 已实现 |
 | [协议 - Commands](./protocol/commands.md) | 控制面板→渲染器指令定义 | ✅ Phase 1 已实现 |
 | [协议 - Events](./protocol/events.md) | 渲染器→控制面板事件定义 | ✅ Phase 1 已实现 |
 | [协议 - 握手流程](./protocol/handshake.md) | 连接建立与断连恢复流程 | ✅ Phase 1 已实现 |

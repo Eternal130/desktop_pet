@@ -378,7 +378,7 @@ public class MainWindowController {
         setupToggleSwitch(autoStartCheck);
         setupToggleSwitch(muteCheckBox);
         setupToggleSwitch(subtitleAdjustCheck);
-        subtitleStyleCombo.getItems().addAll("默认", "阴影", "气泡框", "极简", "樱花粉", "赛博霓虹", "星空紫", "橙焰活力", "和风墨韵");
+        subtitleStyleCombo.getItems().addAll("默认", "阴影", "气泡框", "极简", "樱花粉", "赛博霓虹", "星空紫", "橙焰活力", "和风墨韵", "极简投影", "流媒体盒", "毛玻璃", "终端绿", "暗夜卡片", "消息气泡");
 
         dragDirectBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
         dragPhysicsBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
@@ -903,16 +903,85 @@ public class MainWindowController {
     private SubtitleStyle mapPresetToStyle(String preset) {
         if (preset == null) return SubtitleStyle.defaultStyle();
         return switch (preset) {
-            case "阴影" -> new SubtitleStyle("Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 2.0, 0x00000000L, 3.0, 2, 30);
-            case "气泡框" -> new SubtitleStyle("Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0, 0x99000000L, 2.0, 2, 30);
-            case "极简" -> new SubtitleStyle("Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0, 0x00000000L, 0.0, 2, 30);
-            // 颜色为 RRGGBBTT 格式, TT=00 不透明 (如 0x00FFFFFF = 白色不透明)
-            case "樱花粉" -> new SubtitleStyle("ZCOOL KuaiLe", 50.0, 0x00FF69B4L, 0x00FFFFFFL, 3.0, 0x66FFB6C1L, 2.0, 2, 30);
-            case "赛博霓虹" -> new SubtitleStyle("Orbitron", 46.0, 0x0000FFFFL, 0x00FF00FFL, 2.5, 0x9900FFFFL, 4.0, 2, 30);
-            case "星空紫" -> new SubtitleStyle("Source Han Serif CN", 48.0, 0x00B19CD9L, 0x004B0082L, 2.0, 0x809370DBL, 3.0, 2, 30);
-            case "橙焰活力" -> new SubtitleStyle("Source Han Sans CN", 52.0, 0x00FF8C00L, 0x00FFFFFFL, 3.0, 0x66FF4500L, 2.5, 2, 30);
-            case "和风墨韵" -> new SubtitleStyle("Source Han Serif CN", 46.0, 0x002F4F4FL, 0x00F5F5DCL, 1.5, 0x808B4513L, 2.0, 2, 30);
-            default -> SubtitleStyle.defaultStyle(); // "默认" = white text, black outline
+            // — 朴素预设（加 edgeBlur 现代化）—
+            case "阴影" -> new SubtitleStyle(
+                "Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00111111L, 1.8,
+                0x00000000L, 3.0, 2, 30,
+                0.6, -1, 0.5,
+                false, 0x80000000L, 12.0, 6.0);
+            case "气泡框" -> new SubtitleStyle(
+                "Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0,
+                0x99000000L, 2.0, 2, 30,
+                0.0, -1, 0.0,
+                true, 0x80000000L, 12.0, 6.0);
+            case "极简" -> new SubtitleStyle(
+                "Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0,
+                0x00000000L, 0.0, 2, 30,
+                0.0, -1, 0.0,
+                false, 0x80000000L, 12.0, 6.0);
+            // — 现代二次元预设 —
+            // 颜色为 RRGGBBTT 格式, TT=00 不透明
+            case "樱花粉" -> new SubtitleStyle(   // 桜色柔光
+                "Noto Sans CJK SC", 48.0, 0x00FFB7C5L, 0x004A1020L, 1.8,
+                0x99FFB6C1L, 2.0, 2, 30,
+                0.8, 0, 1.0,
+                false, 0x80000000L, 12.0, 6.0);
+            case "赛博霓虹" -> new SubtitleStyle( // 霓虹光晕
+                "Orbitron", 46.0, 0x0000F5FFL, 0x000B0F14L, 2.0,
+                0xA600F5FFL, 0.5, 2, 30,
+                2.5, 1, 2.0,
+                false, 0x80000000L, 12.0, 6.0);
+            case "星空紫" -> new SubtitleStyle(   // 薰衣草星夜
+                "Source Han Serif CN", 48.0, 0x00CDB7FFL, 0x001C1630L, 2.0,
+                0x8C000000L, 3.0, 2, 30,
+                0.8, 0, 1.0,
+                false, 0x80000000L, 12.0, 6.0);
+            case "橙焰活力" -> new SubtitleStyle( // 琥珀暖阳
+                "Noto Sans CJK SC", 50.0, 0x00FFB347L, 0x002B1810L, 1.8,
+                0x99FF6B00L, 2.0, 2, 30,
+                0.6, 0, 0.5,
+                false, 0x80000000L, 12.0, 6.0);
+            case "和风墨韵" -> new SubtitleStyle( // 和風墨韵
+                "Source Han Serif CN", 46.0, 0x001A1A2EL, 0x00F5F0E6L, 1.5,
+                0xA68B4513L, 1.5, 2, 30,
+                0.4, 0, 2.0,
+                false, 0x80000000L, 12.0, 6.0);
+            // — 现代化风格（非二次元）—
+            case "极简投影" -> new SubtitleStyle(
+                "Noto Sans CJK SC", 50.0, 0x00FAFAFAL, 0x00000000L, 0.0,
+                0x33000000L, 3.0, 2, 30,
+                1.0, 0, 2.0,
+                false, 0x80000000L, 12.0, 6.0);
+            case "流媒体盒" -> new SubtitleStyle(
+                "Noto Sans CJK SC", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0,
+                0x00000000L, 0.0, 2, 30,
+                0.5, 0, 1.0,
+                true, 0x40000000L, 14.0, 8.0);
+            case "毛玻璃" -> new SubtitleStyle(
+                "Noto Sans CJK SC", 46.0, 0x00FFFFFFL, 0x40FFFFFFL, 2.0,
+                0x00000000L, 0.0, 2, 30,
+                1.5, 0, 0.0,
+                true, 0xD0FFFFFFL, 16.0, 10.0);
+            case "终端绿" -> new SubtitleStyle(
+                "Consolas", 42.0, 0x0033FF33L, 0x0033FF33L, 0.0,
+                0x6033FF33L, 2.0, 2, 30,
+                1.5, 0, 1.0,
+                true, 0x260B0D10L, 12.0, 8.0);
+            case "暗夜卡片" -> new SubtitleStyle(
+                "Noto Sans CJK SC", 46.0, 0x00E9EEF5L, 0x000B0D10L, 1.0,
+                0x660B0D10L, 2.0, 2, 30,
+                1.0, 1, 0.5,
+                true, 0x33151A21L, 14.0, 8.0);
+            case "消息气泡" -> new SubtitleStyle(
+                "Microsoft YaHei", 44.0, 0x00FFFFFFL, 0x00000000L, 0.0,
+                0xCC000000L, 0.0, 2, 30,
+                0.5, 0, 0.0,
+                true, 0x003B82F6L, 16.0, 10.0);
+            default -> new SubtitleStyle(         // 默认（现代化基线）
+                "Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00111111L, 1.8,
+                0x00000000L, 0.0, 2, 30,
+                0.6, -1, 0.5,
+                false, 0x80000000L, 12.0, 6.0);
         };
     }
 

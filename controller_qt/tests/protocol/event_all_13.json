@@ -1,0 +1,103 @@
+{
+  "description": "All 13 protocol events per interface.md §4.1 catalog and §6 detailed specs. motion_finished has TWO payload variants (A: group+index from play_motion, B: motion_path from play_motion_ext) — both included. stats_state has nullable GPU fields (gpu_percent/gpu_name/vram_used_bytes/vram_total_bytes): a Windows-full case and a Linux-stub-null case are included. stats_state and layout_state are pseudo-responses (§7.3): routed by ACTION not id — the layout_state case deliberately reuses a pending get_layout command id to prove by-action routing.",
+  "source": "docs/protocol/interface.md §4.1 (13-event catalog), §6 (per-event payload details), §4.2 (motion_finished variants), §7.3 (pseudo-response routing)",
+  "event_count": 13,
+  "cases": [
+    {
+      "name": "ready",
+      "group": "A_connection",
+      "input": { "type": "event", "action": "ready", "id": "evt-ready-0001", "payload": { "version": "1.0.0", "capabilities": ["live2d"] }, "timestamp": 1710000000050 }
+    },
+    {
+      "name": "model_loaded",
+      "group": "B_model",
+      "input": { "type": "event", "action": "model_loaded", "id": "evt-model-loaded-0001", "payload": { "model_id": "Hiyori", "motions": [], "expressions": [] }, "timestamp": 1710000000500 },
+      "note": "motions/expressions are ALWAYS empty arrays (deviation #5); controller must parse .model3.json itself."
+    },
+    {
+      "name": "model_load_failed",
+      "group": "B_model",
+      "input": { "type": "event", "action": "model_load_failed", "id": "evt-model-load-failed-0001", "payload": { "error_code": 1001, "error_message": "Model path not found: Foo" }, "timestamp": 1710000000500 }
+    },
+    {
+      "name": "motion_started",
+      "group": "C_motion",
+      "input": { "type": "event", "action": "motion_started", "id": "evt-motion-started-0001", "payload": { "group": "TapBody", "index": 0 }, "timestamp": 1710000001000 }
+    },
+    {
+      "name": "motion_finished_variant_a_group_index",
+      "group": "C_motion",
+      "input": { "type": "event", "action": "motion_finished", "id": "evt-motion-finished-0001a", "payload": { "group": "TapBody", "index": 0 }, "timestamp": 1710000002000 },
+      "variant": "A",
+      "note": "Variant A: triggered by play_motion. Discriminator: payload has NO motion_path field."
+    },
+    {
+      "name": "motion_finished_variant_b_motion_path",
+      "group": "C_motion",
+      "input": { "type": "event", "action": "motion_finished", "id": "evt-motion-finished-0001b", "payload": { "motion_path": "C:/pets/motions/wave.motion3.json" }, "timestamp": 1710000002000 },
+      "variant": "B",
+      "note": "Variant B: triggered by play_motion_ext. Discriminator: payload HAS motion_path field."
+    },
+    {
+      "name": "hit",
+      "group": "D_interaction",
+      "input": { "type": "event", "action": "hit", "id": "evt-hit-0001", "payload": { "area_id": "head", "x": 120.5, "y": 80.0, "button": 0 }, "timestamp": 1710000003000 },
+      "note": "area_id is lowercase ('head'/'body'); HitArea names in config may be PascalCase."
+    },
+    {
+      "name": "drag_start",
+      "group": "D_interaction",
+      "input": { "type": "event", "action": "drag_start", "id": "evt-drag-start-0001", "payload": { "x": 50.0, "y": 50.0 }, "timestamp": 1710000004000 }
+    },
+    {
+      "name": "drag_end",
+      "group": "D_interaction",
+      "input": { "type": "event", "action": "drag_end", "id": "evt-drag-end-0001", "payload": { "x": 250.0, "y": 180.0, "window_x": 300, "window_y": 380 }, "timestamp": 1710000004100 }
+    },
+    {
+      "name": "layout_changed",
+      "group": "E_state",
+      "input": { "type": "event", "action": "layout_changed", "id": "evt-layout-changed-0001", "payload": { "offset_x": 12.5, "offset_y": -3.0, "scale": 1.1 }, "timestamp": 1710000005000 }
+    },
+    {
+      "name": "window_resized",
+      "group": "E_state",
+      "input": { "type": "event", "action": "window_resized", "id": "evt-window-resized-0001", "payload": { "window_width": 480, "window_height": 720, "window_x": 60, "window_y": 140 }, "timestamp": 1710000005100 }
+    },
+    {
+      "name": "stats_state_windows_full_gpu",
+      "group": "E_state",
+      "input": { "type": "event", "action": "stats_state", "id": "evt-stats-0001", "payload": { "cpu_percent": 12.5, "rss_bytes": 104857600, "gpu_percent": 35.0, "gpu_name": "NVIDIA GeForce RTX 3060", "vram_used_bytes": 536870912, "vram_total_bytes": 8589934592, "timestamp_ms": 1710000005200 }, "timestamp": 1710000005200 },
+      "note": "Windows: all GPU fields present via PDH + DXGI."
+    },
+    {
+      "name": "stats_state_linux_stub_null_gpu",
+      "group": "E_state",
+      "input": { "type": "event", "action": "stats_state", "id": "evt-stats-0002", "payload": { "cpu_percent": 8.3, "rss_bytes": 67108864, "gpu_percent": null, "gpu_name": null, "vram_used_bytes": null, "vram_total_bytes": null, "timestamp_ms": 1710000005200 }, "timestamp": 1710000005200 },
+      "note": "Linux stub: IGpuMonitor::initialize() returns false → 4 GPU fields are null. cpu_percent/rss_bytes/timestamp_ms always present."
+    },
+    {
+      "name": "layout_state_pseudo_response_id_collision",
+      "group": "E_state",
+      "input": { "type": "event", "action": "layout_state", "id": "cmd-get-layout-0001", "payload": { "offset_x": 10.0, "offset_y": -5.0, "scale": 1.2 }, "timestamp": 1710000005300 },
+      "note": "Pseudo-response (§7.3): this event's id COLLIDES with the pending get_layout command id here to prove routing MUST be by action, not by id. A correct consumer routes layout_state by action='layout_state' regardless of id. Renderer normally generates a fresh id; this collision case is deliberate."
+    },
+    {
+      "name": "error",
+      "group": "F_error",
+      "input": { "type": "event", "action": "error", "id": "evt-error-0001", "payload": { "error_code": 2001, "error_message": "No model loaded" }, "timestamp": 1710000006000 }
+    }
+  ],
+  "multi_case_actions": {
+    "motion_finished": { "case_count": 2, "variants": ["group_index", "motion_path"] },
+    "stats_state": { "case_count": 2, "variants": ["windows_full_gpu", "linux_stub_null_gpu"] }
+  },
+  "pseudo_response_actions": ["stats_state", "layout_state"],
+  "expected_action_set": [
+    "ready", "model_loaded", "model_load_failed",
+    "motion_started", "motion_finished",
+    "hit", "drag_start", "drag_end",
+    "layout_changed", "window_resized", "stats_state", "layout_state",
+    "error"
+  ]
+}

@@ -1,0 +1,124 @@
+{
+  "description": "Envelope serialization cases. Covers the three message types per interface.md §2.1-2.3. The 'expected' block states invariants the serialized JSON MUST satisfy: payload is always a JSON object (never null, never omitted); success/error_code/error_message appear ONLY when type==response (top level, never inside payload).",
+  "source": "docs/protocol/interface.md §2.1 (command/event envelope), §2.2 (response envelope), §2.3 (serialization rules)",
+  "cases": [
+    {
+      "name": "command_envelope_minimal",
+      "input": {
+        "type": "command",
+        "action": "stop_motion",
+        "id": "cmd-stop-motion-0001",
+        "payload": {},
+        "timestamp": 1710000000000
+      },
+      "expected": {
+        "type": "command",
+        "payload_is_object": true,
+        "has_top_level_response_fields": false,
+        "required_envelope_keys": ["type", "action", "id", "payload", "timestamp"]
+      }
+    },
+    {
+      "name": "command_envelope_with_payload",
+      "input": {
+        "type": "command",
+        "action": "play_motion",
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "payload": { "group": "Idle", "index": 0, "priority": 1 },
+        "timestamp": 1710000000000
+      },
+      "expected": {
+        "type": "command",
+        "payload_is_object": true,
+        "has_top_level_response_fields": false,
+        "required_envelope_keys": ["type", "action", "id", "payload", "timestamp"]
+      }
+    },
+    {
+      "name": "event_envelope",
+      "input": {
+        "type": "event",
+        "action": "ready",
+        "id": "evt-ready-0001",
+        "payload": { "version": "1.0.0", "capabilities": ["live2d"] },
+        "timestamp": 1710000000050
+      },
+      "expected": {
+        "type": "event",
+        "payload_is_object": true,
+        "has_top_level_response_fields": false,
+        "required_envelope_keys": ["type", "action", "id", "payload", "timestamp"]
+      }
+    },
+    {
+      "name": "response_envelope_success",
+      "input": {
+        "type": "response",
+        "action": "load_model",
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "payload": {},
+        "timestamp": 1710000000100,
+        "success": true,
+        "error_code": 0,
+        "error_message": ""
+      },
+      "expected": {
+        "type": "response",
+        "payload_is_object": true,
+        "payload_is_empty_object": true,
+        "has_top_level_response_fields": true,
+        "success": true,
+        "error_code": 0,
+        "error_message": "",
+        "response_fields_at_top_level": true,
+        "required_envelope_keys": ["type", "action", "id", "payload", "timestamp", "success", "error_code", "error_message"]
+      }
+    },
+    {
+      "name": "response_envelope_failure",
+      "input": {
+        "type": "response",
+        "action": "set_size",
+        "id": "cmd-set-size-0001",
+        "payload": {},
+        "timestamp": 1710000000200,
+        "success": false,
+        "error_code": 4004,
+        "error_message": "width/height must be positive"
+      },
+      "expected": {
+        "type": "response",
+        "payload_is_object": true,
+        "payload_is_empty_object": true,
+        "has_top_level_response_fields": true,
+        "success": false,
+        "error_code": 4004,
+        "error_message": "width/height must be positive",
+        "response_fields_at_top_level": true,
+        "required_envelope_keys": ["type", "action", "id", "payload", "timestamp", "success", "error_code", "error_message"]
+      }
+    },
+    {
+      "name": "response_envelope_unknown_action_5003",
+      "input": {
+        "type": "response",
+        "action": "nonsense_action",
+        "id": "cmd-unknown-0001",
+        "payload": {},
+        "timestamp": 1710000000300,
+        "success": false,
+        "error_code": 5003,
+        "error_message": "Unknown action: nonsense_action"
+      },
+      "expected": {
+        "type": "response",
+        "payload_is_object": true,
+        "payload_is_empty_object": true,
+        "has_top_level_response_fields": true,
+        "success": false,
+        "error_code": 5003,
+        "response_fields_at_top_level": true
+      }
+    }
+  ]
+}

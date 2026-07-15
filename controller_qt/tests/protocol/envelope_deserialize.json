@@ -1,0 +1,158 @@
+{
+  "description": "Envelope deserialization cases per interface.md §2.4. Valid cases round-trip; malformed cases MUST be silently dropped (deserializer returns std::nullopt / null — no exception). Per §2.4: any missing required field, JSON parse error, or wrong type value => silently dropped. Per §1.5: payload must always be an object — payload:null is invalid.",
+  "source": "docs/protocol/interface.md §2.4 (deserialization rules), §1.5 (payload rules)",
+  "cases": [
+    {
+      "name": "valid_command_round_trip",
+      "input": {
+        "type": "command",
+        "action": "play_motion",
+        "id": "cmd-play-0001",
+        "payload": { "group": "Idle", "index": 0, "priority": 1 },
+        "timestamp": 1710000000000
+      },
+      "expected": { "valid": true, "type": "command" }
+    },
+    {
+      "name": "valid_event_round_trip",
+      "input": {
+        "type": "event",
+        "action": "hit",
+        "id": "evt-hit-0001",
+        "payload": { "area_id": "head", "x": 120.5, "y": 80.0, "button": 0 },
+        "timestamp": 1710000000000
+      },
+      "expected": { "valid": true, "type": "event" }
+    },
+    {
+      "name": "valid_response_round_trip",
+      "input": {
+        "type": "response",
+        "action": "load_model",
+        "id": "cmd-load-0001",
+        "payload": {},
+        "timestamp": 1710000000100,
+        "success": true,
+        "error_code": 0,
+        "error_message": ""
+      },
+      "expected": { "valid": true, "type": "response", "success": true }
+    },
+    {
+      "name": "valid_empty_payload_object",
+      "input": {
+        "type": "command",
+        "action": "stop_motion",
+        "id": "cmd-stop-0001",
+        "payload": {},
+        "timestamp": 1710000000000
+      },
+      "expected": { "valid": true, "type": "command" }
+    },
+    {
+      "name": "malformed_missing_id",
+      "input": {
+        "type": "command",
+        "action": "play_motion",
+        "payload": { "group": "Idle" },
+        "timestamp": 1710000000000
+      },
+      "expected": { "valid": false, "reason": "missing required field 'id'" }
+    },
+    {
+      "name": "malformed_missing_payload",
+      "input": {
+        "type": "command",
+        "action": "play_motion",
+        "id": "cmd-x-0001",
+        "timestamp": 1710000000000
+      },
+      "expected": { "valid": false, "reason": "missing required field 'payload'" }
+    },
+    {
+      "name": "malformed_missing_timestamp",
+      "input": {
+        "type": "command",
+        "action": "play_motion",
+        "id": "cmd-x-0002",
+        "payload": { "group": "Idle" }
+      },
+      "expected": { "valid": false, "reason": "missing required field 'timestamp'" }
+    },
+    {
+      "name": "malformed_missing_action",
+      "input": {
+        "type": "command",
+        "id": "cmd-x-0003",
+        "payload": {},
+        "timestamp": 1710000000000
+      },
+      "expected": { "valid": false, "reason": "missing required field 'action'" }
+    },
+    {
+      "name": "malformed_missing_type",
+      "input": {
+        "action": "play_motion",
+        "id": "cmd-x-0004",
+        "payload": { "group": "Idle" },
+        "timestamp": 1710000000000
+      },
+      "expected": { "valid": false, "reason": "missing required field 'type'" }
+    },
+    {
+      "name": "malformed_payload_null",
+      "input": {
+        "type": "command",
+        "action": "play_motion",
+        "id": "cmd-x-0005",
+        "payload": null,
+        "timestamp": 1710000000000
+      },
+      "expected": { "valid": false, "reason": "payload must be an object, got null (§1.5)" }
+    },
+    {
+      "name": "malformed_wrong_type_value",
+      "input": {
+        "type": "notification",
+        "action": "play_motion",
+        "id": "cmd-x-0006",
+        "payload": { "group": "Idle" },
+        "timestamp": 1710000000000
+      },
+      "expected": { "valid": false, "reason": "type must be command/event/response" }
+    },
+    {
+      "name": "malformed_bad_json_array_not_object",
+      "input": ["not", "an", "object"],
+      "expected": { "valid": false, "reason": "JSON root is not an object" }
+    },
+    {
+      "name": "malformed_bad_json_string_not_object",
+      "input": "just a string",
+      "expected": { "valid": false, "reason": "JSON root is not an object" }
+    },
+    {
+      "name": "malformed_payload_not_object_number",
+      "input": {
+        "type": "command",
+        "action": "play_motion",
+        "id": "cmd-x-0007",
+        "payload": 42,
+        "timestamp": 1710000000000
+      },
+      "expected": { "valid": false, "reason": "payload must be an object, got number" }
+    },
+    {
+      "name": "malformed_empty_id_string",
+      "_note": "interface.md §2.1 requires id for request-response matching; an empty id cannot match a pending request and is treated as invalid.",
+      "input": {
+        "type": "command",
+        "action": "play_motion",
+        "id": "",
+        "payload": { "group": "Idle" },
+        "timestamp": 1710000000000
+      },
+      "expected": { "valid": false, "reason": "id must be a non-empty string" }
+    }
+  ]
+}

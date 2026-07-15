@@ -55,7 +55,7 @@ qt_add_qml_module(desktop-pet-controller-qt
         qml/Main.qml
 )
 
-# T1 ships no tests yet; enable_testing() is present so later tasks (QTest)
-# register via add_subdirectory(tests) below without touching this file again.
+# enable_testing() is present so QTest targets under tests/ register via
+# add_subdirectory(tests) without touching this file again.
 enable_testing()
-# add_subdirectory(tests)
+add_subdirectory(tests)

@@ -1,0 +1,158 @@
+{
+  "description": "Connection initialization handshake sequence per interface.md §10.1. Direction convention: command = controller→renderer, event/response = renderer→controller. After WS upgrade the renderer emits 'ready'; the controller then sends the 9-command startup volley, receives 'model_loaded', and finally configures hit areas. Timestamps are integer Unix milliseconds (< 2^53, safe in JSON).",
+  "source": "docs/protocol/interface.md §10.1 (connection init timing), §3.2 (command-event pairs)",
+  "events": [
+    {
+      "step": 1,
+      "direction": "renderer_to_controller",
+      "name": "ready_event",
+      "message": {
+        "type": "event",
+        "action": "ready",
+        "id": "evt-ready-0001",
+        "payload": { "version": "1.0.0", "capabilities": ["live2d"] },
+        "timestamp": 1710000000050
+      },
+      "note": "Renderer sends ready immediately after WS connect. Commands sent before ready are not guaranteed to be processed."
+    },
+    {
+      "step": 2,
+      "direction": "controller_to_renderer",
+      "name": "volley_load_model",
+      "message": {
+        "type": "command",
+        "action": "load_model",
+        "id": "cmd-load-model-0001",
+        "payload": { "model_path": "Hiyori" },
+        "timestamp": 1710000000100
+      }
+    },
+    {
+      "step": 3,
+      "direction": "controller_to_renderer",
+      "name": "volley_set_position",
+      "message": {
+        "type": "command",
+        "action": "set_position",
+        "id": "cmd-set-position-0001",
+        "payload": { "x": 100, "y": 200 },
+        "timestamp": 1710000000110
+      }
+    },
+    {
+      "step": 4,
+      "direction": "controller_to_renderer",
+      "name": "volley_set_size",
+      "message": {
+        "type": "command",
+        "action": "set_size",
+        "id": "cmd-set-size-0001",
+        "payload": { "width": 400, "height": 600 },
+        "timestamp": 1710000000120
+      }
+    },
+    {
+      "step": 5,
+      "direction": "controller_to_renderer",
+      "name": "volley_set_opacity",
+      "message": {
+        "type": "command",
+        "action": "set_opacity",
+        "id": "cmd-set-opacity-0001",
+        "payload": { "opacity": 1.0 },
+        "timestamp": 1710000000130
+      }
+    },
+    {
+      "step": 6,
+      "direction": "controller_to_renderer",
+      "name": "volley_set_fps",
+      "message": {
+        "type": "command",
+        "action": "set_fps",
+        "id": "cmd-set-fps-0001",
+        "payload": { "fps": 60 },
+        "timestamp": 1710000000140
+      }
+    },
+    {
+      "step": 7,
+      "direction": "controller_to_renderer",
+      "name": "volley_set_volume",
+      "message": {
+        "type": "command",
+        "action": "set_volume",
+        "id": "cmd-set-volume-0001",
+        "payload": { "volume": 1.0, "muted": false },
+        "timestamp": 1710000000150
+      }
+    },
+    {
+      "step": 8,
+      "direction": "controller_to_renderer",
+      "name": "volley_set_layout",
+      "message": {
+        "type": "command",
+        "action": "set_layout",
+        "id": "cmd-set-layout-0001",
+        "payload": { "offset_x": 0.0, "offset_y": 0.0, "scale": 1.0 },
+        "timestamp": 1710000000160
+      }
+    },
+    {
+      "step": 9,
+      "direction": "controller_to_renderer",
+      "name": "volley_set_subtitle_layout",
+      "message": {
+        "type": "command",
+        "action": "set_subtitle_layout",
+        "id": "cmd-set-subtitle-layout-0001",
+        "payload": { "offset_x": 0.0, "offset_y": -40.0, "area_width": 0, "area_height": 0, "font_size": 48.0 },
+        "timestamp": 1710000000170
+      }
+    },
+    {
+      "step": 10,
+      "direction": "controller_to_renderer",
+      "name": "volley_set_subtitle_style",
+      "message": {
+        "type": "command",
+        "action": "set_subtitle_style",
+        "id": "cmd-set-subtitle-style-0001",
+        "payload": { "font_name": "Microsoft YaHei", "font_size": 48.0, "primary_color": 16777215, "outline_color": 1118481, "outline_width": 1.8, "shadow_color": 0, "shadow_depth": 0.0, "alignment": 2, "margin_v": 30.0, "edge_blur": 0.6, "font_weight": -1, "letter_spacing": 0.5, "bg_box_enabled": false, "bg_box_color": 2147483648, "bg_box_padding_x": 12.0, "bg_box_padding_y": 6.0 },
+        "timestamp": 1710000000180
+      }
+    },
+    {
+      "step": 11,
+      "direction": "renderer_to_controller",
+      "name": "model_loaded_event",
+      "message": {
+        "type": "event",
+        "action": "model_loaded",
+        "id": "evt-model-loaded-0001",
+        "payload": { "model_id": "Hiyori", "motions": [], "expressions": [] },
+        "timestamp": 1710000000500
+      },
+      "note": "motions/expressions are ALWAYS empty arrays (§4.1 deviation #5); controller must parse .model3.json itself."
+    },
+    {
+      "step": 12,
+      "direction": "controller_to_renderer",
+      "name": "post_load_set_hit_areas",
+      "message": {
+        "type": "command",
+        "action": "set_hit_areas",
+        "id": "cmd-set-hit-areas-0001",
+        "payload": { "hit_areas": ["Head", "Body"] },
+        "timestamp": 1710000000510
+      }
+    }
+  ],
+  "assertions": {
+    "starts_with_ready_event": true,
+    "startup_volley_command_count": 9,
+    "startup_volley_actions_in_order": ["load_model", "set_position", "set_size", "set_opacity", "set_fps", "set_volume", "set_layout", "set_subtitle_layout", "set_subtitle_style"],
+    "contains_model_loaded_event": true
+  }
+}

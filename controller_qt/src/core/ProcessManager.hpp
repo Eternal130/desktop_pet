@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <QObject>
 #include <QProcess>
 #include <QString>
@@ -70,6 +71,29 @@ public:
     // thread of a running GUI (architecture-blueprint.md §4.6.4 step 3).
     bool waitForFinished(int timeoutMs = 5000);
 
+    // Callback type: sends the shutdown command over WS. The app wires this to
+    // wsServer->sendText(serialize(Protocol::buildShutdown()).toJson(Compact)).
+    using ShutdownSender = std::function<void()>;
+
+    // Set the callback that sends shutdown {} over WebSocket.
+    // Must be set before calling stop().
+    void setShutdownSender(ShutdownSender sender);
+
+    // 3-stage graceful shutdown (architecture-blueprint.md §4.6.4):
+    //   1. Set m_manuallyStopping = true, call m_shutdownSender() (sends shutdown {})
+    //   2. Poll waitForFinished in 100ms ticks up to 5000ms total
+    //   3. If still running after 5s → kill() (force terminate)
+    // Returns true if the process exited cleanly (within 5s), false if force-killed.
+    // Blocking — call from the main thread during app exit, never from the GUI
+    // event loop of a running window.
+    bool stop();
+
+    // True while stop() is in progress (user-initiated shutdown). The exited()
+    // signal handler can read this to distinguish user-stop (true) from
+    // crash/external-kill (false). Phase 7's crash-recovery logic (§4.6.3)
+    // checks this before triggering a restart.
+    bool isManuallyStopping() const;
+
 signals:
     // Emitted when the process exits. crashed=true if ExitStatus::CrashExit
     // or exitCode != 0.
@@ -85,4 +109,16 @@ private slots:
 
 private:
     QProcess m_process;
+
+    // Callback that sends the shutdown {} command over WS. Wired by the app
+    // before stop() is called. Nullable — stop() no-ops the send if unset.
+    ShutdownSender m_shutdownSender;
+
+    // True while stop() is executing. Set BEFORE the shutdown command is sent,
+    // cleared AFTER the exited() signal fires (in onFinished). This lets the
+    // exited() slot distinguish user-initiated stop from crash/external-kill.
+    // The renderer has a known teardown crash (0xC0000005) that fires AFTER the
+    // WS connection cleanly closes during a `shutdown` — when this flag is
+    // true, onFinished reports crashed=false so crash recovery does not fire.
+    bool m_manuallyStopping = false;
 };

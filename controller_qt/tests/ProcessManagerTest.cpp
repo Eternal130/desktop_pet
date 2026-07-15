@@ -27,6 +27,7 @@
 #include "core/PathResolve.hpp"
 #include "core/ProcessManager.hpp"
 #include "network/Envelope.hpp"
+#include "network/Protocol.hpp"
 #include "network/WsServer.hpp"
 
 Q_DECLARE_METATYPE(Envelope)
@@ -44,6 +45,8 @@ private slots:
     // ── Integration tier [REQUIRES_RENDERER] ───────────────────────────────
     void testRealRendererLifecycle();
     void testCrashDetection();
+    void testGracefulShutdown();
+    void testManuallyStoppingFlag();
 
 private:
     // Resolve the renderer exe via PathResolve (T14). Returns nullopt if the
@@ -227,6 +230,144 @@ void ProcessManagerTest::testCrashDetection()
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
+// ────────────────────────────────────────────────────────────────────────────
+
+// 3-stage graceful shutdown (T15, blueprint §4.6.4): wire a shutdown sender
+// via setShutdownSender, call stop(), assert clean exit within 5s. Exercises
+// the full send-shutdown → poll-waitForFinished → exit path. The renderer's
+// known teardown crash (0xC0000005) fires AFTER the WS connection closes —
+// because m_manuallyStopping=true, onFinished reports crashed=false.
+void ProcessManagerTest::testGracefulShutdown()
+{
+    const auto path = findRenderer();
+    if (!path.has_value())
+        QSKIP("renderer binary absent");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    server.registerToken(0, QStringLiteral("gracefultoken"));
+    const quint16 port = server.serverPort();
+
+    ProcessManager pm;
+    QSignalSpy msgSpy(&server, &WsServer::messageReceived);
+    QSignalSpy exitedSpy(&pm, &ProcessManager::exited);
+
+    // Wire the shutdown sender exactly as the app will (T15 context):
+    // serialize(Protocol::buildShutdown()) → sendText.
+    pm.setShutdownSender([&server]() {
+        const QByteArray json =
+            serialize(Protocol::buildShutdown()).toJson(QJsonDocument::Compact);
+        server.sendText(QString::fromUtf8(json));
+    });
+
+    pm.startRenderer(*path, port, 0, QStringLiteral("gracefultoken"),
+                     QStringLiteral("Hiyori"));
+
+    QVERIFY2(waitForAction(msgSpy, "ready", 10000),
+             "renderer did not send 'ready' within 10s");
+
+    // stop() is blocking — sends shutdown, polls waitForFinished up to 5s.
+    const bool clean = pm.stop();
+    QVERIFY2(clean, "stop() should return true (renderer exited within 5s)");
+
+    QVERIFY2(exitedSpy.count() >= 1, "exited signal not emitted by stop()");
+    const bool crashed = exitedSpy.at(0).at(1).toBool();
+    // manuallyStopping was true → crashed must be false even if the renderer
+    // hit its known teardown access-violation during exit.
+    QCOMPARE(crashed, false);
+
+    // No residual process.
+    QVERIFY2(!pm.isRunning(), "renderer process still running after stop()");
+
+    server.close();
+}
+
+// manuallyStopping flag observability (T15 m5): the exited() callback must be
+// able to read isManuallyStopping() to distinguish user-stop from crash.
+//   Scenario A: stop() → flag is true when exited fires.
+//   Scenario B: kill() (external) → flag is false, crashed=true.
+void ProcessManagerTest::testManuallyStoppingFlag()
+{
+    const auto path = findRenderer();
+    if (!path.has_value())
+        QSKIP("renderer binary absent");
+
+    // ── Scenario A: stop() sets the flag before exited fires ──────────────
+    {
+        WsServer server;
+        QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+        server.registerToken(0, QStringLiteral("flagtokenA"));
+        const quint16 port = server.serverPort();
+
+        ProcessManager pm;
+        QSignalSpy msgSpy(&server, &WsServer::messageReceived);
+
+        // Capture the flag value at the exact moment exited() fires. The
+        // lambda runs synchronously inside onFinished's emit, BEFORE the flag
+        // is cleared at the end of onFinished.
+        bool flagDuringExit = false;
+        connect(&pm, &ProcessManager::exited, &pm,
+                [&pm, &flagDuringExit](int, bool) {
+                    flagDuringExit = pm.isManuallyStopping();
+                });
+
+        pm.setShutdownSender([&server]() {
+            const QByteArray json =
+                serialize(Protocol::buildShutdown()).toJson(QJsonDocument::Compact);
+            server.sendText(QString::fromUtf8(json));
+        });
+
+        pm.startRenderer(*path, port, 0, QStringLiteral("flagtokenA"),
+                         QStringLiteral("Hiyori"));
+        QVERIFY2(waitForAction(msgSpy, "ready", 10000),
+                 "renderer did not send 'ready' within 10s");
+
+        QVERIFY2(pm.stop(), "stop() should return true");
+        QVERIFY2(flagDuringExit,
+                 "isManuallyStopping() must be true when exited fires during stop()");
+        QVERIFY2(!pm.isManuallyStopping(),
+                 "isManuallyStopping() must be cleared after stop() returns");
+
+        server.close();
+    }
+
+    // ── Scenario B: external kill → flag is false, crashed=true ───────────
+    {
+        WsServer server;
+        QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+        server.registerToken(0, QStringLiteral("flagtokenB"));
+        const quint16 port = server.serverPort();
+
+        ProcessManager pm;
+        QSignalSpy msgSpy(&server, &WsServer::messageReceived);
+        QSignalSpy exitedSpy(&pm, &ProcessManager::exited);
+
+        bool flagDuringExit = true;
+        connect(&pm, &ProcessManager::exited, &pm,
+                [&pm, &flagDuringExit](int, bool) {
+                    flagDuringExit = pm.isManuallyStopping();
+                });
+
+        pm.startRenderer(*path, port, 0, QStringLiteral("flagtokenB"),
+                         QStringLiteral("Hiyori"));
+        QVERIFY2(waitForAction(msgSpy, "ready", 10000),
+                 "renderer did not send 'ready' within 10s");
+
+        pm.kill();
+
+        QVERIFY2(exitedSpy.wait(2000),
+                 "exited not emitted within 2s after kill()");
+        const bool crashed = exitedSpy.at(0).at(1).toBool();
+        QVERIFY2(crashed, "external kill must report crashed=true");
+        QVERIFY2(!flagDuringExit,
+                 "isManuallyStopping() must be false on external kill");
+
+        server.close();
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Original helpers
 // ────────────────────────────────────────────────────────────────────────────
 
 std::optional<QString> ProcessManagerTest::findRenderer()

@@ -1,6 +1,10 @@
 #include "core/ProcessManager.hpp"
 
+#include <utility>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFileInfo>
+#include <QTimer>
 #include <QString>
 #include <QStringList>
 
@@ -106,6 +110,74 @@ bool ProcessManager::waitForFinished(int timeoutMs)
     return m_process.waitForFinished(timeoutMs);
 }
 
+void ProcessManager::setShutdownSender(ShutdownSender sender)
+{
+    m_shutdownSender = std::move(sender);
+}
+
+bool ProcessManager::isManuallyStopping() const
+{
+    return m_manuallyStopping;
+}
+
+bool ProcessManager::stop()
+{
+    // Already stopped — nothing to do. Return true (clean state).
+    if (m_process.state() == QProcess::NotRunning)
+        return true;
+
+    // Set the flag BEFORE sending shutdown so onFinished (which fires during
+    // waitForFinished below) observes manuallyStopping=true and reports
+    // crashed=false for the known teardown access-violation.
+    m_manuallyStopping = true;
+
+    // Stage 1: send `shutdown {}` over WebSocket (architecture-blueprint.md
+    // §4.6.4 step 1). The sender is wired by the app via setShutdownSender().
+    if (m_shutdownSender) {
+        LOG_INFO("ProcessManager::stop — sending shutdown command (pid={})",
+                 m_process.processId());
+        m_shutdownSender();
+    } else {
+        LOG_WARN("ProcessManager::stop — no shutdown sender wired; "
+                 "polling for exit anyway (pid={})", m_process.processId());
+    }
+
+    // Stage 2: spin a local event loop for up to 5s (100ms poll ticks,
+    // blueprint §4.6.4 step 2). A QEventLoop is REQUIRED here — not bare
+    // QProcess::waitForFinished — because the WebSocket send from stage 1
+    // only flushes to the TCP socket when the Qt event loop runs.
+    // QProcess::waitForFinished blocks the Qt event loop (it uses a native
+    // WaitForSingleObject on Windows), so the shutdown JSON would sit in the
+    // QWebSocket's internal buffer forever and the renderer would never exit.
+    // The QEventLoop processes all events (socket I/O, QProcess signals),
+    // so the shutdown reaches the renderer AND onFinished fires inside it.
+    QElapsedTimer elapsed;
+    elapsed.start();
+    QEventLoop loop;
+    QTimer pollTimer;
+    pollTimer.setSingleShot(false);
+    QObject::connect(&pollTimer, &QTimer::timeout, &loop, [this, &elapsed, &loop]() {
+        if (m_process.state() == QProcess::NotRunning || elapsed.hasExpired(5000))
+            loop.quit();
+    });
+    pollTimer.start(100);
+    loop.exec();
+    pollTimer.stop();
+
+    if (m_process.state() == QProcess::NotRunning)
+        return true;
+
+    // Stage 3: timeout — force-kill (blueprint §4.6.4 step 3).
+    // SIGKILL on Unix / TerminateProcess on Windows. onFinished will fire
+    // during the kill's waitForFinished with m_manuallyStopping still true,
+    // so crashed=false (the force-kill is part of the user-initiated stop).
+    LOG_WARN("ProcessManager::stop — renderer did not exit within 5s; "
+             "force-killing (pid={})", m_process.processId());
+    m_process.kill();
+    m_process.waitForFinished(2000);
+    return false;
+}
+
 void ProcessManager::onReadyReadStandardOutput()
 {
     // Pump all available complete lines. canReadLine() guards against
@@ -137,20 +209,24 @@ void ProcessManager::onReadyReadStandardError()
 void ProcessManager::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
     // crashed = the OS reports a crash (CrashExit) OR the process exited with
-    // a non-zero code. Both indicate abnormal termination that the crash-
-    // recovery logic (blueprint §4.6.3) should treat as a potential restart
-    // trigger.
-    //
-    // Known exception: the renderer has a teardown access-violation
+    // a non-zero code — UNLESS stop() initiated this shutdown
+    // (m_manuallyStopping). The renderer has a known teardown access-violation
     // (0xC0000005) that fires AFTER the WS connection is cleanly closed and
-    // the `shutdown` command was processed (T6 PoC finding). The instance
-    // manager (T16) tolerates this by checking a `manuallyStopping` flag
-    // before triggering crash recovery — ProcessManager faithfully reports
-    // crashed=true and lets the caller decide.
-    const bool crashed = (exitStatus == QProcess::CrashExit) || (exitCode != 0);
+    // the `shutdown` command was processed (T6 PoC finding). When
+    // m_manuallyStopping is true, the exit was user-initiated (even if the
+    // renderer crashed during teardown), so crashed=false — Phase 7's crash
+    // recovery (blueprint §4.6.3) must not trigger a restart.
+    const bool crashed = !m_manuallyStopping
+                         && (exitStatus == QProcess::CrashExit || exitCode != 0);
 
-    LOG_INFO("ProcessManager: renderer exited exitCode={} exitStatus={} crashed={}",
-             exitCode, static_cast<int>(exitStatus), crashed);
+    LOG_INFO("ProcessManager: renderer exited exitCode={} exitStatus={} crashed={} manuallyStopping={}",
+             exitCode, static_cast<int>(exitStatus), crashed, m_manuallyStopping);
 
     emit exited(exitCode, crashed);
+
+    // Clear the flag AFTER exited() has been delivered to all connected slots
+    // (QSignalSpy, lambdas) so they observe manuallyStopping=true when the
+    // callback fires. Cleared here rather than at end of stop() so the flag
+    // is reset regardless of which code path caused the process to exit.
+    m_manuallyStopping = false;
 }

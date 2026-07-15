@@ -555,7 +555,8 @@ qt_add_executable(ProcessManagerTest ProcessManagerTest.cpp
     ${CMAKE_SOURCE_DIR}/src/core/ProcessManager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/PathResolve.cpp
     ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp)
 target_link_libraries(ProcessManagerTest PRIVATE
     Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
 target_include_directories(ProcessManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)

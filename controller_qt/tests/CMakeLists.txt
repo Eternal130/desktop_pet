@@ -596,3 +596,66 @@ add_test(NAME ProcessManagerTest COMMAND ProcessManagerTest)
 # no display or renderer binary is present (the integration tier also QSKIPs at
 # runtime if the renderer binary is absent; the unit tier always runs).
 set_tests_properties(ProcessManagerTest PROPERTIES LABELS "REQUIRES_RENDERER")
+
+# StartupSalvo (T16): the 9-command bootstrap salvo + set_hit_areas. Two tiers:
+#   - Unit tier (4 slots, no renderer): capturing-sender harness asserts the 9
+#     commands fire in order, that set_scale NEVER appears in the stream, that
+#     set_subtitle_style carries all 16 named style fields, and that every
+#     salvo action is in the command_all_25.json catalog.
+#   - Integration tier (1 slot, REQUIRES_RENDERER): WsServer + ProcessManager +
+#     StartupSalvo wired against the real renderer; ready → sendSalvo,
+#     model_loaded → sendSetHitAreas, asserts 10 commands captured in order
+#     with no set_scale. Tolerates the known renderer teardown crash (T6/T13).
+# Recompiles StartupSalvo.cpp + Protocol.cpp + WsServer.cpp + ProcessManager.cpp
+# + PathResolve.cpp + Envelope.cpp directly (same pattern as the other tests —
+# no shared lib yet). Links Qt6::Core + Qt6::Network + Qt6::WebSockets (server
+# + integration tier) + Qt6::Test + spdlog (LOG_* macros in StartupSalvo /
+# WsServer / ProcessManager / PathResolve). QTEST_MAIN (NOT APPLESS) — the
+# integration tier uses QSignalSpy::wait / QTest::qWait to pump the event loop.
+qt_add_executable(StartupSalvoTest StartupSalvoTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/StartupSalvo.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ProcessManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PathResolve.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(StartupSalvoTest PRIVATE
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
+target_include_directories(StartupSalvoTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(StartupSalvoTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
+    PROTOCOL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/protocol"
+    BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so the Core/Network/WebSockets/Test
+# DLLs must sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET StartupSalvoTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:StartupSalvoTest>"
+            COMMENT "Running windeployqt for StartupSalvoTest")
+    else()
+        message(WARNING "windeployqt not found; StartupSalvoTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME StartupSalvoTest COMMAND StartupSalvoTest)
+# REQUIRES_RENDERER label lets ctest filter this out of headless/CI runs where
+# no display or renderer binary is present (the integration tier also QSKIPs at
+# runtime if the renderer binary is absent; the unit tier always runs).
+set_tests_properties(StartupSalvoTest PROPERTIES LABELS "REQUIRES_RENDERER")

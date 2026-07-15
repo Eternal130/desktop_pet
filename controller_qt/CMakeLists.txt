@@ -29,12 +29,16 @@ qt_standard_project_setup()
 set(_bin_output_dir "${PROJECT_SOURCE_DIR}/../build/bin")
 qt_add_executable(desktop-pet-controller-qt
     src/main.cpp
+    src/network/Envelope.cpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${_bin_output_dir}"
     WIN32_EXECUTABLE ON
 )
+
+# Expose src/ so T4+ sources can write `#include "network/Envelope.hpp"` etc.
+target_include_directories(desktop-pet-controller-qt PRIVATE src)
 
 # QGuiApplication (QtGui) and QQmlApplicationEngine (QtQml/QtQuick) are not
 # auto-linked by qt_add_executable, so link them explicitly. Core/Network are

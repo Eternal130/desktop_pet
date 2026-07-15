@@ -45,3 +45,43 @@ if(WIN32)
 endif()
 
 add_test(NAME ProtocolFixturesTest COMMAND ProtocolFixturesTest)
+
+# Envelope model ser/deser (T4). The test links the production Envelope.cpp
+# directly (controller_qt has no shared library yet, so each test binary
+# recompiles the .cpp it exercises). PROTOCOL_FIXTURES_DIR is reused so the
+# test finds the T3 JSON fixtures from any working directory, including ctest.
+qt_add_executable(EnvelopeTest EnvelopeTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(EnvelopeTest PRIVATE Qt6::Core Qt6::Test)
+target_include_directories(EnvelopeTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(EnvelopeTest PRIVATE
+    PROTOCOL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/protocol")
+
+# windeployqt for the test exe on Windows (same need as ProtocolFixturesTest:
+# ctest launches the exe with Qt's bin NOT on PATH, so the DLLs must sit next
+# to it). QT_WINDEPLOYQT_EXE is found and cached by the ProtocolFixturesTest
+# block above, which configure-time-runs first; fall back to a fresh lookup
+# if that ordering ever changes.
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET EnvelopeTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:EnvelopeTest>"
+            COMMENT "Running windeployqt for EnvelopeTest")
+    else()
+        message(WARNING "windeployqt not found; EnvelopeTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME EnvelopeTest COMMAND EnvelopeTest)

@@ -1,4 +1,6 @@
 import QtQuick
+import QtQuick.Controls
+import DesktopPet
 
 // Custom frameless-window titlebar.
 //
@@ -19,9 +21,10 @@ Rectangle {
     anchors.top: parent.top
     height: 32
 
-    // Catppuccin Mocha "mantle" — one shade darker than the window base
-    // (#1e1e2e) to give the titlebar visual depth.
-    color: "#181825"
+    // Catppuccin Mocha "mantle" by default (深紫梦幻) — one shade darker than
+    // the window base for visual depth. Binds to Theme so swapping the palette
+    // re-renders the titlebar instantly (T26).
+    color: Theme.titleBarColor
 
     // ── Drag to move ──────────────────────────────────────────────────────
     // DragHandler with target:null is the modern Qt 6 idiom: it does not move
@@ -42,7 +45,7 @@ Rectangle {
         anchors.leftMargin: 12
         anchors.verticalCenter: parent.verticalCenter
         text: qsTr("Desktop Pet Controller (Qt)")
-        color: "#cdd6f4"   // Catppuccin Mocha "text"
+        color: Theme.textColor   // themed (T26)
         font.pixelSize: 13
         font.weight: Font.Medium
     }
@@ -62,11 +65,11 @@ Rectangle {
         Rectangle {
             width: 64
             height: root.height
-            color: homeNavArea.containsMouse ? "#313244" : "transparent"   // Mocha "surface0" on hover
+            color: homeNavArea.containsMouse ? Theme.hoverColor : "transparent"
             Text {
                 anchors.centerIn: parent
                 text: qsTr("Home")
-                color: "#cdd6f4"   // Mocha "text"
+                color: Theme.textColor   // themed (T26)
                 font.pixelSize: 12
             }
             MouseArea {
@@ -81,11 +84,11 @@ Rectangle {
         Rectangle {
             width: 72
             height: root.height
-            color: monitorNavArea.containsMouse ? "#313244" : "transparent"
+            color: monitorNavArea.containsMouse ? Theme.hoverColor : "transparent"
             Text {
                 anchors.centerIn: parent
                 text: qsTr("Monitor")
-                color: "#cdd6f4"
+                color: Theme.textColor
                 font.pixelSize: 12
             }
             MouseArea {
@@ -100,11 +103,11 @@ Rectangle {
         Rectangle {
             width: 72
             height: root.height
-            color: settingsNavArea.containsMouse ? "#313244" : "transparent"
+            color: settingsNavArea.containsMouse ? Theme.hoverColor : "transparent"
             Text {
                 anchors.centerIn: parent
                 text: qsTr("Settings")
-                color: "#cdd6f4"
+                color: Theme.textColor
                 font.pixelSize: 12
             }
             MouseArea {
@@ -123,16 +126,46 @@ Rectangle {
         anchors.bottom: parent.bottom
         spacing: 0
 
+        // ── Theme switcher (T26) ───────────────────────────────────────────
+        // Compact dropdown; selecting an entry calls Theme.setTheme(), which
+        // re-evaluates every bound color in the app instantly. Closed-state is
+        // styled to match the titlebar; the popup uses the default Qt style.
+        ComboBox {
+            id: themeBox
+            model: Theme.themes
+            // Keep the selection in sync with the active theme, including when
+            // it is changed elsewhere (T28 persistence restore, future hotkeys).
+            currentIndex: Theme.themes.indexOf(Theme.currentTheme)
+            onActivated: Theme.setTheme(currentText)
+
+            implicitWidth: 108
+            height: root.height
+
+            // Transparent at rest, hover surface when moused — matches the nav
+            // buttons' hover treatment for a consistent titlebar feel.
+            background: Rectangle {
+                color: themeBox.hovered ? Theme.hoverColor : "transparent"
+            }
+            contentItem: Text {
+                text: themeBox.displayText
+                color: Theme.textColor
+                font.pixelSize: 12
+                verticalAlignment: Text.AlignVCenter
+                leftPadding: 10
+                rightPadding: themeBox.indicator ? themeBox.indicator.width : 0
+            }
+        }
+
         // Minimize button
         Rectangle {
             width: 46
             height: root.height
-            color: minimizeArea.containsMouse ? "#313244" : "transparent"
+            color: minimizeArea.containsMouse ? Theme.hoverColor : "transparent"
 
             Text {
                 anchors.centerIn: parent
                 text: "\u2014"   // em dash — a clean single-line minimize glyph
-                color: "#cdd6f4"
+                color: Theme.textColor
                 font.pixelSize: 14
             }
             MouseArea {
@@ -147,13 +180,14 @@ Rectangle {
         Rectangle {
             width: 46
             height: root.height
-            color: closeArea.containsMouse ? "#f38ba8" : "transparent"
+            color: closeArea.containsMouse ? Theme.closeHoverColor : "transparent"
 
             Text {
                 anchors.centerIn: parent
                 text: "\u2715"   // ✕ heavy multiplication X
-                // Invert contrast when the close button turns red on hover.
-                color: closeArea.containsMouse ? "#1e1e2e" : "#cdd6f4"
+                // Invert contrast when the close button turns red on hover:
+                // bg-colored glyph on the close-hover surface.
+                color: closeArea.containsMouse ? Theme.bgColor : Theme.textColor
                 font.pixelSize: 13
             }
             MouseArea {

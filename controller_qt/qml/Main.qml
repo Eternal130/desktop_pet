@@ -28,7 +28,9 @@ ApplicationWindow {
     visible: true
     title: qsTr("Desktop Pet Controller (Qt)")
     flags: Qt.FramelessWindowHint | Qt.Window
-    color: "#1e1e2e"   // Catppuccin Mocha "base" — dark window background
+    // Window background binds to the global Theme singleton (T26); swapping the
+    // theme re-renders this instantly. Theme is registered under DesktopPet.
+    color: Theme.bgColor
 
     // ── Page switching entry point (called by TitleBar nav buttons) ─────────
     // Maps a page name ("welcome" | "instance" | "settings" | "monitor") to

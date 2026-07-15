@@ -95,6 +95,7 @@ qt_add_qml_module(desktop-pet-controller-qt
     URI DesktopPet
     VERSION 1.0
     QML_FILES
+        qml/Theme.qml
         qml/Main.qml
         qml/TitleBar.qml
         qml/ResizeHandles.qml

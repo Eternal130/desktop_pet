@@ -257,3 +257,49 @@ if(WIN32)
 endif()
 
 add_test(NAME MessageDispatcherTest COMMAND MessageDispatcherTest)
+
+# Protocol typed factories (T9): 9 startup-salvo builders + set_hit_areas +
+# shutdown, each wrapping createCommand with the exact payload fields from
+# interface.md §5. The test recompiles Protocol.cpp + Envelope.cpp directly
+# (same pattern as EnvelopeTest/MessageDispatcherTest — no shared lib yet).
+# Links Qt6::Core + Qt6::Test + spdlog (the test asserts Envelope invariants;
+# spdlog is linked for parity with the other network-layer tests so LOG_* is
+# available if Protocol.cpp ever grows instrumentation). QTEST_APPLESS_MAIN —
+# no event loop needed; the builders are pure functions.
+qt_add_executable(ProtocolFactoryTest ProtocolFactoryTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(ProtocolFactoryTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(ProtocolFactoryTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(ProtocolFactoryTest PRIVATE
+    PROTOCOL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/protocol"
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET ProtocolFactoryTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:ProtocolFactoryTest>"
+            COMMENT "Running windeployqt for ProtocolFactoryTest")
+    else()
+        message(WARNING "windeployqt not found; ProtocolFactoryTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME ProtocolFactoryTest COMMAND ProtocolFactoryTest)

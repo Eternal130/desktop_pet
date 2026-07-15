@@ -537,3 +537,61 @@ if(WIN32)
 endif()
 
 add_test(NAME PathResolveTest COMMAND PathResolveTest)
+
+# ProcessManager (T13): QProcess wrapper managing the renderer process
+# lifecycle — start with CLI args, pump stdout/stderr to spdlog, emit
+# exited(code, crashed) on finish. The test has two tiers: unit (CLI args
+# construction + initial state, no renderer needed) and integration (launches
+# the REAL renderer, asserts `ready` via WsServer, verifies stdout pump + crash
+# detection). The integration tier QSKIPs at runtime if the renderer binary is
+# absent and carries the REQUIRES_RENDERER label for ctest filtering.
+#
+# Recompiles ProcessManager.cpp + WsServer.cpp + PathResolve.cpp + Envelope.cpp
+# directly (same pattern as the other tests — no shared lib yet). Links
+# Qt6::Core + Qt6::Network + Qt6::WebSockets (WsServer integration cases) +
+# Qt6::Test + spdlog (LOG_* macros in ProcessManager/PathResolve/WsServer).
+# QTEST_MAIN (NOT APPLESS) — QProcess + QSignalSpy::wait need the event loop.
+qt_add_executable(ProcessManagerTest ProcessManagerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ProcessManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PathResolve.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(ProcessManagerTest PRIVATE
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
+target_include_directories(ProcessManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(ProcessManagerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
+    BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so the Core/Network/WebSockets/Test
+# DLLs must sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET ProcessManagerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:ProcessManagerTest>"
+            COMMENT "Running windeployqt for ProcessManagerTest")
+    else()
+        message(WARNING "windeployqt not found; ProcessManagerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME ProcessManagerTest COMMAND ProcessManagerTest)
+# REQUIRES_RENDERER label lets ctest filter this out of headless/CI runs where
+# no display or renderer binary is present (the integration tier also QSKIPs at
+# runtime if the renderer binary is absent; the unit tier always runs).
+set_tests_properties(ProcessManagerTest PROPERTIES LABELS "REQUIRES_RENDERER")

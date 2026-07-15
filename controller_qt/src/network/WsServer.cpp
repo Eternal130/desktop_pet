@@ -63,6 +63,18 @@ quint16 WsServer::serverPort() const
     return m_server ? m_server->serverPort() : 0;
 }
 
+bool WsServer::sendText(const QString& text)
+{
+    if (!m_activeConnection) {
+        LOG_WARN("WsServer: sendText with no active connection ({} bytes dropped)",
+                 text.size());
+        return false;
+    }
+    const qint64 written = m_activeConnection->sendTextMessage(text);
+    LOG_DEBUG("WsServer: sent {} bytes (queued {})", text.size(), written);
+    return written > 0;
+}
+
 bool WsServer::isOriginAcceptable(const QString& origin)
 {
     // Empty origin = non-browser client (the renderer) — acceptable. Only

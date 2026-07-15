@@ -170,3 +170,46 @@ if(WIN32)
 endif()
 
 add_test(NAME WsServerTest COMMAND WsServerTest)
+
+# PoC integration test (T6): runs the desktop-pet-controller-qt-poc binary as a
+# subprocess and asserts the full WS↔renderer round-trip completes (exit 0 +
+# "PoC SUCCESS"). The PoC + renderer binaries live in build/bin/, NOT next to
+# this test exe, so BIN_OUTPUT_DIR is baked at compile time to locate them
+# regardless of CWD (same PROTOCOL_FIXTURES_DIR pattern). The test links only
+# Qt6::Core + Qt6::Test: it launches the PoC via QProcess, not via WsServer.
+qt_add_executable(PoCIntegrationTest PoCIntegrationTest.cpp)
+target_link_libraries(PoCIntegrationTest PRIVATE Qt6::Core Qt6::Test)
+target_compile_definitions(PoCIntegrationTest PRIVATE
+    BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
+
+# windeployqt for the test exe on Windows (ctest launches with Qt's bin NOT on
+# PATH, so Qt6Core.dll/Qt6Test.dll must sit next to it). QT_WINDEPLOYQT_EXE is
+# found+cached by the ProtocolFixturesTest block above; fall back to a fresh
+# lookup if ordering ever changes.
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET PoCIntegrationTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:PoCIntegrationTest>"
+            COMMENT "Running windeployqt for PoCIntegrationTest")
+    else()
+        message(WARNING "windeployqt not found; PoCIntegrationTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME PoCIntegrationTest COMMAND PoCIntegrationTest)
+# REQUIRES_RENDERER label lets ctest filter this out of headless/CI runs where
+# no display or renderer binary is present (the test also QSKIPs at runtime if
+# either binary is absent).
+set_tests_properties(PoCIntegrationTest PROPERTIES LABELS "REQUIRES_RENDERER")

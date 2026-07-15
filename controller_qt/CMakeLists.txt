@@ -82,6 +82,55 @@ qt_add_qml_module(desktop-pet-controller-qt
         qml/Main.qml
 )
 
+# ── Phase 0 PoC (task T6) ───────────────────────────────────────────────────
+# A SEPARATE console executable with its own main(). It drives the real C++
+# renderer through the full WS round-trip (ready → load_model → model_loaded →
+# shutdown → exit 0) as a Wave 1 milestone proof. QCoreApplication (NOT
+# QGuiApplication): the PoC has no GUI; the renderer opens its own GLFW window.
+qt_add_executable(desktop-pet-controller-qt-poc
+    src/poc_main.cpp
+    src/network/Envelope.cpp
+    src/network/WsServer.cpp
+    src/logging/Logging.cpp
+)
+target_link_libraries(desktop-pet-controller-qt-poc PRIVATE
+    Qt6::Core
+    Qt6::Network
+    Qt6::WebSockets
+    spdlog::spdlog
+)
+target_include_directories(desktop-pet-controller-qt-poc PRIVATE src)
+target_compile_definitions(desktop-pet-controller-qt-poc PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+set_target_properties(desktop-pet-controller-qt-poc PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${_bin_output_dir}"
+    WIN32_EXECUTABLE OFF  # console app — stdout must reach the terminal
+)
+
+# windeployqt for the PoC binary (Qt6Core.dll etc. next to the exe). build.py's
+# build_qt() runs windeployqt only on the main app; the PoC gets its own deploy
+# step here so it runs standalone from build/bin/.
+if(WIN32)
+    get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+    find_program(QT_WINDEPLOYQT_EXE_POC
+        NAMES windeployqt
+        HINTS "${_qt_bin_dir}"
+        NO_DEFAULT_PATH)
+    if(QT_WINDEPLOYQT_EXE_POC)
+        add_custom_command(TARGET desktop-pet-controller-qt-poc POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE_POC}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:desktop-pet-controller-qt-poc>"
+            COMMENT "Running windeployqt for desktop-pet-controller-qt-poc")
+    else()
+        message(WARNING "windeployqt not found under ${_qt_bin_dir}; "
+                        "the PoC binary may not run standalone on Windows.")
+    endif()
+endif()
+
 # enable_testing() is present so QTest targets under tests/ register via
 # add_subdirectory(tests) without touching this file again.
 enable_testing()

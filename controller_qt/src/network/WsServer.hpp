@@ -52,6 +52,13 @@ public:
     // The port currently being listened on, or 0 when not listening.
     quint16 serverPort() const;
 
+    // Send a text frame to the active connection. Returns true if a connection
+    // is active and the bytes were queued for send, false if no connection is
+    // active. The PoC (T6) and later command dispatchers use this to push
+    // command envelopes to the renderer. Forwarded to
+    // QWebSocket::sendTextMessage on m_activeConnection.
+    bool sendText(const QString& text);
+
 signals:
     // Emitted when a text frame is received and successfully parsed into an
     // Envelope. Invalid JSON / invalid envelopes are silently dropped (§2.4).

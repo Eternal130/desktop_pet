@@ -12,10 +12,15 @@ import DesktopPet
 // placeholder pages (Welcome / InstanceDetail / Settings / Monitor). TitleBar
 // nav buttons call root.switchPage(name), which delegates to pageStack.
 //
-// z-order: ResizeHandles (z=2) sits above TitleBar (z=1) so the 6px top edge
-// strip takes precedence over the titlebar drag in the y=0..6 overlap zone;
-// the rest of the titlebar (y=6..32) drags the window. StackView sits at z=0
-// (default) below both, anchored below the 32px titlebar.
+// T25 (Phase 4.3): Sidebar (200px, instance-list shell) is anchored to the
+// left edge below the titlebar; the StackView's leftMargin clears it so the
+// page body fills only the remaining space.
+//
+// z-order: ResizeHandles (z=2) sits above TitleBar (z=1) / Sidebar (z=1) so
+// the 6px top edge strip takes precedence over the titlebar drag in the y=0..6
+// overlap zone; the rest of the titlebar (y=6..32) drags the window. Sidebar
+// shares z=1 with TitleBar but they never overlap (titlebar y=0..32, sidebar
+// starts at y=32). StackView sits at z=0 (default) below all three.
 ApplicationWindow {
     id: root
     width: 1200
@@ -40,11 +45,13 @@ ApplicationWindow {
         }
     }
 
-    // Page area: fills the window below the 32px titlebar.
+    // Page area: fills the window to the right of the sidebar, below the
+    // 32px titlebar. leftMargin clears the 200px Sidebar (T25).
     StackView {
         id: pageStack
         anchors.fill: parent
         anchors.topMargin: 32   // clear the custom titlebar
+        anchors.leftMargin: 200 // clear the sidebar (T25)
 
         initialItem: welcomePageComp
 
@@ -54,6 +61,12 @@ ApplicationWindow {
         Component { id: instanceDetailPageComp;   InstanceDetailPage {} }
         Component { id: settingsPageComp;         SettingsPage {} }
         Component { id: monitorPageComp;          MonitorPage {} }
+    }
+
+    // Left sidebar — instance list shell (T25). Empty model for now; Phase 5
+    // wires the real instance CRUD flow.
+    Sidebar {
+        z: 1
     }
 
     // Custom titlebar at the top.

@@ -98,6 +98,7 @@ qt_add_qml_module(desktop-pet-controller-qt
         qml/Main.qml
         qml/TitleBar.qml
         qml/ResizeHandles.qml
+        qml/Sidebar.qml
         qml/pages/WelcomePage.qml
         qml/pages/InstanceDetailPage.qml
         qml/pages/SettingsPage.qml

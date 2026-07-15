@@ -758,3 +758,52 @@ if(WIN32)
 endif()
 
 add_test(NAME InstanceConfigTest COMMAND InstanceConfigTest)
+
+# PanelConfig (T19): the 12-field persisted panel UI-state config model —
+# snake_case JSON serde for JavaFX interop. panelConfigToJson / panelConfigFromJson
+# / defaultPanelConfig. Missing fields merge from struct defaults; unknown fields
+# are silently ignored (interface.md §1.5); garbage/empty/mistyped JSON returns a
+# default-constructed PanelConfig without throwing. instance_ids is a JSON array
+# of strings ↔ QStringList. Consumed by T21 (PanelStateManager) and T28
+# (window-state restore).
+#
+# The test recompiles PanelConfig.cpp directly (same pattern as the other tests
+# — no shared lib yet). Links Qt6::Core + Qt6::Test + spdlog (PanelConfig.cpp
+# includes logging/Logging.hpp which references the SPDLOG_* macros; spdlog is
+# statically linked, no extra DLL). QTEST_APPLESS_MAIN — QJsonObject/QJsonArray
+# manipulation is synchronous, no event loop needed.
+qt_add_executable(PanelConfigTest PanelConfigTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PanelConfig.cpp)
+target_link_libraries(PanelConfigTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(PanelConfigTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(PanelConfigTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must sit
+# next to it). QT_WINDEPLOYQT_EXE is found+cached by the ProtocolFixturesTest
+# block above; fall back to a fresh lookup if ordering ever changes. spdlog is
+# statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET PanelConfigTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:PanelConfigTest>"
+            COMMENT "Running windeployqt for PanelConfigTest")
+    else()
+        message(WARNING "windeployqt not found; PanelConfigTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME PanelConfigTest COMMAND PanelConfigTest)

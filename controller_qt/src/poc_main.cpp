@@ -60,6 +60,11 @@ public:
         }
         LOG_INFO("PoC: WsServer listening on 127.0.0.1:{}", kPort);
 
+        // T8: register the token BEFORE starting the renderer so gate c passes
+        // when the renderer connects (blueprint §3.3 — register-before-start to
+        // avoid a race where the renderer connects before the token is mapped).
+        m_server.registerToken(0, m_token);
+
         connect(&m_server, &WsServer::messageReceived, this, &PoCDriver::onMessage);
         connect(&m_server, &WsServer::connectionStateChanged,
                 this, &PoCDriver::onConnectionStateChanged);

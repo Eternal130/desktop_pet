@@ -22,9 +22,25 @@
 WsServer::WsServer(QObject* parent)
     : QObject(parent)
     , m_server(new QWebSocketServer(QStringLiteral("desktop-pet-controller"),
-                                    QWebSocketServer::NonSecureMode, this))
+                                     QWebSocketServer::NonSecureMode, this))
+    , m_readyTimer(new QTimer(this))
 {
     connect(m_server, &QWebSocketServer::newConnection, this, &WsServer::onNewConnection);
+    // handshake.md §4: close the connection if `ready` does not arrive within
+    // the timeout. Single-shot — (re)armed in onNewConnection after acceptance,
+    // stopped on ready (onTextMessageReceived) / disconnect / server close.
+    m_readyTimer->setSingleShot(true);
+    connect(m_readyTimer, &QTimer::timeout, this, [this]() {
+        LOG_ERROR("WsServer: ready timeout — closing connection (no ready event within {}ms)",
+                  m_readyTimeoutMs);
+        if (m_activeConnection) {
+            m_activeConnection->close(QWebSocketProtocol::CloseCodeNormal,
+                                      QStringLiteral("ready timeout"));
+            m_activeConnection->deleteLater();
+            m_activeConnection = nullptr;
+        }
+        emit connectionStateChanged(WsConnectionState::Disconnected, m_lastConnectionInfo);
+    });
 }
 
 WsServer::~WsServer()
@@ -46,6 +62,7 @@ bool WsServer::listen(quint16 port)
 
 void WsServer::close()
 {
+    m_readyTimer->stop();
     if (m_activeConnection) {
         m_activeConnection->close(QWebSocketProtocol::CloseCodeNormal,
                                   QStringLiteral("server shutdown"));
@@ -61,6 +78,23 @@ void WsServer::close()
 quint16 WsServer::serverPort() const
 {
     return m_server ? m_server->serverPort() : 0;
+}
+
+void WsServer::registerToken(int instanceId, const QString& token)
+{
+    m_tokens.insert(instanceId, token);
+    LOG_INFO("WsServer: registered token for instance_id={} ({} hex chars)",
+             instanceId, token.size());
+}
+
+void WsServer::removeToken(int instanceId)
+{
+    m_tokens.remove(instanceId);
+}
+
+void WsServer::setReadyTimeoutMs(int ms)
+{
+    m_readyTimeoutMs = ms;
 }
 
 bool WsServer::sendText(const QString& text)
@@ -136,33 +170,68 @@ void WsServer::onNewConnection()
     if (!socket)
         return;
 
-    // Origin guard first (blueprint §3.3 gate a): reject browser origins.
+    // Gate a — Origin guard (blueprint §3.3): reject browser origins first so a
+    // browser probe can never reach the instance_id/token checks.
     const QString origin = socket->origin();
     if (!isOriginAcceptable(origin)) {
-        LOG_WARN("WsServer: rejecting connection, origin='{}'", origin.toStdString());
-        // 4001 is an application-defined close code (not in the standard enum),
-        // so it must be cast into QWebSocketProtocol::CloseCode.
+        LOG_WARN("WsServer: rejecting connection (gate a), origin='{}'",
+                 origin.toStdString());
         socket->close(static_cast<QWebSocketProtocol::CloseCode>(4001),
                       QStringLiteral("origin rejected"));
         emit connectionRejected(4001, QStringLiteral("origin rejected"));
-        // Schedule deletion once the close handshake completes the disconnect,
-        // so the 4001 Close frame is actually sent before teardown.
+        // Delete once the close handshake completes so the 4001 frame is sent.
         connect(socket, &QWebSocket::disconnected, socket, &QWebSocket::deleteLater);
         return;
     }
 
-    // Single-connection management: replace any existing connection (close 1000).
+    // Parse query params for gates b + c.
+    ConnectionInfo info;
+    parseQueryParams(socket, info);
+
+    // Gate b — instance_id must be present and parse as an integer.
+    // parseQueryParams sets hasQueryParams=false if instance_id is absent OR
+    // toInt() failed (ok=false); foundInstance is only true on a clean parse.
+    if (!info.hasQueryParams || info.instanceId < 0) {
+        LOG_WARN("WsServer: rejecting connection (gate b): invalid instance_id "
+                 "(hasQueryParams={}, instanceId={})",
+                 info.hasQueryParams, info.instanceId);
+        socket->close(static_cast<QWebSocketProtocol::CloseCode>(4000),
+                      QStringLiteral("invalid instance_id"));
+        emit connectionRejected(4000, QStringLiteral("invalid instance_id"));
+        connect(socket, &QWebSocket::disconnected, socket, &QWebSocket::deleteLater);
+        return;
+    }
+
+    // Gate c — token must match the registered token for this instance_id.
+    const auto it = m_tokens.constFind(info.instanceId);
+    const bool registered = (it != m_tokens.constEnd());
+    const bool tokenOk = registered && (*it == info.token);
+    if (!tokenOk) {
+        LOG_WARN("WsServer: rejecting connection (gate c): token mismatch "
+                 "(instance_id={}, registered={})", info.instanceId, registered);
+        socket->close(static_cast<QWebSocketProtocol::CloseCode>(4002),
+                      QStringLiteral("token mismatch"));
+        emit connectionRejected(4002, QStringLiteral("token mismatch"));
+        connect(socket, &QWebSocket::disconnected, socket, &QWebSocket::deleteLater);
+        return;
+    }
+
+    // All 3 gates passed. Replace any existing connection (close 1000). A
+    // rejected connection above never reaches here, so a bad probe cannot evict
+    // a good active connection. Phase 0-4 keeps a single active connection
+    // regardless of instance_id; multi-instance is Phase 5+.
+    //
+    // We close() but do NOT deleteLater() here: the old socket's acceptance-time
+    // `disconnected → deleteLater` connection cleans it up AFTER the close
+    // handshake completes, so the peer actually receives the 1000 Close frame
+    // (destroying the socket too early yields an abnormal 1005 close).
     if (m_activeConnection) {
         LOG_INFO("WsServer: replacing existing connection (close 1000)");
         m_activeConnection->close(QWebSocketProtocol::CloseCodeNormal,
                                   QStringLiteral("replaced"));
-        m_activeConnection->deleteLater();
         m_activeConnection = nullptr;
     }
 
-    // Query-param extraction (instance_id existence + token match is T8).
-    ConnectionInfo info;
-    parseQueryParams(socket, info);
     m_lastConnectionInfo = info;
 
     connect(socket, &QWebSocket::textMessageReceived, this, &WsServer::onTextMessageReceived);
@@ -173,6 +242,10 @@ void WsServer::onNewConnection()
     LOG_INFO("WsServer: connection accepted (instance_id={}, token_len={})",
              info.instanceId, info.token.size());
     emit connectionStateChanged(WsConnectionState::Connected, info);
+
+    // Start the ready-timeout (handshake.md §4): the renderer must send `ready`
+    // within m_readyTimeoutMs or the connection is closed by the timer.
+    m_readyTimer->start(m_readyTimeoutMs);
 }
 
 void WsServer::onTextMessageReceived(const QString& text)
@@ -190,14 +263,31 @@ void WsServer::onTextMessageReceived(const QString& text)
         LOG_WARN("WsServer: dropped invalid envelope");
         return;
     }
+    // handshake.md §3.1: the renderer sends `ready` immediately after the WS
+    // upgrade. Receiving it stops the ready-timeout.
+    if (opt->type == QLatin1String("event")
+        && opt->action == QLatin1String("ready")) {
+        if (m_readyTimer->isActive()) {
+            m_readyTimer->stop();
+            LOG_INFO("WsServer: ready received, ready-timeout stopped");
+        }
+    }
     emit messageReceived(*opt);
 }
 
 void WsServer::onDisconnected()
 {
     auto* socket = qobject_cast<QWebSocket*>(sender());
-    if (socket && socket == m_activeConnection)
+    // Only react when the ACTIVE connection disconnects. A replaced (old) socket
+    // also fires disconnected, but by then m_activeConnection points at the new
+    // socket — emitting Disconnected here would clobber the just-emitted
+    // Connected for the replacement (caught by the T8 replace test).
+    if (socket && socket == m_activeConnection) {
         m_activeConnection = nullptr;
-    LOG_INFO("WsServer: connection disconnected");
-    emit connectionStateChanged(WsConnectionState::Disconnected, m_lastConnectionInfo);
+        m_readyTimer->stop();
+        LOG_INFO("WsServer: active connection disconnected");
+        emit connectionStateChanged(WsConnectionState::Disconnected, m_lastConnectionInfo);
+    } else {
+        LOG_INFO("WsServer: non-active socket disconnected (replaced or rejected)");
+    }
 }

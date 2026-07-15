@@ -44,6 +44,9 @@ void WsServerTest::testResourceNameContainsQueryParams()
     const quint16 port = server.serverPort();
     QVERIFY2(port != 0, "OS should auto-assign a non-zero port");
 
+    // T8: gate c requires the token to be registered before connect.
+    server.registerToken(42, QStringLiteral("deadbeef"));
+
     QWebSocket client;
     QSignalSpy connectedSpy(&server, &WsServer::connectionStateChanged);
     client.open(QUrl(QStringLiteral("ws://127.0.0.1:%1/?instance_id=42&token=deadbeef")
@@ -104,6 +107,9 @@ void WsServerTest::testMessageRoundTrip()
     WsServer server;
     QVERIFY(server.listen(0));
     const quint16 port = server.serverPort();
+
+    // T8: gate c requires the token to be registered before connect.
+    server.registerToken(7, QStringLiteral("cafef00d"));
 
     QWebSocket client;
     QSignalSpy serverConnectedSpy(&server, &WsServer::connectionStateChanged);

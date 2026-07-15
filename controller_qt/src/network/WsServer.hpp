@@ -1,9 +1,11 @@
 #pragma once
 
+#include <QMap>
 #include <QObject>
-#include <QWebSocketServer>
-#include <QWebSocket>
 #include <QString>
+#include <QTimer>
+#include <QWebSocket>
+#include <QWebSocketServer>
 #include "network/Envelope.hpp"
 
 // Connection states emitted by connectionStateChanged.
@@ -25,16 +27,24 @@ struct ConnectionInfo {
     QString rawResourceName;     // verbatim QWebSocket::resourceName() — R1 observability
 };
 
-// WebSocket Server (T5). Binds 127.0.0.1 only (NEVER 0.0.0.0), parses the
+// WebSocket Server (T5 + T8). Binds 127.0.0.1 only (NEVER 0.0.0.0), parses the
 // connection query string for instance_id/token via QWebSocket::resourceName(),
-// enforces the Origin guard (close 4001 for browser-style origins), maintains a
-// single active connection, and emits parsed Envelopes from inbound text frames.
+// and enforces the full 3-gate token handshake (blueprint §3.3):
+//   gate a — Origin guard  : browser-style http(s):// origins → close 4001
+//   gate b — instance_id   : missing / non-integer instance_id → close 4000
+//   gate c — token         : token != registered token for instance_id → close 4002
+// A connection is accepted only after all three gates pass. Tokens are
+// pre-registered via registerToken() BEFORE the renderer process starts (avoids
+// a race where the renderer connects before the token is in the map).
 //
-// The full 3-gate token handshake (instance_id existence, token match) arrives
-// in T8; this task wires only the Origin guard + query extraction so the PoC
-// (T6) can run with a known-good token. Close codes (interface.md appendix):
+// After acceptance a 10s ready-timeout (handshake.md §4) starts; if the `ready`
+// event is not received the connection is closed. A single active connection is
+// maintained — a new validated connection replaces the old (close 1000).
+// Close codes (interface.md appendix):
 //   1000 = normal close (incl. replaced by a newer connection)
+//   4000 = missing / non-integer instance_id query param
 //   4001 = Origin rejected (browser connection)
+//   4002 = token does not match the registered token
 class WsServer : public QObject {
     Q_OBJECT
 public:
@@ -59,6 +69,19 @@ public:
     // QWebSocket::sendTextMessage on m_activeConnection.
     bool sendText(const QString& text);
 
+    // Token registry (T8). Register a token for an instance id BEFORE the
+    // renderer process starts — gate c rejects any connection whose token does
+    // not match the registered value for its instance_id. removeToken clears an
+    // entry (e.g. on instance teardown).
+    void registerToken(int instanceId, const QString& token);
+    void removeToken(int instanceId);
+
+    // Test hook: override the ready-timeout duration (default 10000ms per
+    // handshake.md §4). Tests pass a short value (e.g. 200) so the
+    // ready-timeout case runs fast instead of blocking 10s. Production code
+    // never calls this.
+    void setReadyTimeoutMs(int ms);
+
 signals:
     // Emitted when a text frame is received and successfully parsed into an
     // Envelope. Invalid JSON / invalid envelopes are silently dropped (§2.4).
@@ -80,6 +103,16 @@ private:
     QWebSocketServer* m_server;
     QWebSocket* m_activeConnection = nullptr; // single active connection
     ConnectionInfo m_lastConnectionInfo;
+
+    // Token registry (T8 gate c): instance_id → expected token. Populated via
+    // registerToken() before the renderer starts.
+    QMap<int, QString> m_tokens;
+
+    // Ready-timeout (handshake.md §4). Single-shot; (re)started whenever a
+    // connection is accepted, stopped on `ready` / disconnect / server close.
+    // Fires → close the connection (renderer never said ready).
+    QTimer* m_readyTimer;
+    int m_readyTimeoutMs = 10000;
 
     // Parse the query string from QWebSocket::resourceName(). Returns true if
     // instance_id and token were both found. The raw resource name is copied to

@@ -303,3 +303,47 @@ if(WIN32)
 endif()
 
 add_test(NAME ProtocolFactoryTest COMMAND ProtocolFactoryTest)
+
+# 3-gate token handshake + connection management (T8). Exercises the full
+# handshake (Origin 4001 / instance_id 4000 / token 4002 / good creds /
+# connection-replace 1000 / ready-timeout) with a real QWebSocket client against
+# a real WsServer on 127.0.0.1 with an OS-assigned port. Recompiles WsServer.cpp
+# + Envelope.cpp directly (same pattern as WsServerTest — no shared lib yet).
+# Links Qt6::WebSockets + Qt6::Network (server + in-test client) + spdlog (LOG_*).
+# QTEST_MAIN — needs the event loop that QSignalSpy::wait pumps.
+qt_add_executable(HandshakeTest HandshakeTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(HandshakeTest PRIVATE
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
+target_include_directories(HandshakeTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(HandshakeTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (ctest launches with Qt's bin NOT on
+# PATH, so the WebSockets/Network DLLs must sit next to it). QT_WINDEPLOYQT_EXE
+# is found+cached by the ProtocolFixturesTest block above; fall back to a fresh
+# lookup if ordering ever changes.
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET HandshakeTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:HandshakeTest>"
+            COMMENT "Running windeployqt for HandshakeTest")
+    else()
+        message(WARNING "windeployqt not found; HandshakeTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME HandshakeTest COMMAND HandshakeTest)

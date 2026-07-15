@@ -42,6 +42,7 @@ set(_bin_output_dir "${PROJECT_SOURCE_DIR}/../build/bin")
 qt_add_executable(desktop-pet-controller-qt
     src/main.cpp
     src/network/Envelope.cpp
+    src/network/WsServer.cpp
     src/logging/Logging.cpp
 )
 
@@ -59,6 +60,8 @@ target_include_directories(desktop-pet-controller-qt PRIVATE src)
 target_link_libraries(desktop-pet-controller-qt PRIVATE
     Qt6::Core
     Qt6::Gui
+    Qt6::Network
+    Qt6::WebSockets
     Qt6::Qml
     Qt6::Quick
     spdlog::spdlog

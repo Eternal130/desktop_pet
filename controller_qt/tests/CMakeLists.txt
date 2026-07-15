@@ -127,3 +127,46 @@ if(WIN32)
 endif()
 
 add_test(NAME LoggingTest COMMAND LoggingTest)
+
+# WsServer (T5): real QWebSocketServer + QWebSocket client loop on 127.0.0.1
+# with an OS-assigned port. The test recompiles WsServer.cpp + Envelope.cpp
+# directly (controller_qt has no shared lib yet, same pattern as EnvelopeTest).
+# Needs Qt6::WebSockets (both server and the in-test QWebSocket client) plus
+# Qt6::Network (transitive). Uses QTEST_MAIN (QCoreApplication) — WebSocket I/O
+# needs the event loop that QSignalSpy::wait pumps; QTEST_APPLESS_MAIN cannot.
+qt_add_executable(WsServerTest WsServerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(WsServerTest PRIVATE
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
+target_include_directories(WsServerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(WsServerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so the WebSockets/Network DLLs must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the ProtocolFixturesTest
+# block above; fall back to a fresh lookup if the ordering ever changes.
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET WsServerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:WsServerTest>"
+            COMMENT "Running windeployqt for WsServerTest")
+    else()
+        message(WARNING "windeployqt not found; WsServerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME WsServerTest COMMAND WsServerTest)

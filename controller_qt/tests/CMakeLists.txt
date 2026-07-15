@@ -659,3 +659,53 @@ add_test(NAME StartupSalvoTest COMMAND StartupSalvoTest)
 # no display or renderer binary is present (the integration tier also QSKIPs at
 # runtime if the renderer binary is absent; the unit tier always runs).
 set_tests_properties(StartupSalvoTest PROPERTIES LABELS "REQUIRES_RENDERER")
+
+# ConfigDir (T17): cross-platform config directory manager — configDir() /
+# instancesDir() / logsDir() accessors + ensureDirectories(basePath) tree
+# creator. The accessor paths are home-relative and use '/' on every platform
+# (byte-for-byte compatible with the JavaFX controller's
+# `user.home + "/.config/desktop-pet/"`). ensureDirectories accepts an
+# injectable base path so the tree-creation behavior is exercised against a
+# QTemporaryDir without touching the user's real ~/.config/desktop-pet.
+#
+# The test recompiles ConfigDir.cpp directly (same pattern as the other tests —
+# no shared lib yet). Links Qt6::Core + Qt6::Test + spdlog (ConfigDir.cpp
+# includes logging/Logging.hpp which references the SPDLOG_* macros — the LOG_WARN
+# branch in ensureDirectories routes through spdlog's default logger when
+# Logging::init() has not been called). QTEST_APPLESS_MAIN — QTemporaryDir +
+# QDir::exists() + QString::contains() are synchronous, no event loop needed.
+qt_add_executable(ConfigDirTest ConfigDirTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
+target_link_libraries(ConfigDirTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(ConfigDirTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(ConfigDirTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET ConfigDirTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:ConfigDirTest>"
+            COMMENT "Running windeployqt for ConfigDirTest")
+    else()
+        message(WARNING "windeployqt not found; ConfigDirTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME ConfigDirTest COMMAND ConfigDirTest)

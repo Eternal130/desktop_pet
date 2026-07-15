@@ -51,6 +51,7 @@ qt_add_executable(desktop-pet-controller-qt
     src/core/PathResolve.cpp
     src/core/ProcessManager.cpp
     src/core/StartupSalvo.cpp
+    src/core/ConfigDir.cpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES

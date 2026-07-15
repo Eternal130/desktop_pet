@@ -439,3 +439,52 @@ if(WIN32)
 endif()
 
 add_test(NAME EventRegistryTest COMMAND EventRegistryTest)
+
+# Thread marshaling (T12): WS I/O → Qt main thread. ThreadMarshal.hpp is a
+# header-only template (marshalToMain + ASSERT_MAIN_THREAD), so this test
+# exercises it via WsServer → MessageDispatcher integration. The test
+# recompiles WsServer.cpp + MessageDispatcher.cpp + Envelope.cpp directly
+# (same pattern as the other network-layer tests — no shared lib yet).
+# Links Qt6::WebSockets + Qt6::Network (the WS integration case spins a real
+# QWebSocket client) + spdlog (LOG_* macros used by WsServer/MessageDispatcher).
+# QTEST_MAIN (NOT APPLESS) — marshalToMain posts a queued event that only the
+# QCoreApplication event loop delivers; QSignalSpy::wait / QTest::qWaitFor pump
+# that loop. This is the Wave 2 capstone test (T12, 11th test).
+qt_add_executable(ThreadMarshalTest ThreadMarshalTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/MessageDispatcher.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(ThreadMarshalTest PRIVATE
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
+target_include_directories(ThreadMarshalTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(ThreadMarshalTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so the WebSockets/Network DLLs must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET ThreadMarshalTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:ThreadMarshalTest>"
+            COMMENT "Running windeployqt for ThreadMarshalTest")
+    else()
+        message(WARNING "windeployqt not found; ThreadMarshalTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME ThreadMarshalTest COMMAND ThreadMarshalTest)

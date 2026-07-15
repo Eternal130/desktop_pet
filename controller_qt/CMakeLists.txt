@@ -53,6 +53,7 @@ qt_add_executable(desktop-pet-controller-qt
     src/core/StartupSalvo.cpp
     src/core/ConfigDir.cpp
     src/core/InstanceConfig.cpp
+    src/core/InstanceConfigManager.cpp
     src/core/PanelConfig.cpp
 )
 

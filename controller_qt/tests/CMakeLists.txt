@@ -857,3 +857,53 @@ if(WIN32)
 endif()
 
 add_test(NAME InstanceConfigManagerTest COMMAND InstanceConfigManagerTest)
+
+# PanelStateManager (T21): panel.json load/save + legacy panel-state.json
+# migration. Five behaviors: fresh→defaults-written, existing-panel.json-load,
+# legacy-migration (panel.json + instances/*.json created, old file → .bak),
+# unparseable-legacy→defaults+preserved, save→load round-trip. Recompiles
+# PanelStateManager.cpp + PanelConfig.cpp + InstanceConfig.cpp +
+# InstanceConfigManager.cpp + ConfigDir.cpp directly (same pattern as the other
+# core tests — no shared lib yet). Links Qt6::Core + Qt6::Test + spdlog
+# (PanelStateManager.cpp includes logging/Logging.hpp which references the
+# SPDLOG_* macros; spdlog is statically linked, no extra DLL). QTEST_APPLESS_MAIN
+# — QSaveFile / QFile / QDir are synchronous, no event loop needed.
+qt_add_executable(PanelStateManagerTest PanelStateManagerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PanelStateManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PanelConfig.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
+target_link_libraries(PanelStateManagerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(PanelStateManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(PanelStateManagerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET PanelStateManagerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:PanelStateManagerTest>"
+            COMMENT "Running windeployqt for PanelStateManagerTest")
+    else()
+        message(WARNING "windeployqt not found; PanelStateManagerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME PanelStateManagerTest COMMAND PanelStateManagerTest)

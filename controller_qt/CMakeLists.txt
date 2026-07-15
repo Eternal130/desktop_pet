@@ -55,6 +55,7 @@ qt_add_executable(desktop-pet-controller-qt
     src/core/InstanceConfig.cpp
     src/core/InstanceConfigManager.cpp
     src/core/PanelConfig.cpp
+    src/core/PanelStateManager.cpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES

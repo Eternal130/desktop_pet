@@ -347,3 +347,49 @@ if(WIN32)
 endif()
 
 add_test(NAME HandshakeTest COMMAND HandshakeTest)
+
+# PendingRequests (T10): the pending-request table — expectResponse installs a
+# per-entry single-shot QTimer (10s default / interface.md §7.2), handleResponse
+# completes the matching entry by id (wired from MessageDispatcher's response
+# handler), and a missing response times out. The test recompiles
+# PendingRequests.cpp + Envelope.cpp directly (same pattern as
+# MessageDispatcherTest — no shared lib yet). Links Qt6::Core + Qt6::Test +
+# spdlog (LOG_* macros + CapturingSink for the unknown-id WARN assertion).
+# QTEST_MAIN (NOT APPLESS) — QTimer requires the QCoreApplication event loop
+# that QSignalSpy::wait pumps for the timeout test.
+qt_add_executable(PendingRequestsTest PendingRequestsTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/PendingRequests.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(PendingRequestsTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(PendingRequestsTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(PendingRequestsTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET PendingRequestsTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:PendingRequestsTest>"
+            COMMENT "Running windeployqt for PendingRequestsTest")
+    else()
+        message(WARNING "windeployqt not found; PendingRequestsTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME PendingRequestsTest COMMAND PendingRequestsTest)

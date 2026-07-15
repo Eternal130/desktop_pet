@@ -393,3 +393,49 @@ if(WIN32)
 endif()
 
 add_test(NAME PendingRequestsTest COMMAND PendingRequestsTest)
+
+# EventRegistry (T11): thin convenience wrapper over MessageDispatcher exposing
+# registerEventHandler / unregisterEventHandler / registerDefaults (default
+# log-only handler for ALL 13 protocol events from interface.md §4.1). The test
+# recompiles EventRegistry.cpp + MessageDispatcher.cpp + Envelope.cpp directly
+# (same pattern as MessageDispatcherTest — no shared lib yet). Links Qt6::Core
+# + Qt6::Test + spdlog (LOG_* macros + CapturingSink for the registerDefaults
+# assertion). QTEST_APPLESS_MAIN — no event loop needed; dispatch() is called
+# synchronously as a plain method through the registry's dispatcher dependency.
+qt_add_executable(EventRegistryTest EventRegistryTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/EventRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/MessageDispatcher.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(EventRegistryTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(EventRegistryTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(EventRegistryTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET EventRegistryTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:EventRegistryTest>"
+            COMMENT "Running windeployqt for EventRegistryTest")
+    else()
+        message(WARNING "windeployqt not found; EventRegistryTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME EventRegistryTest COMMAND EventRegistryTest)

@@ -46,6 +46,7 @@ qt_add_executable(desktop-pet-controller-qt
     src/network/WsServer.cpp
     src/network/MessageDispatcher.cpp
     src/network/PendingRequests.cpp
+    src/network/EventRegistry.cpp
     src/logging/Logging.cpp
 )
 

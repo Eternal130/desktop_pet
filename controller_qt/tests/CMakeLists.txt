@@ -213,3 +213,47 @@ add_test(NAME PoCIntegrationTest COMMAND PoCIntegrationTest)
 # no display or renderer binary is present (the test also QSKIPs at runtime if
 # either binary is absent).
 set_tests_properties(PoCIntegrationTest PROPERTIES LABELS "REQUIRES_RENDERER")
+
+# MessageDispatcher (T7): pure-logic router — type-based dispatch (response→
+# responseHandler, event→ handler keyed by action, command→ warn), handler
+# isolation (try/catch around every handler), and the §7.3 pseudo-response rule
+# (stats_state/layout_state route by ACTION, never by id). The test recompiles
+# MessageDispatcher.cpp + Envelope.cpp directly (controller_qt has no shared
+# lib yet, same pattern as the other tests). Links Qt6::Core + Qt6::Test +
+# spdlog (LOG_* macros). QTEST_APPLESS_MAIN — no event loop needed; dispatch()
+# is called synchronously as a plain method.
+qt_add_executable(MessageDispatcherTest MessageDispatcherTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/MessageDispatcher.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(MessageDispatcherTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(MessageDispatcherTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(MessageDispatcherTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must sit
+# next to it). QT_WINDEPLOYQT_EXE is found+cached by the ProtocolFixturesTest
+# block above; fall back to a fresh lookup if ordering ever changes.
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET MessageDispatcherTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:MessageDispatcherTest>"
+            COMMENT "Running windeployqt for MessageDispatcherTest")
+    else()
+        message(WARNING "windeployqt not found; MessageDispatcherTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME MessageDispatcherTest COMMAND MessageDispatcherTest)

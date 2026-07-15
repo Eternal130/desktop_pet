@@ -43,6 +43,7 @@ qt_add_executable(desktop-pet-controller-qt
     src/main.cpp
     src/network/Envelope.cpp
     src/network/WsServer.cpp
+    src/network/MessageDispatcher.cpp
     src/logging/Logging.cpp
 )
 

@@ -709,3 +709,52 @@ if(WIN32)
 endif()
 
 add_test(NAME ConfigDirTest COMMAND ConfigDirTest)
+
+# InstanceConfig (T18): the 28-field persisted instance config model — snake_case
+# JSON serde for JavaFX interop. instanceConfigToJson / instanceConfigFromJson /
+# defaultInstanceConfig. Missing fields merge from struct defaults; unknown
+# fields are silently ignored (interface.md §1.5); garbage/empty/mistyped JSON
+# returns a default-constructed InstanceConfig without throwing. Consumed by
+# T20 (InstanceConfigManager) and T28 (window-state restore); supersedes the
+# minimal InstanceConfigLike view that StartupSalvo (T16) used provisionally.
+#
+# The test recompiles InstanceConfig.cpp directly (same pattern as the other
+# tests — no shared lib yet). Links Qt6::Core + Qt6::Test + spdlog
+# (InstanceConfig.cpp includes logging/Logging.hpp which references the
+# SPDLOG_* macros; spdlog is statically linked, no extra DLL). QTEST_APPLESS_MAIN
+# — QJsonObject manipulation is synchronous, no event loop needed.
+qt_add_executable(InstanceConfigTest InstanceConfigTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp)
+target_link_libraries(InstanceConfigTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(InstanceConfigTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(InstanceConfigTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET InstanceConfigTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:InstanceConfigTest>"
+            COMMENT "Running windeployqt for InstanceConfigTest")
+    else()
+        message(WARNING "windeployqt not found; InstanceConfigTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME InstanceConfigTest COMMAND InstanceConfigTest)

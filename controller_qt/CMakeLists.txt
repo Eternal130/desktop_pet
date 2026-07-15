@@ -87,6 +87,10 @@ target_compile_definitions(desktop-pet-controller-qt PRIVATE
 
 # QML module. Main.qml is auto-registered as type "Main" under URI DesktopPet,
 # loadable via QQmlApplicationEngine::loadFromModule("DesktopPet", "Main").
+# T24: pages/ holds the 4 StackView placeholder pages. qt_add_qml_module
+# flattens subdirectory paths — each file's basename becomes its registered
+# type name, so WelcomePage.qml is usable as `WelcomePage {}` after
+# `import DesktopPet`.
 qt_add_qml_module(desktop-pet-controller-qt
     URI DesktopPet
     VERSION 1.0
@@ -94,6 +98,10 @@ qt_add_qml_module(desktop-pet-controller-qt
         qml/Main.qml
         qml/TitleBar.qml
         qml/ResizeHandles.qml
+        qml/pages/WelcomePage.qml
+        qml/pages/InstanceDetailPage.qml
+        qml/pages/SettingsPage.qml
+        qml/pages/MonitorPage.qml
 )
 
 # ── Phase 0 PoC (task T6) ───────────────────────────────────────────────────

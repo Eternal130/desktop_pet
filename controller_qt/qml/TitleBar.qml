@@ -47,6 +47,75 @@ Rectangle {
         font.weight: Font.Medium
     }
 
+    // ── Page navigation buttons (horizontally centered) ───────────────────
+    // T24: top-level page switcher. Each button calls the host window's
+    // switchPage(name), defined in Main.qml, which replaces the StackView's
+    // top item. InstanceDetail is intentionally absent here — it is reached
+    // from within Welcome (per-instance entry), not from global nav.
+    Row {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        spacing: 0
+
+        // Home → Welcome page
+        Rectangle {
+            width: 64
+            height: root.height
+            color: homeNavArea.containsMouse ? "#313244" : "transparent"   // Mocha "surface0" on hover
+            Text {
+                anchors.centerIn: parent
+                text: qsTr("Home")
+                color: "#cdd6f4"   // Mocha "text"
+                font.pixelSize: 12
+            }
+            MouseArea {
+                id: homeNavArea
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: root.Window.window.switchPage("welcome")
+            }
+        }
+
+        // Monitor → Monitor page
+        Rectangle {
+            width: 72
+            height: root.height
+            color: monitorNavArea.containsMouse ? "#313244" : "transparent"
+            Text {
+                anchors.centerIn: parent
+                text: qsTr("Monitor")
+                color: "#cdd6f4"
+                font.pixelSize: 12
+            }
+            MouseArea {
+                id: monitorNavArea
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: root.Window.window.switchPage("monitor")
+            }
+        }
+
+        // Settings → Settings page
+        Rectangle {
+            width: 72
+            height: root.height
+            color: settingsNavArea.containsMouse ? "#313244" : "transparent"
+            Text {
+                anchors.centerIn: parent
+                text: qsTr("Settings")
+                color: "#cdd6f4"
+                font.pixelSize: 12
+            }
+            MouseArea {
+                id: settingsNavArea
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: root.Window.window.switchPage("settings")
+            }
+        }
+    }
+
     // ── Window control buttons (right side) ──────────────────────────────
     Row {
         anchors.right: parent.right

@@ -226,3 +226,5 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | [项目目录结构](./engineering/project-structure.md) | 渲染引擎/控制面板/完整目录结构 | ✅ 持续更新 |
 | [开发环境与代码规范](./engineering/coding-standards.md) | IDE、代码风格、Git 规范 | ✅ 已确定 |
 | [测试策略](./engineering/testing.md) | 单元测试、集成测试、端到端测试 | ✅ 持续更新 |
+| [控制面板技术栈调研](./research/control-panel-tech-stack.md) | 下一代控制面板技术栈选型调研（Qt/Avalonia/Slint/Flutter/Compose MP/GTK4 对比） | ✅ 2026-07 调研完成 |
+| [控制面板分步开发方案](./controller/development-plan.md) | 10 阶段开发路线图（技术栈无关，含 Qt/Slint 实现要点） | ✅ 2026-07 规划完成 |

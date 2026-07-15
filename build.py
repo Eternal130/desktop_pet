@@ -4,8 +4,9 @@
 Usage:
     python build.py                        # Interactive mode
     python build.py renderer               # Build renderer only
-    python build.py controller             # Build controller only
-    python build.py renderer controller    # Build both
+    python build.py controller             # Build controller only (JavaFX)
+    python build.py qt                     # Build Qt controller only
+    python build.py renderer controller    # Build multiple
     python build.py all                    # Build all
 
 Environment requirements documented in BUILD.md.
@@ -26,6 +27,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 RENDERER_DIR = PROJECT_ROOT / "renderer"
 CONTROLLER_DIR = PROJECT_ROOT / "controller"
+CONTROLLER_QT_DIR = PROJECT_ROOT / "controller_qt"
 BUILD_DIR = PROJECT_ROOT / "build"
 BIN_DIR = BUILD_DIR / "bin"
 THIRD_PARTY_DIR = (
@@ -42,6 +44,16 @@ THIRD_PARTY_DIR = (
 GLEW_VERSION = "2.2.0"
 GLFW_VERSION = "3.4"
 IS_WINDOWS = platform.system() == "Windows"
+
+# Qt toolchain (Windows only). The Qt controller MUST compile/link against
+# Qt's bundled MinGW, NOT the system/Git MinGW used by the renderer. These two
+# MinGW runtimes are distinct; see controller_qt/README.md (MinGW toolchain
+# isolation) and the AGENTS.md "MinGW PATH" pitfall.
+if IS_WINDOWS:
+    QT_MINGW_BIN = r"C:\Qt\Tools\mingw1310_64\bin"
+    QT_PREFIX_PATH = r"C:\Qt\6.10.0\mingw_64"
+    QT_WINDEPLOYQT = Path(QT_PREFIX_PATH) / "bin" / "windeployqt.exe"
+    QT_NINJA_EXE = Path(r"C:\Qt\Tools\ninja\ninja.exe")
 
 
 # ── Output helpers ─────────────────────────────────────────────────
@@ -334,11 +346,108 @@ def build_controller():
     return True
 
 
+# ── Build: Controller Qt ───────────────────────────────────────────
+
+def _get_qt_env():
+    """Build env for the Qt controller subprocess.
+
+    On Windows, PREPENDS Qt's bundled MinGW (C:\\Qt\\Tools\\mingw1310_64) and
+    Qt's Ninja so they win over the system/Git toolchains, and FILTERS OUT
+    Git's bundled MinGW (\\Git\\mingw64\\bin) entirely. The Qt controller must
+    compile/link against Qt's MinGW runtime, not the renderer's system MinGW —
+    see controller_qt/README.md (MinGW toolchain isolation).
+    """
+    env = os.environ.copy()
+    if IS_WINDOWS:
+        sep = ";"
+        path_dirs = env.get("PATH", "").split(sep)
+        filtered = [d for d in path_dirs if "\\Git\\mingw64\\bin" not in d]
+        prepended = [QT_MINGW_BIN, str(QT_NINJA_EXE.parent)] + filtered
+        env["PATH"] = sep.join(prepended)
+    return env
+
+
+def build_qt():
+    header("Building: Controller Qt (C++ / Qt6 / CMake)")
+
+    if not check_tool("cmake"):
+        error("cmake not found on PATH. Install CMake and add it to PATH.")
+        return False
+
+    env = _get_qt_env()
+
+    if IS_WINDOWS:
+        if QT_NINJA_EXE.exists():
+            generator = "Ninja"
+        else:
+            generator = "MinGW Makefiles"
+        prefix_path = os.environ.get("CMAKE_PREFIX_PATH") or QT_PREFIX_PATH
+    else:
+        generator = "Ninja" if check_tool("ninja") else "Unix Makefiles"
+        prefix_path = os.environ.get("CMAKE_PREFIX_PATH") or ""
+
+    build_subdir = BUILD_DIR / "controller_qt"
+
+    configure_cmd = [
+        "cmake",
+        "-S", str(CONTROLLER_QT_DIR),
+        "-B", str(build_subdir),
+        "-G", generator,
+        "-DCMAKE_BUILD_TYPE=Release",
+    ]
+    if prefix_path:
+        configure_cmd.append(f"-DCMAKE_PREFIX_PATH={prefix_path}")
+
+    info("Configuring CMake (Qt controller)...")
+    rc = run(configure_cmd, env=env)
+    if rc != 0:
+        error("CMake configuration failed (Qt controller).")
+        return False
+
+    nproc = os.cpu_count() or 4
+    info(f"Building Qt controller with {nproc} parallel jobs...")
+    rc = run(
+        [
+            "cmake",
+            "--build", str(build_subdir),
+            "--config", "Release",
+            f"-j{nproc}",
+        ],
+        env=env,
+    )
+    if rc != 0:
+        error("Qt controller build failed.")
+        return False
+
+    if IS_WINDOWS:
+        exe_path = BIN_DIR / "desktop-pet-controller-qt.exe"
+        qml_dir = CONTROLLER_QT_DIR / "qml"
+        if QT_WINDEPLOYQT.exists():
+            info("Running windeployqt to copy Qt runtime dependencies...")
+            rc = run(
+                [
+                    str(QT_WINDEPLOYQT),
+                    "--qmldir", str(qml_dir),
+                    str(exe_path),
+                ],
+                env=env,
+            )
+            if rc != 0:
+                warn("windeployqt reported errors; the exe may not run standalone.")
+        else:
+            warn(f"windeployqt not found at {QT_WINDEPLOYQT}; exe may not run standalone.")
+
+    suffix = ".exe" if IS_WINDOWS else ""
+    success(f"Controller Qt built → build/bin/desktop-pet-controller-qt{suffix}")
+    return True
+
+
 # ── Interactive mode ───────────────────────────────────────────────
 
 TARGETS = [
     ("renderer",   "C++ 渲染引擎 (desktop-pet-renderer)"),
     ("controller", "Java 控制面板 (desktop-pet-controller.jar)"),
+    ("qt",         "Qt 控制面板 (desktop-pet-controller-qt)"),
 ]
 
 
@@ -378,7 +487,7 @@ def interactive_select():
                     error(f"Invalid option: {p}")
                     valid = False
                     break
-            elif p in ("renderer", "controller"):
+            elif p in ("renderer", "controller", "qt"):
                 selected.append(p)
             elif p == "all":
                 return [name for name, _ in TARGETS]
@@ -396,6 +505,7 @@ def interactive_select():
 BUILDERS = {
     "renderer": build_renderer,
     "controller": build_controller,
+    "qt": build_qt,
 }
 
 
@@ -407,9 +517,9 @@ def main():
     parser.add_argument(
         "targets",
         nargs="*",
-        choices=["renderer", "controller", "all"],
+        choices=["renderer", "controller", "qt", "all"],
         metavar="TARGET",
-        help="renderer | controller | all",
+        help="renderer | controller | qt | all",
     )
     args = parser.parse_args()
 

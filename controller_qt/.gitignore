@@ -1,0 +1,29 @@
+# In-tree build output (canonical builds go to ../build/controller_qt, which
+# is covered by the root .gitignore `build/` rule — this only guards against
+# accidental local configuration).
+build/
+build-*/
+
+# CMake / tooling artifacts
+compile_commands.json
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake.user*
+
+# Qt Creator / IDE
+*.user
+*.user.*
+*.qtc
+*.qtc.user*
+.idea/
+.vscode/
+
+# Object / binary litter
+*.o
+*.obj
+ moc_*
+moc_*.cpp
+ui_*.h
+qrc_*.cpp

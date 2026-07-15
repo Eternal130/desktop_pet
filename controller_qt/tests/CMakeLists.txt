@@ -488,3 +488,52 @@ if(WIN32)
 endif()
 
 add_test(NAME ThreadMarshalTest COMMAND ThreadMarshalTest)
+
+# PathResolve (T14): backend-aware renderer path resolver — "vulkan" maps to
+# desktop-pet-renderer-vulkan, "opengl"/empty/unknown maps to
+# desktop-pet-renderer, with ".exe" appended on Windows (architecture-
+# blueprint.md §9.4). Returns std::nullopt + WARN when the file is missing.
+# Consumed by T13 ProcessManager and T27 welcome-page env detection.
+#
+# The test recompiles PathResolve.cpp directly (same pattern as the other
+# tests — no shared lib yet). Links Qt6::Core + Qt6::Test + spdlog (LOG_WARN
+# macro in PathResolve.cpp routes through spdlog's default logger when
+# Logging::init() has not been called — sufficient for the missing-file WARN).
+# QTEST_APPLESS_MAIN — QTemporaryDir + QFile::exists() are synchronous, no
+# event loop needed; defaultRendererDir() (which needs QCoreApplication) is
+# not exercised because its result depends on the test binary's location.
+qt_add_executable(PathResolveTest PathResolveTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PathResolve.cpp)
+target_link_libraries(PathResolveTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(PathResolveTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(PathResolveTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET PathResolveTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:PathResolveTest>"
+            COMMENT "Running windeployqt for PathResolveTest")
+    else()
+        message(WARNING "windeployqt not found; PathResolveTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME PathResolveTest COMMAND PathResolveTest)

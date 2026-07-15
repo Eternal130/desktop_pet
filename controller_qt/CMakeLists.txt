@@ -48,6 +48,7 @@ qt_add_executable(desktop-pet-controller-qt
     src/network/PendingRequests.cpp
     src/network/EventRegistry.cpp
     src/logging/Logging.cpp
+    src/core/PathResolve.cpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES

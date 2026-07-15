@@ -85,3 +85,45 @@ if(WIN32)
 endif()
 
 add_test(NAME EnvelopeTest COMMAND EnvelopeTest)
+
+# Logging infrastructure (T2): spdlog rotating-file logger + qInstallMessageHandler
+# bridge. The test recompiles the production Logging.cpp directly (controller_qt
+# has no shared library yet, same pattern as EnvelopeTest). spdlog::spdlog comes
+# from the FetchContent block in the parent CMakeLists.txt and is visible here.
+# Uses QTEST_MAIN (QCoreApplication) because qInfo() needs an app to route
+# through the installed message handler.
+qt_add_executable(LoggingTest LoggingTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/logging/Logging.cpp)
+target_link_libraries(LoggingTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(LoggingTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+# Match the main app: LOG_DEBUG (SPDLOG_DEBUG) must be live in the test too.
+target_compile_definitions(LoggingTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH). QT_WINDEPLOYQT_EXE is found+cached
+# by the ProtocolFixturesTest block above; fall back to a fresh lookup if the
+# ordering ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET LoggingTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:LoggingTest>"
+            COMMENT "Running windeployqt for LoggingTest")
+    else()
+        message(WARNING "windeployqt not found; LoggingTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME LoggingTest COMMAND LoggingTest)

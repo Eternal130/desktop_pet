@@ -24,12 +24,25 @@ find_package(Qt6 6.8 COMPONENTS
 
 qt_standard_project_setup()
 
+# spdlog (header option: bundled fmt). Fetched at configure time, so the first
+# configure requires network access; subsequent configures reuse build/_deps/.
+# Used by src/logging/Logging.cpp (rotating file sink + Qt message bridge).
+include(FetchContent)
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG v1.15.0
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(spdlog)
+
 # Executable. Output lands in <root>/build/bin next to the renderer so the
 # WebSocket/port + relative resource paths line up with the rest of the app.
 set(_bin_output_dir "${PROJECT_SOURCE_DIR}/../build/bin")
 qt_add_executable(desktop-pet-controller-qt
     src/main.cpp
     src/network/Envelope.cpp
+    src/logging/Logging.cpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES
@@ -48,7 +61,14 @@ target_link_libraries(desktop-pet-controller-qt PRIVATE
     Qt6::Gui
     Qt6::Qml
     Qt6::Quick
+    spdlog::spdlog
 )
+
+# Force the spdlog *active* macros (SPDLOG_DEBUG/INFO/... which LOG_* wrap) to
+# emit at debug level by default so LOG_DEBUG is live in dev builds. Release
+# builds can override by appending -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO.
+target_compile_definitions(desktop-pet-controller-qt PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
 # QML module. Main.qml is auto-registered as type "Main" under URI DesktopPet,
 # loadable via QQmlApplicationEngine::loadFromModule("DesktopPet", "Main").

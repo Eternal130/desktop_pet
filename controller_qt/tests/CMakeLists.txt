@@ -907,3 +907,58 @@ if(WIN32)
 endif()
 
 add_test(NAME PanelStateManagerTest COMMAND PanelStateManagerTest)
+
+# RobustnessTest (T22): JSON robustness + atomic-write guarantee. The Wave 4
+# capstone test — locks the "degrade gracefully" contract: every config entry
+# point (PanelStateManager::load, InstanceConfigManager::load/loadAll,
+# instanceConfigFromJson, panelConfigFromJson) must NEVER throw on
+# corrupt/truncated/fuzzed input. Three test groups: truncated panel.json →
+# defaults, stale .tmp (simulated crash) → real file unchanged, and a 1000-
+# iteration fuzz harness (random-byte files + random QJsonObjects) with zero
+# exceptions tolerated.
+#
+# The test recompiles the FULL core config stack: InstanceConfigManager +
+# PanelStateManager + PanelConfig + InstanceConfig + ConfigDir (same pattern as
+# PanelStateManagerTest — no shared lib yet). Links Qt6::Core + Qt6::Test +
+# spdlog (the config managers include logging/Logging.hpp which references the
+# SPDLOG_* macros; spdlog is statically linked, no extra DLL). QTEST_APPLESS_MAIN
+# — QFile / QDir / QJsonObject are synchronous, no event loop needed.
+qt_add_executable(RobustnessTest RobustnessTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PanelStateManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PanelConfig.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
+target_link_libraries(RobustnessTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(RobustnessTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(RobustnessTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET RobustnessTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:RobustnessTest>"
+            COMMENT "Running windeployqt for RobustnessTest")
+    else()
+        message(WARNING "windeployqt not found; RobustnessTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME RobustnessTest COMMAND RobustnessTest)

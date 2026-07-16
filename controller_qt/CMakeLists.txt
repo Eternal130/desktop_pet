@@ -24,6 +24,15 @@ find_package(Qt6 6.8 COMPONENTS
 
 qt_standard_project_setup()
 
+# QTP0001 NEW puts QML modules under the ':/qt/qml/<URI>/' resource prefix — the
+# path QQmlApplicationEngine::loadFromModule expects on Qt 6.5+. Without this,
+# clean builds (where CMake reconfigures from scratch) register the module under
+# ':/<URI>/' and loadFromModule fails at runtime with "Module ... contains no
+# type named ...". Incremental builds (T1-T27) masked this because they never
+# reconfigured. This is the fix the T1 learnings flagged as "safe (matches
+# loadFromModule)". QTP0004 stays default/OLD so qmldir stays auto-generated.
+qt_policy(SET QTP0001 NEW)
+
 # spdlog (header option: bundled fmt). Fetched at configure time, so the first
 # configure requires network access; subsequent configures reuse build/_deps/.
 # Used by src/logging/Logging.cpp (rotating file sink + Qt message bridge).
@@ -61,6 +70,11 @@ qt_add_executable(desktop-pet-controller-qt
     # property in main.cpp (not QML_ELEMENT — see EnvironmentChecker.hpp).
     src/core/EnvironmentChecker.cpp
     src/core/EnvironmentChecker.hpp
+    # T28 window-state restore bridge: Q_INVOKABLE saveWindowState called from
+    # Main.qml. Same context-property pattern as EnvironmentChecker (.hpp listed
+    # for AUTOMOC, no QML_ELEMENT).
+    src/core/WindowStateSaver.cpp
+    src/core/WindowStateSaver.hpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES
@@ -96,6 +110,13 @@ target_compile_definitions(desktop-pet-controller-qt PRIVATE
 # flattens subdirectory paths — each file's basename becomes its registered
 # type name, so WelcomePage.qml is usable as `WelcomePage {}` after
 # `import DesktopPet`.
+#
+# Theme.qml is `pragma Singleton` — on clean builds with Qt 6.10 + QTP0001 NEW,
+# the auto-generated qmldir does NOT pick up `pragma Singleton` and registers
+# Theme as a plain component (its instance properties — bgColor, setTheme, … —
+# are then undefined at runtime). The explicit QT_QML_SINGLETON_TYPE property
+# forces the `singleton` keyword in qmldir so Theme works as a singleton.
+set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(desktop-pet-controller-qt
     URI DesktopPet
     VERSION 1.0

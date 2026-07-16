@@ -56,6 +56,11 @@ qt_add_executable(desktop-pet-controller-qt
     src/core/InstanceConfigManager.cpp
     src/core/PanelConfig.cpp
     src/core/PanelStateManager.cpp
+    # T27 welcome-page environment detection. The .hpp is listed so AUTOMOC
+    # reliably processes its Q_OBJECT metadata. Registered as a context
+    # property in main.cpp (not QML_ELEMENT — see EnvironmentChecker.hpp).
+    src/core/EnvironmentChecker.cpp
+    src/core/EnvironmentChecker.hpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES

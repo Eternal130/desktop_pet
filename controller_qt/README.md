@@ -30,7 +30,7 @@ The `qt` target in `build.py`:
 Run the binary directly:
 
 ```bash
-./build/bin/desktop-pet-controller-qt.exe   # shows "Desktop Pet (Qt)" window
+./build/bin/desktop-pet-controller-qt.exe   # launches "Desktop Pet Controller (Qt)" window
 ```
 
 ---

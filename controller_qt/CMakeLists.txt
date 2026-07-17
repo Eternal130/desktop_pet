@@ -18,6 +18,7 @@ find_package(Qt6 6.8 COMPONENTS
     Quick
     QuickControls2
     Concurrent
+    Charts
     Test
     REQUIRED
 )
@@ -65,6 +66,67 @@ qt_add_executable(desktop-pet-controller-qt
     src/core/InstanceConfigManager.cpp
     src/core/PanelConfig.cpp
     src/core/PanelStateManager.cpp
+    # Phase 5 todo 4: pure static .model3.json parser + model-directory
+    # scanner. Consumed by todo 5 (InstanceSession lifecycle: on
+    # model_loaded, parseModelInfo → send set_hit_areas with the parsed
+    # hitAreas) and todo 6 (InstanceDetailPage model ComboBox populated by
+    # scanAvailableModels). Header-only deps: Qt6::Core (QFile/QJson/QDir)
+    # already linked below; no new Qt modules needed.
+    src/core/ModelInfoParser.cpp
+    src/core/ModelScanner.cpp
+    # Phase 5 todo 2: per-instance orchestrator. Owns ProcessManager +
+    # MessageDispatcher + EventRegistry (M2 — NOT shared from main.cpp). The
+    # .hpp is listed so AUTOMOC processes its Q_OBJECT metadata.
+    src/core/InstanceSession.cpp
+    src/core/InstanceSession.hpp
+    src/core/InstanceSessionSetters.cpp
+    # Phase 5 todo 6: Q_INVOKABLE model-metadata accessors + play_motion /
+    # set_expression triggers consumed by InstanceDetailPage.qml. Extracted to
+    # its own TU to keep InstanceSession.cpp under the 250 pure-LOC ceiling
+    # (same split discipline as InstanceSessionSetters.cpp).
+    src/core/InstanceSessionCommands.cpp
+    # Phase 5 todo 8: QTimer-based idle motion scheduler. Single QTimer on the
+    # main thread (D3) drives the cadence; recursive single-shot re-arm
+    # replicates Java's scheduleAtFixedRate. Standalone for todo 8 (tested
+    # independently via SchedulerTest); todo 10 owns a Scheduler inside
+    # InstanceSession and starts it on model_loaded. The .hpp is listed so
+    # AUTOMOC processes its Q_OBJECT + signals metadata.
+    src/core/Scheduler.cpp
+    src/core/Scheduler.hpp
+    # Phase 5 todo 9: hit→play_motion translator. QObject port of Java's
+    # InteractionHandler. 3-tier case-folding lookup (exact → capitalized →
+    # DEFAULT_MAPPINGS lowercased) over an optional per-model ModelConfig.
+    # Standalone for todo 9 (tested independently); todo 10 wires this into
+    # InstanceSession's hit event handler (after MountedBehaviorEngine in
+    # Phase 8). The .hpp is listed so AUTOMOC processes its Q_OBJECT metadata.
+    src/core/InteractionHandler.cpp
+    src/core/InteractionHandler.hpp
+    # Phase 5 todo 10: Wave 6 capstone — HitAreaCacheManager (JSON cache of
+    # modelName→hitAreas at <configDir>/hit_area_cache.json, ported from Java)
+    # + InstanceSessionHandlers (event-handler bodies for hit/drag_end/
+    # motion_finished + startIdleScheduler, extracted to keep InstanceSession.cpp
+    # under the 250 pure-LOC ceiling). Both .hpp files are listed so AUTOMOC
+    # processes their Q_OBJECT metadata.
+    src/core/HitAreaCacheManager.cpp
+    src/core/HitAreaCacheManager.hpp
+    src/core/InstanceSessionHandlers.cpp
+    # Phase 5 Wave 7 todo 12: crash-recovery exponential-backoff scheduler.
+    # QObject owning the per-instance restart-attempt count + the BACKOFF_MS
+    # ladder; port of Java MainWindowController::scheduleRestart. QTimer::
+    # singleShot schedules retry() on the Qt main thread (no extra thread).
+    # Owned by InstanceSession — one RestartController per pet instance, same
+    # ownership pattern as Scheduler / InteractionHandler. The .hpp is listed
+    # so AUTOMOC processes its Q_OBJECT + signals metadata.
+    src/core/RestartController.cpp
+    src/core/RestartController.hpp
+    # Phase 5 todo 3: QAbstractListModel sidebar roster. Owns the
+    # QList<InstanceSession*> and demuxes WsServer messages by instanceId (M2).
+    # Loads on construction in instanceIds order (m4 fix — NOT loadAll's sort).
+    # Persistence is injected via a savePanel callback (m5 fix — decouples from
+    # PanelStateManager for testability). The .hpp is listed so AUTOMOC
+    # processes its Q_OBJECT + Q_ENUM metadata.
+    src/core/InstanceManager.cpp
+    src/core/InstanceManager.hpp
     # T27 welcome-page environment detection. The .hpp is listed so AUTOMOC
     # reliably processes its Q_OBJECT metadata. Registered as a context
     # property in main.cpp (not QML_ELEMENT — see EnvironmentChecker.hpp).
@@ -75,6 +137,84 @@ qt_add_executable(desktop-pet-controller-qt
     # for AUTOMOC, no QML_ELEMENT).
     src/core/WindowStateSaver.cpp
     src/core/WindowStateSaver.hpp
+    # Phase 5 Wave 7 todo 15: QML bridge for PanelConfig's 4 behavior fields
+    # (closeAction, confirmOnExit, startMinimized, autoLaunchSystem). Exposes
+    # them as Q_PROPERTY (READ+WRITE+NOTIFY) so SettingsPage binds two-way;
+    # each setter does load-modify-save via PanelStateManager so the other 8
+    # fields survive unchanged. Registered as the 'panelConfig' context
+    # property in main.cpp. The .hpp is listed so AUTOMOC processes Q_OBJECT.
+    src/core/PanelConfigController.cpp
+    src/core/PanelConfigController.hpp
+    # Phase 5 Wave 7 todo 14: OS auto-launch manager (Windows reg.exe via
+    # QProcess / Linux ~/.config/autostart/desktop-pet.desktop / macOS no-op).
+    # Port of Java util/AutoLaunchManager.java. Injectable suppliers (app-path,
+    # autostart-dir, reg-executor, platform) make it testable without touching
+    # the real registry. Exposed as the 'autoLaunch' context property by
+    # todo 15 (closeAction). First file in src/system/ — the subdir exists for
+    # OS-integration classes (TrayManager also lands here in todo 13).
+    src/system/AutoLaunchManager.cpp
+    src/system/AutoLaunchManager.hpp
+    # Phase 5 Wave 7 todo 13: QSystemTrayIcon wrapper. QtGui-only (works with
+    # QGuiApplication — NO QtWidgets link, NO QMenu). Constructor calls
+    # QGuiApplication::setQuitOnLastWindowClosed(false). Right-click →
+    # requestContextMenu → QML Menu pops (Main.qml); DoubleClick →
+    # visibilityToggled. Icon loaded from :/icons/tray-icon.png with a
+    # generated blue-circle fallback when no .qrc exists (current state).
+    # Exposed as the 'trayManager' context property by main.cpp. The .hpp is
+    # listed so AUTOMOC processes its Q_OBJECT + signals metadata.
+    src/system/TrayManager.cpp
+    src/system/TrayManager.hpp
+    # Phase 5 Wave 8 todo 17: self-resource collection via platform APIs
+    # (replaces Java OSHI). Windows — GetProcessTimes (CPU%, two-sample diff)
+    # + GetProcessMemoryInfo (RSS WorkingSetSize); Linux — /proc/self/stat
+    # (CPU ticks) + /proc/self/status (VmRSS) parsed from scratch (M5 fix —
+    # the renderer's ProcessStatsCollector Linux half is a STUB returning
+    # zeros, NOT a reference). ControllerStats{cpuPercent, rssBytes,
+    # timestampMs} drops the JVM-heap fields (N/A for Qt). Never-throws
+    # contract (§4.8.1) — failed samples zero cpuPercent/rssBytes but always
+    # set timestampMs. Consumed by todo 18 (MonitorPage 2s QTimer poll).
+    # psapi (GetProcessMemoryInfo) linked below on Windows.
+    src/system/ResourceStatsCollector.cpp
+    src/system/ResourceStatsCollector.hpp
+    # Phase 5 Wave 8 todo 19: voice pack protobuf integration. Two pure static
+    # utilities + one data-model header, all header-only-deps (Qt6::Core only,
+    # already linked below). No new Qt modules.
+    #
+    # src/protobuf/bundles.proto is the verbatim schema reference (copied from
+    # controller/src/main/protobuf/bundles.proto). It is NOT compiled — the Qt
+    # port uses a hand-rolled protobuf wire-format reader in MetaMkoParser.cpp
+    # instead of FetchContent'ing libprotobuf + protoc codegen. See
+    # MetaMkoParser.cpp's file-level comment for the full rationale (short:
+    # the .mko schema is 5 messages of scalar fields; a ~150 LOC reader is
+    # cleaner than pulling in protobuf+abseil for an optional Phase 8 feature;
+    # the task spec explicitly allows this fallback). bundles.proto is kept
+    # verbatim so a future task can swap in real protobuf via FetchContent +
+    # protobuf_generate_cpp without touching the schema — the parseMetaMko
+    # → std::optional<VoicePackInfo> public API stays identical.
+    src/core/VoicePackScanner.cpp
+    src/core/MetaMkoParser.cpp
+    # Phase 5 Wave 8 todo 20: MountedBehaviorEngine — the voice-pack behavior
+    # engine that has PRIORITY over InteractionHandler for hit events when a
+    # voice pack is mounted. Default-constructed member of InstanceSession
+    # (= no voice pack → hasGroupForArea always false → falls back to
+    # InteractionHandler). Todo 21 swaps in a populated VoicePackInfo when
+    # the user mounts a pack via the UI. Port of Java's MountedBehaviorEngine
+    # (246 LOC); estimateOggDurationMs is a ~50 LOC heuristic that parses the
+    # OGG container directly (no libvorbis dependency — see the .cpp file-level
+    # comment for the rationale). Header-only-deps: Qt6::Core + Protocol.hpp
+    # (already linked below).
+    src/core/MountedBehaviorEngine.cpp
+    # Phase 5 Wave 8 todo 18: resource-monitor data model + InstanceSession
+    # monitor wiring. MonitorDataModel is the Qt port of Java's
+    # ui/MonitorDataModel.java (copy-on-write ring buffer cap=60 +
+    # mergeController/mergeRenderer/isStale). InstanceSessionMonitor.cpp holds
+    # the 2s QTimer tick + stats_state event handler bodies extracted from
+    # InstanceSession.cpp (same split discipline as Setters/Commands/Handlers).
+    # Qt6::Charts (linked below) is the QML ChartView/LineSeries/ValueAxis
+    # module consumed by MonitorPage.qml's 6 sparkline charts.
+    src/ui/MonitorDataModel.cpp
+    src/ui/MonitorDataModel.hpp
+    src/core/InstanceSessionMonitor.cpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES
@@ -91,10 +231,23 @@ target_include_directories(desktop-pet-controller-qt PRIVATE src)
 target_link_libraries(desktop-pet-controller-qt PRIVATE
     Qt6::Core
     Qt6::Gui
+    # T13 finding: QSystemTrayIcon is PHYSICALLY in QtWidgets on Qt 6.10
+    # (qsystemtrayicon.h includes qtwidgetsglobal.h) despite the Qt docs
+    # implying it moved to QtGui. Linking QtWidgets is REQUIRED to use
+    # QSystemTrayIcon. M3 spirit still respected: we use QGuiApplication
+    # (NOT QApplication), instantiate NO QWidget subclasses, and use NO
+    # QMenu — the QML Menu (Main.qml) is the tray popup. QtWidgets here is
+    # purely a header/symbol dependency for QSystemTrayIcon.
+    Qt6::Widgets
     Qt6::Network
     Qt6::WebSockets
     Qt6::Qml
     Qt6::Quick
+    # Wave 8 todo 18: QtCharts QML module (ChartView, LineSeries, ValueAxis)
+    # consumed by MonitorPage.qml's 6 live resource-monitor sparklines.
+    # windeployqt auto-detects Qt6Charts.dll via the exe's import table — no
+    # --modules charts flag needed in build.py's windeployqt invocation.
+    Qt6::Charts
     spdlog::spdlog
 )
 
@@ -103,6 +256,13 @@ target_link_libraries(desktop-pet-controller-qt PRIVATE
 # builds can override by appending -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO.
 target_compile_definitions(desktop-pet-controller-qt PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# Windows-only system-library link for ResourceStatsCollector (todo 17):
+# GetProcessMemoryInfo lives in Psapi.lib. MinGW ships libpsapi.a so the
+# plain `psapi` link name resolves. No-op on Linux (/proc needs no link).
+if(WIN32)
+    target_link_libraries(desktop-pet-controller-qt PRIVATE psapi)
+endif()
 
 # QML module. Main.qml is auto-registered as type "Main" under URI DesktopPet,
 # loadable via QQmlApplicationEngine::loadFromModule("DesktopPet", "Main").

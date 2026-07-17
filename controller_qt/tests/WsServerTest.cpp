@@ -134,7 +134,10 @@ void WsServerTest::testMessageRoundTrip()
     QVERIFY2(msgSpy.wait(5000), "messageReceived not emitted within 5s");
     QCOMPARE(msgSpy.count(), 1);
 
-    const Envelope received = msgSpy.takeFirst().at(0).value<Envelope>();
+    // Phase 5 todo 11: signal carries (int instanceId, const Envelope&).
+    const QList<QVariant> captured = msgSpy.takeFirst();
+    QCOMPARE(captured.at(0).toInt(), 7);
+    const Envelope received = captured.at(1).value<Envelope>();
     QCOMPARE(received.action, QStringLiteral("load_model"));
     QCOMPARE(received.type, QStringLiteral("command"));
     QCOMPARE(received.payload.value(QStringLiteral("model_path")).toString(),

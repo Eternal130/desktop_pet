@@ -67,6 +67,13 @@ struct InstanceConfig {
     int subtitleAreaHeight = 0;            // 0 = auto
     double subtitleFontSize = 48.0;
     QString subtitleStylePreset = QStringLiteral("默认"); // "default" (Chinese)
+    // Phase 5 Wave 8 todo 21: subtitle auto-adjust mode (font scaling to area).
+    // Bound to the InstanceDetailPage adjust-mode CheckBox; toggled via
+    // InstanceSession::setSubtitleAdjustMode which sends set_subtitle_adjust_mode
+    // (§D.4) + persists. NOTE: added in todo 21 — the Java reference kept this
+    // as runtime-only state (no persisted field); the Qt port persists it so
+    // the user's preference survives restarts. Field count goes 28 → 29.
+    bool subtitleAdjustMode = false;
 
     // Member-wise equality — used by round-trip identity tests (QJsonObject and
     // QString compare by content, so ordering is irrelevant).
@@ -98,7 +105,8 @@ struct InstanceConfig {
             && subtitleAreaWidth == other.subtitleAreaWidth
             && subtitleAreaHeight == other.subtitleAreaHeight
             && subtitleFontSize == other.subtitleFontSize
-            && subtitleStylePreset == other.subtitleStylePreset;
+            && subtitleStylePreset == other.subtitleStylePreset
+            && subtitleAdjustMode == other.subtitleAdjustMode;
     }
 };
 

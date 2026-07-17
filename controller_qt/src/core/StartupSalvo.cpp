@@ -1,5 +1,6 @@
 #include "core/StartupSalvo.hpp"
 
+#include "core/SubtitlePresets.hpp"
 #include "network/Protocol.hpp"
 
 #include <QJsonDocument>
@@ -51,7 +52,8 @@ QStringList StartupSalvo::sendSalvo(const InstanceConfigLike& c) {
     sent.append(sendOne(Protocol::buildSetSubtitleLayout(
         c.subtitleOffsetX, c.subtitleOffsetY,
         c.subtitleAreaWidth, c.subtitleAreaHeight)));
-    sent.append(sendOne(Protocol::buildSetSubtitleStyle()));
+    sent.append(sendOne(Protocol::buildSetSubtitleStyle(
+        SubtitlePresets::mapPresetToStyle(c.subtitleStylePreset))));
 
     SPDLOG_INFO("StartupSalvo: sent {} commands after ready", sent.size());
     return sent;

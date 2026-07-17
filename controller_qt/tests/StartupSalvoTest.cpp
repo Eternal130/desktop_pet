@@ -284,14 +284,14 @@ void StartupSalvoTest::testFullSalvoWithLiveRenderer() {
 
     // Wire the salvo's sender to the live WsServer (production wiring).
     salvo.setCommandSender([&server](const QString& json) {
-        server.sendText(json);
+        server.sendText(0, json);
     });
 
     // Graceful shutdown path — stop() sends shutdown via this hook (T13/T15).
     pm.setShutdownSender([&server]() {
         const QByteArray json =
             serialize(Protocol::buildShutdown()).toJson(QJsonDocument::Compact);
-        server.sendText(QString::fromUtf8(json));
+        server.sendText(0, QString::fromUtf8(json));
     });
 
     QSignalSpy msgSpy(&server, &WsServer::messageReceived);
@@ -367,14 +367,15 @@ bool StartupSalvoTest::waitForAction(QSignalSpy& spy, const char* action,
     t.start();
     while (!t.hasExpired(timeoutMs)) {
         for (int i = 0; i < spy.count(); ++i) {
-            const Envelope env = spy.at(i).at(0).value<Envelope>();
+            // Phase 5 todo 11: signal is (int instanceId, Envelope) — env at [1].
+            const Envelope env = spy.at(i).at(1).value<Envelope>();
             if (env.action == QLatin1String(action))
                 return true;
         }
         QTest::qWait(100);
     }
     for (int i = 0; i < spy.count(); ++i) {
-        const Envelope env = spy.at(i).at(0).value<Envelope>();
+        const Envelope env = spy.at(i).at(1).value<Envelope>();
         if (env.action == QLatin1String(action))
             return true;
     }

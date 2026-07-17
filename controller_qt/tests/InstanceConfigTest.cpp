@@ -29,9 +29,12 @@
 
 namespace {
 
-// Number of fields / serialized keys. Every ground-truth source (blueprint
-// §5.1, the Java record, this struct's own definition) agrees on 28.
-constexpr int kFieldCount = 28;
+// Number of fields / serialized keys. Blueprint §5.1 + the Java record each
+// define 28 fields; the Qt struct added a 29th (subtitle_adjust_mode) in
+// Phase 5 Wave 8 todo 21 — the Java reference kept it as runtime-only state,
+// but the Qt port persists it so the user's adjust-mode preference survives
+// restarts. Every other ground-truth source agrees on the original 28.
+constexpr int kFieldCount = 29;
 
 // Build a config where EVERY field carries a distinctive, non-default value.
 // Used by the round-trip test so a single missed field surfaces immediately.
@@ -68,6 +71,7 @@ InstanceConfig makeFullyPopulated()
     c.subtitleAreaHeight = 120;
     c.subtitleFontSize = 32.0;
     c.subtitleStylePreset = QStringLiteral("终端黑客");
+    c.subtitleAdjustMode = true;
     return c;
 }
 

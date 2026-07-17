@@ -962,3 +962,983 @@ if(WIN32)
 endif()
 
 add_test(NAME RobustnessTest COMMAND RobustnessTest)
+
+# NetworkWiringTest (Phase 5, todo 1): verifies the main.cpp network-stack
+# wiring — constructs WsServer + PendingRequests on the stack (mirrors main.cpp),
+# asserts listen(0) + serverPort()>0, then pushes a synthetic Envelope through a
+# real QWebSocket client and asserts messageReceived fires (QSignalSpy). This is
+# the integration test for the Phase-0-4 gap closure: the network stack is now
+# wired into the real app entry point.
+# Recompiles WsServer.cpp + PendingRequests.cpp + Envelope.cpp directly (same
+# pattern as WsServerTest — no shared lib yet). Links Qt6::WebSockets +
+# Qt6::Network (server + in-test QWebSocket client) + spdlog (LOG_* in WsServer).
+# QTEST_MAIN — WebSocket I/O needs the event loop that QSignalSpy::wait pumps.
+qt_add_executable(NetworkWiringTest NetworkWiringTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/PendingRequests.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(NetworkWiringTest PRIVATE
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
+target_include_directories(NetworkWiringTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(NetworkWiringTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET NetworkWiringTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:NetworkWiringTest>"
+            COMMENT "Running windeployqt for NetworkWiringTest")
+    else()
+        message(WARNING "windeployqt not found; NetworkWiringTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME NetworkWiringTest COMMAND NetworkWiringTest)
+
+# InstanceSessionTest (Phase 5, todo 2): the per-instance orchestrator. Two
+# tiers — unit (no renderer: bogus-path start() → startFailed+error; setters
+# persist+emit; stop() clean) and integration [REQUIRES_RENDERER] (real renderer
+# lifecycle: start→ready→running→stop→stopped; stop() suppresses the teardown
+# crash signal via manuallyStopping). Recompiles InstanceSession.cpp + its full
+# transitive dep chain (ProcessManager, PathResolve, WsServer, Protocol, Envelope,
+# MessageDispatcher, EventRegistry, InstanceConfig) directly (same pattern as the
+# other tests — no shared lib yet). Links Qt6::WebSockets + Qt6::Network (WsServer
+# + integration tier) + Qt6::Test + spdlog. QTEST_MAIN — QSignalSpy::wait /
+# QTest::qWait pump the event loop that QProcess + WS I/O require.
+qt_add_executable(InstanceSessionTest InstanceSessionTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceSession.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionSetters.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionCommands.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionHandlers.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionMonitor.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ProcessManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PathResolve.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/HitAreaCacheManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/RestartController.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/StartupSalvo.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ModelInfoParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ModelScanner.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/Scheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InteractionHandler.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/system/ResourceStatsCollector.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/MonitorDataModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/PendingRequests.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/MessageDispatcher.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/EventRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(InstanceSessionTest PRIVATE
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
+target_include_directories(InstanceSessionTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(InstanceSessionTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
+    BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET InstanceSessionTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:InstanceSessionTest>"
+            COMMENT "Running windeployqt for InstanceSessionTest")
+    else()
+        message(WARNING "windeployqt not found; InstanceSessionTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME InstanceSessionTest COMMAND InstanceSessionTest)
+set_tests_properties(InstanceSessionTest PROPERTIES LABELS "REQUIRES_RENDERER")
+
+# ModelInfoParserTest (Phase 5, todo 4): pure static .model3.json parser —
+# extracts motionGroups (FileReferences.Motions.<group> array lengths),
+# expressions (FileReferences.Expressions[].Name), and hitAreas
+# (HitAreas[].Name). Missing file / corrupt JSON → std::nullopt (never
+# throws). This is the controller-side fallback for the renderer's
+# model_loaded event which returns motions/expressions as EMPTY arrays
+# (interface.md §B). Consumed by todo 5 (InstanceSession model_loaded →
+# set_hit_areas) and todo 6 (InstanceDetailPage UI).
+#
+# Recompiles ModelInfoParser.cpp directly (same pattern as the other core
+# tests — no shared lib yet). Links Qt6::Core + Qt6::Test + spdlog
+# (ModelInfoParser.cpp includes logging/Logging.hpp which references the
+# SPDLOG_* macros; spdlog is statically linked, no extra DLL).
+# QTEST_APPLESS_MAIN — QFile/QJsonDocument are synchronous, no event loop.
+#
+# CUBISM_RESOURCES_DIR is baked at compile time so the test finds the real
+# Hiyori fixture regardless of CWD (same pattern as PROTOCOL_FIXTURES_DIR /
+# BIN_OUTPUT_DIR). The fixture's REAL content (verified at port time):
+# Motions.Idle=9, Motions.TapBody=1, no Expressions field, HitAreas=[Body].
+qt_add_executable(ModelInfoParserTest ModelInfoParserTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ModelInfoParser.cpp)
+target_link_libraries(ModelInfoParserTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(ModelInfoParserTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(ModelInfoParserTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
+    CUBISM_RESOURCES_DIR="${CMAKE_SOURCE_DIR}/../third_party/CubismSdkForNative/Samples/Resources")
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET ModelInfoParserTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:ModelInfoParserTest>"
+            COMMENT "Running windeployqt for ModelInfoParserTest")
+    else()
+        message(WARNING "windeployqt not found; ModelInfoParserTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME ModelInfoParserTest COMMAND ModelInfoParserTest)
+
+# ModelScannerTest (Phase 5, todo 4): pure static model-directory scanner —
+# lists <rendererDir>/Resources/Models/*/ subdirs containing
+# <name>.model3.json, sorted case-insensitively. Missing dir / empty input
+# → empty QStringList (never throws).
+#
+# Recompiles ModelScanner.cpp directly (same pattern). Links Qt6::Core +
+# Qt6::Test + spdlog (ModelScanner.cpp includes logging/Logging.hpp which
+# references the SPDLOG_* macros; spdlog is statically linked).
+# QTEST_APPLESS_MAIN — QDir/QFile are synchronous, no event loop.
+#
+# Test strategy: uses QTemporaryDir to create the EXACT shipped layout
+# (<tmp>/Resources/Models/<Name>/<Name>.model3.json). The real Cubism
+# Samples dir has a different shape (<root>/Resources/<Model>/ — NO "Models"
+# segment), so it cannot be used directly — see the test file's header
+# comment for the full rationale.
+qt_add_executable(ModelScannerTest ModelScannerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ModelScanner.cpp)
+target_link_libraries(ModelScannerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(ModelScannerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(ModelScannerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET ModelScannerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:ModelScannerTest>"
+            COMMENT "Running windeployqt for ModelScannerTest")
+    else()
+        message(WARNING "windeployqt not found; ModelScannerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME ModelScannerTest COMMAND ModelScannerTest)
+
+# InstanceManagerTest (Phase 5, todo 3): the sidebar QAbstractListModel. Four
+# slots — create+persist (instanceIds in creation order through a panel.json
+# round-trip), delete (file gone + panel.json updated + safe no-op on unknown
+# uuid + requestDelete→deleteConfirmed), corrupt-degradation (skip a bad
+# instance file with WARN, load only the valid one, no crash), route (demux a
+# response to the session whose instanceId matches; unknown instanceId → no-op).
+#
+# Recompiles InstanceManager + InstanceSession + its full transitive dep chain
+# (ProcessManager, PathResolve, InstanceConfig/Manager, PanelConfig,
+# PanelStateManager for the savePanel wiring in the test, StartupSalvo,
+# ModelInfoParser, WsServer, Protocol, PendingRequests, MessageDispatcher,
+# EventRegistry, Envelope) directly (same pattern as InstanceSessionTest — no
+# shared lib yet). Links Qt6::WebSockets + Qt6::Network (WsServer) + Qt6::Test
+# + spdlog. QTEST_MAIN — route() touches InstanceSession/WsServer and QSignalSpy
+# over PendingRequests::resolved is safest with a real application. No renderer
+# is launched (createInstance never calls start()), so NO REQUIRES_RENDERER label.
+qt_add_executable(InstanceManagerTest InstanceManagerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceSession.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionSetters.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionCommands.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionHandlers.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionMonitor.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ProcessManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PathResolve.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/HitAreaCacheManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/RestartController.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PanelConfig.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/PanelStateManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/StartupSalvo.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ModelInfoParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ModelScanner.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/Scheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InteractionHandler.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/system/ResourceStatsCollector.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/MonitorDataModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/PendingRequests.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/MessageDispatcher.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/EventRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(InstanceManagerTest PRIVATE
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
+target_include_directories(InstanceManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(InstanceManagerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET InstanceManagerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:InstanceManagerTest>"
+            COMMENT "Running windeployqt for InstanceManagerTest")
+    else()
+        message(WARNING "windeployqt not found; InstanceManagerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME InstanceManagerTest COMMAND InstanceManagerTest)
+
+# SchedulerTest (Phase 5, todo 8): QTimer-based idle motion scheduler. Eight
+# slots covering the blueprint §8.3 contract — cadence (≥3 triggers in 200ms at
+# 50ms interval), pause (flag-only, 0 triggers while paused), resume (triggers
+# resume at cadence), triggerNow (immediate fire + cadence reset, fires even
+# when paused), updateInterval (new interval takes effect immediately),
+# shutdown (no further triggers), emptyIdleMotions (no trigger, no crash),
+# exceptionSurvives (throwing callback swallowed + logged, scheduler survives).
+#
+# The test recompiles Scheduler.cpp directly (same pattern as the other core
+# tests — no shared lib yet). Links Qt6::Core + Qt6::Test + spdlog (Scheduler.cpp
+# includes logging/Logging.hpp which references the SPDLOG_* macros; spdlog is
+# statically linked, no extra DLL). QTEST_MAIN (NOT APPLESS) — QTimer requires
+# the QCoreApplication event loop that QTest::qWait pumps for every cadence
+# assertion. The Scheduler's QTimer is parented to the Scheduler (stack-local
+# per slot) so no cross-slot leakage; each slot calls shutdown() before
+# assertions to stop the timer.
+qt_add_executable(SchedulerTest SchedulerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/Scheduler.cpp)
+target_link_libraries(SchedulerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(SchedulerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(SchedulerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET SchedulerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+            --no-translations
+            --no-system-d3d-compiler
+            --no-opengl-sw
+            --no-quick-import
+            "$<TARGET_FILE:SchedulerTest>"
+            COMMENT "Running windeployqt for SchedulerTest")
+    else()
+        message(WARNING "windeployqt not found; SchedulerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME SchedulerTest COMMAND SchedulerTest)
+
+# InteractionHandlerTest (Phase 5, todo 9): hit→play_motion translator. Six
+# slots locking the 3-tier case-folding lookup (interface.md §F): default
+# head→TapHead, default body→TapBody, case-fold capital ("head"→"Head" match
+# via tier 2), exact-match-wins-over-default precedence, unknown-area no-op,
+# empty/missing-payload no-op. Harness is a capturing messageSender
+# (QStringList) so assertions are on the serialized JSON's parsed structure.
+#
+# The test recompiles InteractionHandler.cpp + Envelope.cpp directly (same
+# pattern as the other core tests — no shared lib yet). Links Qt6::Core +
+# Qt6::Test + spdlog (InteractionHandler.cpp includes logging/Logging.hpp
+# which references the SPDLOG_* macros; spdlog is statically linked, no extra
+# DLL). QTEST_APPLESS_MAIN — pure logic (QJsonObject manipulation + the
+# handler's case-folding lookup), no event loop needed.
+qt_add_executable(InteractionHandlerTest InteractionHandlerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InteractionHandler.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp)
+target_link_libraries(InteractionHandlerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(InteractionHandlerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(InteractionHandlerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET InteractionHandlerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+            --no-translations
+            --no-system-d3d-compiler
+            --no-opengl-sw
+            --no-quick-import
+            "$<TARGET_FILE:InteractionHandlerTest>"
+            COMMENT "Running windeployqt for InteractionHandlerTest")
+    else()
+        message(WARNING "windeployqt not found; InteractionHandlerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME InteractionHandlerTest COMMAND InteractionHandlerTest)
+
+# WsServerMultiTest (Phase 5, todo 11): multi-instance routing. Five slots lock
+# the new multi-connection contract — two concurrent instances route with the
+# correct instanceId, sendText(instanceId, ...) reaches only the right socket,
+# disconnect on one instance leaves the others untouched, a wrong-token probe
+# for an existing instance_id does NOT evict the good connection, and a
+# reconnect with the correct token closes the old socket (1000) and replaces it.
+#
+# Recompiles WsServer.cpp + Envelope.cpp directly (same pattern as WsServerTest
+# / HandshakeTest — no shared lib yet). Links Qt6::WebSockets + Qt6::Network
+# (server + in-test QWebSocket clients) + spdlog (LOG_* in WsServer).
+# QTEST_MAIN (NOT APPLESS) — WsServer + QWebSocket need the QCoreApplication
+# event loop that QSignalSpy::wait pumps.
+qt_add_executable(WsServerMultiTest WsServerMultiTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(WsServerMultiTest PRIVATE
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
+target_include_directories(WsServerMultiTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(WsServerMultiTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET WsServerMultiTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:WsServerMultiTest>"
+            COMMENT "Running windeployqt for WsServerMultiTest")
+    else()
+        message(WARNING "windeployqt not found; WsServerMultiTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME WsServerMultiTest COMMAND WsServerMultiTest)
+
+# AutoLaunchManager (Phase 5 Wave 7 todo 14): OS auto-launch toggle — Windows
+# `reg.exe` add/delete/query on HKCU\...\Run value 'DesktopPet' via QProcess,
+# Linux atomic write/delete of ~/.config/autostart/desktop-pet.desktop, macOS
+# no-op log. Port of Java util/AutoLaunchManager.java. Testability via injected
+# suppliers (app-path, autostart-dir, reg-executor, platform) — every Windows
+# case captures the (program, args) reg.exe invocation via a fake executor and
+# returns a canned exit code; ZERO real registry mutation. Linux cases use
+# QTemporaryDir as the autostart dir. 8 slots cover Windows (enable/isEnabled/
+# disable/reg-fails) + Linux (enable/disable/isEnabled) + unsupported-platform.
+#
+# Recompiles AutoLaunchManager.cpp directly (same pattern as the other tests —
+# no shared lib yet). Links Qt6::Core + Qt6::Test + spdlog (AutoLaunchManager.cpp
+# includes logging/Logging.hpp which references the SPDLOG_* macros; spdlog is
+# statically linked, no extra DLL). QTEST_APPLESS_MAIN — QSaveFile / QFile /
+# QDir / QString are all synchronous; the production default regExecutor IS
+# real QProcess, but tests inject fakes that never spawn anything.
+qt_add_executable(AutoLaunchManagerTest AutoLaunchManagerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/system/AutoLaunchManager.cpp)
+target_link_libraries(AutoLaunchManagerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(AutoLaunchManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(AutoLaunchManagerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET AutoLaunchManagerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:AutoLaunchManagerTest>"
+            COMMENT "Running windeployqt for AutoLaunchManagerTest")
+    else()
+        message(WARNING "windeployqt not found; AutoLaunchManagerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME AutoLaunchManagerTest COMMAND AutoLaunchManagerTest)
+
+# RestartControllerTest (Phase 5 Wave 7, todo 12): crash-recovery backoff.
+# Three slots lock the §8.2 contract — backoff ladder (5 retries fire at
+# increasing delays via QSignalSpy::wait, attempts→5, no gaveUp), gaveUp
+# (the 6th scheduleRestart fires gaveUp synchronously, no 6th retry arms),
+# resetOnConnect (resetting after 3 attempts makes the next scheduleRestart
+# use BACKOFF[0] again, verified by measuring the actual elapsed delay).
+#
+# Production BACKOFF_MS {2,4,8,16,30}s would make the full ladder take ~60s,
+# so every slot installs a fast test ladder via setBackoffForTest
+# ({10,20,30,40,50}ms) — the entire backoff sequence completes in ~150ms.
+#
+# Recompiles RestartController.cpp directly (same pattern as the other core
+# tests — no shared lib yet). Links Qt6::Core + Qt6::Test + spdlog
+# (RestartController.cpp includes logging/Logging.hpp which references the
+# SPDLOG_* macros; spdlog is statically linked, no extra DLL).
+# QTEST_MAIN (NOT APPLESS) — QTimer::singleShot requires the QCoreApplication
+# event loop that QSignalSpy::wait pumps; QTEST_APPLESS_MAIN would silently
+# skip every retry assertion.
+qt_add_executable(RestartControllerTest RestartControllerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/RestartController.cpp)
+target_link_libraries(RestartControllerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(RestartControllerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(RestartControllerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET RestartControllerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:RestartControllerTest>"
+            COMMENT "Running windeployqt for RestartControllerTest")
+    else()
+        message(WARNING "windeployqt not found; RestartControllerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME RestartControllerTest COMMAND RestartControllerTest)
+
+# TrayManagerTest (Phase 5 Wave 7, todo 13): QSystemTrayIcon wrapper.
+# Five slots lock the signal-routing contract:
+#   - testQuitOnLastWindowClosedDisabled: ctor side-effect (the blueprint
+#     §4.1.6 "禁用框架的关闭即退出默认行为" requirement) — verified true
+#     even when no system tray is available (CI/GNOME).
+#   - testMenuActivators: the 3 Q_INVOKABLE menu activators each emit their
+#     signal exactly once (QSignalSpy). Covers the QML Menu items uniformly.
+#   - testActivatedDoubleClickEmitsVisibilityToggled: onActivated(DoubleClick)
+#     → visibilityToggled. QSKIPs gracefully when isAvailable()==false (no
+#     m_tray to route through).
+#   - testActivatedContextEmitsRequestContextMenu: onActivated(Context) →
+#     requestContextMenu. Same QSKIP condition.
+#   - testActivatedTriggerIgnored: Trigger/MiddleClick/Unknown emit NOTHING
+#     (parity with the Java reference).
+#
+# Recompiles TrayManager.cpp directly (same pattern as the other system/
+# tests — no shared lib yet). Links Qt6::Gui (QSystemTrayIcon +
+# QGuiApplication::setQuitOnLastWindowClosed) + Qt6::Test + spdlog
+# (TrayManager.cpp includes logging/Logging.hpp which references the
+# SPDLOG_* macros; spdlog is statically linked, no extra DLL).
+#
+# CUSTOM main() (NOT QTEST_MAIN): the test instantiates QGuiApplication
+# explicitly because QSystemTrayIcon + setQuitOnLastWindowClosed are QtGui
+# APIs that require it. QTEST_MAIN would create only QCoreApplication.
+#
+# Qt6::Widgets linked for the same reason as the main exe (T13 finding):
+# QSystemTrayIcon's header lives in QtWidgets on Qt 6.10 despite the docs.
+qt_add_executable(TrayManagerTest TrayManagerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/system/TrayManager.cpp)
+target_link_libraries(TrayManagerTest PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test spdlog::spdlog)
+target_include_directories(TrayManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(TrayManagerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (Qt6Core.dll / Qt6Gui.dll /
+# Qt6Test.dll must sit next to the exe — ctest runs with Qt's bin NOT on
+# PATH). QT_WINDEPLOYQT_EXE is found+cached by the ProtocolFixturesTest
+# block above; fall back to a fresh lookup if ordering ever changes.
+# spdlog is statically linked (no extra DLL needed).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET TrayManagerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:TrayManagerTest>"
+            COMMENT "Running windeployqt for TrayManagerTest")
+    else()
+        message(WARNING "windeployqt not found; TrayManagerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME TrayManagerTest COMMAND TrayManagerTest)
+
+# ResourceStatsCollectorTest (Phase 5 Wave 8 todo 17): self-resource
+# collection via platform APIs (Win32 GetProcessTimes+GetProcessMemoryInfo;
+# Linux /proc/self/stat+/proc/self/status parsed from scratch — M5 fix).
+# Five slots lock the §4.8.1 contract:
+#   - testCollectReturnsValidTimestamp: timestampMs > 0 on the first sample.
+#   - testFirstSampleCpuIsZero: cpuPercent == 0.0 with no baseline.
+#   - testCpuPercentAfterTwoSamples: 100ms gap → second cpuPercent finite,
+#     [0, 100] (all-cores-saturated scale).
+#   - testRssBytesPositive: rssBytes > 0 for a real running process. On
+#     Linux this doubles as the M5 guard — proves /proc parsing works
+#     rather than the renderer's stub-zero path.
+#   - testFailureNeverThrows: inject NULL handle (Win) / non-existent /proc
+#     path (Linux) → fields zeroed, timestampMs set, no throw escapes.
+#
+# Recompiles ResourceStatsCollector.cpp directly (same pattern as the other
+# system/ tests — no shared lib yet). Links Qt6::Core + Qt6::Test + spdlog
+# (ResourceStatsCollector.cpp includes logging/Logging.hpp which references
+# the SPDLOG_* macros; spdlog is statically linked, no extra DLL). On
+# Windows, `psapi` is also linked (GetProcessMemoryInfo lives in Psapi.lib).
+# QTEST_MAIN (NOT APPLESS) — QTest::qWait (used to separate the two CPU%
+# samples by a real wall-clock gap) requires the QCoreApplication event loop.
+qt_add_executable(ResourceStatsCollectorTest ResourceStatsCollectorTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/system/ResourceStatsCollector.cpp)
+target_link_libraries(ResourceStatsCollectorTest PRIVATE
+    Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(ResourceStatsCollectorTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(ResourceStatsCollectorTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+if(WIN32)
+    target_link_libraries(ResourceStatsCollectorTest PRIVATE psapi)
+endif()
+
+# windeployqt for the test exe on Windows (same need as the other test exes:
+# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
+# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
+# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
+# ever changes. spdlog is statically linked (no extra DLL needed). psapi is
+# a system lib (already in the MinGW toolchain).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET ResourceStatsCollectorTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:ResourceStatsCollectorTest>"
+            COMMENT "Running windeployqt for ResourceStatsCollectorTest")
+    else()
+        message(WARNING "windeployqt not found; ResourceStatsCollectorTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME ResourceStatsCollectorTest COMMAND ResourceStatsCollectorTest)
+
+# VoicePackScannerTest (Phase 5 Wave 8 todo 19): pure static voice-pack
+# directory scanner — lists <rendererDir>/Resources/VoicePacks/*/ subdirs
+# containing meta.mko, sorted case-insensitively, hidden dirs skipped. Six
+# slots: single pack, sorted multiple, filter-no-meta.mko, skip-hidden-dir,
+# nonexistent dir → empty, empty dir → empty. Missing dir / empty input →
+# empty QStringList (never throws).
+#
+# Recompiles VoicePackScanner.cpp directly (same pattern as ModelScannerTest).
+# Links Qt6::Core + Qt6::Test + spdlog (VoicePackScanner.cpp includes
+# logging/Logging.hpp which references the SPDLOG_* macros; spdlog is
+# statically linked). QTEST_APPLESS_MAIN — QDir/QFile are synchronous.
+#
+# Test strategy: QTemporaryDir creates the EXACT shipped layout
+# (<tmp>/Resources/VoicePacks/<Pack>/meta.mko). No real voice-pack fixtures
+# ship under Resources/VoicePacks in the current build, so synthesized
+# fixtures are the only option — same strategy as ModelScannerTest.
+qt_add_executable(VoicePackScannerTest VoicePackScannerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/VoicePackScanner.cpp)
+target_link_libraries(VoicePackScannerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(VoicePackScannerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(VoicePackScannerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET VoicePackScannerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:VoicePackScannerTest>"
+            COMMENT "Running windeployqt for VoicePackScannerTest")
+    else()
+        message(WARNING "windeployqt not found; VoicePackScannerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME VoicePackScannerTest COMMAND VoicePackScannerTest)
+
+# MetaMkoParserTest (Phase 5 Wave 8 todo 19): meta.mko protobuf Bundle parser.
+# Six slots lock the §5.5 contract: valid Bundle → populated VoicePackInfo
+# (meta + groups + modules), actions bucketed by group code, optional lipSync
+# presence (field 5 present → populated, absent → empty), missing file →
+# std::nullopt, corrupt bytes → std::nullopt, empty dir → std::nullopt.
+#
+# Implementation note: the Qt port uses a hand-rolled protobuf wire-format
+# reader (see MetaMkoParser.cpp file-level comment), NOT generated protobuf.
+# The test therefore synthesizes a valid Bundle via a minimal protobuf
+# SERIALIZER in its anonymous namespace (encodeVarint/encodeTag/
+# encodeStringField/encodeMessageField) — the serialized bytes are
+# byte-for-byte identical to what protoc would emit, so the round-trip
+# faithfully proves the reader handles real protobuf wire format.
+#
+# Recompiles MetaMkoParser.cpp directly (same pattern as ModelInfoParserTest).
+# Links Qt6::Core + Qt6::Test + spdlog (MetaMkoParser.cpp includes
+# logging/Logging.hpp which references the SPDLOG_* macros; spdlog is
+# statically linked). QTEST_APPLESS_MAIN — QFile/QByteArray are synchronous.
+qt_add_executable(MetaMkoParserTest MetaMkoParserTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/MetaMkoParser.cpp)
+target_link_libraries(MetaMkoParserTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(MetaMkoParserTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(MetaMkoParserTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET MetaMkoParserTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:MetaMkoParserTest>"
+            COMMENT "Running windeployqt for MetaMkoParserTest")
+    else()
+        message(WARNING "windeployqt not found; MetaMkoParserTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME MetaMkoParserTest COMMAND MetaMkoParserTest)
+
+# SubtitlePresetsTest (Phase 5 Wave 8 todo 21): 15-preset data table ported
+# VERBATIM from Java mapPresetToStyle. Five slots lock the port:
+#   - testPresetNamesHas15Entries: 15 names in Java ComboBox-list order.
+#   - testDefaultPresetMatchesSubtitleStyleDefaults: mapPresetToStyle("默认")
+#     == SubtitleStyle{} (the struct's default initializers).
+#   - testAllNamedPresetsAreDistinct: every named preset differs from 默认 in
+#     at least one field (catches a missed field that silently clones 默认).
+#   - testUnknownPresetReturnsDefault: Java's `default ->` case fallback.
+#   - testB1RegressionGuardAABBGGRR: 赛博霓虹's primaryColor/outlineColor/
+#     shadowColor pinned to the EXACT Java uint32 values (AABBGGRR per
+#     interface.md §1.3, NOT RRGGBBTT despite the Java comment). The Belief-1
+#     regression guard at the preset layer -- ProtocolFactoryTest pins it at
+#     the wire-format layer too.
+#
+# Header-only table (SubtitlePresets.hpp is all inline). The transitive
+# include chain pulls in Protocol.hpp (for SubtitleStyle) + Envelope.hpp,
+# but the test calls ONLY inline functions from SubtitlePresets namespace --
+# no factory or serialize() linkage needed. Same single-.cpp pattern as
+# VoicePackScannerTest/MetaMkoParserTest. Links Qt6::Core + Qt6::Test +
+# spdlog (the include chain references SPDLOG_* macros; spdlog is statically
+# linked, no extra DLL). QTEST_APPLESS_MAIN -- pure data queries, no loop.
+qt_add_executable(SubtitlePresetsTest SubtitlePresetsTest.cpp)
+target_link_libraries(SubtitlePresetsTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(SubtitlePresetsTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(SubtitlePresetsTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET SubtitlePresetsTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:SubtitlePresetsTest>"
+            COMMENT "Running windeployqt for SubtitlePresetsTest")
+    else()
+        message(WARNING "windeployqt not found; SubtitlePresetsTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME SubtitlePresetsTest COMMAND SubtitlePresetsTest)
+
+# MountedBehaviorEngineTest (Phase 5 Wave 8 todo 20): voice-pack behavior engine
+# that routes hit events to play_motion_ext when a voice pack is mounted. Six
+# slots lock the contract:
+#   - testBuildBehaviorCommand: synthetic VoicePackInfo with one head-tap action
+#     (motion + audio + lipSync) → returns a play_motion_ext Envelope with
+#     absolute paths, group priority, fade in/out seconds, subtitle_text +
+#     subtitle_duration (the latter from the OGG heuristic).
+#   - testHasGroupForAreaFalse: unknown area → false; case-insensitive lookup
+#     (HEAD == head).
+#   - testNullVoicePack: default-constructed engine → hasGroupForArea always
+#     false, buildBehaviorCommand returns nullopt (the "engine disabled"
+#     sentinel that InstanceSession's hit handler relies on for the
+#     InteractionHandler fallback).
+#   - testEstimateOggDuration: synthesized OGG-shaped blob (\x01vorbis header +
+#     sample_rate at +12, final OggS page + granule at +6) → exact duration =
+#     granule / sample_rate * 1000. Non-OGG / missing / too-small → fallback
+#     kFallbackDurationMs (5000), NOT 0 or throw.
+#   - testAudioOnly: action with empty motion + non-empty audio →
+#     buildAudioOnlyCommand returns a play_audio Envelope.
+#   - testIsIdleMotionPath: idle-group action's resolved motion path is
+#     recognized; non-matching path returns false.
+#
+# Recompiles MountedBehaviorEngine.cpp + Protocol.cpp + Envelope.cpp directly
+# (MountedBehaviorEngine calls Protocol::buildPlayMotionExt + buildPlayAudio;
+# Protocol calls Envelope's createCommand). Links Qt6::Core + Qt6::Test +
+# spdlog (LOG_* macros). QTEST_APPLESS_MAIN — QFile/QByteArray/QDir are
+# synchronous, no event loop needed.
+qt_add_executable(MountedBehaviorEngineTest MountedBehaviorEngineTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(MountedBehaviorEngineTest PRIVATE
+    Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(MountedBehaviorEngineTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(MountedBehaviorEngineTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET MountedBehaviorEngineTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:MountedBehaviorEngineTest>"
+            COMMENT "Running windeployqt for MountedBehaviorEngineTest")
+    else()
+        message(WARNING "windeployqt not found; MountedBehaviorEngineTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME MountedBehaviorEngineTest COMMAND MountedBehaviorEngineTest)
+
+# OggDurationHeuristicTest (Phase 5 Wave 8 todo 20): extracted from MountedBehaviorEngineTest
+# when that file exceeded the 250 pure-LOC ceiling. The estimateOggDurationMs
+# static method is a self-contained binary-format parser (distinct from the
+# engine API cluster), so it gets its own test file. Three slots lock the
+# heuristic + fallback contract:
+#   - testExactDurationFromSynthesizedOgg: 1s/2s blobs → granule/sample_rate*1000.
+#   - testFallbackOnNonOggContent: non-OGG bytes → kFallbackDurationMs.
+#   - testFallbackOnMissingOrTinyFile: missing / <85 bytes → fallback.
+#
+# Recompiles MountedBehaviorEngine.cpp only (the static method's only dep is
+# Qt6::Core QFile/QByteArray + spdlog LOG_*). No Protocol/Envelope needed
+# (those are only pulled in by the engine's instance methods). Links Qt6::Core
+# + Qt6::Test + spdlog. QTEST_APPLESS_MAIN — QFile/QByteArray are synchronous.
+qt_add_executable(OggDurationHeuristicTest OggDurationHeuristicTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+target_link_libraries(OggDurationHeuristicTest PRIVATE
+    Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(OggDurationHeuristicTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(OggDurationHeuristicTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET OggDurationHeuristicTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:OggDurationHeuristicTest>"
+            COMMENT "Running windeployqt for OggDurationHeuristicTest")
+    else()
+        message(WARNING "windeployqt not found; OggDurationHeuristicTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME OggDurationHeuristicTest COMMAND OggDurationHeuristicTest)
+
+# MonitorDataModelTest (Phase 5 Wave 8 todo 18): resource-monitor ring buffer
+# + merge semantics + stale predicate. Six slots lock the Java reference's
+# (MonitorDataModel.java) contract:
+#   - testRingBufferCap: 65 controller merges → history.size()==60 (FIFO drop).
+#   - testIsStalePredicate: static isStale() boundary cases (never / just-fresh /
+#     1ms-over / negative threshold).
+#   - testMergeRenderer: Linux-stub stats_state payload (gpu/vram JSON null)
+#     parses cleanly, null fields preserved, Q_INVOKABLE getters return -1.0
+#     sentinel, GPU/VRAM chart series skip null samples.
+#   - testMergePreservesOtherSide: controller merge then renderer merge leaves
+#     BOTH halves populated in the latest snapshot (carry-forward rule).
+#   - testClearHistory: clears ring + resets lastRendererUpdateMs to 0, fires
+#     historyCleared signal exactly once.
+#   - testRendererStatsFromJson: Windows full payload / Linux stub / missing
+#     keys / partial payload — fromJson never throws, per-field null tolerance.
+#
+# Recompiles MonitorDataModel.cpp directly (same pattern as the other ui/
+# tests — no shared lib yet). Links Qt6::Core + Qt6::Test + spdlog
+# (MonitorDataModel.cpp's transitive include chain references the SPDLOG_*
+# macros via ResourceStatsCollector.hpp → logging/Logging.hpp; spdlog is
+# statically linked, no extra DLL). ResourceStatsCollector.cpp is NOT
+# recompiled here — MonitorDataModel only uses the ControllerStats struct
+# definition (header-only), it does not call collect(), so no psapi link.
+# QTEST_APPLESS_MAIN — QDateTime + QJsonObject are synchronous, no event loop.
+qt_add_executable(MonitorDataModelTest MonitorDataModelTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/MonitorDataModel.cpp)
+target_link_libraries(MonitorDataModelTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(MonitorDataModelTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(MonitorDataModelTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+# windeployqt for the test exe on Windows (ctest launches with Qt's bin NOT on
+# PATH, so Qt6Core.dll/Qt6Test.dll must sit next to it). QT_WINDEPLOYQT_EXE is
+# found+cached by the ProtocolFixturesTest block above; fall back to a fresh
+# lookup if ordering ever changes. spdlog is statically linked (no extra DLL).
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET MonitorDataModelTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:MonitorDataModelTest>"
+            COMMENT "Running windeployqt for MonitorDataModelTest")
+    else()
+        message(WARNING "windeployqt not found; MonitorDataModelTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME MonitorDataModelTest COMMAND MonitorDataModelTest)

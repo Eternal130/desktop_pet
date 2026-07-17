@@ -105,8 +105,13 @@ void ThreadMarshalTest::testWsMessageRoutesToMainThreadHandler()
     const quint16 port = server.serverPort();
 
     MessageDispatcher dispatcher;
+    // Phase 5 todo 11: messageReceived now carries (int instanceId, env).
+    // MessageDispatcher::dispatch takes only env — wrap in a lambda that
+    // drops the instanceId (this test has one client, id is irrelevant).
     QObject::connect(&server, &WsServer::messageReceived,
-                     &dispatcher, &MessageDispatcher::dispatch);
+                     &dispatcher, [&dispatcher](int, const Envelope& env) {
+                         dispatcher.dispatch(env);
+                     });
 
     bool handlerRan = false;
     bool handlerOnMain = false;

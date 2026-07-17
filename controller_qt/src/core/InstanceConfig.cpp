@@ -86,6 +86,7 @@ QJsonObject instanceConfigToJson(const InstanceConfig& cfg)
     obj.insert(QStringLiteral("subtitle_area_height"), cfg.subtitleAreaHeight);
     obj.insert(QStringLiteral("subtitle_font_size"), cfg.subtitleFontSize);
     obj.insert(QStringLiteral("subtitle_style_preset"), cfg.subtitleStylePreset);
+    obj.insert(QStringLiteral("subtitle_adjust_mode"), cfg.subtitleAdjustMode);
     return obj;
 }
 
@@ -125,6 +126,7 @@ InstanceConfig instanceConfigFromJson(const QJsonObject& json)
     cfg.subtitleAreaHeight = readInt(json, QLatin1String("subtitle_area_height"), cfg.subtitleAreaHeight);
     cfg.subtitleFontSize = readDouble(json, QLatin1String("subtitle_font_size"), cfg.subtitleFontSize);
     cfg.subtitleStylePreset = readString(json, QLatin1String("subtitle_style_preset"), cfg.subtitleStylePreset);
+    cfg.subtitleAdjustMode = readBool(json, QLatin1String("subtitle_adjust_mode"), cfg.subtitleAdjustMode);
 
     return cfg;
 }

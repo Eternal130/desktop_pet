@@ -16,12 +16,19 @@
 //   - emits snake_case keys matching interface.md §5 verbatim;
 //   - never emits response fields (those live only on type=="response").
 //
-// Scope: the 9 salvo commands + set_hit_areas + shutdown. Runtime commands
-// (play_motion / show_subtitle / etc.) get their own factories in a later task
-// when the call sites that need them arrive — not speculatively here.
+// Scope: the 9 salvo commands + set_hit_areas + shutdown (Phase 0-4 T9), PLUS
+// the runtime command factories (T16) — play_motion / play_motion_ext /
+// stop_motion / set_expression / play_audio / stop_audio / show_subtitle /
+// hide_subtitle / set_subtitle_adjust_mode / get_stats / get_layout /
+// reset_layout. The runtime factories are required by Wave 8 features:
+// MonitorPage (get_stats), Voice Pack / MountedBehaviorEngine
+// (play_motion_ext), SubtitlePage (show_subtitle etc.), LayoutPage
+// (get_layout / reset_layout).
 //
 // NOT introduced: set_scale. Per interface.md §H.2 it is a renderer-side stub
 // (logs only, no effect); scale is carried by set_layout's `scale` field.
+// Also NOT introduced: response factories — the renderer emits those, the
+// controller only builds commands here.
 
 // The 16-field subtitle style block shared by show_subtitle (§D.1) and
 // set_subtitle_style (§D.3). Colors are AABBGGRR uint32 decimals (§1.3) —
@@ -94,5 +101,61 @@ Envelope buildSetHitAreas(const QJsonArray& hitAreas);
 
 // §G.1 — graceful shutdown. Renderer replies Response(success) then exits.
 Envelope buildShutdown();
+
+// ── Runtime commands (T16) ─────────────────────────────────────────────────
+
+// §B.1 — play a motion from the loaded model's motion group. priority per
+// interface.md §B.1: 0=Force (interrupts current), 1=Idle, 2=Normal.
+Envelope buildPlayMotion(const QString& group, int index, int priority);
+
+// §B.3 — stop the currently-playing motion. Empty payload.
+Envelope buildStopMotion();
+
+// §B.4 — apply an expression from the loaded model's expression list.
+// expressionId matches model3.json FileReferences.Expressions[].Name.
+Envelope buildSetExpression(const QString& expressionId);
+
+// §B.2 — play an external motion file (.motion3.json) with optional audio,
+// lip-sync, and subtitle side-channels. The four optional fields
+// (audioPath, lipSyncPath, subtitleText, subtitleDurationMs) are emitted
+// ONLY when populated: audioPath/lipSyncPath when non-empty, subtitle
+// fields as a pair when subtitleText is non-empty. fadeIn/fadeOut are
+// seconds. subtitleDurationMs is int64 per interface.md §B.2.
+Envelope buildPlayMotionExt(const QString& motionPath, int priority,
+                            double fadeIn, double fadeOut,
+                            const QString& audioPath = {},
+                            const QString& lipSyncPath = {},
+                            const QString& subtitleText = {},
+                            qint64 subtitleDurationMs = 0);
+
+// §C.1 — play an audio file (.ogg). volume is 0.0–1.0.
+Envelope buildPlayAudio(const QString& audioPath, double volume);
+
+// §C.2 — stop the currently-playing audio. Empty payload.
+Envelope buildStopAudio();
+
+// §D.1 — show a subtitle. text + duration_ms at top, then all 16 style
+// fields (same field set as set_subtitle_style). Style defaults reproduce
+// the fixture payload in command_all_25.json exactly. The duration field
+// is emitted as `duration` per interface.md §D.1 / Java reference.
+Envelope buildShowSubtitle(const QString& text, qint64 durationMs,
+                           const SubtitleStyle& style = {});
+
+// §D.2 — hide the currently-showing subtitle. Empty payload.
+Envelope buildHideSubtitle();
+
+// §D.4 — toggle subtitle auto-adjust mode (font scaling to area).
+Envelope buildSetSubtitleAdjustMode(bool enabled);
+
+// §F.1 — request current runtime stats. Renderer replies with a
+// stats_state event (not a Response). Empty payload.
+Envelope buildGetStats();
+
+// §E.2 — query the current model layout. Empty payload; renderer replies
+// via Response carrying {offset_x, offset_y, scale}.
+Envelope buildGetLayout();
+
+// §E.3 — reset model layout to defaults. Empty payload.
+Envelope buildResetLayout();
 
 } // namespace Protocol

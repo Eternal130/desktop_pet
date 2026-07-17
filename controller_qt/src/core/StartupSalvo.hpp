@@ -59,6 +59,11 @@ struct InstanceConfigLike {
     double subtitleOffsetY = 0.0;
     int subtitleAreaWidth = 0;   // 0 = auto
     int subtitleAreaHeight = 0;  // 0 = auto
+    // Phase 5 Wave 8 todo 21: the persisted preset name ("默认"/"阴影"/...).
+    // sendSalvo maps this via SubtitlePresets::mapPresetToStyle →
+    // buildSetSubtitleStyle so the renderer applies the user-chosen preset on
+    // every ready→salvo bootstrap, not just the default. Empty → 默认.
+    QString subtitleStylePreset = QStringLiteral("默认");
 };
 
 class StartupSalvo : public QObject {

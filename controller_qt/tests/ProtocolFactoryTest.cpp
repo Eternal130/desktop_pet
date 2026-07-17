@@ -41,6 +41,21 @@ private slots:
     void testSetHitAreas();
     void testShutdown();
 
+    // ── Runtime command factories (T16) ────────────────────────────────
+    void testPlayMotion();
+    void testStopMotion();
+    void testSetExpression();
+    void testPlayMotionExt();
+    void testPlayMotionExtOmitsEmpty();
+    void testPlayAudio();
+    void testStopAudio();
+    void testShowSubtitle();
+    void testHideSubtitle();
+    void testSetSubtitleAdjustMode();
+    void testGetStats();
+    void testGetLayout();
+    void testResetLayout();
+
     // ── Cross-cutting invariants ────────────────────────────────────────
     void testResponseFieldsAtTopLevel();   // §2.2 response shape
     void testTimestampIsCurrentMs();       // explicit separate check
@@ -174,6 +189,110 @@ void ProtocolFactoryTest::testSetHitAreas() {
 void ProtocolFactoryTest::testShutdown() {
     verifyCommand(QStringLiteral("shutdown"),
                   Protocol::buildShutdown());
+}
+
+// ── Runtime command factories (T16) ────────────────────────────────────────
+//
+// Each factory's payload is asserted field-for-field against the corresponding
+// command_all_25.json case via verifyCommand(). Fixture values mirror
+// interface.md §B/C/D/E/F exactly.
+
+void ProtocolFactoryTest::testPlayMotion() {
+    // Fixture: {group:"Idle", index:0, priority:1}
+    verifyCommand(QStringLiteral("play_motion"),
+                  Protocol::buildPlayMotion(QStringLiteral("Idle"), 0, 1));
+}
+
+void ProtocolFactoryTest::testStopMotion() {
+    verifyCommand(QStringLiteral("stop_motion"),
+                  Protocol::buildStopMotion());
+}
+
+void ProtocolFactoryTest::testSetExpression() {
+    // Fixture: {expression_id:"default"}
+    verifyCommand(QStringLiteral("set_expression"),
+                  Protocol::buildSetExpression(QStringLiteral("default")));
+}
+
+void ProtocolFactoryTest::testPlayMotionExt() {
+    // Fixture: all 8 fields populated (theMountedBehaviorEngine full-payload
+    // shape — audio + lipSync + subtitle all opted in).
+    verifyCommand(QStringLiteral("play_motion_ext"),
+                  Protocol::buildPlayMotionExt(
+                      QStringLiteral("C:/pets/motions/wave.motion3.json"),
+                      2, 1.0, 1.0,
+                      QStringLiteral("C:/pets/audio/wave.ogg"),
+                      QStringLiteral("C:/pets/lipsync/wave.txt"),
+                      QStringLiteral("Hello there!"),
+                      2000));
+}
+
+void ProtocolFactoryTest::testPlayMotionExtOmitsEmpty() {
+    // When audio/lipSync/subtitle are empty, those keys MUST be absent from
+    // the payload (interface.md §B.2 optional fields). Only the 4 always-on
+    // keys (motion_path/priority/fade_in/fade_out) appear.
+    const Envelope env = Protocol::buildPlayMotionExt(
+        QStringLiteral("C:/pets/motions/wave.motion3.json"), 2, 1.0, 1.0);
+
+    QCOMPARE(env.type, QStringLiteral("command"));
+    QCOMPARE(env.action, QStringLiteral("play_motion_ext"));
+
+    const QStringList keys = env.payload.keys();
+    QCOMPARE(keys.size(), 4);
+    QVERIFY(env.payload.contains(QStringLiteral("motion_path")));
+    QVERIFY(env.payload.contains(QStringLiteral("priority")));
+    QVERIFY(env.payload.contains(QStringLiteral("fade_in")));
+    QVERIFY(env.payload.contains(QStringLiteral("fade_out")));
+    QVERIFY(!env.payload.contains(QStringLiteral("audio_path")));
+    QVERIFY(!env.payload.contains(QStringLiteral("lip_sync_path")));
+    QVERIFY(!env.payload.contains(QStringLiteral("subtitle_text")));
+    QVERIFY(!env.payload.contains(QStringLiteral("subtitle_duration")));
+}
+
+void ProtocolFactoryTest::testPlayAudio() {
+    // Fixture: {audio_path, volume}
+    verifyCommand(QStringLiteral("play_audio"),
+                  Protocol::buildPlayAudio(
+                      QStringLiteral("C:/pets/audio/greeting.ogg"), 0.8));
+}
+
+void ProtocolFactoryTest::testStopAudio() {
+    verifyCommand(QStringLiteral("stop_audio"),
+                  Protocol::buildStopAudio());
+}
+
+void ProtocolFactoryTest::testShowSubtitle() {
+    // Fixture: text="Hello!", duration=3000, then the default SubtitleStyle
+    // (16 fields). Default-constructed SubtitleStyle reproduces the fixture
+    // style block byte-for-byte (Protocol.hpp:31-48 defaults match §D.1).
+    verifyCommand(QStringLiteral("show_subtitle"),
+                  Protocol::buildShowSubtitle(QStringLiteral("Hello!"), 3000));
+}
+
+void ProtocolFactoryTest::testHideSubtitle() {
+    verifyCommand(QStringLiteral("hide_subtitle"),
+                  Protocol::buildHideSubtitle());
+}
+
+void ProtocolFactoryTest::testSetSubtitleAdjustMode() {
+    // Fixture: {enabled:true}
+    verifyCommand(QStringLiteral("set_subtitle_adjust_mode"),
+                  Protocol::buildSetSubtitleAdjustMode(true));
+}
+
+void ProtocolFactoryTest::testGetStats() {
+    verifyCommand(QStringLiteral("get_stats"),
+                  Protocol::buildGetStats());
+}
+
+void ProtocolFactoryTest::testGetLayout() {
+    verifyCommand(QStringLiteral("get_layout"),
+                  Protocol::buildGetLayout());
+}
+
+void ProtocolFactoryTest::testResetLayout() {
+    verifyCommand(QStringLiteral("reset_layout"),
+                  Protocol::buildResetLayout());
 }
 
 // ── Cross-cutting invariants ───────────────────────────────────────────────

@@ -257,7 +257,7 @@ void ProcessManagerTest::testGracefulShutdown()
     pm.setShutdownSender([&server]() {
         const QByteArray json =
             serialize(Protocol::buildShutdown()).toJson(QJsonDocument::Compact);
-        server.sendText(QString::fromUtf8(json));
+        server.sendText(0, QString::fromUtf8(json));
     });
 
     pm.startRenderer(*path, port, 0, QStringLiteral("gracefultoken"),
@@ -314,7 +314,7 @@ void ProcessManagerTest::testManuallyStoppingFlag()
         pm.setShutdownSender([&server]() {
             const QByteArray json =
                 serialize(Protocol::buildShutdown()).toJson(QJsonDocument::Compact);
-            server.sendText(QString::fromUtf8(json));
+            server.sendText(0, QString::fromUtf8(json));
         });
 
         pm.startRenderer(*path, port, 0, QStringLiteral("flagtokenA"),
@@ -383,7 +383,8 @@ bool ProcessManagerTest::waitForAction(QSignalSpy& spy, const char* action,
     t.start();
     while (!t.hasExpired(timeoutMs)) {
         for (int i = 0; i < spy.count(); ++i) {
-            const Envelope env = spy.at(i).at(0).value<Envelope>();
+            // Phase 5 todo 11: signal is (int instanceId, Envelope) — env at [1].
+            const Envelope env = spy.at(i).at(1).value<Envelope>();
             if (env.action == QLatin1String(action))
                 return true;
         }
@@ -391,7 +392,7 @@ bool ProcessManagerTest::waitForAction(QSignalSpy& spy, const char* action,
     }
     // Final check after the loop expires.
     for (int i = 0; i < spy.count(); ++i) {
-        const Envelope env = spy.at(i).at(0).value<Envelope>();
+        const Envelope env = spy.at(i).at(1).value<Envelope>();
         if (env.action == QLatin1String(action))
             return true;
     }
@@ -403,7 +404,8 @@ void ProcessManagerTest::sendShutdown(WsServer& server)
     const QByteArray json =
         serialize(createCommand(QStringLiteral("shutdown"), QJsonObject{}))
             .toJson(QJsonDocument::Compact);
-    server.sendText(QString::fromUtf8(json));
+    // Phase 5 todo 11: sendText routes by instanceId; tests use instance_id=0.
+    server.sendText(0, QString::fromUtf8(json));
 }
 
 QTEST_MAIN(ProcessManagerTest)

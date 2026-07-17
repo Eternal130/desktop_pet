@@ -65,7 +65,12 @@ public:
         // avoid a race where the renderer connects before the token is mapped).
         m_server.registerToken(0, m_token);
 
-        connect(&m_server, &WsServer::messageReceived, this, &PoCDriver::onMessage);
+        connect(&m_server, &WsServer::messageReceived, this,
+                [this](int instanceId, const Envelope& env) {
+                    // PoC is single-instance (instance_id=0); ignore the arg.
+                    Q_UNUSED(instanceId)
+                    onMessage(env);
+                });
         connect(&m_server, &WsServer::connectionStateChanged,
                 this, &PoCDriver::onConnectionStateChanged);
 
@@ -209,7 +214,7 @@ private:
     {
         const QByteArray json = serialize(createCommand(action, payload))
                                     .toJson(QJsonDocument::Compact);
-        m_server.sendText(QString::fromUtf8(json));
+        m_server.sendText(0, QString::fromUtf8(json));
     }
 
     void succeed()

@@ -4,6 +4,8 @@
 #include <QtQml/QtQml>
 #include <QJsonDocument>
 
+#include <chrono>
+
 #include <spdlog/spdlog.h>
 #include "logging/Logging.hpp"
 #include "core/ConfigDir.hpp"
@@ -25,6 +27,19 @@
 
 int main(int argc, char *argv[])
 {
+    // ── T24 cold-start timing anchor ─────────────────────────────────────
+    // Captured BEFORE QGuiApplication construction so Qt framework init cost
+    // is included in the cold-start delta. Exposed to QML as the
+    // `coldStartT0Ms` context property so Main.qml's Component.onCompleted can
+    // log the wall-clock-visible delta ("COLD_START_MS=<n>"). std::chrono is
+    // used (not QDateTime) because it is provably safe pre-QCoreApplication.
+    // The matching log line in Main.qml is the measurement point; this anchor
+    // is only set once per process and never read again after Component.
+    // onCompleted logs the delta.
+    const auto t0SinceEpoch = std::chrono::system_clock::now().time_since_epoch();
+    const qint64 coldStartT0Ms = static_cast<qint64>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(t0SinceEpoch).count());
+
     QGuiApplication app(argc, argv);
 
     // Boot logging BEFORE any LOG_* call. ConfigDir::ensureDirectories creates
@@ -213,6 +228,22 @@ int main(int argc, char *argv[])
     qmlRegisterUncreatableType<InstanceSession>(
         "DesktopPet", 1, 0, "InstanceSession",
         QStringLiteral("InstanceSession is created only by InstanceManager (C++)"));
+
+    // T24: expose the cold-start anchor to QML so Main.qml's Component.
+    // onCompleted can compute the user-visible delta. Set BEFORE
+    // loadFromModule so the property is in place by the time the QML engine
+    // evaluates Component.onCompleted.
+    engine.rootContext()->setContextProperty("coldStartT0Ms", coldStartT0Ms);
+
+    // T24: log the C++ side pre-load cost (everything between main() entry
+    // and the QML load call). The QML side logs the residual (loadFromModule
+    // cost + first-frame). Their sum is the wall-clock cold-start number.
+    {
+        const auto nowSinceEpoch = std::chrono::system_clock::now().time_since_epoch();
+        const qint64 nowMs = static_cast<qint64>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(nowSinceEpoch).count());
+        LOG_INFO("COLD_START_PRE_LOAD_MS={} t0={}", nowMs - coldStartT0Ms, coldStartT0Ms);
+    }
 
     // Loads type "Main" from the QML module registered in CMakeLists.txt
     // (qt_add_qml_module, URI "DesktopPet").

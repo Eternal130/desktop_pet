@@ -106,6 +106,15 @@ private slots:
     void onReadyReadStandardOutput();
     void onReadyReadStandardError();
     void onFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    // T25 exception audit: handles QProcess::FailedToStart (exe exists per
+    // resolveRendererPath but the OS cannot launch it — permission denied,
+    // corrupted binary, wrong arch). Without this, the renderer process
+    // silently fails to start, finished() never fires, and InstanceSession
+    // is stuck in "connecting" forever. We emit exited(-1, true) so
+    // InstanceSession::onProcessExited treats it as a crash → error +
+    // startFailed → RestartController backoff ladder. Safe to emit because
+    // Qt 6 guarantees finished() does NOT fire for FailedToStart.
+    void onErrorOccurred(QProcess::ProcessError error);
 
 private:
     QProcess m_process;

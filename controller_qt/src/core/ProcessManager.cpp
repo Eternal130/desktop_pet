@@ -26,6 +26,12 @@ ProcessManager::ProcessManager(QObject* parent)
             this, &ProcessManager::onReadyReadStandardOutput);
     connect(&m_process, &QProcess::readyReadStandardError,
             this, &ProcessManager::onReadyReadStandardError);
+    // T25: FailedToStart (exe exists but OS can't launch — permissions,
+    // corrupt binary, wrong arch). Qt 6 does NOT emit finished() for this,
+    // so without this connection InstanceSession would stay "connecting"
+    // forever. onErrorOccurred emits exited(-1, true) → crash path.
+    connect(&m_process, &QProcess::errorOccurred,
+            this, &ProcessManager::onErrorOccurred);
 }
 
 ProcessManager::~ProcessManager()
@@ -229,4 +235,19 @@ void ProcessManager::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
     // callback fires. Cleared here rather than at end of stop() so the flag
     // is reset regardless of which code path caused the process to exit.
     m_manuallyStopping = false;
+}
+
+void ProcessManager::onErrorOccurred(QProcess::ProcessError error)
+{
+    // FailedToStart is the only error that finished() does NOT cover. Qt 6
+    // guarantees finished() fires for every other error (Crashed, Timedout,
+    // etc.), so emitting exited here for those would double-fire with
+    // onFinished. Only FailedToStart → emit exited so InstanceSession's
+    // crash-recovery path engages instead of hanging in "connecting".
+    if (error != QProcess::FailedToStart)
+        return;
+
+    LOG_ERROR("ProcessManager: renderer failed to start (FailedToStart) — "
+              "emit exited as crash so InstanceSession engages recovery");
+    emit exited(-1, true);
 }

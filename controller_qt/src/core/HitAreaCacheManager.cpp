@@ -110,7 +110,18 @@ void HitAreaCacheManager::save(const QMap<QString, QStringList>& cache) const
                   path.toStdString());
         return;
     }
-    file.write(data);
+    // T25 exception audit: check write() return value + flush() before
+    // commit(). A short write (disk full, I/O error) would leave the .tmp
+    // with partial data; commit() would succeed on the truncated file,
+    // silently corrupting the cache. Matches InstanceConfigManager +
+    // PanelStateManager atomicWrite discipline.
+    const qint64 written = file.write(data);
+    if (written != data.size() || !file.flush()) {
+        LOG_ERROR("HitAreaCacheManager: short write to \"{}\" ({} of {} bytes)",
+                  path.toStdString(), written, data.size());
+        file.cancelWriting();
+        return;
+    }
     if (!file.commit()) {
         LOG_ERROR("HitAreaCacheManager: atomic write failed for \"{}\": {}",
                   path.toStdString(),

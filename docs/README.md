@@ -7,7 +7,7 @@
 
 ## 一、项目阶段与当前进度
 
-本项目分为 4 个阶段，**MVP、Phase 1、Phase 2、Phase 2.x（Vulkan 渲染后端）已完成，Phase 3a 已完成，Phase 3b 渲染器侧已完成**：
+本项目分为 4 个阶段，**MVP、Phase 1、Phase 2、Phase 2.x（Vulkan 渲染后端）已完成，Phase 3a 已完成，Phase 3b 渲染器侧已完成**。此外 **controller_qt（Qt 6 控制面板，Phase 5-9）已完成**：
 
 | 功能 | MVP | Phase 1 | Phase 2 | Phase 2.x | Phase 3 |
 |:---|:---:|:---:|:---:|:---:|:---:|
@@ -24,10 +24,15 @@
 | 音频播放 | ✗ | — | — | — | ⚠️ 渲染器侧 ✅（`AudioManager`，miniaudio + libvorbis），控制器侧待实现 |
 | 口型同步 + 文案气泡 | ✗ | — | — | — | ❌ 待开发（Phase 3c） |
 | 闲时随机动作 | ✅ 已完成（渲染器内置） | — | ✅ 由控制面板 Scheduler 调度 | — | — |
+| **controller_qt（Qt 6 控制面板）** | ✗ | — | — | — | — |
+
+> **controller_qt Phase 5-9: ✅ 已完成** — Qt 6.10 / C++17 / QML 控制面板，JavaFX `controller/` 的 C++ 后继版本。多实例宠物管理（侧边栏 `QAbstractListModel`）、完整协议覆盖（25 命令 + 14 事件）、每实例配置持久化（`~/.config/desktop-pet/instances/{uuid}.json`，QSaveFile 原子写入）、闲时动作调度器、点击→动作处理器（3 级大小写容错查找）、崩溃恢复（指数退避，最大 5 次）、系统托盘（QSystemTrayIcon）、开机自启（Windows 注册表 / Linux `.desktop`）、资源监视器（QtCharts 火花线：CPU% + RSS）、语音包发现与挂载（手写 protobuf reader，无 libprotobuf 依赖）、字幕系统（16 个命名样式字段）、布局同步。**38 个 QTest 二进制全部通过**。蓝图 §9.5「永不崩溃」哲学合规性已审计（T25）。详见 `controller_qt/README.md`。
 
 > **阶段说明**：Phase 1 = WebSocket 通信层，Phase 2 = Java 控制面板，Phase 2.x = Vulkan 渲染后端解耦（OpenGL/Vulkan 双后端，编译时切换），Phase 3 = 音频与语音包模块（细分为 3a 基础挂载、3b 音频播放、3c 口型同步、3d 行为图引擎）。
 >
 > **当前状态**：MVP、Phase 1、Phase 2、Phase 2.x（Vulkan 渲染后端）已完成，平台支持已扩展至 Windows（MinGW Makefiles，win32 环境）。Phase 2 控制面板已重构为 Tab 式 UI（Dashboard/Settings/Actions/Advanced），支持多宠物实例管理。Phase 2.x 在渲染引擎中引入 `IGraphicsBackend` 抽象接口，提供 `OpenGLBackend` 与 `VulkanBackend` 双实现，通过编译时开关 `-DUSE_VULKAN=ON` 切换（无运行时切换），`platform/WindowManager.cpp` 被 GL/Vulkan 共享。Phase 3a（语音包挂载）Java 侧与渲染器侧均已实现——Java 侧语音包扫描（`VoicePackScanner`）、meta.mko 解析（`MetaMkoParser`）、挂载配置持久化（`MountConfigManager`）、运行时行为引擎（`MountedBehaviorEngine`），渲染器侧 `play_motion_ext` 指令已注册。Phase 3b 渲染器侧音频播放已实现（`AudioManager`，miniaudio + libvorbis 播放 OGG，`play_audio`/`stop_audio`/`set_volume` 三指令已接入），控制器侧 `AudioMapping` record 仅定义、`AudioMappingManager` 与 UI 待实现。Phase 3c/3d 待后续实现。
+>
+> **controller_qt（Qt 6 控制面板，Phase 5-9）已全部完成**：Qt 6.10 / C++17 / QML，多实例宠物管理，完整协议覆盖（25 命令 + 14 事件），每实例配置持久化（QSaveFile 原子写入），闲时调度器，点击→动作处理，崩溃恢复（指数退避），系统托盘，开机自启，资源监视器（QtCharts），语音包发现与挂载（手写 protobuf reader），字幕系统，布局同步。38 个 QTest 二进制全部通过。蓝图 §9.5「永不崩溃」合规性已审计。详见 `controller_qt/README.md`。
 
 ---
 
@@ -111,6 +116,7 @@
 | 通信模块（渲染引擎端） | C++ | 同上 | IXWebSocket 11.4.6（Client）、nlohmann/json 3.12.0 | ✅ Phase 1 |
 | 控制面板 | Java 21 LTS | OpenJDK 21 / Maven ≥ 3.9 | JavaFX 21 (OpenJFX 21.0.5)、Java-WebSocket 1.6.0（Server）、Gson 2.13.2、SLF4J 2.0.17 + Logback 1.5.32、protobuf-java 4.29.3 | ✅ Phase 2 + Phase 3a |
 | 音频模块（渲染器侧） | C++ | 同上 | miniaudio（single-header vendored）、libogg 1.3.5 + libvorbis 1.3.7（CMake FetchContent） | ✅ Phase 3b 渲染器侧已实现，控制器侧待实现 |
+| 控制面板（Qt 6） | C++17 | Qt 6.10 / MinGW 13.1.0 / CMake ≥ 3.22 / Ninja | Qt6（Core, Gui, Widgets, Network, WebSockets, Qml, Quick, QuickControls2, Concurrent, Charts, Test）、spdlog 1.15.0（CMake FetchContent） | ✅ Phase 5-9 已完成（controller_qt） |
 | 通信协议 | — | — | WebSocket（端口 9001）+ JSON Envelope | ✅ Phase 1 |
 | 目标平台 | — | — | Ubuntu 22.04 LTS（X11）+ Windows 10+（Win32 / MinGW）；GPU 支持 OpenGL 3.3+ 或 Vulkan 1.2+（Vulkan 后端） | ✅ MVP + Windows 扩展 |
 
@@ -183,6 +189,7 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | **语音包挂载** | 语音包与模型解耦挂载，meta.mko (Protobuf) 解析，Java 侧行为引擎 + 渲染器 `play_motion_ext` 均已实现 | ✅ Java 侧 + 渲染器侧均已实现 | Phase 3a |
 | **渲染后端** | OpenGL/Vulkan 双后端，`IGraphicsBackend` 抽象接口（6 方法），`OpenGLBackend` + `VulkanBackend` 双实现，编译时开关 `USE_VULKAN` 切换（无运行时切换） | ✅ 已实现 | Phase 2.x |
 | **音频播放** | 音频文件独立于模型管理，支持跨模型复用；渲染器侧 miniaudio + libvorbis 播放 OGG（`play_audio`/`stop_audio`/`set_volume`），控制面板管理映射和音量 | ⚠️ 渲染器侧 ✅ 已实现，控制器侧（`AudioMappingManager`/UI）待实现 | Phase 3b |
+| **Qt 控制面板** | Qt 6.10 / C++17 / QML，JavaFX 控制面板的 C++ 后继。多实例管理、完整协议覆盖（25 命令 + 14 事件）、每实例配置持久化（QSaveFile 原子写入）、闲时调度、崩溃恢复（指数退避）、系统托盘、开机自启、资源监视器（QtCharts）、语音包挂载（手写 protobuf）、字幕系统、布局同步 | ✅ Phase 5-9 已完成（38 QTest 全部通过） | Phase 5-9 |
 | **口型同步** | lipSync txt 解析 + 定时驱动 `ParamMouthOpenY`，文案气泡 UI | ❌ 待实现 | Phase 3c |
 | **性能**   | 自适应帧率（15-60fps）或固定帧率（15-120fps 可配），闲时低占用 | ✅ 已实现 | MVP/Phase 2 |
 | **平台**   | Ubuntu 22.04 / X11 + Windows 10+ / Win32（MinGW Makefiles） | ✅ 双平台已实现 | MVP + Windows 扩展 |
@@ -228,3 +235,4 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | [测试策略](./engineering/testing.md) | 单元测试、集成测试、端到端测试 | ✅ 持续更新 |
 | [控制面板技术栈调研](./research/control-panel-tech-stack.md) | 下一代控制面板技术栈选型调研（Qt/Avalonia/Slint/Flutter/Compose MP/GTK4 对比） | ✅ 2026-07 调研完成 |
 | [控制面板分步开发方案](./controller/development-plan.md) | 10 阶段开发路线图（技术栈无关，含 Qt/Slint 实现要点） | ✅ 2026-07 规划完成 |
+| `controller_qt/README.md` | Qt 6 控制面板完整文档（Phase 5-9：特性、构建、打包、测试、架构、QML 页面、协议互通） | ✅ Phase 5-9 已完成 |

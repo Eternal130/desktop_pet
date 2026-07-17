@@ -12,13 +12,14 @@ Live2D desktop pet application. JavaFX control panel (Java 21) orchestrates a C+
 
 ```
 desktop_pet/
-├── controller/     # JavaFX control panel (Maven, Java 21)
-├── renderer/       # Live2D renderer (CMake, C++17, Cubism SDK 5)
-├── third_party/    # CubismSdkForNative (Core + Framework + Samples)
-├── docs/           # Full architecture docs (Chinese, 30+ .md files)
-├── build.py        # Unified build orchestrator (Python 3.6+)
-├── BUILD.md        # Build guide
-└── build/bin/      # Output: renderer.exe + controller.jar + DLLs + resources
+├── controller/         # JavaFX control panel (Maven, Java 21) — legacy
+├── controller_qt/      # Qt 6 control panel (CMake, C++17) — current/active
+├── renderer/           # Live2D renderer (CMake, C++17, Cubism SDK 5)
+├── third_party/        # CubismSdkForNative (Core + Framework + Samples)
+├── docs/               # Full architecture docs (Chinese, 30+ .md files)
+├── build.py            # Unified build orchestrator (Python 3.6+)
+├── BUILD.md            # Build guide
+└── build/bin/          # Output: renderer.exe + controller.jar + controller-qt.exe + DLLs + resources
 ```
 
 ## WHERE TO LOOK
@@ -36,6 +37,12 @@ desktop_pet/
 | Protocol spec | `docs/protocol/` | commands.md, events.md, handshake.md |
 | Architecture overview | `docs/README.md` | Definitive project doc |
 | AI learnings/pitfalls | `.sisyphus/notepads/` | Phase-specific dev notes |
+| Add controller_qt UI page | `controller_qt/qml/pages/` | QML pages: Welcome, InstanceDetail, Monitor, Settings |
+| Add controller_qt business logic | `controller_qt/src/core/` | InstanceSession (+ split TUs), InstanceManager, Scheduler, InteractionHandler, config |
+| Add controller_qt protocol command | `controller_qt/src/network/Protocol.hpp` | 25 typed command factories + envelope helpers |
+| Add controller_qt system integration | `controller_qt/src/system/` | TrayManager, AutoLaunchManager, ResourceStatsCollector |
+| Change controller_qt instance config | `controller_qt/src/core/InstanceConfigManager.cpp` | Persists to `~/.config/desktop-pet/instances/{uuid}.json` (atomic write via QSaveFile) |
+| Add controller_qt monitor feature | `controller_qt/src/ui/MonitorDataModel.cpp` | 60-sample ring buffer for QtCharts sparklines |
 
 ## CODE MAP — Key Classes
 
@@ -52,6 +59,22 @@ desktop_pet/
 | `AudioManager` | C++ | `renderer/src/AudioManager.hpp` | miniaudio + libvorbis OGG playback (Phase 3b renderer side) |
 | `WebSocketClient` | C++ | `renderer/src/network/WebSocketClient.hpp` | IXWebSocket client wrapper |
 | `MessageHandler` | C++ | `renderer/src/network/MessageHandler.hpp` | Message routing by action |
+| `InstanceSession` | C++ | `controller_qt/src/core/InstanceSession.hpp` | Per-pet orchestrator (split across 5 TUs: .cpp/Setters/Commands/Handlers/Monitor); owns ProcessManager + MessageDispatcher + EventRegistry + Scheduler + InteractionHandler + RestartController + MonitorDataModel |
+| `InstanceManager` | C++ | `controller_qt/src/core/InstanceManager.hpp` | QAbstractListModel sidebar roster, demuxes WsServer messages by instanceId, persistence via savePanel callback |
+| `WsServer` | C++ | `controller_qt/src/network/WsServer.hpp` | QWebSocketServer on 127.0.0.1:9001, 3-gate token handshake, multi-instance routing |
+| `Scheduler` | C++ | `controller_qt/src/core/Scheduler.hpp` | QTimer idle motion cadence |
+| `InteractionHandler` | C++ | `controller_qt/src/core/InteractionHandler.hpp` | hit → play_motion (3-tier case-folding lookup) |
+| `MountedBehaviorEngine` | C++ | `controller_qt/src/core/MountedBehaviorEngine.hpp` | Voice-pack behavior engine (priority over InteractionHandler when a pack is mounted) |
+| `RestartController` | C++ | `controller_qt/src/core/RestartController.hpp` | Exponential-backoff crash recovery (max 5 attempts) |
+| `TrayManager` | C++ | `controller_qt/src/system/TrayManager.hpp` | QSystemTrayIcon wrapper (QtGui only — no QMenu, QML popup) |
+| `AutoLaunchManager` (Qt) | C++ | `controller_qt/src/system/AutoLaunchManager.hpp` | Win `reg.exe` via QProcess / Linux `.desktop` (injectable suppliers for testing) |
+| `ResourceStatsCollector` | C++ | `controller_qt/src/system/ResourceStatsCollector.hpp` | Win `GetProcessTimes`+`GetProcessMemoryInfo` / Linux `/proc/self/*`; never-throws contract |
+| `MonitorDataModel` | C++ | `controller_qt/src/ui/MonitorDataModel.hpp` | Copy-on-write ring buffer (cap=60) + mergeController/mergeRenderer for QtCharts |
+| `VoicePackScanner` | C++ | `controller_qt/src/core/VoicePackScanner.hpp` | Discovers voice packs containing `meta.mko` |
+| `MetaMkoParser` | C++ | `controller_qt/src/core/MetaMkoParser.hpp` | Hand-rolled protobuf wire-format reader for `.mko` (no libprotobuf dep) |
+| `SubtitlePresets` | C++ | `controller_qt/src/core/SubtitlePresets.hpp` | 16 named style fields, `set_subtitle_style` |
+| `PanelConfigController` | C++ | `controller_qt/src/core/PanelConfigController.hpp` | QML bridge for 4 PanelConfig behavior fields |
+| `HitAreaCacheManager` | C++ | `controller_qt/src/core/HitAreaCacheManager.hpp` | JSON cache of modelName → hitAreas |
 
 ## CONVENTIONS (Non-Standard)
 
@@ -84,12 +107,15 @@ desktop_pet/
 
 ### Known Pitfalls
 - **MinGW PATH**: Git's bundled MinGW conflicts with project MinGW — `build.py` filters it; manual CMake must do the same
+- **MinGW PATH (Qt controller)**: `controller_qt/` uses Qt-bundled MinGW 13.1.0 (`C:\Qt\Tools\mingw1310_64`), separate from the renderer's MinGW — `build.py qt` filters PATH; manual CMake must prepend Qt's MinGW
 - **CMake target_sources**: Adding `.cpp` requires `cmake -S ... -B ...` reconfigure before `cmake --build`
 - **Cubism FinishedMotionCallback**: Raw C function pointer — capturing lambdas won't work, use static function + `SetFinishedMotionCustomData(void*)`
 - **Mockito**: Use `doReturn().when()` for re-stubbing; `when().thenReturn()` fails for checked-exception methods
 - **JavaFX version**: Must use 21.0.5 LTS — do NOT use 25.x (requires JDK 23+)
 - **module-info.java**: Empty packages in `opens`/`exports` cause `InvalidModuleDescriptorException` at runtime
 - **Monocle**: Must use `io.github.sebivenlo:openjfx-monocle:jdk-21.0.1` (NOT org.testfx)
+- **Qt QTP0001 policy**: QML modules use `:/qt/qml/<URI>/` layout (NEW policy) — incremental builds masked the bug during T1-T27
+- **Qt LSP false positives**: LSP server lacks Qt include paths; `python build.py qt` compiles clean — trust CMake, not LSP diagnostics on Qt files
 
 ## COMMANDS
 
@@ -101,6 +127,7 @@ python build.py all            # Both components
 # Build individually
 python build.py renderer       # C++ renderer (CMake + MinGW/Make)
 python build.py controller     # Java controller (Maven)
+python build.py qt             # Qt controller (CMake + Qt 6 + Ninja)
 
 # Direct Maven
 cd controller && mvnw.cmd clean package -DskipTests    # Windows
@@ -113,6 +140,7 @@ cmake --build build/renderer_mingw --config Release -j
 # Tests
 cd controller && mvnw.cmd test                          # Java tests (headless via Monocle)
 cd renderer/build && ctest                              # C++ tests (Google Test)
+ctest --test-dir build/controller_qt                    # Qt controller tests (38 QTest binaries)
 
 # Vulkan backend
 cmake --build build/renderer_vulkan --config Release -j
@@ -128,3 +156,4 @@ cmake --build build/renderer_vulkan --config Release -j
 - Dual platform: Ubuntu/X11 (original MVP) + Windows/MinGW (current). `build.py` builds both OpenGL and Vulkan variants.
 - Build artifacts: `build/bin/desktop-pet-renderer.exe`, `build/bin/desktop-pet-controller.jar`
 - Renderer CLI args: `--port`, `--instance-id`, `--model`, `--token`, `--x`, `--y`, `--width`, `--height`
+- **controller_qt Phase 5-9: COMPLETE** — Qt 6.10 / C++17 / QML control panel, the C++ successor to the JavaFX `controller/`. Multi-instance pet management with full protocol coverage (25 commands + 14 events), sidebar roster (`QAbstractListModel`), per-instance config persistence, idle motion scheduler, hit→motion handler, crash-recovery with exponential backoff (max 5 attempts), system tray (QSystemTrayIcon), OS auto-launch (Win registry / Linux `.desktop`), resource monitor (QtCharts sparklines: CPU% + RSS), voice pack discovery + mounting (hand-rolled protobuf reader, no libprotobuf dep), subtitle system (16 named style fields), layout sync. **38 QTest binaries**, all green. Atomic config writes via QSaveFile. Blueprint §9.5 "永不崩溃" compliance audited (T25). See `controller_qt/README.md` for details. Known limitations (documented, NOT bugs): R4 (Wayland transparent window), R5 (GNOME tray AppIndicator), R6 (Wayland global hotkeys).

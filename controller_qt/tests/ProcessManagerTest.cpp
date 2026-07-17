@@ -83,8 +83,10 @@ void ProcessManagerTest::testInitialState()
 
 // startRenderer with a dummy (non-existent) path still populates arguments()
 // synchronously — QProcess::start sets program+args before the async launch
-// fails. The FailedToStart error is silently ignored (ProcessManager does not
-// connect errorOccurred), so no spurious exited fires.
+// fails. T25 exception audit: ProcessManager now connects errorOccurred, so
+// FailedToStart fires asynchronously → exited(-1, true). These unit-tier tests
+// don't spy on exited and don't pump the event loop long enough for the async
+// error to be delivered, so assertions on arguments() remain deterministic.
 void ProcessManagerTest::testCliArgsConstruction()
 {
     ProcessManager pm;

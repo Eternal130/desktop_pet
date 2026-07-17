@@ -56,6 +56,14 @@ ApplicationWindow {
     // Theme.setTheme is a guarded no-op for unknown names or no-op transitions,
     // so a bogus / default initialTheme is harmless.
     Component.onCompleted: {
+        // T24 cold-start measurement: log the wall-clock delta between main()
+        // entry (the coldStartT0Ms context property set in main.cpp before
+        // QGuiApplication construction) and the first-frame QML completion.
+        // console.log routes through Qt's message handler bridge into the
+        // spdlog rotating-file sink (Logging.cpp qtMessageHandler), and
+        // flush_on(info) makes the line appear on disk immediately so the
+        // measurement script can grep it. Greppable tag: COLD_START_MS=.
+        console.log("COLD_START_MS=" + (Date.now() - coldStartT0Ms))
         Theme.setTheme(initialTheme)
         _initializingTheme = false
     }

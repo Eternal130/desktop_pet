@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
+import FluentUI
 import DesktopPet
 
 // Frameless main window with custom titlebar + 8-direction edge resize.
@@ -64,6 +65,11 @@ ApplicationWindow {
         // flush_on(info) makes the line appear on disk immediately so the
         // measurement script can grep it. Greppable tag: COLD_START_MS=.
         console.log("COLD_START_MS=" + (Date.now() - coldStartT0Ms))
+        // Unify accents: FluentUI controls default to Fluent blue while the
+        // custom shell uses Theme.accentColor — pin FluTheme.primaryColor to
+        // ours so the mixed shell + Fluent pages read as one system.
+        // (FluTheme.dark is read-only/derived — do not assign it.)
+        FluTheme.primaryColor = Theme.accentColor
         Theme.setTheme(initialTheme)
         _initializingTheme = false
     }
@@ -157,6 +163,11 @@ ApplicationWindow {
         if (target !== null) {
             root.currentPage = (name === "instance") ? "welcome" : name
             if (name === "monitor") {
+                // Auto-select the first instance when none is selected so the
+                // monitor page shows live charts instead of its empty state
+                // (also what --screenshot captures).
+                if (root.currentInstance === null && instanceManager.instanceAt)
+                    root.currentInstance = instanceManager.instanceAt(0)
                 pageStack.replace(target, { instance: root.currentInstance })
             } else {
                 pageStack.replace(target)

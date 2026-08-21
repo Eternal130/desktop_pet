@@ -13,6 +13,14 @@
 
 #include <spdlog/spdlog.h>
 #include "logging/Logging.hpp"
+
+// FluentUI static-lib registration. The FLUENTUI_BUILD_STATIC_LIB guard from
+// FluentUI's own example does NOT apply here: that macro is only defined on
+// FluentUI's targets, not propagated to consumers. We always build FluentUI
+// in static mode (CMakeLists FetchContent), so register unconditionally.
+#include <FluentUI.h>
+Q_IMPORT_QML_PLUGIN(FluentUIPlugin)
+
 #include "core/ConfigDir.hpp"
 #include "core/EnvironmentChecker.hpp"
 #include "core/InstanceManager.hpp"
@@ -163,6 +171,8 @@ int main(int argc, char *argv[])
     PanelConfigController panelConfigController(ConfigDir::configDir());
 
     QQmlApplicationEngine engine;
+
+    FluentUI::registerTypes(&engine);
 
     // EnvironmentChecker (T27) — exposed as a global QML context property
     // "envChecker" so every page can read the readiness probes without

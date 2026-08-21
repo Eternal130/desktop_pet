@@ -1,59 +1,40 @@
 import QtQuick
 import QtQuick.Controls
+import FluentUI
 import DesktopPet
 
-// Welcome / home page — T27 (Phase 4.5).
+// Welcome / home page — FluentUI rewrite (feat/qt-fluentui-rewrite branch).
 //
-// First-run landing page shown by Main.qml's StackView. Combines:
-//   - App icon placeholder + title + subtitle + primary CTA button
-//   - An environment-detection panel that probes six readiness items
-//     (renderers, Qt runtime, resources, models, WS port) and renders each
-//     as a "● Ready / ● Not found" row.
-//
-// The checker is a global QML context property "envChecker" set in main.cpp
-// (EnvironmentChecker, T27). It is NOT instantiated from QML — every page
-// shares the same instance. runChecks() is called once on Component.onCompleted
-// and can be re-triggered by the "Re-check" button (idempotent).
-//
-// All colors bind to the Theme singleton (T26) so the page re-renders
-// instantly on theme switch. Status dot colors are the Catppuccin Mocha
-// green/red pair also used by Sidebar.qml's status badge (system-status
-// indicators read the same green=good / red=bad in every theme).
+// Same data model as the classic page: envChecker context property probes
+// six readiness items; this version renders them inside a FluCard with
+// FluentUI buttons/typography. CheckRow stays a custom component (dot +
+// label/detail) since FluentUI has no direct equivalent.
 Rectangle {
     id: root
-    color: Theme.bgColor
+    color: "transparent"
 
-    // Status colors — Theme semantic tokens (universal good/bad signals).
     readonly property color _readyColor: Theme.successColor
     readonly property color _notReadyColor: Theme.errorColor
-
-    // Muted secondary text.
     readonly property color _mutedColor: Theme.mutedTextColor
 
     Flickable {
         anchors.fill: parent
-        contentWidth: width
-        contentHeight: contentColumn.implicitHeight + 48
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        contentHeight: contentColumn.implicitHeight + 48
+        ScrollBar.vertical: FluScrollBar {}
 
         Column {
             id: contentColumn
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.topMargin: 40
+            width: root.width - 64
+            x: 32
             spacing: 28
+            topPadding: 40
 
-            // ── Header: icon + title + subtitle ──────────────────────────
+            // ── Header: icon + title + subtitle + CTA ───────────────────
             Column {
-                anchors.left: parent.left
-                anchors.leftMargin: 32
-                anchors.right: parent.right
-                anchors.rightMargin: 32
                 spacing: 14
 
-                // App icon placeholder — accent-colored circle with a paw glyph.
                 Rectangle {
                     width: 72
                     height: 72
@@ -62,126 +43,62 @@ Rectangle {
 
                     Text {
                         anchors.centerIn: parent
-                        text: qsTr("🐾")   // paw — placeholder for real icon asset
+                        text: qsTr("🐾")
                         font.pixelSize: 34
                     }
                 }
 
-                Text {
+                FluText {
                     text: qsTr("Desktop Pet Controller")
-                    color: Theme.textColor
-                    font.pixelSize: 30
-                    font.weight: Font.DemiBold
+                    font: FluTextStyle.TitleLarge
                 }
 
-                Text {
+                FluText {
                     text: qsTr("Create your first pet instance to get started")
                     color: root._mutedColor
                     font.pixelSize: 14
                 }
 
-                // Primary CTA — Phase 5 wires the real create flow; for now
-                // the click is a no-op (logs only). Enabled regardless of env
-                // state so the user can always click; the env panel below
-                // communicates what is missing.
-                Rectangle {
+                FluFilledButton {
                     id: createButton
-                    width: createBtnText.implicitWidth + 32
-                    height: 38
-                    radius: Theme.radiusMd
-                    color: createArea.containsMouse
-                           ? Qt.darker(Theme.accentColor, 1.12)
-                           : Theme.accentColor
-
-                    Text {
-                        id: createBtnText
-                        anchors.centerIn: parent
-                        text: qsTr("Create First Instance")
-                        color: Theme.bgColor
-                        font.pixelSize: 13
-                        font.weight: Font.DemiBold
-                    }
-
-                    MouseArea {
-                        id: createArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: console.log("create first instance clicked (Phase 5)")
-                    }
+                    text: qsTr("Create First Instance")
+                    implicitWidth: 220
+                    implicitHeight: 40
+                    onClicked: console.log("create first instance clicked")
                 }
             }
 
             // ── Environment detection panel ──────────────────────────────
-            Rectangle {
-                id: panel
-                anchors.left: parent.left
-                anchors.leftMargin: 32
-                anchors.right: parent.right
-                anchors.rightMargin: 32
-                height: panelContent.implicitHeight + 48
-                radius: Theme.radiusLg
-                color: Theme.surfaceColor
-                border.color: Theme.borderColor
-                border.width: 1
+            FluFrame {
+                width: parent.width
+                padding: 20
 
                 Column {
                     id: panelContent
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.margins: 20
+                    width: parent.width
                     spacing: 14
 
-                    // Panel header: title (left) + re-check button (right).
                     Item {
                         width: parent.width
                         height: Math.max(headerTitle.implicitHeight, recheckBtn.height)
 
-                        Text {
+                        FluText {
                             id: headerTitle
                             text: qsTr("Environment")
-                            color: Theme.textColor
-                            font.pixelSize: 16
-                            font.weight: Font.DemiBold
+                            font: FluTextStyle.Title
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
                         }
 
-                        Rectangle {
+                        FluButton {
                             id: recheckBtn
-                            width: recheckText.implicitWidth + 20
-                            height: 26
-                            radius: 4
-                            color: recheckArea.containsMouse
-                                   ? Theme.hoverColor
-                                   : "transparent"
-                            border.color: root._mutedColor
-                            border.width: 1
+                            text: qsTr("↻ Re-check")
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-
-                            Text {
-                                id: recheckText
-                                anchors.centerIn: parent
-                                text: qsTr("↻ Re-check")
-                                color: root._mutedColor
-                                font.pixelSize: 12
-                            }
-
-                            MouseArea {
-                                id: recheckArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: envChecker.runChecks()
-                            }
+                            onClicked: envChecker.runChecks()
                         }
                     }
 
-                    // Six check rows. Each row binds directly to the matching
-                    // envChecker property; the dot/detail re-evaluate on
-                    // checksChanged automatically.
                     CheckRow {
                         width: parent.width
                         ready: envChecker.openglRendererReady
@@ -233,24 +150,16 @@ Rectangle {
                 }
             }
 
-            // ── Overall status line ──────────────────────────────────────
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: 32
+            FluText {
                 text: envChecker.allReady
                       ? qsTr("● All checks passed — ready to launch.")
                       : qsTr("● Some checks failed — resolve the items above.")
                 color: envChecker.allReady ? root._readyColor : root._notReadyColor
                 font.pixelSize: 13
-                font.weight: Font.Medium
             }
         }
     }
 
-    // ── CheckRow component: status dot + label/detail ──────────────────────
-    // Inline component (Qt 6.3+). A transparent container anchoring a colored
-    // dot to the left and a label+detail Column to the right of it. Height
-    // tracks the Column so multi-line details are not clipped.
     component CheckRow : Rectangle {
         id: rowItem
         property bool ready: false
@@ -267,7 +176,7 @@ Rectangle {
             radius: 5
             anchors.left: parent.left
             anchors.top: parent.top
-            anchors.topMargin: 4   // nudge down to align with the label baseline
+            anchors.topMargin: 4
             color: rowItem.ready ? root._readyColor : root._notReadyColor
         }
 
@@ -277,13 +186,12 @@ Rectangle {
             anchors.leftMargin: 12
             anchors.right: parent.right
 
-            Text {
+            FluText {
                 text: rowItem.label
-                color: Theme.textColor
                 font.pixelSize: 13
                 font.weight: Font.Medium
             }
-            Text {
+            FluText {
                 text: rowItem.detail
                 color: root._mutedColor
                 font.pixelSize: 11
@@ -293,7 +201,5 @@ Rectangle {
         }
     }
 
-    // Run the six probes once the page is ready. QML bindings take it from
-    // there — checksChanged refreshes every dot/detail automatically.
     Component.onCompleted: envChecker.runChecks()
 }

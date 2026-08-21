@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtCharts
+import FluentUI
 import DesktopPet
 
 // Monitor page — Phase 5 Wave 8 todo 18.
@@ -223,7 +224,7 @@ Rectangle {
     // optional sub-line (e.g. GPU name / "of 8 GB") + a ChartView. The chart
     // is a sparkline-style LineSeries (axes hidden, no legend, no gridlines)
     // per the Java reference's configureChart().
-    component ChartCard : Rectangle {
+    component ChartCard : FluFrame {
         id: card
         property string titleText: ""
         property string valueText: ""
@@ -232,10 +233,7 @@ Rectangle {
         property var series: []
         property string valueFormat: "percent"
         height: 160
-        radius: Theme.radiusLg
-        color: Theme.surfaceColor
-        border.color: Theme.borderColor
-        border.width: 1
+        padding: 0
 
         Text {
             id: title

@@ -84,13 +84,14 @@ void EnvironmentChecker::runAllChecks()
     m_modelsAvailable = !m_availableModels.isEmpty();
 
     // (6) Port 9001 bindable — try to listen on 127.0.0.1, close immediately.
-    // QTcpServer::listen is synchronous; no event loop needed. If something is
-    // already listening (another controller instance, the Java controller, a
-    // stale renderer), listen fails and portBindable reports false so the user
-    // knows a restart is needed before launching a pet instance.
+    // QTcpServer::listen is synchronous; no event loop needed. If something
+    // EXTERNAL is already listening (another controller instance, the Java
+    // controller, a stale renderer), listen fails and portBindable reports
+    // false. Our own WsServer (started in main before the welcome page
+    // probes) does NOT count as a conflict — m_ownServerListening overrides.
     QTcpServer probe;
-    m_portBindable =
-        probe.listen(QHostAddress(QHostAddress::LocalHost), kPort);
+    m_portBindable = m_ownServerListening
+        || probe.listen(QHostAddress(QHostAddress::LocalHost), kPort);
     if (m_portBindable) {
         probe.close();
     } else {
@@ -103,6 +104,11 @@ void EnvironmentChecker::runAllChecks()
              "models={} (count={}) port={}",
              m_openglRendererReady, m_vulkanRendererReady, m_resourcesReady,
              m_modelsAvailable, m_availableModels.size(), m_portBindable);
+}
+
+void EnvironmentChecker::setOwnServerListening(bool listening)
+{
+    m_ownServerListening = listening;
 }
 
 // ── Read-only getters returning the cached probe results ───────────────────

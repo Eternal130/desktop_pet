@@ -53,6 +53,15 @@ public:
     // before any getter returns a meaningful value.
     Q_INVOKABLE void runChecks();
 
+    // In-process override for the port probe: when the app's own WsServer is
+    // already listening on kPort (the normal case — main.cpp listens before
+    // the welcome page probes), the socket probe would see the port taken by
+    // OURSELVES and wrongly report "In use — another process is listening".
+    // main.cpp calls setOwnServerListening(wsServer.listen() result) right
+    // after the listen attempt; when true, portBindable() reports true
+    // regardless of the socket probe.
+    void setOwnServerListening(bool listening);
+
     bool openglRendererReady() const;
     bool vulkanRendererReady() const;
     bool qtRuntimeReady() const { return true; }  // we're running → Qt is OK
@@ -98,6 +107,7 @@ private:
     bool m_resourcesReady = false;
     bool m_modelsAvailable = false;
     bool m_portBindable = false;
+    bool m_ownServerListening = false;
     QStringList m_availableModels;
 
     // Default WebSocket port (docs/protocol/handshake.md §1, AGENTS.md:

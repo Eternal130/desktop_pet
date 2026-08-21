@@ -232,9 +232,14 @@ int main(int argc, char *argv[])
     // "WsServer: listening on 127.0.0.1:<port>" on success (matches the
     // acceptance regex WsServer.*listen.*9001).
     constexpr quint16 kWsPort = 9001;
-    if (!wsServer.listen(kWsPort)) {
+    // Own-listener fact for the port probe: our WsServer holding 9001 is
+    // readiness, not a conflict (EnvironmentChecker override — see .hpp).
+    // A genuine listen failure (another process owns 9001) leaves the
+    // override false so the probe still reports the conflict.
+    envChecker.setOwnServerListening(wsServer.listen(kWsPort));
+    if (!envChecker.portBindable()) {
         LOG_WARN("WsServer failed to listen on port {} — panel will open "
-                 "without network (todo 11 adds error handling)", kWsPort);
+                  "without network (todo 11 adds error handling)", kWsPort);
     }
 
     // Register InstanceSession as a QML type so Q_INVOKABLE methods returning
@@ -295,37 +300,55 @@ int main(int argc, char *argv[])
                 delayMs = QString::fromUtf8(argv[++i]).toInt();
         }
         if (screenshotMode && !engine.rootObjects().isEmpty()) {
-            QObject* root = engine.rootObjects().first();
-            QDir().mkpath(outDir);
-            // Recursive capture chain: switchPage -> wait delayMs -> grab -> recurse.
-            // `chain` anchors each singleShot so the sequence stops safely if
-            // the object dies mid-run; recursion replaces the buggy repeating-
-            // timer/nested-singleShot interleave.
-            auto* chain = new QObject(&app);
-            auto grabPage = [root, &outDir](const QString& page) {
-                auto* window = qobject_cast<QQuickWindow*>(root);
-                if (!window) return;
-                const QImage img = window->grabWindow();
-                const QString path = QDir(outDir).filePath(page + QStringLiteral(".png"));
-                img.save(path);
-                printf("SCREENSHOT_SAVED=%s\n", path.toStdString().c_str());
-                fflush(stdout);
-            };
-            qsizetype idx = 0;
-            std::function<void()> step = [&, chain, &idx, &step, &grabPage]() {
-                if (idx >= pages.size()) {
-                    chain->deleteLater();
-                    QApplication::quit();
-                    return;
+            // Two-phase state machine on one repeating QTimer: odd ticks switch
+            // the page, even ticks grab it. All state lives as properties on
+            // the heap `runner` (parented to app) so teardown after exec()
+            // cannot touch dangling stack references — the earlier
+            // by-reference recursive std::function crashed (0xC0000005) at exit.
+            auto* runner = new QObject(&app);
+            runner->setProperty("root", QVariant::fromValue<QObject*>(
+                engine.rootObjects().first()));
+            runner->setProperty("outDir", outDir);
+            runner->setProperty("pages", pages);
+            runner->setProperty("idx", 0);
+            runner->setProperty("awaitingGrab", false);
+
+            auto* ticker = new QTimer(runner);
+            ticker->setInterval(delayMs);
+            QObject::connect(ticker, &QTimer::timeout, runner,
+                             [runner, ticker]() {
+                auto* window = qobject_cast<QQuickWindow*>(
+                    runner->property("root").value<QObject*>());
+                const QString dir = runner->property("outDir").toString();
+                const QStringList pages =
+                    runner->property("pages").toStringList();
+                const int idx = runner->property("idx").toInt();
+                const bool awaiting = runner->property("awaitingGrab").toBool();
+
+                if (awaiting) {
+                    runner->setProperty("awaitingGrab", false);
+                    if (window) {
+                        const QImage img = window->grabWindow();
+                        const QString path = QDir(dir).filePath(
+                            pages.at(idx) + QStringLiteral(".png"));
+                        img.save(path);
+                        printf("SCREENSHOT_SAVED=%s\n",
+                               path.toStdString().c_str());
+                        fflush(stdout);
+                    }
+                    runner->setProperty("idx", idx + 1);
+                    if (idx + 1 >= pages.size()) {
+                        ticker->stop();
+                        runner->deleteLater();
+                        QApplication::quit();
+                    }
+                } else if (idx < pages.size()) {
+                    QMetaObject::invokeMethod(window, "switchPage",
+                                              Q_ARG(QVariant, pages.at(idx)));
+                    runner->setProperty("awaitingGrab", true);
                 }
-                const QString page = pages.at(idx++);
-                QMetaObject::invokeMethod(root, "switchPage", Q_ARG(QVariant, page));
-                QTimer::singleShot(delayMs, chain, [chain, page, &step, &grabPage]() {
-                    grabPage(page);
-                    QMetaObject::invokeMethod(chain, [chain, &step]() { step(); });
-                });
-            };
-            QTimer::singleShot(1200, chain, [chain, &step]() { step(); });
+            });
+            QTimer::singleShot(1200, runner, [ticker]() { ticker->start(); });
             const int shotExit = app.exec();
             Logging::shutdown();
             return shotExit;
@@ -333,8 +356,6 @@ int main(int argc, char *argv[])
     }
 
     const int exitCode = app.exec();
-    // Flush the rotating file sink so the final log lines (incl. the close
-    // handler's "Saved window state") reach disk before process tear-down.
     Logging::shutdown();
     return exitCode;
 }

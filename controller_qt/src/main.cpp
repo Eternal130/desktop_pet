@@ -348,8 +348,11 @@ int main(int argc, char *argv[])
                     }
                     runner->setProperty("idx", idx + 1);
                     if (idx + 1 >= pages.size()) {
+                        // No deleteLater here: quitting right after queueing a
+                        // deferred delete raced app teardown and corrupted the
+                        // heap (0xC0000374). runner is parented to app and is
+                        // reclaimed by app's own destructor.
                         ticker->stop();
-                        runner->deleteLater();
                         QApplication::quit();
                     }
                 } else if (idx < pages.size()) {
@@ -361,7 +364,14 @@ int main(int argc, char *argv[])
             QTimer::singleShot(1200, runner, [ticker]() { ticker->start(); });
             const int shotExit = app.exec();
             Logging::shutdown();
-            return shotExit;
+            // Test-only path: exit directly instead of unwinding the stack.
+            // With FluentUI statically linked, destroying the QML engine +
+            // FluentUI plugin singletons after an in-exec quit corrupts the
+            // heap (0xC0000374). Screenshots are already on disk and the log
+            // sink is flushed, so skipping teardown loses nothing here. The
+            // PRODUCTION exit path (normal window close) is unaffected —
+            // verified EXIT=0.
+            std::exit(shotExit);
         }
     }
 

@@ -23,6 +23,13 @@ Rectangle {
     color: Theme.bgColor
 
     property var instance: null
+    // Nav-url loading passes no initial properties; self-select the first
+    // instance so live charts render without an external selector.
+    Component.onCompleted: {
+        if (!instance && instanceManager.instanceAt)
+            instance = instanceManager.instanceAt(0)
+        if (instance) root.monitorModel = instance.monitorModel()
+    }
     property var monitorModel: null
 
     readonly property color _mutedColor: Theme.mutedTextColor
@@ -56,7 +63,7 @@ Rectangle {
     Text {
         anchors.centerIn: parent
         visible: instance === null
-        text: qsTr("Select an instance from the sidebar")
+        text: qsTr("No instance yet — create one from the Home page")
         color: _mutedColor
         font.pixelSize: 14
     }
@@ -214,9 +221,6 @@ Rectangle {
                 root.monitorModel = null
             }
         }
-    }
-    Component.onCompleted: {
-        if (instance) root.monitorModel = instance.monitorModel()
     }
 
     // ── Inline ChartCard component ─────────────────────────────────────────

@@ -24,7 +24,10 @@ Rectangle {
     // The InstanceSession* this page renders. null until todo 7 wires Sidebar
     // selection -> Main.qml -> this property. Every binding guards on
     // `instance != null` so the page renders cleanly in the pre-wiring state.
-    property var instance: null
+    // Nav-url loading passes no initial properties; self-select the first
+    // instance (same pattern as MonitorPage).
+    property var instance: instanceManager.instanceAt
+                           ? instanceManager.instanceAt(0) : null
 
     // Emitted when the user clicks Delete. Main.qml / todo 7 connects this to
     // the confirm-dialog flow (blueprint §4.2: default-focus Cancel). The page
@@ -56,7 +59,7 @@ Rectangle {
     Text {
         anchors.centerIn: parent
         visible: instance === null
-        text: qsTr("Select an instance from the sidebar")
+        text: qsTr("No instance yet — create one from the Home page")
         color: _mutedColor
         font.pixelSize: 14
     }
@@ -181,7 +184,7 @@ Rectangle {
                     LifecycleButton {
                         label: qsTr("Delete"); danger: true
                         enabled: instance !== null
-                        onClicked: root.deleteRequested()
+                        onClicked: if (instance) instanceManager.requestDelete(instance.instanceId)
                     }
                 }
             }

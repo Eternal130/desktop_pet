@@ -65,7 +65,7 @@ Rectangle {
         visible: instance === null
         text: qsTr("No instance yet — create one from the Home page")
         color: _mutedColor
-        font.pixelSize: 14
+        font: FluTextStyle.Body
     }
 
     // ── Header ─────────────────────────────────────────────────────────────
@@ -78,8 +78,7 @@ Rectangle {
         visible: instance !== null
         text: qsTr("Resource Monitor")
         color: Theme.textColor
-        font.pixelSize: 22
-        font.weight: Font.DemiBold
+        font: FluTextStyle.Subtitle
     }
     Text {
         id: subhead
@@ -110,8 +109,7 @@ Rectangle {
             anchors.centerIn: parent
             text: qsTr("⚠ Renderer data stale (no stats_state in >10s)")
             color: _warnColor
-            font.pixelSize: 12
-            font.weight: Font.Medium
+            font: FluTextStyle.Caption
         }
     }
 
@@ -247,9 +245,10 @@ Rectangle {
             anchors.leftMargin: 14
             text: card.titleText
             color: _mutedColor
-            font.pixelSize: 11
-            font.weight: Font.Medium
             font.capitalization: Font.AllUppercase
+            font.family: FluTextStyle.BodyStrong.family
+            font.pixelSize: FluTextStyle.BodyStrong.pixelSize
+            font.weight: FluTextStyle.BodyStrong.weight
         }
         Text {
             id: value
@@ -259,8 +258,7 @@ Rectangle {
             anchors.rightMargin: 14
             text: card.valueText
             color: Theme.textColor
-            font.pixelSize: 18
-            font.weight: Font.DemiBold
+            font: FluTextStyle.Subtitle
         }
         Text {
             id: sub
@@ -271,7 +269,7 @@ Rectangle {
             visible: text.length > 0
             text: card.subText
             color: _faintColor
-            font.pixelSize: 10
+            font: FluTextStyle.Caption
         }
 
         ChartView {

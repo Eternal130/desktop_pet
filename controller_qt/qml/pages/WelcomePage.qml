@@ -50,13 +50,13 @@ Rectangle {
 
                 FluText {
                     text: qsTr("Desktop Pet Controller")
-                    font: FluTextStyle.TitleLarge
+                    font: FluTextStyle.Title
                 }
 
                 FluText {
                     text: qsTr("Create your first pet instance to get started")
                     color: root._mutedColor
-                    font.pixelSize: 14
+                    font: FluTextStyle.Caption
                 }
 
                 FluFilledButton {
@@ -85,7 +85,7 @@ Rectangle {
                         FluText {
                             id: headerTitle
                             text: qsTr("Environment")
-                            font: FluTextStyle.Title
+                            font: FluTextStyle.BodyStrong
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
                         }
@@ -188,13 +188,12 @@ Rectangle {
 
             FluText {
                 text: rowItem.label
-                font.pixelSize: 13
-                font.weight: Font.Medium
+                font: FluTextStyle.BodyStrong
             }
             FluText {
                 text: rowItem.detail
                 color: root._mutedColor
-                font.pixelSize: 11
+                font: FluTextStyle.Caption
                 wrapMode: Text.WordWrap
                 width: rowCol.width
             }

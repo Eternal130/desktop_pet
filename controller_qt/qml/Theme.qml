@@ -32,33 +32,33 @@ QtObject {
     signal themeChanged(string name)
 
     // ── Core palette ──────────────────────────────────────────────────────────
-    // Modern minimal: light neutral canvas, near-flat surface, single accent.
-    readonly property color bgColor:         "#fafafa"   // canvas
+    // Fully Fluent: Fluent 2 system blue accent, neutral cool-gray surfaces.
+    readonly property color bgColor:         "#f3f3f3"   // canvas (Fluent layer)
     readonly property color surfaceColor:    "#ffffff"   // cards / panels
     readonly property color textColor:       "#1a1a1a"   // primary text
-    readonly property color accentColor:     "#5b5bd6"   // restrained indigo
+    readonly property color accentColor:     "#005fb8"   // Fluent 2 brand blue
     readonly property color titleBarColor:   "#ffffff"   // flat titlebar
-    readonly property color hoverColor:      "#ececec"   // subtle hover fill
-    readonly property color closeHoverColor: "#e5484d"   // destructive hover
+    readonly property color hoverColor:      "#e5e5e5"   // neutral hover fill
+    readonly property color closeHoverColor: "#c42b1c"   // Fluent error red
 
     // ── Extended neutrals (surface hierarchy + borders) ─────────────────────
     readonly property color sidebarColor:    "#f4f4f5"   // sidebar rail
     readonly property color borderColor:     "#e4e4e7"   // hairline borders
     readonly property color mutedTextColor:  "#71717a"   // secondary text
 
-    // ── Semantic status colors (universal good/warn/bad signals) ────────────
-    readonly property color successColor:    "#30a46c"   // green
-    readonly property color warningColor:    "#f5a623"   // amber
-    readonly property color errorColor:      "#e5484d"   // red
+    // ── Semantic status colors (Fluent 2 palette) ──────────────────────────
+    readonly property color successColor:    "#0e700e"   // fluent green
+    readonly property color warningColor:    "#9d5d00"   // fluent amber
+    readonly property color errorColor:      "#c42b1c"   // fluent red
 
-    // ── Chart accent ramp (6 distinct, desaturated hues for sparklines) ────
+    // ── Chart accent ramp (Fluent-hued, 6 distinct for sparklines) ──────────
     readonly property var chartColors: [
-        "#5b5bd6",   // indigo
-        "#0ea5e9",   // sky
-        "#30a46c",   // green
-        "#f59e0b",   // amber
-        "#ec4899",   // pink
-        "#14b8a6"    // teal
+        "#005fb8",   // fluent blue
+        "#0f6cbd",   // blue shade
+        "#0e700e",   // fluent green
+        "#9d5d00",   // fluent amber
+        "#c239b3",   // fluent magenta
+        "#038387"    // fluent teal
     ]
 
     // ── Elevation tokens — Linear/Notion consensus: RESTING cards get NO

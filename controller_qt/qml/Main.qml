@@ -30,7 +30,7 @@ FluWindow {
 
     appBar: FluAppBar {
         title: qsTr("Desktop Pet Controller")
-        showDark: false
+        showDark: true
         z: 7
     }
 
@@ -40,13 +40,18 @@ FluWindow {
     property string currentInstanceUuid: ""
 
     function switchPage(name) {
-        // Native nav flow: startPageByItem drives selection state (accent
-        // pill) AND loads the item's url into the nav view's content loader.
+        // Main items: startPageByItem (framework selection + onTapListener
+        // load hook). Footer Settings: startPageByItem cannot resolve footer
+        // items (verified empirically — getItems() misses them), so drive
+        // the load directly; footer selection highlight is a known gap.
+        if (name === "settings") {
+            navSettings.onTapListener()
+            return
+        }
         let item = null
         if (name === "welcome")        item = navHome
         else if (name === "instance")  item = navInstance
         else if (name === "monitor")   item = navMonitor
-        else if (name === "settings")  item = navSettings
         if (item !== null) navView.startPageByItem(item)
     }
 
@@ -101,6 +106,32 @@ FluWindow {
         id: navView
         anchors.fill: parent
         items: navItems
+        footerItems: FluObject {
+            FluPaneItem {
+                id: navSettings
+                title: qsTr("Settings")
+                icon: FluentIcons.Settings
+                // Same load contract as main items: onTapListener. The
+                // framework's footer selection sync only runs when this is
+                // unset, but then page loading would need `url` (which its
+                // loader can't reach) — accept no footer highlight for now.
+                onTapListener: function() {
+                    root.currentPage = "settings"
+                    pageLoader.sourceComponent = settingsPageComp
+                }
+            }
+        }
+        autoSuggestBox: FluAutoSuggestBox {
+            placeholderText: qsTr("Search")
+            items: [
+                { title: navHome.title, key: "welcome" },
+                { title: navInstance.title, key: "instance" },
+                { title: navMonitor.title, key: "monitor" },
+                { title: navSettings.title, key: "settings" }
+            ]
+            onItemClicked:
+                (data) => root.switchPage(data.key ?? data.title)
+        }
         // Framework contract: items WITHOUT url get their onTapListener()
         // invoked by setCurrentIndex/startPageByItem — that's our page-load
         // hook. Selection state (accent pill) is managed by the nav view.
@@ -147,15 +178,6 @@ FluWindow {
                 if (root.currentInstance === null)
                     root.currentInstance = instanceManager.instanceAt(0)
                 pageLoader.sourceComponent = monitorPageComp
-            }
-        }
-        FluPaneItem {
-            id: navSettings
-            title: qsTr("Settings")
-            icon: FluentIcons.Settings
-            onTapListener: function() {
-                root.currentPage = "settings"
-                pageLoader.sourceComponent = settingsPageComp
             }
         }
     }
@@ -236,7 +258,10 @@ FluWindow {
 
     Component.onCompleted: {
         console.log("COLD_START_MS=" + (Date.now() - coldStartT0Ms))
+        // Full Fluent theming: brand-blue accent + Mica window material
+        // (Win11; degrades gracefully elsewhere).
         FluTheme.primaryColor = Theme.accentColor
+        FluTheme.enableMica = true
         Theme.setTheme(initialTheme)
     }
 }

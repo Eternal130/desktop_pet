@@ -29,7 +29,7 @@ Rectangle {
 
             FluText {
                 text: qsTr("Settings")
-                font: FluTextStyle.TitleLarge
+                font: FluTextStyle.Title
             }
 
             // ── Exit Behavior ───────────────────────────────────────────
@@ -43,13 +43,13 @@ Rectangle {
 
                     FluText {
                         text: qsTr("退出行为")
-                        font: FluTextStyle.Title
+                        font: FluTextStyle.BodyStrong
                         color: Theme.accentColor
                     }
 
                     FluText {
                         text: qsTr("关闭按钮行为")
-                        font.pixelSize: 14
+                        font: FluTextStyle.Body
                     }
 
                     Row {
@@ -83,7 +83,7 @@ Rectangle {
                     FluText {
                         text: qsTr("开启后，点击关闭按钮时会弹出确认对话框。")
                         color: root._mutedColor
-                        font.pixelSize: 12
+                        font: FluTextStyle.Caption
                         leftPadding: 58
                     }
                 }
@@ -100,7 +100,7 @@ Rectangle {
 
                     FluText {
                         text: qsTr("启动")
-                        font: FluTextStyle.Title
+                        font: FluTextStyle.BodyStrong
                         color: Theme.accentColor
                     }
 
@@ -140,7 +140,7 @@ Rectangle {
                     FluText {
                         text: qsTr("开启后，程序启动时窗口将隐藏到系统托盘。")
                         color: root._mutedColor
-                        font.pixelSize: 12
+                        font: FluTextStyle.Caption
                         leftPadding: 58
                     }
                 }

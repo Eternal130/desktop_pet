@@ -27,6 +27,11 @@ FluWindow {
     visible: true
     title: qsTr("Desktop Pet Controller")
     launchMode: FluWindowType.SingleInstance
+    // Win11 system backdrop — this FluentUI version drives Mica through the
+    // frameless effect, not a FluTheme flag. "mica" tints the window with
+    // the user's wallpaper (the official demo's signature look); degrades
+    // to "dwm-blur"/"normal" below Win11.
+    effect: "mica"
 
     appBar: FluAppBar {
         title: qsTr("Desktop Pet Controller")
@@ -261,10 +266,10 @@ FluWindow {
 
     Component.onCompleted: {
         console.log("COLD_START_MS=" + (Date.now() - coldStartT0Ms))
-        // Full Fluent theming: brand-blue accent + Mica window material
-        // (Win11; degrades gracefully elsewhere).
+        // FluentUI default darkMode is Light; the AppBar moon toggle lets the
+        // user switch at runtime. Do NOT pin darkMode here — respect the
+        // in-session choice.
         FluTheme.primaryColor = Theme.accentColor
-        FluTheme.enableMica = true
         Theme.setTheme(initialTheme)
     }
 }

@@ -353,7 +353,7 @@ Rectangle {
                     ParamRow {
                         width: parent.width
                         labelText: qsTr("Muted")
-                        AppCheckBox {
+                        CheckBox {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             checked: instance ? instance.muted : false
@@ -389,7 +389,7 @@ Rectangle {
                     ParamRow {
                         width: parent.width
                         labelText: qsTr("Auto-start with panel")
-                        AppCheckBox {
+                        CheckBox {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             checked: instance ? instance.autoStartEnabled() : false
@@ -441,7 +441,7 @@ Rectangle {
                     ParamRow {
                         width: parent.width
                         labelText: qsTr("Auto-adjust to area")
-                        AppCheckBox {
+                        CheckBox {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             checked: instance ? instance.subtitleAdjustModeEnabled() : false

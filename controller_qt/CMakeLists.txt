@@ -306,16 +306,12 @@ qt_add_qml_module(desktop-pet-controller-qt
     URI DesktopPet
     VERSION 1.0
     QML_FILES
-        qml/Theme.qml
-        qml/Main.qml
-        qml/TitleBar.qml
-        qml/ResizeHandles.qml
-        qml/Sidebar.qml
+qml/Theme.qml
+qml/Main.qml
 qml/pages/WelcomePage.qml
 qml/pages/InstanceDetailPage.qml
 qml/pages/SettingsPage.qml
 qml/pages/MonitorPage.qml
-qml/pages/AppCheckBox.qml
 )
 
 # ── Phase 0 PoC (task T6) ───────────────────────────────────────────────────

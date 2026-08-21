@@ -5,6 +5,26 @@ JavaFX `controller/`. A multi-instance desktop pet manager interoperable with
 the existing C++ `renderer/` (Live2D Cubism 5) over the same JSON-over-WebSocket
 protocol (controller = WS server, renderer = WS client).
 
+> **Branch note (`feat/qt-fluentui-rewrite`):** the UI is rewritten on the
+> **FluentUI QML component library** (zhuzichu520/FluentUI, main-branch commit,
+> static-linked via FetchContent). Window shell = `FluWindow` + `FluAppBar` +
+> `FluNavigationView` (left nav: Home / Instance / Monitor / Settings); pages
+> use FluFrame / FluButton / FluToggleSwitch / FluText; Monitor charts stay on
+> QtCharts (FluentUI's bundled charts are QCustomPlot = GPL — deliberately
+> avoided). Accent unified: `FluTheme.primaryColor = Theme.accentColor`
+> (indigo #5b5bd6). The legacy `feat/qt-controller-foundation` branch keeps the
+> custom hand-drawn shell for comparison.
+>
+> **FluentUI-specific build notes:**
+> - First configure fetches FluentUI (network required); later builds reuse the
+>   FetchContent cache.
+> - `build.py qt` additionally copies `Qt5Compat/GraphicalEffects` (FluAcrylic
+>   dep) and `Qt6ShaderTools.dll` next to the exe — windeployqt cannot detect
+>   these QML-internal imports.
+> - Known limitation: with the static FluentUI plugin, the `--screenshot`
+>   test-only path exits via `std::exit` to bypass a teardown heap corruption;
+>   the production close path is unaffected (verified EXIT=0).
+
 > **Scope:** This directory is purely additive. It does **not** touch
 > `controller/` (JavaFX — still builds independently) or `renderer/` (C++ Live2D
 > engine). The renderer keeps its own Google Test; controller_qt uses **QTest

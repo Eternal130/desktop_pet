@@ -36,6 +36,15 @@ Rectangle {
     // page body; themed (was hardcoded Mocha "mantle").
     color: Theme.sidebarColor
 
+    // Hairline right separator — structure line instead of color-block edge
+    Rectangle {
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        width: 1
+        color: Theme.borderColor
+    }
+
     // ── Instance list ─────────────────────────────────────────────────────
     ListView {
         id: instanceList

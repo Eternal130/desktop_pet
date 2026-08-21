@@ -121,7 +121,7 @@ Rectangle {
                     }
                 }
 
-                CheckBox {
+                AppCheckBox {
                     id: confirmExitCb
                     text: qsTr("退出前确认")
                     checked: panelConfig.confirmOnExit
@@ -153,7 +153,7 @@ Rectangle {
                 // desire. On toggle: call enable()/disable() + persist the
                 // desire so the startup hook can re-arm if the registry was
                 // cleared externally.
-                CheckBox {
+                AppCheckBox {
                     id: autoLaunchCb
                     text: qsTr("开机自启动")
                     Component.onCompleted: checked = autoLaunch.isEnabled()
@@ -168,7 +168,7 @@ Rectangle {
                     }
                 }
 
-                CheckBox {
+                AppCheckBox {
                     id: startMinimizedCb
                     text: qsTr("启动时最小化")
                     checked: panelConfig.startMinimized

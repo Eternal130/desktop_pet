@@ -61,6 +61,24 @@ QtObject {
         "#14b8a6"    // teal
     ]
 
+    // ── Elevation tokens — Linear/Notion consensus: RESTING cards get NO
+    // shadow (1px border is the separator); shadows only for floating layers
+    // (dialogs, popovers). Values = Fluent 2 shadow8 two-layer recipe.
+    readonly property color  shadowColor:   Qt.rgba(0, 0, 0, 0.14)
+    readonly property real   shadowBlur:    8
+    readonly property real   shadowOffsetY: 4
+
+    // ── Radius scale (4px grid; consensus: controls 4-6, cards 8-12) ───────
+    readonly property real radiusSm: 4    // badges, chips, small controls
+    readonly property real radiusMd: 6    // buttons, inputs
+    readonly property real radiusLg: 12   // cards, panels
+
+    // ── Typography scale (weight hierarchy: 600 heads / 500 sub / 400 body)─
+    readonly property int fontCaption: 11
+    readonly property int fontBody:     13
+    readonly property int fontSubhead:  15
+    readonly property int fontTitle:    18
+
     // ── Mutation (kept for persistence compatibility) ───────────────────────
     function setTheme(name) {
         if (name === currentTheme) return

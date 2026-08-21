@@ -232,8 +232,10 @@ Rectangle {
         property var series: []
         property string valueFormat: "percent"
         height: 160
-        radius: 10
+        radius: Theme.radiusLg
         color: Theme.surfaceColor
+        border.color: Theme.borderColor
+        border.width: 1
 
         Text {
             id: title

@@ -88,7 +88,7 @@ Rectangle {
                     id: createButton
                     width: createBtnText.implicitWidth + 32
                     height: 38
-                    radius: 6
+                    radius: Theme.radiusMd
                     color: createArea.containsMouse
                            ? Qt.darker(Theme.accentColor, 1.12)
                            : Theme.accentColor
@@ -120,8 +120,10 @@ Rectangle {
                 anchors.right: parent.right
                 anchors.rightMargin: 32
                 height: panelContent.implicitHeight + 48
-                radius: 10
+                radius: Theme.radiusLg
                 color: Theme.surfaceColor
+                border.color: Theme.borderColor
+                border.width: 1
 
                 Column {
                     id: panelContent
@@ -200,7 +202,7 @@ Rectangle {
                         width: parent.width
                         ready: envChecker.qtRuntimeReady
                         label: qsTr("Qt Runtime")
-                        detail: qsTr("Qt ") + Qt.version
+                        detail: qsTr("Qt ") + envChecker.qtVersion
                     }
                     CheckRow {
                         width: parent.width

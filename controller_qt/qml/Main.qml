@@ -144,6 +144,10 @@ ApplicationWindow {
     // "monitor" gets the currentInstance bound (Wave 8 todo 18) so
     // MonitorPage can read instance.monitorModel() for the live charts; null
     // when no sidebar row is selected (the page renders its empty state).
+    // Current top-level page name ("welcome"|"monitor"|"settings") — drives
+    // the TitleBar nav active indicator and is updated by switchPage().
+    property string currentPage: "welcome"
+
     function switchPage(name) {
         let target = null
         if (name === "welcome")        target = welcomePageComp
@@ -151,6 +155,7 @@ ApplicationWindow {
         else if (name === "settings")  target = settingsPageComp
         else if (name === "monitor")   target = monitorPageComp
         if (target !== null) {
+            root.currentPage = (name === "instance") ? "welcome" : name
             if (name === "monitor") {
                 pageStack.replace(target, { instance: root.currentInstance })
             } else {

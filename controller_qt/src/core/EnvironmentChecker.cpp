@@ -167,7 +167,11 @@ QString EnvironmentChecker::vulkanRendererPath() const
     return m_vulkanRendererPath;
 }
 
-QString EnvironmentChecker::modelsDirectory() const
-{
+QString EnvironmentChecker::modelsDirectory() const{
     return m_modelsDir;
+}
+
+QString EnvironmentChecker::qtVersion() const
+{
+    return QString::fromLatin1(qVersion());
 }

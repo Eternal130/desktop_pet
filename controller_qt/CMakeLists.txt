@@ -286,10 +286,11 @@ qt_add_qml_module(desktop-pet-controller-qt
         qml/TitleBar.qml
         qml/ResizeHandles.qml
         qml/Sidebar.qml
-        qml/pages/WelcomePage.qml
-        qml/pages/InstanceDetailPage.qml
-        qml/pages/SettingsPage.qml
-        qml/pages/MonitorPage.qml
+qml/pages/WelcomePage.qml
+qml/pages/InstanceDetailPage.qml
+qml/pages/SettingsPage.qml
+qml/pages/MonitorPage.qml
+qml/pages/AppCheckBox.qml
 )
 
 # ── Phase 0 PoC (task T6) ───────────────────────────────────────────────────

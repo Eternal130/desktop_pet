@@ -43,6 +43,7 @@ class EnvironmentChecker : public QObject {
     Q_PROPERTY(QString openglRendererPath READ openglRendererPath NOTIFY checksChanged)
     Q_PROPERTY(QString vulkanRendererPath READ vulkanRendererPath NOTIFY checksChanged)
     Q_PROPERTY(QString modelsDirectory READ modelsDirectory NOTIFY checksChanged)
+    Q_PROPERTY(QString qtVersion READ qtVersion CONSTANT)
     Q_PROPERTY(int port READ port CONSTANT)
 
 public:
@@ -75,6 +76,9 @@ public:
     QString openglRendererPath() const;
     QString vulkanRendererPath() const;
     QString modelsDirectory() const;
+    // qVersion() result (e.g. "6.10.0") — the QML Qt global object exposes no
+    // reliable version property, so the checker publishes it for WelcomePage.
+    QString qtVersion() const;
     int port() const { return kPort; }
 
 signals:

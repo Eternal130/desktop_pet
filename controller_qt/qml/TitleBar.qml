@@ -26,6 +26,15 @@ Rectangle {
     // re-renders the titlebar instantly (T26).
     color: Theme.titleBarColor
 
+    // Hairline bottom separator (Notion #00000014-style structure line)
+    Rectangle {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: 1
+        color: Theme.borderColor
+    }
+
     // ── Drag to move ──────────────────────────────────────────────────────
     // DragHandler with target:null is the modern Qt 6 idiom: it does not move
     // any item itself; we hook its activation to trigger the OS-native
@@ -55,22 +64,34 @@ Rectangle {
     // switchPage(name), defined in Main.qml, which replaces the StackView's
     // top item. InstanceDetail is intentionally absent here — it is reached
     // from within Welcome (per-instance entry), not from global nav.
+    // Active page (window.currentPage): accent-colored label + 2px bottom
+    // indicator bar (visual QA punch-list item; Linear/Notion nav idiom).
     Row {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         spacing: 0
 
-        // Home → Welcome page
         Rectangle {
             width: 64
             height: root.height
-            color: homeNavArea.containsMouse ? Theme.hoverColor : "transparent"
+            property bool active: root.Window.window.currentPage === "welcome"
+            color: homeNavArea.containsMouse && !active
+                   ? Theme.hoverColor : "transparent"
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 2
+                color: Theme.accentColor
+                visible: parent.active
+            }
             Text {
                 anchors.centerIn: parent
                 text: qsTr("Home")
-                color: Theme.textColor   // themed (T26)
+                color: parent.active ? Theme.accentColor : Theme.textColor
                 font.pixelSize: 12
+                font.weight: parent.active ? Font.DemiBold : Font.Normal
             }
             MouseArea {
                 id: homeNavArea
@@ -80,16 +101,26 @@ Rectangle {
             }
         }
 
-        // Monitor → Monitor page
         Rectangle {
             width: 72
             height: root.height
-            color: monitorNavArea.containsMouse ? Theme.hoverColor : "transparent"
+            property bool active: root.Window.window.currentPage === "monitor"
+            color: monitorNavArea.containsMouse && !active
+                   ? Theme.hoverColor : "transparent"
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 2
+                color: Theme.accentColor
+                visible: parent.active
+            }
             Text {
                 anchors.centerIn: parent
                 text: qsTr("Monitor")
-                color: Theme.textColor
+                color: parent.active ? Theme.accentColor : Theme.textColor
                 font.pixelSize: 12
+                font.weight: parent.active ? Font.DemiBold : Font.Normal
             }
             MouseArea {
                 id: monitorNavArea
@@ -99,16 +130,26 @@ Rectangle {
             }
         }
 
-        // Settings → Settings page
         Rectangle {
             width: 72
             height: root.height
-            color: settingsNavArea.containsMouse ? Theme.hoverColor : "transparent"
+            property bool active: root.Window.window.currentPage === "settings"
+            color: settingsNavArea.containsMouse && !active
+                   ? Theme.hoverColor : "transparent"
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 2
+                color: Theme.accentColor
+                visible: parent.active
+            }
             Text {
                 anchors.centerIn: parent
                 text: qsTr("Settings")
-                color: Theme.textColor
+                color: parent.active ? Theme.accentColor : Theme.textColor
                 font.pixelSize: 12
+                font.weight: parent.active ? Font.DemiBold : Font.Normal
             }
             MouseArea {
                 id: settingsNavArea

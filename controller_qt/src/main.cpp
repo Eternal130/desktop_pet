@@ -3,8 +3,13 @@
 #include <QQmlContext>
 #include <QtQml/QtQml>
 #include <QJsonDocument>
+#include <QQuickWindow>
+#include <QTimer>
+#include <QDir>
 
+#include <cstdlib>
 #include <chrono>
+#include <functional>
 
 #include <spdlog/spdlog.h>
 #include "logging/Logging.hpp"
@@ -27,6 +32,15 @@
 
 int main(int argc, char *argv[])
 {
+    // Use the Basic QuickControls style: the default native (Windows) style
+    // forbids customizing Control background/contentItem, which (a) breaks
+    // Theme-bound CheckBox/ComboBox colors and (b) crashes the renderer when
+    // QtCharts' ChartView loads under a ComboBox with a custom background.
+    // Basic imposes no palette of its own, so our Theme singleton owns all
+    // visuals. Must be set before QGuiApplication construction.
+    // Ref: https://doc.qt.io/qt-6/qtquickcontrols2-styles.html
+    qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+
     // ── T24 cold-start timing anchor ─────────────────────────────────────
     // Captured BEFORE QGuiApplication construction so Qt framework init cost
     // is included in the cold-start delta. Exposed to QML as the
@@ -248,6 +262,69 @@ int main(int argc, char *argv[])
     // Loads type "Main" from the QML module registered in CMakeLists.txt
     // (qt_add_qml_module, URI "DesktopPet").
     engine.loadFromModule("DesktopPet", "Main");
+
+    // ── Screenshot mode (visual QA, 方案3) ─────────────────────────────────
+    // Usage: controller --screenshot [--out DIR] [--pages welcome,monitor,settings]
+    // [--delay MS]. Waits for the window to render, then for each requested
+    // page: calls root.switchPage(name) via QMetaObject::invokeMethod, waits
+    // --delay ms (default 800) for bindings/animations to settle, grabs the
+    // window via QQuickWindow::grabWindow() and saves
+    // "<out>/<page>.png" (default out: "screenshots"). Quits with exit code 0.
+    // Purely additive: without --screenshot the run loop below is unchanged.
+    {
+        bool screenshotMode = false;
+        QString outDir = QStringLiteral("screenshots");
+        QStringList pages = {QStringLiteral("welcome"), QStringLiteral("monitor"),
+                             QStringLiteral("settings")};
+        int delayMs = 800;
+        for (int i = 1; i < argc; ++i) {
+            const QString arg = QString::fromUtf8(argv[i]);
+            if (arg == QStringLiteral("--screenshot")) screenshotMode = true;
+            else if (arg == QStringLiteral("--out") && i + 1 < argc)
+                outDir = QString::fromUtf8(argv[++i]);
+            else if (arg == QStringLiteral("--pages") && i + 1 < argc)
+                pages = QString::fromUtf8(argv[++i]).split(QLatin1Char(','),
+                                                           Qt::SkipEmptyParts);
+            else if (arg == QStringLiteral("--delay") && i + 1 < argc)
+                delayMs = QString::fromUtf8(argv[++i]).toInt();
+        }
+        if (screenshotMode && !engine.rootObjects().isEmpty()) {
+            QObject* root = engine.rootObjects().first();
+            QDir().mkpath(outDir);
+            // Recursive capture chain: switchPage -> wait delayMs -> grab -> recurse.
+            // `chain` anchors each singleShot so the sequence stops safely if
+            // the object dies mid-run; recursion replaces the buggy repeating-
+            // timer/nested-singleShot interleave.
+            auto* chain = new QObject(&app);
+            auto grabPage = [root, &outDir](const QString& page) {
+                auto* window = qobject_cast<QQuickWindow*>(root);
+                if (!window) return;
+                const QImage img = window->grabWindow();
+                const QString path = QDir(outDir).filePath(page + QStringLiteral(".png"));
+                img.save(path);
+                printf("SCREENSHOT_SAVED=%s\n", path.toStdString().c_str());
+                fflush(stdout);
+            };
+            qsizetype idx = 0;
+            std::function<void()> step = [&, chain, &idx, &step, &grabPage]() {
+                if (idx >= pages.size()) {
+                    chain->deleteLater();
+                    QGuiApplication::quit();
+                    return;
+                }
+                const QString page = pages.at(idx++);
+                QMetaObject::invokeMethod(root, "switchPage", Q_ARG(QVariant, page));
+                QTimer::singleShot(delayMs, chain, [chain, page, &step, &grabPage]() {
+                    grabPage(page);
+                    QMetaObject::invokeMethod(chain, [chain, &step]() { step(); });
+                });
+            };
+            QTimer::singleShot(1200, chain, [chain, &step]() { step(); });
+            const int shotExit = app.exec();
+            Logging::shutdown();
+            return shotExit;
+        }
+    }
 
     const int exitCode = app.exec();
     // Flush the rotating file sink so the final log lines (incl. the close

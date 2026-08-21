@@ -32,9 +32,9 @@ Rectangle {
     anchors.topMargin: 32     // clear the custom titlebar (TitleBar.qml)
     width: 200
 
-    // Catppuccin Mocha "mantle" — one shade darker than the content area
-    // (#1e1e2e base) to visually separate the sidebar from the page body.
-    color: "#181825"
+    // Modern minimal rail — one shade off the canvas to separate it from the
+    // page body; themed (was hardcoded Mocha "mantle").
+    color: Theme.sidebarColor
 
     // ── Instance list ─────────────────────────────────────────────────────
     ListView {
@@ -55,7 +55,7 @@ Rectangle {
         delegate: Rectangle {
             width: instanceList.width
             height: 56
-            color: rowArea.containsMouse ? "#313244" : "transparent"   // Mocha "surface0" on hover
+            color: rowArea.containsMouse ? Theme.hoverColor : "transparent"
 
             Column {
                 anchors.left: parent.left
@@ -65,13 +65,13 @@ Rectangle {
 
                 Text {
                     text: model.label
-                    color: "#cdd6f4"   // Mocha "text"
+                    color: Theme.textColor
                     font.pixelSize: 13
                     font.weight: Font.Medium
                 }
                 Text {
                     text: model.modelName || qsTr("(no model)")
-                    color: "#a6adc8"   // Mocha "subtext0"
+                    color: Theme.mutedTextColor
                     font.pixelSize: 11
                 }
             }
@@ -85,13 +85,17 @@ Rectangle {
                 width: statusText.implicitWidth + 16
                 height: 20
                 radius: 10
-                color: model.status === "running" ? "#1e3a2f" : "#313244"
+                color: model.status === "running"
+                    ? Qt.rgba(Theme.successColor.r, Theme.successColor.g,
+                              Theme.successColor.b, 0.15)
+                    : Theme.borderColor
 
                 Text {
                     id: statusText
                     anchors.centerIn: parent
                     text: model.status
-                    color: model.status === "running" ? "#a6e3a1" : "#a6adc8"   // Mocha "green" / subtext0
+                    color: model.status === "running"
+                           ? Theme.successColor : Theme.mutedTextColor
                     font.pixelSize: 10
                     font.capitalization: Font.AllUppercase
                 }
@@ -111,7 +115,7 @@ Rectangle {
             anchors.centerIn: parent
             visible: instanceList.count === 0
             text: qsTr("No instances")
-            color: "#a6adc8"   // Mocha "subtext0"
+            color: Theme.mutedTextColor
             font.pixelSize: 13
         }
     }
@@ -125,7 +129,7 @@ Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
         height: 40
-        color: addArea.containsMouse ? "#313244" : "transparent"
+        color: addArea.containsMouse ? Theme.hoverColor : "transparent"
 
         // Top hairline border separating the button from the list above.
         Rectangle {
@@ -133,13 +137,13 @@ Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
             height: 1
-            color: "#313244"   // Mocha "surface0"
+            color: Theme.borderColor
         }
 
         Text {
             anchors.centerIn: parent
             text: qsTr("\uFF0B Add Instance")   // ＋ full-width plus
-            color: "#cdd6f4"   // Mocha "text"
+            color: Theme.textColor
             font.pixelSize: 13
             font.weight: Font.Medium
         }

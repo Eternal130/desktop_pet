@@ -32,15 +32,13 @@ Rectangle {
     // confirm lives one level up.
     signal deleteRequested()
 
-    // Mocha accent colors for the status badge -- fixed across themes (green/
-    // yellow/gray/red are universal state signals, matching WelcomePage's
-    // _readyColor/_notReadyColor convention).
-    readonly property color _runningColor:    "#a6e3a1"   // Mocha "green"
-    readonly property color _connectingColor: "#f9e2af"   // Mocha "yellow"
-    readonly property color _stoppedColor:    "#a6adc8"   // Mocha "subtext0"
-    readonly property color _errorColor:      "#f38ba8"   // Mocha "red"
-    readonly property color _mutedColor: Qt.rgba(
-        Theme.textColor.r, Theme.textColor.g, Theme.textColor.b, 0.6)
+    // Semantic status colors from Theme (green/amber/gray/red are universal
+    // state signals, matching WelcomePage's convention).
+    readonly property color _runningColor:    Theme.successColor
+    readonly property color _connectingColor: Theme.warningColor
+    readonly property color _stoppedColor:    Theme.mutedTextColor
+    readonly property color _errorColor:      Theme.errorColor
+    readonly property color _mutedColor: Theme.mutedTextColor
     readonly property color _faintColor: Qt.rgba(
         Theme.textColor.r, Theme.textColor.g, Theme.textColor.b, 0.35)
 
@@ -105,7 +103,7 @@ Rectangle {
                         selectByMouse: true
                         background: Rectangle {
                             color: labelField.activeFocus
-                                ? Qt.lighter(Theme.surfaceColor, 1.15)
+                                ? Theme.hoverColor
                                 : "transparent"
                             radius: 6
                             border.color: labelField.activeFocus
@@ -522,7 +520,7 @@ Rectangle {
                     height: 24
                     radius: 4
                     color: clearArea.containsMouse
-                        ? Qt.lighter(Theme.surfaceColor, 1.3)
+                        ? Theme.hoverColor
                         : "transparent"
                     border.color: _mutedColor
                     border.width: 1
@@ -657,7 +655,7 @@ Rectangle {
              : emphasis        ? Theme.accentColor
              : danger          ? Qt.rgba(_errorColor.r, _errorColor.g,
                                           _errorColor.b, 0.18)
-             : hover.containsMouse ? Qt.lighter(Theme.surfaceColor, 1.3)
+             : hover.containsMouse ? Theme.hoverColor
              :                     "transparent"
         border.color: danger ? _errorColor : _mutedColor
         border.width: 1
@@ -690,8 +688,8 @@ Rectangle {
         height: 38
         radius: 6
         color: mArea.containsMouse
-            ? Qt.lighter(Theme.bgColor, 1.4)
-            : Qt.lighter(Theme.bgColor, 1.15)
+            ? Theme.hoverColor
+            : Theme.bgColor
         border.color: _faintColor
         border.width: 1
         Text {
@@ -738,14 +736,14 @@ Rectangle {
         height: 28
         radius: 14
         color: eArea.containsMouse
-            ? Qt.lighter(Theme.accentColor, 1.15)
+            ? Theme.accentColor
             : Qt.rgba(Theme.accentColor.r, Theme.accentColor.g,
                       Theme.accentColor.b, 0.20)
         Text {
             id: exprText
             anchors.centerIn: parent
             text: eb.name
-            color: Theme.textColor
+            color: eArea.containsMouse ? "#ffffff" : Theme.textColor
             font.pixelSize: 11
         }
         MouseArea {

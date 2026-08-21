@@ -132,7 +132,7 @@ Rectangle {
                     text: qsTr("勾选后，点击关闭按钮时会弹出确认对话框。")
                     color: root._mutedColor
                     font.pixelSize: 12
-                    leftPadding: 28
+                    leftPadding: 36
                 }
             }
 
@@ -179,7 +179,7 @@ Rectangle {
                     text: qsTr("勾选后，程序启动时窗口将隐藏到系统托盘。")
                     color: root._mutedColor
                     font.pixelSize: 12
-                    leftPadding: 28
+                    leftPadding: 36
                 }
             }
 

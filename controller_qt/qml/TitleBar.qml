@@ -126,35 +126,8 @@ Rectangle {
         anchors.bottom: parent.bottom
         spacing: 0
 
-        // ── Theme switcher (T26) ───────────────────────────────────────────
-        // Compact dropdown; selecting an entry calls Theme.setTheme(), which
-        // re-evaluates every bound color in the app instantly. Closed-state is
-        // styled to match the titlebar; the popup uses the default Qt style.
-        ComboBox {
-            id: themeBox
-            model: Theme.themes
-            // Keep the selection in sync with the active theme, including when
-            // it is changed elsewhere (T28 persistence restore, future hotkeys).
-            currentIndex: Theme.themes.indexOf(Theme.currentTheme)
-            onActivated: Theme.setTheme(currentText)
-
-            implicitWidth: 108
-            height: root.height
-
-            // Transparent at rest, hover surface when moused — matches the nav
-            // buttons' hover treatment for a consistent titlebar feel.
-            background: Rectangle {
-                color: themeBox.hovered ? Theme.hoverColor : "transparent"
-            }
-            contentItem: Text {
-                text: themeBox.displayText
-                color: Theme.textColor
-                font.pixelSize: 12
-                verticalAlignment: Text.AlignVCenter
-                leftPadding: 10
-                rightPadding: themeBox.indicator ? themeBox.indicator.width : 0
-            }
-        }
+        // (Theme switcher removed — single modern minimal theme; T28
+        // persistence is a harmless no-op for unknown stored names.)
 
         // Minimize button
         Rectangle {

@@ -23,14 +23,12 @@ Rectangle {
     id: root
     color: Theme.bgColor
 
-    // Status colors — fixed (not theme-bound): green/red are universal
-    // "good/bad" signals. Matches Sidebar.qml line 83 convention.
-    readonly property color _readyColor: "#a6e3a1"     // Mocha "green"
-    readonly property color _notReadyColor: "#f38ba8"  // Mocha "red"
+    // Status colors — Theme semantic tokens (universal good/bad signals).
+    readonly property color _readyColor: Theme.successColor
+    readonly property color _notReadyColor: Theme.errorColor
 
-    // Muted text derived from Theme.textColor so it tracks theme switches.
-    readonly property color _mutedColor: Qt.rgba(
-        Theme.textColor.r, Theme.textColor.g, Theme.textColor.b, 0.6)
+    // Muted secondary text.
+    readonly property color _mutedColor: Theme.mutedTextColor
 
     Flickable {
         anchors.fill: parent
@@ -92,7 +90,7 @@ Rectangle {
                     height: 38
                     radius: 6
                     color: createArea.containsMouse
-                           ? Qt.lighter(Theme.accentColor, 1.15)
+                           ? Qt.darker(Theme.accentColor, 1.12)
                            : Theme.accentColor
 
                     Text {
@@ -154,7 +152,7 @@ Rectangle {
                             height: 26
                             radius: 4
                             color: recheckArea.containsMouse
-                                   ? Qt.lighter(Theme.surfaceColor, 1.3)
+                                   ? Theme.hoverColor
                                    : "transparent"
                             border.color: root._mutedColor
                             border.width: 1

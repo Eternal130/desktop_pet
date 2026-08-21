@@ -24,17 +24,16 @@ Rectangle {
     property var instance: null
     property var monitorModel: null
 
-    readonly property color _mutedColor: Qt.rgba(
-        Theme.textColor.r, Theme.textColor.g, Theme.textColor.b, 0.6)
+    readonly property color _mutedColor: Theme.mutedTextColor
     readonly property color _faintColor: Qt.rgba(
         Theme.textColor.r, Theme.textColor.g, Theme.textColor.b, 0.35)
-    readonly property color _warnColor: "#f9e2af"   // Mocha "yellow"
-    readonly property color _accent2:   "#89b4fa"   // Mocha "blue" (chart line)
-    readonly property color _accent3:   "#a6e3a1"   // Mocha "green"
-    readonly property color _accent4:   "#fab387"   // Mocha "peach"
-    readonly property color _accent5:   "#f5c2e7"   // Mocha "pink"
-    readonly property color _accent6:   "#94e2d5"   // Mocha "teal"
-    readonly property color _accent7:   "#cba6f7"   // Mocha "mauve"
+    readonly property color _warnColor: Theme.warningColor
+    readonly property color _accent2:   Theme.chartColors[1]   // sky
+    readonly property color _accent3:   Theme.chartColors[2]   // green
+    readonly property color _accent4:   Theme.chartColors[3]   // amber
+    readonly property color _accent5:   Theme.chartColors[4]   // pink
+    readonly property color _accent6:   Theme.chartColors[5]   // teal
+    readonly property color _accent7:   Theme.chartColors[0]   // indigo
 
     // ── formatBytes / formatPercent helpers (ported from Java) ─────────────
     // bytes can be -1 (null sentinel) → returns "—".

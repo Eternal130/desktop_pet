@@ -136,8 +136,16 @@ bool init(const QString& logDir, std::size_t maxBytes, std::size_t maxFiles)
 
 void shutdown()
 {
+    // Restore Qt's default message handler BEFORE flushing: objects destroyed
+    // later during stack unwind (engine, window) may still emit Qt messages,
+    // and the installed handler would route them into spdlog.
+    qInstallMessageHandler(nullptr);
     spdlog::default_logger()->flush();
-    spdlog::shutdown();
+    // Deliberately NO spdlog::shutdown() here: it destroys the registry
+    // before main's stack unwind and spdlog's own static destructors run,
+    // which crashed the process with 0xC0000005 on every exit. The logger
+    // and its sinks are reclaimed by normal static destruction; flush above
+    // guarantees the log tail is on disk.
 }
 
 } // namespace Logging

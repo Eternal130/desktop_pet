@@ -31,7 +31,12 @@ FluWindow {
     // frameless effect, not a FluTheme flag. "mica" tints the window with
     // the user's wallpaper (the official demo's signature look); degrades
     // to "dwm-blur"/"normal" below Win11.
-    effect: "mica"
+    // Win11 backdrop. NOTE: in this FluentUI version FluWindow only renders
+    // a TRANSPARENT base under "dwm-blur" (mica still paints an opaque
+    // windowActiveBackgroundColor over the DWM material) — dwm-blur is the
+    // effect that actually shows the wallpaper-tinted backdrop, matching
+    // the official demo's look. Selected via the demo's own Theme page.
+    effect: "dwm-blur"
 
     appBar: FluAppBar {
         title: qsTr("Desktop Pet Controller")

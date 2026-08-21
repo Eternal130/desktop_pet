@@ -19,7 +19,9 @@ import DesktopPet
 // controls) are deliberately stubbed -- todos 19/21/22 implement them.
 Rectangle {
     id: root
-    color: Theme.bgColor
+    // Transparent so the FluWindow material (Mica/tinted background) shows
+    // through — matching the Fluent demo's layered look.
+    color: "transparent"
 
     // The InstanceSession* this page renders. null until todo 7 wires Sidebar
     // selection -> Main.qml -> this property. Every binding guards on

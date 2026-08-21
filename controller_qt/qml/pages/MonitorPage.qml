@@ -20,7 +20,8 @@ import DesktopPet
 // margins, 10px-radius surface panels, muted text at 0.6 alpha.
 Rectangle {
     id: root
-    color: Theme.bgColor
+    // Transparent so the FluWindow material shows through.
+    color: "transparent"
 
     property var instance: null
     // Nav-url loading passes no initial properties; self-select the first

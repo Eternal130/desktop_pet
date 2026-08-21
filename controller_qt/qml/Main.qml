@@ -102,6 +102,17 @@ FluWindow {
         }
     }
 
+    // Central page loader driven by nav onTapListener callbacks. Declared
+    // BEFORE navView so the nav pane (later sibling, higher z) always paints
+    // above page content; leftMargin mirrors the framework's own
+    // loader_content margin (cellWidth expanded / navCompactWidth compact).
+    Loader {
+        id: pageLoader
+        anchors.fill: parent
+        anchors.leftMargin: navView.cellWidth
+        sourceComponent: welcomePageComp
+    }
+
     FluNavigationView {
         id: navView
         anchors.fill: parent
@@ -138,14 +149,6 @@ FluWindow {
         title: qsTr("Desktop Pet")
         onLogoClicked: navView.startPageByItem(navHome)
         Component.onCompleted: navView.startPageByItem(navHome)
-    }
-
-    // Central page loader driven by nav onTapListener callbacks.
-    Loader {
-        id: pageLoader
-        anchors.fill: parent
-        anchors.leftMargin: 220
-        sourceComponent: welcomePageComp
     }
 
     FluObject {

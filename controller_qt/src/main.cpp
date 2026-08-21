@@ -1,4 +1,4 @@
-#include <QGuiApplication>
+#include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QtQml/QtQml>
@@ -54,7 +54,13 @@ int main(int argc, char *argv[])
     const qint64 coldStartT0Ms = static_cast<qint64>(
         std::chrono::duration_cast<std::chrono::milliseconds>(t0SinceEpoch).count());
 
-    QGuiApplication app(argc, argv);
+    // QApplication (NOT QGuiApplication): Qt 6.10 QtCharts' ChartView depends
+    // on QtWidgets initialization — under a bare QGuiApplication the ChartView
+    // creation crashes with 0xC0000005 inside Qt6Widgets.dll (MonitorPage).
+    // Verified by minimal repro: QGuiApplication+ChartView crashes,
+    // QApplication+ChartView renders fine. QtWidgets is already linked for
+    // QSystemTrayIcon (T13), so this costs nothing extra.
+    QApplication app(argc, argv);
 
     // Boot logging BEFORE any LOG_* call. ConfigDir::ensureDirectories creates
     // ~/.config/desktop-pet/{,instances,logs}/ so Logging::init can attach its
@@ -309,7 +315,7 @@ int main(int argc, char *argv[])
             std::function<void()> step = [&, chain, &idx, &step, &grabPage]() {
                 if (idx >= pages.size()) {
                     chain->deleteLater();
-                    QGuiApplication::quit();
+                    QApplication::quit();
                     return;
                 }
                 const QString page = pages.at(idx++);

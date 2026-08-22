@@ -26,6 +26,27 @@ Rectangle {
         font.pixelSize: 13
     }
 
+    AppButton {
+        anchors.centerIn: parent
+        anchors.verticalCenterOffset: 36
+        visible: instance === null
+        style: "primary"
+        text: qsTr("＋ 创建第一个实例")
+        onClicked: createDialog.open()
+    }
+
+    CreateInstanceDialog {
+        id: createDialog
+        onAccepted: (name, avatar) => {
+            const uuid = instanceManager.createInstance(name, avatar)
+            if (uuid !== "") {
+                const row = instanceManager.rowCount() - 1
+                Window.window.selectInstance(
+                    row, instanceManager.instanceAt(row).instanceId)
+            }
+        }
+    }
+
     Flickable {
         anchors.fill: parent
         visible: instance !== null
@@ -88,6 +109,12 @@ Rectangle {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 8
+                        AppButton {
+                            style: "subtle"
+                            text: qsTr("＋ 新建实例")
+                            anchors.verticalCenter: parent.verticalCenter
+                            onClicked: createDialog.open()
+                        }
                         AppButton {
                             style: "danger"
                             text: qsTr("🗑 删除")

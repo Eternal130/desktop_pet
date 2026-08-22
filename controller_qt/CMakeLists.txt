@@ -286,8 +286,9 @@ qt_add_qml_module(desktop-pet-controller-qt
 qml/Theme.qml
 qml/Main.qml
 qml/components/AppButton.qml
-qml/components/AppComboBox.qml
-qml/components/AppDialog.qml
+  qml/components/AppComboBox.qml
+  qml/components/AppDialog.qml
+  qml/components/CreateInstanceDialog.qml
 qml/components/AppScrollBar.qml
 qml/components/AppSlider.qml
 qml/components/Card.qml

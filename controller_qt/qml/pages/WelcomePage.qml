@@ -97,9 +97,10 @@ Rectangle {
     }
     Timer { interval: 2000; running: true; repeat: true; onTriggered: root._tick++ }
 
-    function _createInstance() {
-        const label = qsTr("宠物 %1").arg(instanceManager.rowCount() + 1)
-        const uuid = instanceManager.createInstance(label)
+    function _createInstance() { createDialog.open() }
+
+    function _finishCreate(name, avatar) {
+        const uuid = instanceManager.createInstance(name, avatar)
         if (uuid !== "") {
             const row = instanceManager.rowCount() - 1
             Window.window.selectInstance(
@@ -239,11 +240,24 @@ Rectangle {
             }
 
             // ── Instance card grid ─────────────────────────────────────
-            Text {
-                text: qsTr("我的宠物")
-                color: Theme.textColor
-                font.pixelSize: 15
-                font.weight: Font.DemiBold
+            Item {
+                width: parent.width
+                height: 32
+                Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("我的宠物")
+                    color: Theme.textColor
+                    font.pixelSize: 15
+                    font.weight: Font.DemiBold
+                }
+                AppButton {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    style: "primary"
+                    text: qsTr("＋ 创建实例")
+                    onClicked: root._createInstance()
+                }
             }
             GridLayout {
                 width: parent.width
@@ -294,7 +308,8 @@ Rectangle {
                                 }
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "🐱"; font.pixelSize: 28
+                                    text: model.avatar
+                                    font.pixelSize: 28
                                 }
                             }
 
@@ -498,6 +513,11 @@ Rectangle {
                 }
             }
         }
+    }
+
+    CreateInstanceDialog {
+        id: createDialog
+        onAccepted: (name, avatar) => root._finishCreate(name, avatar)
     }
 
     component MetricCard : Card {

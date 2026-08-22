@@ -218,6 +218,24 @@
   /* legend swatches */
   .leg { display:flex; gap:14px; font-size:11.5px; color:var(--text-2); margin-top:8px; flex-wrap:wrap; }
   .leg i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+
+  /* asset grid (资源管理) */
+  .asset-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .asset-card { display:flex; flex-direction:column; gap:6px; padding:14px; }
+  .asset-thumb { width:100%; aspect-ratio:1; border-radius:6px; background:linear-gradient(160deg,#cfd2f5,#a7abe8);
+    display:flex; align-items:center; justify-content:center; font-size:40px; }
+  .asset-name { font-size:13px; font-weight:600; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .asset-meta { font-size:11px; color:var(--text-3); }
+
+  /* logo source picker (Logo 替换) */
+  .logo-src-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .logo-src { display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 6px;
+    border-radius:6px; border:2px solid transparent; cursor:default; }
+  .logo-src:hover { background:rgba(0,0,0,.04); }
+  .logo-src.sel { border-color:var(--accent); background:rgba(91,91,214,.08); }
+  .logo-src .ls-t { width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; }
+  .logo-src .ls-n { font-size:11.5px; color:var(--text-2); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .logo-src.sel .ls-n { color:var(--accent); font-weight:600; }
 </style>
 </head>
 <body>
@@ -231,6 +249,8 @@
   <a href="#p3">③ 资源监控</a>
   <a href="#p4">④ 语音包（新页面）</a>
   <a href="#p5">⑤ 设置</a>
+  <a href="#p6">⑥ 资源管理（新页面）</a>
+  <a href="#p7">⑦ Logo 替换（并入设置 · 外观分区）</a>
 </div>
 
 <!-- ════════════════════════════ PAGE 1 ════════════════════════════ -->
@@ -256,6 +276,7 @@
         <div class="nav-item"><span class="ico">🐱</span> 实例详情<div class="badge">3</div></div>
         <div class="nav-item"><span class="ico">📊</span> 资源监控</div>
         <div class="nav-item"><span class="ico">🎙</span> 语音包<div class="badge">2</div></div>
+        <div class="nav-item"><span class="ico">🗂</span> 资源管理<div class="badge">6</div></div>
         <div class="nav-spacer"></div>
         <div class="nav-item"><span class="ico">⚙</span> 设置</div>
         <div class="nav-profile"><div class="avatar">🐾</div> v2.0 · 3 实例运行中</div>
@@ -540,6 +561,7 @@
         <div class="nav-item"><span class="ico">🐱</span> 实例详情</div>
         <div class="nav-item"><span class="ico">📊</span> 资源监控</div>
         <div class="nav-item active"><span class="ico">🎙</span> 语音包<div class="badge">2</div></div>
+        <div class="nav-item"><span class="ico">🗂</span> 资源管理<div class="badge">6</div></div>
         <div class="nav-spacer"></div>
         <div class="nav-item"><span class="ico">⚙</span> 设置</div>
         <div class="nav-profile"><div class="avatar">🎙</div> 扫描目录 ~/.config/desktop-pet/voicepacks</div>
@@ -615,6 +637,8 @@
         <div class="nav-item"><span class="ico">🐱</span> 实例详情</div>
         <div class="nav-item"><span class="ico">📊</span> 资源监控</div>
         <div class="nav-item"><span class="ico">🎙</span> 语音包</div>
+        <div class="nav-item"><span class="ico">🗂</span> 资源管理</div>
+        <div class="nav-item"><span class="ico">🖌</span> Logo</div>
         <div class="nav-spacer"></div>
         <div class="nav-item active"><span class="ico">⚙</span> 设置</div>
         <div class="nav-profile"><div class="avatar">⚙</div> PanelConfig · 原子写入</div>
@@ -680,6 +704,208 @@
   <div class="note-box">
     「行为/启动」四项对应现有 PanelConfigController 字段（closeAction / confirmOnExit / startMinimized / autoLaunchSystem）；
     「外观」复用 FluTheme.darkMode + Theme.accentColor + FluWindow effect；强调色同时驱动图表调色板（Theme.chartColors）。
+  </div>
+</div>
+
+<!-- ════════════════════════════ PAGE 6 ════════════════════════════ -->
+<div class="frame-wrap" id="p6">
+  <div class="frame-label">⑥ 资源管理（新增独立页面 — 图片库：上传 / 删除 / 预览）</div>
+  <div class="frame-note">
+    新页面。用户上传的图片统一入库：内容哈希命名（sha256 去重）、统一转存 PNG、元数据存 app.db（SQLite）。
+    图片库与实例解耦——<b>删除实例不删除图片</b>（与现有 emoji 图标同语义：实例只存引用，不拥有资源）。
+    上传来源 = FileDialog；用途标记（面板 logo / 实例图标 / 未使用）由引用关系推导，不要求用户手填。
+  </div>
+  <div class="window">
+    <div class="titlebar"><div class="tb-icon"></div><div class="tb-title">资源管理 — Desktop Pet Controller</div>
+      <div class="tb-btns"><div class="tb-btn">─</div><div class="tb-btn">▢</div><div class="tb-btn close">✕</div></div></div>
+    <div class="body">
+      <div class="nav">
+        <div class="nav-search">🔍 搜索…</div>
+        <div class="nav-group-label">宠物</div>
+        <div class="nav-item"><span class="ico">🏠</span> 主页</div>
+        <div class="nav-item"><span class="ico">🐱</span> 实例详情</div>
+        <div class="nav-item"><span class="ico">📊</span> 资源监控</div>
+        <div class="nav-item"><span class="ico">🎙</span> 语音包</div>
+        <div class="nav-item active"><span class="ico">🗂</span> 资源管理<div class="badge">6</div></div>
+        <div class="nav-item"><span class="ico">🖌</span> Logo</div>
+        <div class="nav-spacer"></div>
+        <div class="nav-item"><span class="ico">⚙</span> 设置</div>
+        <div class="nav-profile"><div class="avatar">🗂</div> app.db · assets/uploads</div>
+      </div>
+      <div class="content">
+        <div class="row" style="align-items:center;">
+          <div class="page-title" style="margin:0;">资源管理</div>
+          <div class="grow"></div>
+          <div class="btn subtle">📂 打开资源目录</div>
+          <div class="btn subtle">🖌 去设置换 Logo</div>
+          <div class="btn primary">⬆ 上传图片</div>
+        </div>
+        <div class="page-desc">支持 PNG / JPG / WEBP / ICO · 导入时统一转存 PNG 并按内容哈希去重 · 总量 6 张 · 4.2 MB</div>
+
+        <div class="row" style="align-items:center; margin-bottom:12px;">
+          <div class="seg"><div class="sel">全部 <span style="color:var(--text-3);">6</span></div><div>已使用 <span style="color:var(--text-3);">3</span></div><div>未使用 <span style="color:var(--text-3);">3</span></div></div>
+          <div class="grow"></div>
+          <span style="font-size:12px;color:var(--text-3);">🔍 按名称 / 哈希搜索…</span>
+        </div>
+
+        <div class="asset-grid">
+          <div class="card asset-card">
+            <div class="asset-thumb">🐱</div>
+            <div class="asset-name">cat_icon.png</div>
+            <div class="asset-meta">256×256 · 48 KB · 2026-08-20</div>
+            <div class="pill ok" style="align-self:flex-start;"><span class="d"></span>小黑 · 图标</div>
+            <div class="btnrow"><span class="btn subtle" style="padding:4px 10px;">👁 预览</span><span class="btn danger" style="padding:4px 10px;">🗑</span></div>
+          </div>
+          <div class="card asset-card">
+            <div class="asset-thumb" style="background:linear-gradient(160deg,#d8f0d8,#a8d0a8);">🐾</div>
+            <div class="asset-name">paw_logo.png</div>
+            <div class="asset-meta">512×512 · 96 KB · 2026-08-19</div>
+            <div class="pill ok" style="align-self:flex-start;background:var(--accent-light);color:var(--accent);"><span class="d" style="background:var(--accent);"></span>面板 Logo</div>
+            <div class="btnrow"><span class="btn subtle" style="padding:4px 10px;">👁 预览</span><span class="btn danger" style="padding:4px 10px;">🗑</span></div>
+          </div>
+          <div class="card asset-card">
+            <div class="asset-thumb" style="background:linear-gradient(160deg,#f8d3d8,#eaa8b4);">🐰</div>
+            <div class="asset-name">rabbit.png</div>
+            <div class="asset-meta">256×256 · 52 KB · 2026-08-19</div>
+            <div class="pill ok" style="align-self:flex-start;"><span class="d"></span>白兔 · 图标</div>
+            <div class="btnrow"><span class="btn subtle" style="padding:4px 10px;">👁 预览</span><span class="btn danger" style="padding:4px 10px;">🗑</span></div>
+          </div>
+          <div class="card asset-card">
+            <div class="asset-thumb" style="background:linear-gradient(160deg,#e4e4e4,#c9c9c9);">🐺</div>
+            <div class="asset-name">wolf.png</div>
+            <div class="asset-meta">256×256 · 47 KB · 2026-08-18</div>
+            <div class="pill off" style="align-self:flex-start;"><span class="d"></span>未使用</div>
+            <div class="btnrow"><span class="btn subtle" style="padding:4px 10px;">👁 预览</span><span class="btn danger" style="padding:4px 10px;">🗑</span></div>
+          </div>
+          <div class="card asset-card">
+            <div class="asset-thumb" style="background:linear-gradient(160deg,#fdf3dd,#f0d8a0);">🌙</div>
+            <div class="asset-name">moon.png</div>
+            <div class="asset-meta">128×128 · 18 KB · 2026-08-15</div>
+            <div class="pill off" style="align-self:flex-start;"><span class="d"></span>未使用</div>
+            <div class="btnrow"><span class="btn subtle" style="padding:4px 10px;">👁 预览</span><span class="btn danger" style="padding:4px 10px;">🗑</span></div>
+          </div>
+          <div class="card asset-card" style="border-style:dashed; align-items:center; justify-content:center; cursor:default; opacity:.7;">
+            <div style="font-size:26px; color:var(--text-3);">＋</div>
+            <div style="font-size:12px; color:var(--text-3);">拖入图片或点击上传</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="note-box">
+    交互逻辑：<b>上传</b> = 「上传图片」按钮或虚线卡 → FileDialog(多选) / 拖放；导入管线 = QImage 校验解码 → 转 PNG → sha256 命名 →
+    落盘 assets/uploads/ → 元数据 INSERT app.db（哈希重复时静默跳过并提示"已存在"）。<b>预览</b> = FluContentDialog 放大图 +
+    完整元数据（原始文件名 / 哈希 / 尺寸 / 大小 / 上传时间 / 引用列表）。<b>删除</b> = 二次确认对话框；被引用中的图片（当前 logo /
+    任一实例图标）删除时对话框列出受影响引用并要求先解除引用（引导跳转 Logo 页 / 实例详情页），未使用图片直接删文件 + db 记录。
+    删除实例<b>不</b>删图片——实例仅持有 asset_id 引用（与 emoji 图标同语义），引用随实例删除自动解除。
+  </div>
+</div>
+
+<!-- ══════════════════════════════ PAGE 7 ══════════════════════════════ -->
+<div class="frame-wrap" id="p7">
+  <div class="frame-label">⑦ Logo 替换（并入设置 · 外观分区 — 不占一级导航）</div>
+  <div class="frame-note">
+    位置决策：Logo 替换是低频一次性个性化操作，不单独占导航项（导航留给实例/监控/语音包/资源等高频页面），
+    收进「设置 → 外观」分区。布局 = 设置页左锚点导航 + 右侧设置卡片的既有模式：预览卡 + 来源选择卡 + 上传卡。
+    选择即预览、应用后持久化到 app.db（panel_config），删图片不回退默认——logo 同样是引用，被删除需先在资源管理页解除。
+  </div>
+  <div class="window">
+    <div class="titlebar">
+      <div class="tb-icon" style="background:none;overflow:hidden;"><span style="font-size:14px;">🐾</span></div>
+      <div class="tb-title">设置 — Desktop Pet Controller</div>
+      <div class="tb-btns"><div class="tb-btn">─</div><div class="tb-btn">▢</div><div class="tb-btn close">✕</div></div>
+    </div>
+    <div class="body">
+      <div class="nav">
+        <div class="nav-search">🔍 搜索…</div>
+        <div class="nav-group-label">宠物</div>
+        <div class="nav-item"><span class="ico">🏠</span> 主页</div>
+        <div class="nav-item"><span class="ico">🐱</span> 实例详情</div>
+        <div class="nav-item"><span class="ico">📊</span> 资源监控</div>
+        <div class="nav-item"><span class="ico">🎙</span> 语音包</div>
+        <div class="nav-item"><span class="ico">🗂</span> 资源管理</div>
+        <div class="nav-spacer"></div>
+        <div class="nav-item active"><span class="ico">⚙</span> 设置</div>
+        <div class="nav-profile"><div class="avatar" style="background:none;overflow:hidden;">🐾</div> 当前：paw_logo</div>
+      </div>
+      <div class="content" style="display:flex; gap:24px;">
+        <div class="col" style="width:170px; padding-top:4px;">
+          <div class="nav-item" style="margin-left:0;">🔀 行为</div>
+          <div class="nav-item" style="margin-left:0;">🚀 启动</div>
+          <div class="nav-item active" style="margin-left:0;">🎨 外观</div>
+          <div class="nav-item" style="margin-left:0;">ℹ 关于</div>
+        </div>
+        <div class="col grow">
+          <div class="page-title" style="font-size:22px;">外观 · Logo 替换</div>
+          <div class="page-desc">控制面板标题栏与导航头像的图标 · 实例图标请在各实例详情页更换</div>
+
+        <div style="display:flex; gap:14px;">
+          <!-- LEFT: preview -->
+          <div class="col" style="flex:1.1;">
+            <div class="card" style="text-align:center; padding:28px;">
+              <div style="font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:14px;">实时预览</div>
+              <div style="width:96px; height:96px; margin:0 auto 14px; border-radius:20px; background:linear-gradient(135deg,#8b8bf0,#5b5bd6); display:flex; align-items:center; justify-content:center; font-size:44px;">🐾</div>
+              <div style="font-size:13px; font-weight:600;">paw_logo.png <span class="pill ok" style="margin-left:6px;"><span class="d"></span>使用中</span></div>
+              <div class="hint" style="margin-top:4px;">512×512 · 来自资源库 · 2026-08-19 上传</div>
+              <div class="btnrow" style="justify-content:center; margin-top:16px;">
+                <span class="btn">✓ 应用 Logo</span>
+                <span class="btn subtle">↺ 恢复默认</span>
+              </div>
+            </div>
+            <div class="card">
+              <h3>实际效果</h3>
+              <div class="row" style="align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,.55); border:1px solid rgba(0,0,0,.05); border-radius:6px;">
+                <span style="width:18px;height:18px;border-radius:4px;background:linear-gradient(135deg,#8b8bf0,#5b5bd6);display:flex;align-items:center;justify-content:center;font-size:11px;">🐾</span>
+                <span style="font-size:12px;color:var(--text-2);flex:1;">Desktop Pet Controller — 标题栏</span>
+              </div>
+              <div class="row" style="align-items:center; gap:10px; padding:8px 10px; margin-top:8px; background:rgba(243,243,243,.75); border:1px solid rgba(0,0,0,.06); border-radius:6px;">
+                <span style="width:30px;height:30px;border-radius:15px;background:linear-gradient(135deg,#8b8bf0,#5b5bd6);display:flex;align-items:center;justify-content:center;font-size:14px;">🐾</span>
+                <span style="font-size:12px;color:var(--text-2);flex:1;">导航底部 — 用户头像区</span>
+              </div>
+              <div class="row" style="align-items:center; gap:10px; padding:8px 10px; margin-top:8px; border:1px solid rgba(0,0,0,.06); border-radius:6px;">
+                <span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:15px;">🐾</span>
+                <span style="font-size:12px;color:var(--text-2);flex:1;">系统托盘图标（可选同步）</span>
+                <div class="toggle"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: sources -->
+          <div class="col" style="flex:1;">
+            <div class="card">
+              <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+                <h3 style="margin:0;">来源</h3>
+                <span class="btn subtle" style="padding:4px 10px; font-size:12px;">🗂 资源库 6 张 →</span>
+              </div>
+              <div class="logo-src-grid">
+                <div class="logo-src sel"><div class="ls-t" style="background:linear-gradient(135deg,#8b8bf0,#5b5bd6);">🐾</div><div class="ls-n">默认</div></div>
+                <div class="logo-src"><div class="ls-t" style="background:linear-gradient(160deg,#d8f0d8,#a8d0a8);">🐾</div><div class="ls-n">paw_logo</div></div>
+                <div class="logo-src"><div class="ls-t" style="background:linear-gradient(160deg,#f8d3d8,#eaa8b4);">🐰</div><div class="ls-n">rabbit</div></div>
+                <div class="logo-src"><div class="ls-t" style="background:linear-gradient(160deg,#e4e4e4,#c9c9c9);">🐺</div><div class="ls-n">wolf</div></div>
+                <div class="logo-src"><div class="ls-t" style="background:linear-gradient(160deg,#fdf3dd,#f0d8a0);">🌙</div><div class="ls-n">moon</div></div>
+                <div class="logo-src"><div class="ls-t" style="background:linear-gradient(160deg,#cfd2f5,#a7abe8);">🐱</div><div class="ls-n">cat_icon</div></div>
+              </div>
+              <div class="hint" style="margin-top:10px;">选中即预览（未应用），点「应用 Logo」持久化；再点一次取消选中。</div>
+            </div>
+
+            <div class="card" style="border-style:dashed; text-align:center; padding:22px;">
+              <div style="font-size:22px; margin-bottom:6px;">⬆</div>
+              <div style="font-size:13px; font-weight:600; margin-bottom:2px;">直接上传新图片</div>
+              <div class="hint" style="margin-bottom:12px;">PNG / JPG / WEBP / ICO · 建议 512×512 以上 · 自动入库并选中</div>
+              <span class="btn primary" style="padding:6px 18px;">选择文件…</span>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="note-box">
+    交互逻辑：左预览右选择,选中即预览、应用才持久化（应用 = UPDATE panel_config.logo_asset_id,含\"托盘图标同步\"开关一并写入）。
+    「直接上传」= FileDialog → 走资源管理同一导入管线（校验→PNG→哈希→入库）→ 自动选中新资源 → 用户确认应用。
+    「恢复默认」回退到内置资源 paw.png 并清空引用。Logo 与图片库同生命周期：删除使用中的 logo 图片需先在资源管理页解除引用
+    （该约束与实例图标一致）。实例图标更换入口在实例详情页头部（点击 emoji/图标 → 弹出同款选择网格,数据源相同）,不在本页。
+    入口收束：设置 → 外观分区新增「Logo 替换」卡片即本页主体;资源管理页提供「去设置换 Logo →」跳转,不再有独立导航项。
   </div>
 </div>
 

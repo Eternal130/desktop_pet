@@ -186,10 +186,12 @@ Window {
         Rectangle {
             width: 18; height: 18; radius: 4
             x: 16; y: (parent.height - height) / 2
-            color: Theme.accentColor
+            color: assetManager.logoUrl.length > 0
+                   ? "transparent"
+                   : Theme.accentColor
             PanelLogoGlyph {
                 anchors.centerIn: parent
-                size: 14
+                size: 18
             }
         }
         Text {
@@ -424,16 +426,30 @@ Window {
             Row {
                 x: 16; y: (parent.height - height) / 2
                 spacing: 10
-                Rectangle {
-                    width: 30; height: 30; radius: 15
+                Item {
+                    width: 30; height: 30
                     anchors.verticalCenter: parent.verticalCenter
-                    gradient: Gradient {
-                        GradientStop { position: 0; color: "#8b8bf0" }
-                        GradientStop { position: 1; color: Theme.accentColor }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 15
+                        visible: assetManager.logoUrl.length === 0
+                        gradient: Gradient {
+                            GradientStop { position: 0; color: "#8b8bf0" }
+                            GradientStop { position: 1; color: Theme.accentColor }
+                        }
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 15
+                        visible: assetManager.logoUrl.length > 0
+                        color: Theme.dark ? "#2a2a2a" : "#eaeaea"
+                        border.width: 1
+                        border.color: Theme.borderColor
                     }
                     PanelLogoGlyph {
                         anchors.centerIn: parent
-                        size: 22
+                        size: 24
                     }
                 }
                 Text {

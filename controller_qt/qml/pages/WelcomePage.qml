@@ -117,9 +117,25 @@ Rectangle {
 
         Rectangle {
             width: 72; height: 72; radius: 36
-            color: Theme.accentColor
+            color: assetManager.logoUrl.length > 0
+                   ? (Theme.dark ? "#2a2a2a" : "#eaeaea")
+                   : Theme.accentColor
+            border.width: assetManager.logoUrl.length > 0 ? 1 : 0
+            border.color: Theme.borderColor
             anchors.horizontalCenter: parent.horizontalCenter
-            Text { anchors.centerIn: parent; text: "🐾"; font.pixelSize: 34 }
+            Image {
+                anchors.fill: parent
+                anchors.margins: 8
+                source: assetManager.logoUrl
+                fillMode: Image.PreserveAspectFit
+                visible: assetManager.logoUrl.length > 0
+                         && status === Image.Ready
+            }
+            Text {
+                anchors.centerIn: parent
+                visible: assetManager.logoUrl.length === 0
+                text: "🐾"; font.pixelSize: 34
+            }
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter

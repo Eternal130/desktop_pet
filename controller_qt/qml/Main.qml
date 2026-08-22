@@ -62,6 +62,7 @@ FluWindow {
         if (name === "welcome")        item = navHome
         else if (name === "instance")  item = navInstance
         else if (name === "monitor")   item = navMonitor
+        else if (name === "voicepack") { navVoicePack.onTapListener(); return }
         if (item !== null) navView.startPageByItem(item)
     }
 
@@ -148,6 +149,7 @@ FluWindow {
                 { title: navHome.title, key: "welcome" },
                 { title: navInstance.title, key: "instance" },
                 { title: navMonitor.title, key: "monitor" },
+                { title: navVoicePack.title, key: "voicepack" },
                 { title: navSettings.title, key: "settings" }
             ]
             onItemClicked:
@@ -193,12 +195,22 @@ FluWindow {
                 pageLoader.sourceComponent = monitorPageComp
             }
         }
+        FluPaneItem {
+            id: navVoicePack
+            title: qsTr("Voice Packs")
+            icon: FluentIcons.Microphone
+            onTapListener: function() {
+                root.currentPage = "voicepack"
+                pageLoader.sourceComponent = voicePackPageComp
+            }
+        }
     }
 
     Component { id: welcomePageComp;        WelcomePage {} }
     Component { id: instanceDetailPageComp; InstanceDetailPage { instance: root.currentInstance } }
     Component { id: monitorPageComp;        MonitorPage { instance: root.currentInstance } }
     Component { id: settingsPageComp;       SettingsPage {} }
+    Component { id: voicePackPageComp;      VoicePackPage {} }
 
     // Detail-page delete request: with FluNavigationView's own content
     // loader the page instance isn't directly reachable from here, so

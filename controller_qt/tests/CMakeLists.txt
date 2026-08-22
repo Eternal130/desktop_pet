@@ -1036,6 +1036,7 @@ qt_add_executable(InstanceSessionTest InstanceSessionTest.cpp
     ${CMAKE_SOURCE_DIR}/src/core/Scheduler.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InteractionHandler.cpp
     ${CMAKE_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/MetaMkoParser.cpp
     ${CMAKE_SOURCE_DIR}/src/system/ResourceStatsCollector.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/MonitorDataModel.cpp
     ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
@@ -1211,6 +1212,7 @@ qt_add_executable(InstanceManagerTest InstanceManagerTest.cpp
     ${CMAKE_SOURCE_DIR}/src/core/Scheduler.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InteractionHandler.cpp
     ${CMAKE_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/MetaMkoParser.cpp
     ${CMAKE_SOURCE_DIR}/src/system/ResourceStatsCollector.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/MonitorDataModel.cpp
     ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp

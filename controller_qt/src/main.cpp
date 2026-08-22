@@ -228,10 +228,11 @@ int main(int argc, char *argv[])
     // to-tray vs confirm-then-exit.
     engine.rootContext()->setContextProperty("panelConfig", &panelConfigController);
 
-    // VoicePackController context property (Fluent UI redesign Phase 5).
-    // Read-only discovery surface (VoicePackScanner + MetaMkoParser) for
-    // VoicePackPage.qml. Mount wiring to InstanceSession is todo 21.
+    // VoicePackController context property. Discovery over VoicePackScanner
+    // + MetaMkoParser; todo 21 mount wiring reaches the per-instance
+    // MountedBehaviorEngine via the InstanceManager.
     VoicePackController voicePackController;
+    voicePackController.setInstanceManager(&instanceManager);
     engine.rootContext()->setContextProperty("voicePacks", &voicePackController);
 
     // Start the WS server on the hardcoded protocol port (blueprint §3.1).

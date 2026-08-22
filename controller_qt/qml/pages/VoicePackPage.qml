@@ -3,7 +3,8 @@ import QtQuick.Controls
 import DesktopPet
 
 // Voice-pack page (design doc §4). Library + mapping preview left, mount
-// matrix right (display-only pending core wiring todo 21).
+// matrix right (todo 21 wired: per-instance mount/unmount drives
+// MountedBehaviorEngine via voicePacks.setInstanceVoicePack).
 Rectangle {
     id: root
     color: "transparent"
@@ -196,7 +197,7 @@ Rectangle {
                     }
                 }
 
-                // RIGHT: mount matrix
+                // RIGHT: mount matrix (todo 21 wired — live mount/unmount)
                 Column {
                     width: (parent.width - Theme.spaceGroup) * 0.42
                     spacing: Theme.spaceGroup
@@ -204,32 +205,47 @@ Rectangle {
                     Card {
                         width: parent.width
                         title: qsTr("挂载到实例")
-
-                        Text {
-                            width: parent.width
-                            wrapMode: Text.WordWrap
-                            color: Theme.warningColor
-                            font.pixelSize: 11
-                            text: qsTr("⚠ 挂载接线尚未完成（核心侧 todo 21）：当前版本" +
-                                       "可浏览语音包元数据，挂载/卸载操作将在核心接线" +
-                                       "后启用。")
-                        }
+                        hint: qsTr("挂载/卸载即时下发 · 卸载后恢复默认命中处理")
 
                         Column {
                             width: parent.width
-                            spacing: 10
+                            spacing: 12
 
                             Repeater {
                                 model: instanceManager
                                 delegate: SettingRow {
                                     width: parent.width
                                     title: label
-                                    desc: qsTr("未挂载 · 挂载功能待核心接线")
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: qsTr("无")
-                                        color: root._mutedColor
-                                        font.pixelSize: 13
+                                    desc: qsTr("当前：") + (
+                                        voicePacks.instanceVoicePack(model.uuid).length > 0
+                                        ? voicePacks.packDisplayNameFor(
+                                              voicePacks.instanceVoicePack(model.uuid))
+                                        : qsTr("无"))
+                                    Segmented {
+                                        options: {
+                                            const opts = [qsTr("无")]
+                                            for (let i = 0; i < voicePacks.packCount; ++i)
+                                                opts.push(voicePacks.packDisplayName(i))
+                                            return opts
+                                        }
+                                        currentValue: {
+                                            const mounted = voicePacks.instanceVoicePack(model.uuid)
+                                            if (mounted.length === 0) return qsTr("无")
+                                            for (let i = 0; i < voicePacks.packCount; ++i)
+                                                if (voicePacks.packPath(i) === mounted)
+                                                    return voicePacks.packDisplayName(i)
+                                            return qsTr("无")
+                                        }
+                                        onSelected: (v) => {
+                                            if (v === qsTr("无")) {
+                                                voicePacks.setInstanceVoicePack(model.uuid, "")
+                                                return
+                                            }
+                                            for (let i = 0; i < voicePacks.packCount; ++i)
+                                                if (voicePacks.packDisplayName(i) === v)
+                                                    voicePacks.setInstanceVoicePack(
+                                                        model.uuid, voicePacks.packPath(i))
+                                        }
                                     }
                                 }
                             }

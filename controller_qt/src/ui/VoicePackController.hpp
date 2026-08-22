@@ -13,10 +13,12 @@
 //   Q_INVOKABLE packGroupNames(i)        — group names (for the mapping
 //                                          preview chips)
 //   Q_INVOKABLE voicePackDir()           — the scanned directory
-//
-// Mount/unmount to InstanceSession is NOT wired here — todo 21 (populating
-// MountedBehaviorEngine per instance) remains a core-side gap; the QML
-// matrix shows the available packs but marks mounting as pending wiring.
+//   Q_INVOKABLE packPath(i)              — absolute pack directory
+//   Q_INVOKABLE setInstanceVoicePack(instanceUuid, packPathOrEmpty)
+//                                        — mount/unmount via InstanceSession
+//                                          ("" = unmount); emits mountsChanged
+//   Q_INVOKABLE instanceVoicePack(instanceUuid)
+//                                        — the instance's mounted pack path
 //
 // Contract: never throws; all core functions used are noexcept-equivalent
 // (return empty optionals/lists on failure).
@@ -27,6 +29,8 @@
 #include <QStringList>
 
 #include "core/VoicePackInfo.hpp"
+
+class InstanceManager;
 
 class VoicePackController : public QObject {
     Q_OBJECT
@@ -44,11 +48,23 @@ public:
     Q_INVOKABLE int packGroupCount(int index) const;
     Q_INVOKABLE int packActionCount(int index) const;
     Q_INVOKABLE QStringList packGroupNames(int index) const;
+    Q_INVOKABLE QString packPath(int index) const;
+    Q_INVOKABLE QString packDisplayNameFor(const QString& packPath) const;
+
+    // Mount wiring (todo 21). The manager is injected post-construction by
+    // main.cpp (the controller is created before the InstanceManager there);
+    // null manager makes these no-ops returning ""/false.
+    void setInstanceManager(InstanceManager* manager) { m_manager = manager; }
+    Q_INVOKABLE bool setInstanceVoicePack(const QString& instanceUuid,
+                                          const QString& packPath);
+    Q_INVOKABLE QString instanceVoicePack(const QString& instanceUuid) const;
 
 signals:
     void packsChanged();
+    void mountsChanged();
 
 private:
     QList<core::VoicePackInfo> m_packs;
     QString m_voicePackDir;
+    InstanceManager* m_manager = nullptr;
 };

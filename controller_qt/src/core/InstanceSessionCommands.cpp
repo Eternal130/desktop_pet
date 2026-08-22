@@ -1,9 +1,10 @@
-#include "core/InstanceSession.hpp"
+﻿#include "core/InstanceSession.hpp"
 
 #include <QJsonObject>
 
 #include <spdlog/spdlog.h>
 #include "logging/Logging.hpp"
+#include "core/MetaMkoParser.hpp"
 #include "core/ModelScanner.hpp"
 #include "core/PathResolve.hpp"
 #include "core/SubtitlePresets.hpp"
@@ -29,7 +30,7 @@ QStringList InstanceSession::availableModels() const
 {
     // Prefer m_rendererDir (stored in start()) so the list matches what the
     // running renderer actually sees; fall back to the persisted
-    // config.rendererPath, then defaultRendererDir() — the same fallback
+    // config.rendererPath, then defaultRendererDir() 鈥?the same fallback
     // chain start() uses, so the ComboBox populates before start().
     QString dir = m_rendererDir;
     if (dir.isEmpty())
@@ -63,7 +64,7 @@ QStringList InstanceSession::expressionNames() const
     return m_modelInfo->expressions;
 }
 
-// Design-doc §② third stage tab: hit-area names from the parsed
+// Design-doc 搂鈶?third stage tab: hit-area names from the parsed
 // .model3.json. Empty until model_loaded fires.
 QStringList InstanceSession::hitAreaNames() const
 {
@@ -73,7 +74,7 @@ QStringList InstanceSession::hitAreaNames() const
     return m_modelInfo->hitAreas;
 }
 
-// Design-doc §③ crash-recovery card: live restart-attempt count from the
+// Design-doc 搂鈶?crash-recovery card: live restart-attempt count from the
 // owned RestartController (0..5, reset on successful connect).
 int InstanceSession::restartAttempts() const
 {
@@ -85,7 +86,7 @@ void InstanceSession::playMotion(const QString& group, int index)
     LOG_INFO("InstanceSession[{}]: playMotion group=\"{}\" index={}",
              m_instanceId, group.toStdString(), index);
 
-    // priority=2 is PriorityNormal per interface.md §B.1 (click-triggered).
+    // priority=2 is PriorityNormal per interface.md 搂B.1 (click-triggered).
     // (todo 16: previously inline createCommand; now via typed factory.)
     sendCommand(Protocol::buildPlayMotion(group, index, 2));
 }
@@ -99,7 +100,7 @@ void InstanceSession::setExpression(const QString& expressionId)
     sendCommand(Protocol::buildSetExpression(expressionId));
 }
 
-// ── Read-only InstanceConfig field accessors (display-only in the param panel;
+// 鈹€鈹€ Read-only InstanceConfig field accessors (display-only in the param panel;
 // persistence lands in todo 7). One-line wrappers over m_config.
 
 QString InstanceSession::dragMode() const
@@ -117,10 +118,10 @@ bool InstanceSession::autoStartEnabled() const
     return m_config.autoStart;
 }
 
-// ── Phase-5 Wave 8 todo 21 (subtitle UI helpers) ────────────────────────────
+// 鈹€鈹€ Phase-5 Wave 8 todo 21 (subtitle UI helpers) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 // Mirror of Java MainWindowController subtitleStyleCombo/subtitleAdjustCheck
-// handlers. Each setter: update m_config → send Protocol command via
-// sendCommand → persist via m_configManager. No NOTIFY signal: the QML
+// handlers. Each setter: update m_config 鈫?send Protocol command via
+// sendCommand 鈫?persist via m_configManager. No NOTIFY signal: the QML
 // ComboBox/CheckBox read the getter once at panel construction and manage
 // their own checked-state afterward (same pattern as dragMode/idleInterval/
 // autoStart accessors above).
@@ -167,18 +168,66 @@ void InstanceSession::setSubtitleAdjustMode(bool enabled)
     }
 }
 
-// ── Phase-5 Wave 8 todo 22 (layout command triggers) ────────────────────────
+// 鈹€鈹€ Phase-5 Wave 8 todo 22 (layout command triggers) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── Voice-pack mount (todo 21) ───────────────────────────────────────────
+
+bool InstanceSession::mountVoicePack(const QString& packPath)
+{
+    if (packPath.isEmpty()) {
+        unmountVoicePack();
+        return false;
+    }
+    auto pack = core::parseMetaMko(packPath);
+    if (!pack.has_value()) {
+        LOG_WARN("InstanceSession[{}]: mountVoicePack failed to parse \"{}\" "
+                 "— leaving current state", m_instanceId,
+                 packPath.toStdString());
+        return m_mountedPack.has_value();
+    }
+    m_mountedPack = std::move(*pack);
+    m_behaviorEngine.setVoicePack(&*m_mountedPack);
+    m_config.voicePack = packPath;
+    if (!m_configManager.save(m_config)) {
+        LOG_ERROR("InstanceSession[{}]: failed to persist voice pack",
+                  m_instanceId);
+    }
+    LOG_INFO("InstanceSession[{}]: mounted voice pack \"{}\" ({} groups)",
+             m_instanceId, m_mountedPack->displayName.toStdString(),
+             m_mountedPack->groups.size());
+    return true;
+}
+
+void InstanceSession::unmountVoicePack()
+{
+    if (!m_mountedPack.has_value() && m_config.voicePack.isEmpty()) {
+        return;
+    }
+    m_behaviorEngine.setVoicePack(nullptr);
+    m_mountedPack.reset();
+    m_config.voicePack.clear();
+    if (!m_configManager.save(m_config)) {
+        LOG_ERROR("InstanceSession[{}]: failed to persist voice-pack unmount",
+                  m_instanceId);
+    }
+    LOG_INFO("InstanceSession[{}]: unmounted voice pack", m_instanceId);
+}
+
+QString InstanceSession::mountedVoicePack() const
+{
+    return m_config.voicePack;
+}
+
 // getLayout/resetLayout are fire-and-forget from the pending-request
 // perspective: sendCommand pushes the envelope and emits commandSent but never
 // registers a PendingRequests entry. get_layout's response routes via the
-// layout_state EVENT by action (interface.md §7.3); reset_layout's Response is
+// layout_state EVENT by action (interface.md 搂7.3); reset_layout's Response is
 // a plain success ack the controller does not need to await.
 
 void InstanceSession::getLayout()
 {
     LOG_INFO("InstanceSession[{}]: getLayout", m_instanceId);
     // No pending request: the reply arrives as a layout_state event routed by
-    // action → handleLayoutStateEvent → emits layoutUpdated.
+    // action 鈫?handleLayoutStateEvent 鈫?emits layoutUpdated.
     sendCommand(Protocol::buildGetLayout());
 }
 

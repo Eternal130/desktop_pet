@@ -191,6 +191,20 @@ public slots:
     // silently ignores an unknown expression_id.
     Q_INVOKABLE void setExpression(const QString& expressionId);
 
+    // ── Voice-pack mount (todo 21) ─────────────────────────────────────────
+    // Mount the voice pack at `packPath` (the absolute pack directory that
+    // contains meta.mko): parse + populate m_behaviorEngine + persist the
+    // choice to InstanceConfig.voicePack. Empty/unparseable pack → unmount.
+    // Returns true when the engine ended up enabled.
+    Q_INVOKABLE bool mountVoicePack(const QString& packPath);
+
+    // Unmount the voice pack (engine sentinel, hit falls back to
+    // InteractionHandler) and persist voicePack = "".
+    Q_INVOKABLE void unmountVoicePack();
+
+    // The mounted pack's absolute directory (empty = not mounted).
+    Q_INVOKABLE QString mountedVoicePack() const;
+
     // ── Phase-5 Wave 8 todo 21 (subtitle UI helpers) ────────────────────────
     // Q_INVOKABLE accessors + setters consumed by InstanceDetailPage.qml's
     // Subtitle panel. presetNames() returns the 15 Chinese display names
@@ -402,10 +416,10 @@ private:
     HitAreaCacheManager   m_hitAreaCache;       // todo 10: hitArea cache by model
     Scheduler             m_scheduler;          // todo 8/10: idle motion cycling
     RestartController     m_restartController;  // todo 12: crash-recovery backoff
-    // todo 20: voice-pack behavior engine. Default-constructed = no voice pack
-    // (hasGroupForArea always false → hit falls back to InteractionHandler).
-    // todo 21 swaps in a populated VoicePackInfo when the user mounts a pack.
+    // todo 20/21: voice-pack behavior engine. Empty = not mounted; mount
+    // swaps in the parsed VoicePackInfo (owned by m_mountedPack).
     core::MountedBehaviorEngine m_behaviorEngine;
+    std::optional<core::VoicePackInfo> m_mountedPack;
 
     // ── Phase-5 Wave 8 todo 18 (resource monitor) ───────────────────────────
     // Per-session monitor model + the controller-side collector that feeds it

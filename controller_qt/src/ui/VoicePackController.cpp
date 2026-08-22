@@ -4,6 +4,8 @@
 #include <QDir>
 #include <QFileInfo>
 
+#include "core/InstanceManager.hpp"
+#include "core/InstanceSession.hpp"
 #include "core/MetaMkoParser.hpp"
 #include "core/VoicePackScanner.hpp"
 
@@ -73,4 +75,47 @@ QStringList VoicePackController::packGroupNames(int index) const {
         out << (g.name.isEmpty() ? g.code : g.name);
     }
     return out;
+}
+
+QString VoicePackController::packPath(int index) const {
+    if (index < 0 || index >= m_packs.size()) return {};
+    return m_packs.at(index).basePath;
+}
+
+QString VoicePackController::packDisplayNameFor(const QString& packPath) const {
+    for (const auto& p : m_packs) {
+        if (p.basePath == packPath) {
+            return p.displayName.isEmpty() ? p.dirName : p.displayName;
+        }
+    }
+    return packPath;
+}
+
+bool VoicePackController::setInstanceVoicePack(const QString& instanceUuid,
+                                               const QString& packPath)
+{
+    if (m_manager == nullptr) return false;
+    // Locate the session by uuid (same scan the manager's delete path uses).
+    for (int i = 0; i < m_manager->rowCount(); ++i) {
+        InstanceSession* s = m_manager->instanceAt(i);
+        if (s == nullptr || s->uuid() != instanceUuid) continue;
+        const bool ok = packPath.isEmpty() ? (s->unmountVoicePack(), true)
+                                           : s->mountVoicePack(packPath);
+        emit mountsChanged();
+        return ok;
+    }
+    return false;
+}
+
+QString VoicePackController::instanceVoicePack(
+    const QString& instanceUuid) const
+{
+    if (m_manager == nullptr) return {};
+    for (int i = 0; i < m_manager->rowCount(); ++i) {
+        InstanceSession* s = m_manager->instanceAt(i);
+        if (s != nullptr && s->uuid() == instanceUuid) {
+            return s->mountedVoicePack();
+        }
+    }
+    return {};
 }

@@ -8,6 +8,7 @@
 
 #include <spdlog/spdlog.h>
 #include "logging/Logging.hpp"
+#include "core/MetaMkoParser.hpp"
 #include "core/ModelInfoParser.hpp"
 #include "core/PathResolve.hpp"
 #include "network/PendingRequests.hpp"
@@ -158,6 +159,22 @@ InstanceSession::InstanceSession(InstanceConfig config, WsServer& server,
     connect(&m_monitorTimer, &QTimer::timeout, this, [this]() {
         onMonitorTick();
     });
+
+    // todo 21: restore a persisted voice-pack mount so hit events route
+    // through MountedBehaviorEngine immediately after launch.
+    if (!m_config.voicePack.isEmpty()) {
+        auto pack = core::parseMetaMko(m_config.voicePack);
+        if (pack.has_value()) {
+            m_mountedPack = std::move(*pack);
+            m_behaviorEngine.setVoicePack(&*m_mountedPack);
+            LOG_INFO("InstanceSession[{}]: restored voice pack \"{}\"",
+                     m_instanceId, m_mountedPack->displayName.toStdString());
+        } else {
+            LOG_WARN("InstanceSession[{}]: persisted voice pack \"{}\" no "
+                     "longer parses — starting unmounted", m_instanceId,
+                     m_config.voicePack.toStdString());
+        }
+    }
 }
 
 InstanceSession::~InstanceSession() = default;

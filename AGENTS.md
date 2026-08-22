@@ -37,7 +37,8 @@ desktop_pet/
 | Protocol spec | `docs/protocol/` | commands.md, events.md, handshake.md |
 | Architecture overview | `docs/README.md` | Definitive project doc |
 | AI learnings/pitfalls | `.sisyphus/notepads/` | Phase-specific dev notes |
-| Add controller_qt UI page | `controller_qt/qml/pages/` | QML pages: Welcome, InstanceDetail, Monitor, Settings |
+| Add controller_qt UI page | `controller_qt/qml/pages/` | QML pages: Welcome (dashboard), InstanceDetail (two-column workbench), Monitor (3×2 charts), VoicePack, Settings (anchor nav) |
+| Add controller_qt shared QML component | `controller_qt/qml/components/` | StatusPill, SettingRow, SectionCard, Chip; register new files in qt_add_qml_module QML_FILES |
 | Add controller_qt business logic | `controller_qt/src/core/` | InstanceSession (+ split TUs), InstanceManager, Scheduler, InteractionHandler, config |
 | Add controller_qt protocol command | `controller_qt/src/network/Protocol.hpp` | 25 typed command factories + envelope helpers |
 | Add controller_qt system integration | `controller_qt/src/system/` | TrayManager, AutoLaunchManager, ResourceStatsCollector |
@@ -70,7 +71,8 @@ desktop_pet/
 | `AutoLaunchManager` (Qt) | C++ | `controller_qt/src/system/AutoLaunchManager.hpp` | Win `reg.exe` via QProcess / Linux `.desktop` (injectable suppliers for testing) |
 | `ResourceStatsCollector` | C++ | `controller_qt/src/system/ResourceStatsCollector.hpp` | Win `GetProcessTimes`+`GetProcessMemoryInfo` / Linux `/proc/self/*`; never-throws contract |
 | `MonitorDataModel` | C++ | `controller_qt/src/ui/MonitorDataModel.hpp` | Copy-on-write ring buffer (cap=60) + mergeController/mergeRenderer for QtCharts |
-| `VoicePackScanner` | C++ | `controller_qt/src/core/VoicePackScanner.hpp` | Discovers voice packs containing `meta.mko` |
+| `VoicePackScanner` | C++ | `controller_qt/src/core/VoicePackScanner.hpp` | Discovers voice packs containing `meta.mko` (takes renderer BASE dir, appends `Resources/VoicePacks` internally) |
+| `VoicePackController` | C++ | `controller_qt/src/ui/VoicePackController.hpp` | QML bridge (`voicePacks` ctx prop): pack discovery + metadata for VoicePackPage |
 | `MetaMkoParser` | C++ | `controller_qt/src/core/MetaMkoParser.hpp` | Hand-rolled protobuf wire-format reader for `.mko` (no libprotobuf dep) |
 | `SubtitlePresets` | C++ | `controller_qt/src/core/SubtitlePresets.hpp` | 16 named style fields, `set_subtitle_style` |
 | `PanelConfigController` | C++ | `controller_qt/src/core/PanelConfigController.hpp` | QML bridge for 4 PanelConfig behavior fields |
@@ -116,6 +118,9 @@ desktop_pet/
 - **Monocle**: Must use `io.github.sebivenlo:openjfx-monocle:jdk-21.0.1` (NOT org.testfx)
 - **Qt QTP0001 policy**: QML modules use `:/qt/qml/<URI>/` layout (NEW policy) — incremental builds masked the bug during T1-T27
 - **Qt LSP false positives**: LSP server lacks Qt include paths; `python build.py qt` compiles clean — trust CMake, not LSP diagnostics on Qt files
+- **FluFrame no implicit size**: FluFrame is Rectangle-based — in GridLayout, rows collapse to 0 without `Layout.preferredHeight`/`implicitHeight` (verified via screenshot QA)
+- **Row children + anchors.right**: silently misplaced — use anchored Item for title+trailing-button headers
+- **ColumnLayout has no topPadding**: assigning it kills QML page compilation (only Column supports padding)
 
 ## COMMANDS
 

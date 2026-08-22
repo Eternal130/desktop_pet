@@ -246,6 +246,7 @@ Why this matters:
 | `TrayManager` | `QSystemTrayIcon` wrapper (QGuiApplication — no `QApplication`, no `QMenu`; the QML `Menu` is the popup) | `src/system/TrayManager.hpp` |
 | `AutoLaunchManager` | Win `reg.exe` via `QProcess` / Linux `~/.config/autostart/desktop-pet.desktop`; injectable suppliers for testing | `src/system/AutoLaunchManager.hpp` |
 | `MonitorDataModel` | Copy-on-write ring buffer (cap=60) + `mergeController`/`mergeRenderer`/`isStale` | `src/ui/MonitorDataModel.hpp` |
+| `VoicePackController` | QML bridge for the voice-pack page: discovery over VoicePackScanner + MetaMkoParser metadata (pack count/names/groups/actions). Mount wiring pending todo 21 | `src/ui/VoicePackController.hpp` |
 | `MetaMkoParser` | Hand-rolled protobuf wire-format reader for `.mko` voice-pack metadata (no libprotobuf dep — see `.cpp` file-level comment) | `src/core/MetaMkoParser.hpp` |
 | `PanelConfigController` | QML bridge for the 4 behavior `PanelConfig` fields (`closeAction`, `confirmOnExit`, `startMinimized`, `autoLaunchSystem`) | `src/core/PanelConfigController.hpp` |
 
@@ -253,12 +254,25 @@ Why this matters:
 
 | Page | Role |
 |:---|:---|
-| `Main.qml` | Frameless window, custom titlebar, 8-dir resize, tray menu popup, StackView host |
-| `Sidebar.qml` | Instance roster (bound to `InstanceManager`), add/remove buttons |
-| `WelcomePage.qml` | First-run environment detection (Qt/renderer/config-dir checks) |
-| `InstanceDetailPage.qml` | Per-instance controls: model ComboBox, motion/expression triggers, position/scale setters |
-| `MonitorPage.qml` | 6 QtCharts sparklines (controller CPU/RSS + renderer CPU/RSS + layout stats) |
-| `SettingsPage.qml` | Panel-wide config: close action, confirm-on-exit, start-minimized, auto-launch |
+| `Main.qml` | FluWindow + FluAppBar + FluNavigationView shell; 5-page routing (welcome/instance/monitor/voicepack/settings) |
+| `components/StatusPill.qml` | Status → semantic-color pill badge (running/connecting/error/stopped) |
+| `components/SettingRow.qml` | Fluent settings row: label block left, right-anchored control slot |
+| `components/SectionCard.qml` | FluFrame card with title/hint header + optional action slot |
+| `components/Chip.qml` | Pill chip for motions/expressions/mapping groups |
+| `WelcomePage.qml` | Dashboard: metric strip (aggregate CPU/RSS/WS health), instance card grid, collapsible env-check summary |
+| `InstanceDetailPage.qml` | Two-column workbench: stage (model + motion/expression chips) + params left; subtitle (live preview)/layout/voice-pack right; command-log drawer |
+| `MonitorPage.qml` | Instance selector + 3×2 chart grid with peak/trend footers + InfoBar stale banner + crash-recovery card |
+| `VoicePackPage.qml` | Voice-pack library (scanner + meta.mko metadata), mapping preview, per-instance mount matrix (mount pending todo 21) |
+| `SettingsPage.qml` | Anchor nav (行为/启动/外观/关于) + SettingRow cards; theme mode, accent swatches, about |
+
+**Known QML pitfalls (verified via screenshot QA):**
+- `FluFrame` (Rectangle-based) has **no implicit size** — items placed in
+  `GridLayout` collapse rows to 0 and stack/overlap. Always set
+  `Layout.preferredHeight` (or `implicitHeight`) on FluFrame delegates.
+- `Row` children cannot use `anchors.right` (silently misplaced) — use an
+  anchored `Item` header for title + trailing buttons.
+- `ColumnLayout` has no `topPadding` (only `Column` does) — assigning it
+  fails QML component compilation for the whole page.
 
 ### Notable design choices
 
@@ -304,8 +318,11 @@ controller_qt/
 │   ├── logging/                # Logging.cpp (spdlog rotating-file + Qt message bridge)
 │   └── protobuf/               # bundles.proto (schema reference — NOT compiled)
 ├── qml/
-│   ├── Main.qml, Sidebar.qml, TitleBar.qml, ResizeHandles.qml, Theme.qml (singleton)
-│   └── pages/                  # WelcomePage, InstanceDetailPage, MonitorPage, SettingsPage
+│   ├── Main.qml, Theme.qml (singleton)
+│   ├── components/           # StatusPill, SettingRow, SectionCard, Chip
+│   └── pages/                # WelcomePage, InstanceDetailPage, MonitorPage,
+│                             #   VoicePackPage, SettingsPage
+│   └── # (legacy Sidebar/TitleBar/ResizeHandles remain on disk, unused)
 └── tests/                      # 38 QTest binaries (see Testing section)
 ```
 

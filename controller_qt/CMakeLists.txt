@@ -229,6 +229,8 @@ qt_add_executable(desktop-pet-controller-qt
     # module consumed by MonitorPage.qml's 6 sparkline charts.
     src/ui/MonitorDataModel.cpp
     src/ui/MonitorDataModel.hpp
+    src/ui/VoicePackController.cpp
+    src/ui/VoicePackController.hpp
     src/core/InstanceSessionMonitor.cpp
 )
 
@@ -305,13 +307,18 @@ set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(desktop-pet-controller-qt
     URI DesktopPet
     VERSION 1.0
-    QML_FILES
+        QML_FILES
 qml/Theme.qml
 qml/Main.qml
+qml/components/StatusPill.qml
+qml/components/SettingRow.qml
+qml/components/SectionCard.qml
+qml/components/Chip.qml
 qml/pages/WelcomePage.qml
 qml/pages/InstanceDetailPage.qml
 qml/pages/SettingsPage.qml
 qml/pages/MonitorPage.qml
+qml/pages/VoicePackPage.qml
 )
 
 # ── Phase 0 PoC (task T6) ───────────────────────────────────────────────────

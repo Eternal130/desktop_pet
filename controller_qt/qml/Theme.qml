@@ -73,6 +73,12 @@ QtObject {
     readonly property real radiusMd: 6    // buttons, inputs
     readonly property real radiusLg: 12   // cards, panels
 
+    // ── Fluent redesign spacing scale (8pt grid, Phase 0 tokens) ──────────
+    readonly property real spacePage: 32      // page outer margin
+    readonly property real spaceCard: 20      // card inner padding
+    readonly property real spaceGroup: 14     // gap between cards
+    readonly property real spaceItem: 8       // gap between items in a card
+
     // ── Typography scale (weight hierarchy: 600 heads / 500 sub / 400 body)─
     readonly property int fontCaption: 11
     readonly property int fontBody:     13

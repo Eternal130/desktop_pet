@@ -260,6 +260,18 @@ Rectangle {
 
                         readonly property var _inst: instanceManager.instanceAt(index)
 
+                        // Whole-card click opens the detail page. MouseArea
+                        // (not TapHandler) so the child buttons (启动/停止/
+                        // 重启/管理) consume their own clicks first and do
+                        // NOT trigger navigation.
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Window.window.selectInstance(
+                                index, model.uuid)
+                        }
+
                         Row {
                             width: parent.width
                             spacing: 14

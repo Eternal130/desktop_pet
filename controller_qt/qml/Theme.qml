@@ -1,91 +1,104 @@
-// Global theme singleton — modern minimal design system.
+// Global theme singleton — Fluent UI redesign palette (docs/design/
+// fluent-ui-redesign.html) with light/dark modes and a mutable accent.
 //
-// Single theme (the legacy 深紫梦幻 / 樱花浅粉 / 赛博霓虹 catalog was removed).
-// The public API surface (bgColor / surfaceColor / textColor / accentColor /
-// titleBarColor / hoverColor / closeHoverColor + currentTheme / themes /
-// setTheme) is preserved so existing bindings and the T28 persistence path
-// (WindowStateSaver stores Theme.currentTheme) keep working unchanged.
-//
-// Palette: modern minimal — near-white canvas, soft neutral surface, one
-// restrained indigo accent, hairline borders, semantic status colors kept
-// desaturated for a calm dashboard feel.
-//
-// Singleton (pragma Singleton) so any component can read Theme.bgColor after
-// `import DesktopPet` without threading a property through the tree.
-// Registered under URI DesktopPet by qt_add_qml_module.
+// Light values mirror the design mock :root block verbatim. Dark values are
+// the Fluent 2 dark equivalents. accentColor is writable (SettingsPage §⑤
+// swatches); all dependent colors recompute via bindings.
 pragma Singleton
 
 import QtQuick
 
 QtObject {
-    // ── Active theme name ────────────────────────────────────────────────────
-    // Kept for T28 persistence compatibility: WindowStateSaver round-trips
-    // this string through panel.json. setTheme() no-ops on any other name.
-    property string currentTheme: "现代简约"
+    // Persisted theme name (WindowStateSaver round-trips this string).
+    property string currentTheme: "浅色"
 
-    // Catalog of one — Main.qml restores the persisted name; unknown stored
-    // values fall back harmlessly to this entry.
-    readonly property var themes: ["现代简约"]
+    // "light" | "dark" — derived from currentTheme so T28 persistence keeps
+    // working; setDarkMode() is the mutation entry point.
+    readonly property bool dark: currentTheme === "深色"
+    function setDarkMode(d) {
+        setTheme(d ? "深色" : "浅色")
+    }
 
-    // Emitted on theme change. Never fires in practice (single theme), but
-    // Main.qml's Connections keeps its listener — zero behavioral risk.
+    readonly property var themes: ["浅色", "深色"]
+
     signal themeChanged(string name)
 
-    // ── Core palette ──────────────────────────────────────────────────────────
-    // Fully Fluent: Fluent 2 system blue accent, neutral cool-gray surfaces.
-    readonly property color bgColor:         "#f3f3f3"   // canvas (Fluent layer)
-    readonly property color surfaceColor:    "#ffffff"   // cards / panels
-    readonly property color textColor:       "#1a1a1a"   // primary text
-    readonly property color accentColor:     "#005fb8"   // Fluent 2 brand blue
-    readonly property color titleBarColor:   "#ffffff"   // flat titlebar
-    readonly property color hoverColor:      "#e5e5e5"   // neutral hover fill
-    readonly property color closeHoverColor: "#c42b1c"   // Fluent error red
+    // ── Core palette ──────────────────────────────────────────────────────
+    readonly property color bgColor:       dark ? "#202020" : "#f3f3f3"
+    // Design-mock body gradient (135deg, near-instant hues over the canvas)
+    readonly property color bgGradA: dark ? "#1d1d21" : "#eef0f7"
+    readonly property color bgGradB: dark ? "#202024" : "#f3f0f7"
+    readonly property color bgGradC: dark ? "#1c1f1e" : "#f0f4f2"
+    // Titlebar / nav are TRANSLUCENT layers over that canvas (mock: .55/.75)
+    readonly property color titleBarOverlay: dark ? Qt.rgba(0.17, 0.17, 0.18, 0.55)
+                                                  : Qt.rgba(1, 1, 1, 0.55)
+    readonly property color navOverlay:     dark ? Qt.rgba(0.14, 0.14, 0.15, 0.75)
+                                                  : Qt.rgba(0.95, 0.95, 0.95, 0.75)
+    readonly property color hairlineColor:  dark ? "#ffffff12" : "#0000000d"
+    readonly property color surfaceColor:  dark ? "#2b2b2b" : "#ffffff"
+    readonly property color navColor:      dark ? "#272727" : "#f9f9f9"
+    readonly property color titleBarColor: dark ? "#2b2b2b" : "#ffffff"
+    readonly property color textColor:     dark ? "#ffffff" : "#1a1a1a"
+    readonly property color text2Color:    dark ? "#c8c8c8" : "#5c5c5c"
+    readonly property color text3Color:    dark ? "#9a9a9a" : "#8a8a8a"
+    property color accentColor: "#5b5bd6"   // design mock --accent
+    readonly property color accentHoverColor: "#4c4cc4"
+    readonly property color accentLightColor:
+        dark ? Qt.rgba(0.36, 0.36, 0.84, 0.22) : "#e8e8fb"
+    readonly property color hoverColor:     dark ? "#333333" : "#e9e9e9"
+    readonly property color closeHoverColor: "#c42b1c"
 
-    // ── Extended neutrals (surface hierarchy + borders) ─────────────────────
-    readonly property color sidebarColor:    "#f4f4f5"   // sidebar rail
-    readonly property color borderColor:     "#e4e4e7"   // hairline borders
-    readonly property color mutedTextColor:  "#71717a"   // secondary text
+    // kept aliases (older bindings used these names)
+    readonly property color mutedTextColor: text2Color
+    readonly property color borderColor:    dark ? "#3d3d3d" : "#e5e5e5"
+    readonly property color sidebarColor:   navColor
 
-    // ── Semantic status colors (Fluent 2 palette) ──────────────────────────
-    readonly property color successColor:    "#0e700e"   // fluent green
-    readonly property color warningColor:    "#9d5d00"   // fluent amber
-    readonly property color errorColor:      "#c42b1c"   // fluent red
+    // ── Semantic status (design mock) ────────────────────────────────────
+    readonly property color successColor: "#0f7b0f"
+    readonly property color successBgColor: dark ? "#11331122" : "#e6f2e6"
+    readonly property color warningColor: "#9d5d00"
+    readonly property color warningBgColor: dark ? "#9d5d0022" : "#fdf3dd"
+    readonly property color errorColor: "#c42b1c"
+    readonly property color errorBgColor: dark ? "#c42b1c22" : "#fde7e7"
+    readonly property color offBgColor: dark ? "#ffffff14" : "#0000000f"
 
-    // ── Chart accent ramp (Fluent-hued, 6 distinct for sparklines) ──────────
+    // ── Chart ramp (design mock chart1..chart6) ──────────────────────────
     readonly property var chartColors: [
-        "#005fb8",   // fluent blue
-        "#0f6cbd",   // blue shade
-        "#0e700e",   // fluent green
-        "#9d5d00",   // fluent amber
-        "#c239b3",   // fluent magenta
-        "#038387"    // fluent teal
+        "#4cc2ff", "#f472d0", "#0f7b0f",
+        "#eaa300", "#29b8db", "#5b5bd6"
     ]
 
-    // ── Elevation tokens — Linear/Notion consensus: RESTING cards get NO
-    // shadow (1px border is the separator); shadows only for floating layers
-    // (dialogs, popovers). Values = Fluent 2 shadow8 two-layer recipe.
-    readonly property color  shadowColor:   Qt.rgba(0, 0, 0, 0.14)
-    readonly property real   shadowBlur:    8
-    readonly property real   shadowOffsetY: 4
+    // ── Elevation (floating layers only; resting cards use a hairline) ──
+    readonly property color shadowColor: Qt.rgba(0, 0, 0, dark ? 0.5 : 0.22)
 
-    // ── Radius scale (4px grid; consensus: controls 4-6, cards 8-12) ───────
-    readonly property real radiusSm: 4    // badges, chips, small controls
-    readonly property real radiusMd: 6    // buttons, inputs
-    readonly property real radiusLg: 12   // cards, panels
+    // ── Radius (design mock: card 8 · button 5 · badge full) ────────────
+    readonly property real radiusSm: 4
+    readonly property real radiusMd: 5
+    readonly property real radiusLg: 8
 
-    // ── Fluent redesign spacing scale (8pt grid, Phase 0 tokens) ──────────
-    readonly property real spacePage: 32      // page outer margin
-    readonly property real spaceCard: 20      // card inner padding
-    readonly property real spaceGroup: 14     // gap between cards
-    readonly property real spaceItem: 8       // gap between items in a card
+    // ── Spacing (8pt grid: page 32 / card 20 / group 14 / item 8) ───────
+    readonly property real spacePage: 32
+    readonly property real spaceCard: 20
+    readonly property real spaceGroup: 14
+    readonly property real spaceItem: 8
 
-    // ── Typography scale (weight hierarchy: 600 heads / 500 sub / 400 body)─
+    // ── Typography ────────────────────────────────────────────────────────
     readonly property int fontCaption: 11
-    readonly property int fontBody:     13
-    readonly property int fontSubhead:  15
-    readonly property int fontTitle:    18
+    readonly property int fontBody: 13
+    readonly property int fontSubhead: 15
+    readonly property int fontTitle: 24
 
-    // ── Mutation (kept for persistence compatibility) ───────────────────────
+    // Log console (design mock .log)
+    readonly property color logBgColor: "#202020"
+    readonly property color logTextColor: "#d6d6d6"
+
+    function accentAlpha(a) {
+        return Qt.rgba(accentColor.r, accentColor.g, accentColor.b, a)
+    }
+    function withAlpha(c, a) {
+        return Qt.rgba(c.r, c.g, c.b, a)
+    }
+
     function setTheme(name) {
         if (name === currentTheme) return
         if (themes.indexOf(name) === -1) return

@@ -1,12 +1,8 @@
 import QtQuick
-import QtQuick.Controls
-import FluentUI
 import DesktopPet
 
 // StatusPill — rounded status badge with a leading dot.
-// Maps a session status string to a Fluent semantic color:
-//   running → ok green · connecting/pending → warn amber · error → red · else gray.
-// Shared by instance cards, detail header, and voice-pack rows.
+// running → green · connecting/pending → amber · error → red · else gray.
 Rectangle {
     id: root
 
@@ -14,10 +10,10 @@ Rectangle {
     property string label: ""       // override text; defaults to `status`
 
     readonly property color _c: {
-        if (status === "running")                       return Theme.successColor
+        if (status === "running")                            return Theme.successColor
         if (status === "connecting" || status === "pending") return Theme.warningColor
-        if (status === "error")                         return Theme.errorColor
-        return Theme.mutedTextColor
+        if (status === "error")                              return Theme.errorColor
+        return Theme.text2Color
     }
 
     height: 22

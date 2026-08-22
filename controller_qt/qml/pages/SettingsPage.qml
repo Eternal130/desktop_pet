@@ -1,25 +1,16 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
-import FluentUI
 import DesktopPet
 
-// Settings page — Fluent UI redesign (design doc §⑤).
-//
-// Win11-settings layout: left anchor nav (行为/启动/外观/关于), right column
-// of SettingRow-styled cards. Behavior data model unchanged: panelConfig +
-// autoLaunch context properties drive the same four fields, persistence
-// unchanged (QSaveFile atomic writes in PanelConfigController).
-//
-// New display-only sections: appearance (theme mode + accent swatches +
-// window material) and about (version, protocol coverage, config dir).
+// Settings page (design doc §5). Anchor nav left + SettingRow cards right.
+// Behavior fields unchanged (panelConfig / autoLaunch). Three-way
+// closeAction (exit / minimize / ask) + accent swatches + theme mode.
 Rectangle {
     id: root
     color: "transparent"
 
-    readonly property color _mutedColor: Theme.mutedTextColor
+    readonly property color _mutedColor: Theme.text2Color
 
-    // Anchor sections (scroll positions resolved after layout).
     function _scrollTo(section) {
         const map = { "behavior": behaviorCard, "startup": startupCard,
                       "appearance": appearanceCard, "about": aboutCard }
@@ -30,101 +21,85 @@ Rectangle {
     }
     property string activeSection: "behavior"
 
-    RowLayout {
+    Row {
         anchors.fill: parent
         anchors.leftMargin: Theme.spacePage
         anchors.rightMargin: Theme.spacePage
         anchors.topMargin: 28
         spacing: 24
 
-        // ── Left anchor nav ────────────────────────────────────────────────
+        // ── Left anchor nav ────────────────────────────────────────────
         Column {
-            Layout.preferredWidth: 140
-            Layout.alignment: Qt.AlignTop
+            width: 150
             spacing: 2
 
-            FluText {
+            Text {
                 text: qsTr("设置")
-                font: FluTextStyle.Title
+                color: Theme.textColor
+                font.pixelSize: 22
+                font.weight: Font.DemiBold
                 bottomPadding: 16
             }
-            FluToggleButton {
-                width: 130
-                text: qsTr("🔀 行为")
-                checked: root.activeSection === "behavior"
-                onClicked: root._scrollTo("behavior")
-            }
-            FluToggleButton {
-                width: 130
-                text: qsTr("🚀 启动")
-                checked: root.activeSection === "startup"
-                onClicked: root._scrollTo("startup")
-            }
-            FluToggleButton {
-                width: 130
-                text: qsTr("🎨 外观")
-                checked: root.activeSection === "appearance"
-                onClicked: root._scrollTo("appearance")
-            }
-            FluToggleButton {
-                width: 130
-                text: qsTr("ℹ 关于")
-                checked: root.activeSection === "about"
-                onClicked: root._scrollTo("about")
-            }
+            AnchorNavItem { text: qsTr("🔀 行为"); section: "behavior" }
+            AnchorNavItem { text: qsTr("🚀 启动"); section: "startup" }
+            AnchorNavItem { text: qsTr("🎨 外观"); section: "appearance" }
+            AnchorNavItem { text: qsTr("ℹ 关于"); section: "about" }
         }
 
-        // ── Right settings column ──────────────────────────────────────────
+        // ── Right settings column ──────────────────────────────────────
         Flickable {
             id: flick
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            width: root.width - 2 * Theme.spacePage - 150 - 24
+            height: parent.height
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             contentWidth: width
             contentHeight: contentCol.implicitHeight + 48
-            ScrollBar.vertical: FluScrollBar {}
+            ScrollBar.vertical: AppScrollBar {}
 
             Column {
                 id: contentCol
                 width: flick.width
                 spacing: Theme.spaceGroup
 
-                // ── Behavior ───────────────────────────────────────────────
-                SectionCard {
+                Card {
                     id: behaviorCard
                     width: parent.width
-                    title: qsTr("行为")
-                    hint: qsTr("关闭按钮与退出策略 · 立即持久化")
+                    title: qsTr("关闭按钮行为")
 
-                    FluText { text: qsTr("关闭按钮行为"); font: FluTextStyle.BodyStrong }
-                    Row {
-                        spacing: 8
-                        FluToggleButton {
-                            text: qsTr("退出时关闭")
-                            checked: panelConfig.closeAction === "exit"
-                            onClicked: panelConfig.closeAction = "exit"
-                        }
-                        FluToggleButton {
-                            text: qsTr("最小化到托盘")
-                            checked: panelConfig.closeAction === "minimize"
-                            onClicked: panelConfig.closeAction = "minimize"
-                        }
+                    Segmented {
+                        options: [ { label: qsTr("退出程序"), value: "exit" },
+                                   { label: qsTr("最小化到托盘"), value: "minimize" },
+                                   { label: qsTr("每次询问"), value: "ask" } ]
+                        currentValue: panelConfig.closeAction
+                        onSelected: (v) => { panelConfig.closeAction = v }
                     }
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: qsTr("选择「每次询问」时将弹出确认对话框。")
+                        color: root._mutedColor
+                        font.pixelSize: 11
+                    }
+                }
+
+                Card {
+                    width: parent.width
+                    title: qsTr("退出")
+
                     SettingRow {
                         width: parent.width
                         title: qsTr("退出前确认")
-                        desc: qsTr("开启后，点击关闭按钮时会弹出确认对话框。")
-                        FluToggleSwitch {
+                        desc: qsTr("点击关闭按钮时弹出确认对话框")
+                        ToggleSwitch {
                             anchors.verticalCenter: parent.verticalCenter
                             checked: panelConfig.confirmOnExit
-                            onCheckedChanged: panelConfig.confirmOnExit = checked
+                            onToggled: panelConfig.confirmOnExit = checked
                         }
                     }
                 }
 
-                // ── Startup ────────────────────────────────────────────────
-                SectionCard {
+                Card {
                     id: startupCard
                     width: parent.width
                     title: qsTr("启动")
@@ -133,10 +108,15 @@ Rectangle {
                         width: parent.width
                         title: qsTr("开机自启动")
                         desc: qsTr("Windows 注册表 / Linux .desktop")
-                        FluToggleSwitch {
+                        ToggleSwitch {
                             anchors.verticalCenter: parent.verticalCenter
-                            Component.onCompleted: checked = autoLaunch.isEnabled()
-                            onCheckedChanged: {
+                            property bool _syncing: true
+                            Component.onCompleted: {
+                                checked = autoLaunch.isEnabled()
+                                _syncing = false
+                            }
+                            onToggled: {
+                                if (_syncing) return
                                 if (checked) {
                                     autoLaunch.enable()
                                     panelConfig.autoLaunchSystem = true
@@ -149,87 +129,63 @@ Rectangle {
                     }
                     SettingRow {
                         width: parent.width
-                        title: qsTr("启动时最小化")
-                        desc: qsTr("开启后，程序启动时窗口将隐藏到系统托盘。")
-                        FluToggleSwitch {
+                        title: qsTr("启动时最小化到托盘")
+                        desc: qsTr("程序启动时窗口直接隐藏")
+                        ToggleSwitch {
                             anchors.verticalCenter: parent.verticalCenter
                             checked: panelConfig.startMinimized
-                            onCheckedChanged: panelConfig.startMinimized = checked
+                            onToggled: panelConfig.startMinimized = checked
                         }
                     }
                 }
 
-                // ── Appearance ─────────────────────────────────────────────
-                SectionCard {
+                Card {
                     id: appearanceCard
                     width: parent.width
                     title: qsTr("外观")
 
-                    FluText { text: qsTr("主题模式"); font: FluTextStyle.BodyStrong }
-                    Row {
-                        spacing: 8
-                        FluToggleButton {
-                            text: qsTr("浅色")
-                            checked: !FluTheme.dark
-                            onClicked: FluTheme.dark = false
-                        }
-                        FluToggleButton {
-                            text: qsTr("深色")
-                            checked: FluTheme.dark
-                            onClicked: FluTheme.dark = true
+                    SettingRow {
+                        width: parent.width
+                        title: qsTr("主题模式")
+                        desc: qsTr("跟随系统或手动指定")
+                        Segmented {
+                            options: [qsTr("浅色"), qsTr("深色")]
+                            currentValue: Theme.dark ? qsTr("深色") : qsTr("浅色")
+                            onSelected: (v) => { Theme.setDarkMode(v === qsTr("深色")) }
                         }
                     }
-
-                    FluText { text: qsTr("强调色"); font: FluTextStyle.BodyStrong }
-                    Row {
-                        spacing: 8
-                        Repeater {
-                            model: [
-                                { name: "Fluent Blue", c: "#005fb8" },
-                                { name: "Indigo",      c: "#5b5bd6" },
-                                { name: "Green",       c: "#0e700e" },
-                                { name: "Amber",       c: "#9d5d00" },
-                                { name: "Magenta",     c: "#c239b3" }
-                            ]
-                            delegate: Rectangle {
-                                width: 26; height: 26
-                                radius: Theme.radiusSm
-                                color: modelData.c
-                                border.width: Theme.accentColor.toString().toUpperCase()
-                                              === modelData.c.toUpperCase() ? 3 : 1
-                                border.color: border.width === 3
-                                    ? Theme.textColor : Theme.borderColor
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: FluTheme.primaryColor = modelData.c
+                    SettingRow {
+                        width: parent.width
+                        title: qsTr("强调色")
+                        desc: qsTr("导航/按钮/图表统一色相")
+                        Row {
+                            spacing: 8
+                            Repeater {
+                                model: [
+                                    "#5b5bd6", "#0078d4", "#107c10",
+                                    "#ca5010", "#c239b3"
+                                ]
+                                delegate: Rectangle {
+                                    required property string modelData
+                                    width: 22; height: 22
+                                    radius: Theme.radiusSm
+                                    color: modelData
+                                    border.width: Theme.accentColor.toString()
+                                                  .toUpperCase() === modelData.toUpperCase()
+                                                  ? 2 : 0
+                                    border.color: Theme.textColor
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Theme.accentColor = parent.modelData
+                                    }
                                 }
                             }
                         }
                     }
-                    FluText {
-                        width: parent.width
-                        wrapMode: Text.WordWrap
-                        text: qsTr("强调色同步驱动导航、按钮与监控图表调色板。")
-                        color: root._mutedColor
-                        font: FluTextStyle.Caption
-                    }
-
-                    SettingRow {
-                        width: parent.width
-                        title: qsTr("窗口材质")
-                        desc: qsTr("亚克力（dwm-blur）· Win11 Mica / 旧系统自动降级")
-                        FluText {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("亚克力")
-                            color: root._mutedColor
-                            font: FluTextStyle.Caption
-                        }
-                    }
                 }
 
-                // ── About ──────────────────────────────────────────────────
-                SectionCard {
+                Card {
                     id: aboutCard
                     width: parent.width
                     title: qsTr("关于")
@@ -237,7 +193,7 @@ Rectangle {
                     SettingRow {
                         width: parent.width
                         title: qsTr("Desktop Pet Controller (Qt)")
-                        desc: qsTr("Qt %1 · MinGW 13.1 · FluentUI").arg(
+                        desc: qsTr("v2.0 · Qt %1 · 原生 QML Fluent 风格").arg(
                             envChecker.qtVersion)
                     }
                     SettingRow {
@@ -249,9 +205,46 @@ Rectangle {
                         width: parent.width
                         title: qsTr("日志与配置")
                         desc: qsTr("~/.config/desktop-pet/ · spdlog 轮转日志")
+                        AppButton {
+                            style: "subtle"
+                            text: qsTr("打开目录")
+                            implicitHeight: 26; fontSize: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            onClicked: Qt.openUrlExternally(
+                                "file:///" + voicePacks.voicePackDir())
+                        }
                     }
                 }
             }
         }
+    }
+
+    component AnchorNavItem : Rectangle {
+        id: navBtn
+        property string text: ""
+        property string section: ""
+        width: 130
+        height: 34
+        radius: Theme.radiusMd
+        readonly property bool sel: root.activeSection === section
+        color: sel ? Theme.accentAlpha(0.12)
+            : (_hover.hovered ? Theme.withAlpha(Theme.textColor, 0.05) : "transparent")
+
+        Rectangle {
+            visible: navBtn.sel
+            x: -8; y: parent.height * 0.25
+            width: 3; height: parent.height * 0.5
+            radius: 2
+            color: Theme.accentColor
+        }
+        Text {
+            anchors.centerIn: parent
+            text: navBtn.text
+            color: navBtn.sel ? Theme.accentColor : Theme.textColor
+            font.pixelSize: 13
+            font.weight: navBtn.sel ? Font.DemiBold : Font.Normal
+        }
+        HoverHandler { id: _hover }
+        TapHandler { onTapped: root._scrollTo(navBtn.section) }
     }
 }

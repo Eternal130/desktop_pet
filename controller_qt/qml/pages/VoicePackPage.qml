@@ -1,26 +1,15 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
-import FluentUI
 import DesktopPet
 
-// Voice-pack page — Fluent UI redesign Phase 5 (design doc §④).
-//
-// Two columns:
-//   LEFT:  pack library (VoicePackScanner discovery + MetaMkoParser
-//          metadata) + behavior-mapping preview chips for the selected pack.
-//   RIGHT: per-instance mount matrix. Mount/unmount itself is pending core
-//          wiring (todo 21 — populating MountedBehaviorEngine per instance),
-//          so the matrix is rendered display-only with an explanatory note.
-//
-// Data source: `voicePacks` context property (VoicePackController).
+// Voice-pack page (design doc §4). Library + mapping preview left, mount
+// matrix right (display-only pending core wiring todo 21).
 Rectangle {
     id: root
     color: "transparent"
 
-    readonly property color _mutedColor: Theme.mutedTextColor
-    readonly property color _faintColor: Qt.rgba(
-        Theme.textColor.r, Theme.textColor.g, Theme.textColor.b, 0.35)
+    readonly property color _mutedColor: Theme.text2Color
+    readonly property color _faintColor: Theme.text3Color
 
     property int selectedPack: 0
 
@@ -29,7 +18,7 @@ Rectangle {
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         contentHeight: contentCol.implicitHeight + 48
-        ScrollBar.vertical: FluScrollBar {}
+        ScrollBar.vertical: AppScrollBar {}
 
         Column {
             id: contentCol
@@ -38,64 +27,82 @@ Rectangle {
             spacing: Theme.spaceGroup
             topPadding: 28
 
-            // ── Header ─────────────────────────────────────────────────────
-            RowLayout {
+            // ── Header ─────────────────────────────────────────────────
+            Item {
                 width: parent.width
-                spacing: 12
-                FluText {
+                height: 40
+                Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("语音包")
-                    font: FluTextStyle.Title
-                    Layout.fillWidth: true
+                    color: Theme.textColor
+                    font.pixelSize: 24
+                    font.weight: Font.DemiBold
                 }
-                FluFilledButton {
-                    text: qsTr("↻ 重新扫描")
-                    onClicked: voicePacks.rescan()
+                Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    AppButton {
+                        style: "subtle"
+                        text: qsTr("📂 打开语音包目录")
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: Qt.openUrlExternally(
+                            "file:///" + voicePacks.voicePackDir())
+                    }
+                    AppButton {
+                        style: "primary"
+                        text: qsTr("↻ 重新扫描")
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: voicePacks.rescan()
+                    }
                 }
             }
-            FluText {
-                text: qsTr("发现于 meta.mko · 手写 protobuf 解析（无 libprotobuf 依赖）")
+            Text {
+                text: qsTr("发现于 meta.mko · 手写 protobuf 解析（无 libprotobuf 依赖）" +
+                           " · 挂载后行为引擎优先处理命中与待机")
                 color: _mutedColor
-                font: FluTextStyle.Caption
+                font.pixelSize: 13
             }
 
-            // ── Empty state ────────────────────────────────────────────────
-            SectionCard {
+            // ── Empty state ────────────────────────────────────────────
+            Card {
                 width: parent.width
                 visible: voicePacks.packCount === 0
                 title: qsTr("未发现语音包")
 
-                FluText {
+                Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: root._mutedColor
-                    font: FluTextStyle.Body
+                    font.pixelSize: 13
                     text: qsTr("将包含 meta.mko 的语音包目录放入：%1").arg(
                         voicePacks.voicePackDir())
                 }
-                FluText {
+                Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: root._faintColor
-                    font: FluTextStyle.Caption
+                    font.pixelSize: 11
                     text: qsTr("放入后点击右上角「重新扫描」即可发现。")
                 }
             }
 
-            // ── Two-column zone ────────────────────────────────────────────
-            RowLayout {
+            // ── Two-column zone ────────────────────────────────────────
+            Row {
                 width: parent.width
                 spacing: Theme.spaceGroup
                 visible: voicePacks.packCount > 0
 
                 // LEFT: library + mapping preview
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1.4
+                Column {
+                    width: (parent.width - Theme.spaceGroup) * 0.58
                     spacing: Theme.spaceGroup
 
-                    SectionCard {
-                        Layout.fillWidth: true
+                    Card {
+                        width: parent.width
                         title: qsTr("语音包库")
+                        hint: qsTr("VoicePackScanner")
 
                         Column {
                             width: parent.width
@@ -105,15 +112,12 @@ Rectangle {
                                 model: voicePacks.packCount
                                 delegate: Rectangle {
                                     width: parent.width
-                                    height: 56
+                                    height: 64
                                     radius: Theme.radiusMd
                                     readonly property bool sel:
                                         root.selectedPack === index
-                                    color: sel
-                                        ? Qt.rgba(Theme.accentColor.r,
-                                                  Theme.accentColor.g,
-                                                  Theme.accentColor.b, 0.10)
-                                        : "transparent"
+                                    color: sel ? Theme.accentAlpha(0.10)
+                                               : "transparent"
                                     border.width: sel ? 1 : 0
                                     border.color: Theme.accentColor
 
@@ -125,9 +129,10 @@ Rectangle {
                                         Rectangle {
                                             width: 36; height: 36; radius: 8
                                             anchors.verticalCenter: parent.verticalCenter
-                                            color: Qt.rgba(Theme.accentColor.r,
-                                                           Theme.accentColor.g,
-                                                           Theme.accentColor.b, 0.16)
+                                            gradient: Gradient {
+                                                GradientStop { position: 0; color: "#ffd9a8" }
+                                                GradientStop { position: 1; color: "#f0a860" }
+                                            }
                                             Text {
                                                 anchors.centerIn: parent
                                                 text: "🎙"; font.pixelSize: 16
@@ -136,22 +141,25 @@ Rectangle {
                                         Column {
                                             anchors.verticalCenter: parent.verticalCenter
                                             spacing: 2
-                                            FluText {
+                                            Text {
                                                 text: voicePacks.packDisplayName(index)
-                                                font: FluTextStyle.BodyStrong
+                                                color: Theme.textColor
+                                                font.pixelSize: 13
+                                                font.weight: Font.DemiBold
                                             }
-                                            FluText {
+                                            Text {
                                                 text: qsTr("%1 组行为映射 · %2 条语音 · %3")
                                                     .arg(voicePacks.packGroupCount(index))
                                                     .arg(voicePacks.packActionCount(index))
                                                     .arg(voicePacks.packDirName(index))
                                                 color: root._faintColor
-                                                font: FluTextStyle.Caption
+                                                font.pixelSize: 11
                                             }
                                         }
                                     }
                                     MouseArea {
                                         anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
                                         onClicked: root.selectedPack = index
                                     }
                                 }
@@ -159,8 +167,8 @@ Rectangle {
                         }
                     }
 
-                    SectionCard {
-                        Layout.fillWidth: true
+                    Card {
+                        width: parent.width
                         title: voicePacks.packCount > root.selectedPack
                             ? qsTr("%1 · 行为映射预览").arg(
                                   voicePacks.packDisplayName(root.selectedPack))
@@ -177,32 +185,31 @@ Rectangle {
                                 delegate: Chip { text: modelData }
                             }
                         }
-                        FluText {
+                        Text {
                             visible: voicePacks.packCount > root.selectedPack
                                      && voicePacks.packGroupNames(
                                             root.selectedPack).length === 0
-                            text: qsTr("(该语音包未定义行为映射组)")
+                            text: qsTr("（该语音包未定义行为映射组）")
                             color: root._mutedColor
-                            font: FluTextStyle.Caption
+                            font.pixelSize: 11
                         }
                     }
                 }
 
                 // RIGHT: mount matrix
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1
+                Column {
+                    width: (parent.width - Theme.spaceGroup) * 0.42
                     spacing: Theme.spaceGroup
 
-                    SectionCard {
-                        Layout.fillWidth: true
+                    Card {
+                        width: parent.width
                         title: qsTr("挂载到实例")
 
-                        FluText {
+                        Text {
                             width: parent.width
                             wrapMode: Text.WordWrap
                             color: Theme.warningColor
-                            font: FluTextStyle.Caption
+                            font.pixelSize: 11
                             text: qsTr("⚠ 挂载接线尚未完成（核心侧 todo 21）：当前版本" +
                                        "可浏览语音包元数据，挂载/卸载操作将在核心接线" +
                                        "后启用。")
@@ -214,29 +221,24 @@ Rectangle {
 
                             Repeater {
                                 model: instanceManager
-                                delegate: Row {
+                                delegate: SettingRow {
                                     width: parent.width
-                                    spacing: 12
-
-                                    FluText {
-                                        text: label
-                                        font: FluTextStyle.BodyStrong
+                                    title: label
+                                    desc: qsTr("未挂载 · 挂载功能待核心接线")
+                                    Text {
                                         anchors.verticalCenter: parent.verticalCenter
-                                    }
-                                    FluText {
-                                        text: qsTr("未挂载")
-                                        color: root._faintColor
-                                        font: FluTextStyle.Caption
-                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: qsTr("无")
+                                        color: root._mutedColor
+                                        font.pixelSize: 13
                                     }
                                 }
                             }
 
-                            FluText {
+                            Text {
                                 visible: instanceManager.rowCount() === 0
-                                text: qsTr("(暂无实例)")
+                                text: qsTr("（暂无实例）")
                                 color: root._mutedColor
-                                font: FluTextStyle.Caption
+                                font.pixelSize: 11
                             }
                         }
                     }

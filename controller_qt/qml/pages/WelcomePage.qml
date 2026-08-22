@@ -1,32 +1,25 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Window
 import QtQuick.Layouts
-import FluentUI
+import QtQuick.Window
 import DesktopPet
 
-// Welcome / home page — Fluent UI redesign (dashboard layout).
-//
-// Three zones (design doc §①):
-//   1. Metrics strip  — running instance count, aggregated controller/
-//      renderer CPU+RSS, WS connection health.
-//   2. Instance grid  — one card per instance (status pill, model/fps/
-//      volume summary, quick start/stop/restart, "manage" route).
-//   3. Env summary    — collapsed green row when all checks pass; auto-
-//      expands to the full 6-item list when any check fails.
-//
-// Data sources unchanged: envChecker context property, InstanceManager
-// model roles (label/modelName/status/connected/uuid), instance.*
-// session properties, createInstance → selectInstance → switchPage flow.
+// Home / dashboard (design doc §1). All bindings preserved: envChecker,
+// instanceManager roles, createInstance -> selectInstance -> switchPage flow,
+// monitorModel aggregation.
 Rectangle {
     id: root
     color: "transparent"
 
-    readonly property color _mutedColor: Theme.mutedTextColor
-    readonly property color _faintColor: Qt.rgba(
-        Theme.textColor.r, Theme.textColor.g, Theme.textColor.b, 0.35)
+    readonly property color _mutedColor: Theme.text2Color
+    readonly property color _faintColor: Theme.text3Color
 
-    // Aggregation: iterate live sessions for metrics strip values.
+    readonly property var _thumbGradients: [
+        ["#cfd2f5", "#a7abe8"], ["#f8d3d8", "#eaa8b4"],
+        ["#d9f0d9", "#a8d0a8"], ["#f5ecd0", "#e0c98a"],
+        ["#d8e8f5", "#a8c4e0"], ["#ece0f5", "#c4a8e0"]
+    ]
+
     function _runningCount() {
         let n = 0
         for (let i = 0; i < instanceManager.rowCount(); ++i) {
@@ -74,6 +67,16 @@ Rectangle {
         const m = s ? s.monitorModel() : null
         return m ? m.latestControllerRssBytes() : -1
     }
+    function _ctrlCpuSeries() {
+        const s = instanceManager.instanceAt(0)
+        const m = s ? s.monitorModel() : null
+        return m ? m.controllerCpuSeries() : []
+    }
+    function _rendererCpuSeries() {
+        const s = instanceManager.instanceAt(0)
+        const m = s ? s.monitorModel() : null
+        return m ? m.rendererCpuSeries() : []
+    }
     function _fmtBytes(b) {
         if (b < 0) return "—"
         if (b <= 0) return "0 B"
@@ -84,7 +87,6 @@ Rectangle {
     }
     function _fmtPct(p) { return p < 0 ? "—" : p.toFixed(1) + "%" }
 
-    // Re-evaluate metric bindings when instances mutate.
     property real _tick: 0
     Connections {
         target: instanceManager
@@ -95,7 +97,18 @@ Rectangle {
     }
     Timer { interval: 2000; running: true; repeat: true; onTriggered: root._tick++ }
 
-    // ── Empty state (no instances at all) ──────────────────────────────────
+    function _createInstance() {
+        const label = qsTr("宠物 %1").arg(instanceManager.rowCount() + 1)
+        const uuid = instanceManager.createInstance(label)
+        if (uuid !== "") {
+            const row = instanceManager.rowCount() - 1
+            Window.window.selectInstance(
+                row, instanceManager.instanceAt(row).instanceId)
+            Window.window.switchPage("instance")
+        }
+    }
+
+    // ── Empty state ───────────────────────────────────────────────────
     Column {
         anchors.centerIn: parent
         visible: instanceManager.rowCount() === 0
@@ -107,33 +120,25 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             Text { anchors.centerIn: parent; text: "🐾"; font.pixelSize: 34 }
         }
-        FluText {
+        Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("Desktop Pet Controller")
-            font: FluTextStyle.Title
+            color: Theme.textColor
+            font.pixelSize: 20
+            font.weight: Font.DemiBold
         }
-        FluText {
+        Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: qsTr("Create your first pet instance to get started")
+            text: qsTr("创建你的第一个宠物实例，开始使用")
             color: _mutedColor
-            font: FluTextStyle.Caption
+            font.pixelSize: 13
         }
-        FluFilledButton {
+        AppButton {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: qsTr("Create First Instance")
+            style: "primary"
+            text: qsTr("＋ 创建第一个实例")
             implicitWidth: 220; implicitHeight: 40
             onClicked: root._createInstance()
-        }
-    }
-
-    function _createInstance() {
-        const label = qsTr("Pet %1").arg(instanceManager.rowCount() + 1)
-        const uuid = instanceManager.createInstance(label)
-        if (uuid !== "") {
-            const row = instanceManager.rowCount() - 1
-            Window.window.selectInstance(
-                row, instanceManager.instanceAt(row).instanceId)
-            Window.window.switchPage("instance")
         }
     }
 
@@ -143,7 +148,7 @@ Rectangle {
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         contentHeight: contentCol.implicitHeight + 48
-        ScrollBar.vertical: FluScrollBar {}
+        ScrollBar.vertical: AppScrollBar {}
 
         Column {
             id: contentCol
@@ -152,65 +157,93 @@ Rectangle {
             spacing: Theme.spaceGroup
             topPadding: 28
 
-            // ── Header ─────────────────────────────────────────────────────
-            RowLayout {
+            // ── Header ─────────────────────────────────────────────────
+            Item {
                 width: parent.width
-                spacing: 12
-                FluText {
+                height: 40
+                Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("主页")
-                    font: FluTextStyle.Title
-                    Layout.fillWidth: true
+                    color: Theme.textColor
+                    font.pixelSize: 24
+                    font.weight: Font.DemiBold
                 }
-                FluFilledButton {
-                    text: qsTr("＋ 创建实例")
-                    onClicked: root._createInstance()
+                Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    AppButton {
+                        style: "subtle"
+                        text: qsTr("⤓ 导入配置")
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: Qt.openUrlExternally(
+                            "file:///" + voicePacks.voicePackDir())
+                    }
+                    AppButton {
+                        style: "primary"
+                        text: qsTr("＋ 创建实例")
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: root._createInstance()
+                    }
                 }
             }
-            FluText {
+            Text {
                 text: qsTr("管理所有桌面宠物实例 · 上次会话已自动恢复")
                 color: _mutedColor
-                font: FluTextStyle.Caption
+                font.pixelSize: 13
             }
 
-            // ── Metrics strip ──────────────────────────────────────────────
-            RowLayout {
+            // ── Metrics strip with sparklines ──────────────────────────
+            Row {
                 width: parent.width
                 spacing: Theme.spaceGroup
 
                 MetricCard {
-                    Layout.fillWidth: true
+                    width: (parent.width - 3 * Theme.spaceGroup) / 4
                     titleText: qsTr("运行中实例")
                     valueText: root._tick >= 0
                         ? (root._runningCount() + " / " + instanceManager.rowCount())
                         : ""
+                    sparkVisible: false
                 }
                 MetricCard {
-                    Layout.fillWidth: true
+                    width: (parent.width - 3 * Theme.spaceGroup) / 4
                     titleText: qsTr("控制器 CPU / 内存")
                     valueText: root._tick >= 0
                         ? (root._fmtPct(root._ctrlCpu()) + " · " + root._fmtBytes(root._ctrlRss()))
                         : ""
+                    sparkSeries: root._ctrlCpuSeries()
+                    sparkColor: Theme.chartColors[0]
                 }
                 MetricCard {
-                    Layout.fillWidth: true
+                    width: (parent.width - 3 * Theme.spaceGroup) / 4
                     titleText: qsTr("渲染器 CPU / 内存")
                     valueText: root._tick >= 0
                         ? (root._fmtPct(root._aggRendererCpu()) + " · " + root._fmtBytes(root._aggRendererRss()))
                         : ""
+                    sparkSeries: root._rendererCpuSeries()
+                    sparkColor: Theme.chartColors[3]
                 }
                 MetricCard {
-                    Layout.fillWidth: true
+                    width: (parent.width - 3 * Theme.spaceGroup) / 4
                     titleText: qsTr("WS 连接")
-                    valueText: root._tick >= 0 ? (root._connectedCount() + " ✓") : ""
+                    valueText: root._tick >= 0
+                        ? (root._connectedCount() + " ✓") : ""
                     valueColor: root._connectedCount() > 0
-                        ? Theme.successColor : Theme.mutedTextColor
+                        ? Theme.successColor : Theme.text2Color
+                    deltaText: root._connectedCount() > 0
+                        ? qsTr("127.0.0.1:9001 正常") : qsTr("无连接")
+                    sparkVisible: false
                 }
             }
 
-            // ── Instance grid ──────────────────────────────────────────────
-            FluText {
+            // ── Instance card grid ─────────────────────────────────────
+            Text {
                 text: qsTr("我的宠物")
-                font: FluTextStyle.BodyStrong
+                color: Theme.textColor
+                font.pixelSize: 15
+                font.weight: Font.DemiBold
             }
             GridLayout {
                 width: parent.width
@@ -220,85 +253,105 @@ Rectangle {
 
                 Repeater {
                     model: instanceManager
-                    delegate: FluFrame {
+                    delegate: Card {
                         Layout.fillWidth: true
-                        // FluFrame has no implicit size — without an explicit
-                        // preferred height the GridLayout row collapses to 0
-                        // and cards stack/overlap (verified via screenshot QA).
-                        Layout.preferredHeight: 140
-                        padding: Theme.spaceCard
+                        Layout.preferredHeight: 150
+                        padding: 16
 
                         readonly property var _inst: instanceManager.instanceAt(index)
 
                         Row {
                             width: parent.width
                             spacing: 14
+                            opacity: model.status === "stopped" ? 0.75 : 1.0
 
                             Rectangle {
-                                width: 56; height: 56; radius: 10
+                                width: 64; height: 64; radius: 8
                                 anchors.verticalCenter: parent.verticalCenter
-                                color: Qt.rgba(Theme.accentColor.r,
-                                               Theme.accentColor.g,
-                                               Theme.accentColor.b, 0.14)
+                                gradient: Gradient {
+                                    GradientStop {
+                                        position: 0
+                                        color: root._thumbGradients[
+                                            index % root._thumbGradients.length][0]
+                                    }
+                                    GradientStop {
+                                        position: 1
+                                        color: root._thumbGradients[
+                                            index % root._thumbGradients.length][1]
+                                    }
+                                }
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "🐾"; font.pixelSize: 26
+                                    text: "🐱"; font.pixelSize: 28
                                 }
                             }
 
                             Column {
-                                width: parent.width - 70
-                                spacing: 6
+                                width: parent.width - 78
+                                spacing: 5
+                                anchors.verticalCenter: parent.verticalCenter
 
-                                RowLayout {
-                                    width: parent.width
+                                Row {
                                     spacing: 8
-                                    FluText {
+                                    Text {
                                         text: label
-                                        font: FluTextStyle.BodyStrong
-                                        Layout.fillWidth: true
+                                        color: Theme.textColor
+                                        font.pixelSize: 14
+                                        font.weight: Font.DemiBold
                                     }
-                                    StatusPill {
-                                        status: model.status
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
+                                    StatusPill { status: model.status }
                                 }
-                                FluText {
+                                Text {
                                     width: parent.width
-                                    text: model.modelName.length > 0
-                                        ? model.modelName
-                                        : qsTr("未加载模型")
+                                    text: {
+                                        const parts = []
+                                        parts.push(model.modelName.length > 0
+                                            ? model.modelName : qsTr("未加载模型"))
+                                        const inst = instanceManager.instanceAt(index)
+                                        if (inst && inst.targetFps > 0)
+                                            parts.push(inst.targetFps + " FPS")
+                                        else if (inst)
+                                            parts.push(qsTr("自适应 FPS"))
+                                        if (inst && inst.muted)
+                                            parts.push(qsTr("静音"))
+                                        else if (inst)
+                                            parts.push(qsTr("音量 ") +
+                                                Math.round(inst.volume * 100) + "%")
+                                        return parts.join(" · ")
+                                    }
                                     color: root._faintColor
-                                    font: FluTextStyle.Caption
+                                    font.pixelSize: 11
+                                    elide: Text.ElideRight
                                 }
                                 Row {
                                     spacing: 8
-                                    FluButton {
+                                    AppButton {
+                                        style: "subtle"
                                         text: model.status === "running"
                                               ? qsTr("⏸ 停止") : qsTr("▶ 启动")
-                                        padding: 6
-                                        font.pixelSize: 12
+                                        implicitHeight: 26
+                                        fontSize: 12
                                         onClicked: {
                                             if (!_inst) return
-                                            if (model.status === "running")
-                                                _inst.stop()
-                                            else
-                                                _inst.start()
+                                            if (model.status === "running") _inst.stop()
+                                            else _inst.start()
                                         }
                                     }
-                                    FluButton {
+                                    AppButton {
+                                        style: "subtle"
                                         text: qsTr("↻ 重启")
-                                        padding: 6
-                                        font.pixelSize: 12
+                                        implicitHeight: 26
+                                        fontSize: 12
                                         enabled: model.status === "running"
                                         onClicked: if (_inst) _inst.restart()
                                     }
-                                    FluTextButton {
+                                    AppButton {
+                                        style: "subtle"
                                         text: qsTr("管理 →")
-                                        font.pixelSize: 12
-                                        onClicked:
-                                            Window.window.selectInstance(
-                                                index, model.uuid)
+                                        implicitHeight: 26
+                                        fontSize: 12
+                                        onClicked: Window.window.selectInstance(
+                                            index, model.uuid)
                                     }
                                 }
                             }
@@ -307,140 +360,151 @@ Rectangle {
                 }
             }
 
-            // ── Environment summary (collapsible) ──────────────────────────
-            FluFrame {
+            // ── Env check summary (collapsible) ────────────────────────
+            Card {
+                id: envCard
                 width: parent.width
-                padding: Theme.spaceCard
+                padding: 14
+                property bool envExpanded: !envChecker.allReady
 
-                Column {
+                Item {
                     width: parent.width
-                    spacing: envExpanded ? 14 : 0
+                    height: 40
 
-                    Item {
-                        width: parent.width
-                        height: 40
-
-                        Row {
-                            anchors.left: parent.left
+                    Row {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 10
+                        Rectangle {
+                            width: 20; height: 20; radius: 5
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: 10
-                            Rectangle {
-                                width: 20; height: 20; radius: 5
-                                anchors.verticalCenter: parent.verticalCenter
-                                color: envChecker.allReady
-                                    ? Theme.successColor : Theme.errorColor
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: envChecker.allReady ? "✓" : "!"
-                                    color: "#fff"; font.pixelSize: 12
-                                    font.weight: Font.DemiBold
-                                }
-                            }
-                            FluText {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: envChecker.allReady
-                                    ? qsTr("环境检查全部通过")
-                                    : qsTr("部分环境检查未通过")
-                                font: FluTextStyle.BodyStrong
-                                color: envChecker.allReady
-                                    ? Theme.successColor : Theme.errorColor
+                            color: envChecker.allReady
+                                ? Theme.successColor : Theme.errorColor
+                            Text {
+                                anchors.centerIn: parent
+                                text: envChecker.allReady ? "✓" : "!"
+                                color: "#fff"; font.pixelSize: 12
+                                font.weight: Font.DemiBold
                             }
                         }
-
-                        Row {
-                            anchors.right: parent.right
+                        Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: 8
-                            FluTextButton {
-                                text: qsTr("重新检测")
-                                font.pixelSize: 12
-                                onClicked: envChecker.runChecks()
-                            }
-                            FluTextButton {
-                                text: envExpanded ? qsTr("收起 ▴") : qsTr("展开详情 ▾")
-                                font.pixelSize: 12
-                                onClicked: envExpanded = !envExpanded
-                            }
+                            text: envChecker.allReady
+                                ? qsTr("环境检查全部通过")
+                                : qsTr("部分环境检查未通过")
+                            color: envChecker.allReady
+                                ? Theme.successColor : Theme.errorColor
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                        }
+                        Text {
+                            visible: envChecker.allReady
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "· OpenGL " + (envChecker.openglRendererReady ? "✓" : "✗")
+                                + "  Vulkan " + (envChecker.vulkanRendererReady ? "✓" : "✗")
+                                + "  " + qsTr("端口 9001 ") + (envChecker.portBindable ? "✓" : "✗")
+                            color: root._faintColor
+                            font.pixelSize: 12
                         }
                     }
 
-                    // Full check list — only when expanded. Auto-expand on
-                    // failure (binding, not one-shot: a later re-check that
-                    // fails re-opens the list).
-                    Column {
-                        visible: envExpanded
-                        width: parent.width
-                        spacing: 10
-
-                        CheckRow {
-                            width: parent.width
-                            ready: envChecker.openglRendererReady
-                            label: qsTr("OpenGL Renderer")
-                            detail: envChecker.openglRendererReady
-                                    ? qsTr("Found: ") + envChecker.openglRendererPath
-                                    : qsTr("Not found")
+                    Row {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+                        AppButton {
+                            style: "subtle"
+                            text: qsTr("重新检测")
+                            implicitHeight: 26; fontSize: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            onClicked: envChecker.runChecks()
                         }
-                        CheckRow {
-                            width: parent.width
-                            ready: envChecker.vulkanRendererReady
-                            label: qsTr("Vulkan Renderer")
-                            detail: envChecker.vulkanRendererReady
-                                    ? qsTr("Found: ") + envChecker.vulkanRendererPath
-                                    : qsTr("Not found")
-                        }
-                        CheckRow {
-                            width: parent.width
-                            ready: envChecker.qtRuntimeReady
-                            label: qsTr("Qt Runtime")
-                            detail: qsTr("Qt ") + envChecker.qtVersion
-                        }
-                        CheckRow {
-                            width: parent.width
-                            ready: envChecker.resourcesReady
-                            label: qsTr("Resources")
-                            detail: envChecker.resourcesReady
-                                    ? qsTr("Found: ") + envChecker.modelsDirectory
-                                    : qsTr("Not found")
-                        }
-                        CheckRow {
-                            width: parent.width
-                            ready: envChecker.modelsAvailable
-                            label: qsTr("Models")
-                            detail: envChecker.modelsAvailable
-                                    ? qsTr("%1 available: %2")
-                                      .arg(envChecker.availableModels.length)
-                                      .arg(envChecker.availableModels.join(", "))
-                                    : qsTr("No models found")
-                        }
-                        CheckRow {
-                            width: parent.width
-                            ready: envChecker.portBindable
-                            label: qsTr("WS Port %1").arg(envChecker.port)
-                            detail: envChecker.portBindable
-                                    ? qsTr("Bindable (free)")
-                                    : qsTr("In use — another process is listening")
+                        AppButton {
+                            style: "subtle"
+                            text: envCard.envExpanded
+                                  ? qsTr("收起 ▴") : qsTr("展开详情 ▾")
+                            implicitHeight: 26; fontSize: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            onClicked: envCard.envExpanded = !envCard.envExpanded
                         }
                     }
                 }
 
-                property bool envExpanded: !envChecker.allReady
+                Column {
+                    width: parent.width
+                    visible: envCard.envExpanded
+                    spacing: 10
+
+                    CheckRow {
+                        width: parent.width
+                        ready: envChecker.openglRendererReady
+                        label: qsTr("OpenGL 渲染器")
+                        detail: envChecker.openglRendererReady
+                                ? qsTr("找到: ") + envChecker.openglRendererPath
+                                : qsTr("未找到")
+                    }
+                    CheckRow {
+                        width: parent.width
+                        ready: envChecker.vulkanRendererReady
+                        label: qsTr("Vulkan 渲染器")
+                        detail: envChecker.vulkanRendererReady
+                                ? qsTr("找到: ") + envChecker.vulkanRendererPath
+                                : qsTr("未找到")
+                    }
+                    CheckRow {
+                        width: parent.width
+                        ready: envChecker.qtRuntimeReady
+                        label: qsTr("Qt 运行时")
+                        detail: qsTr("Qt ") + envChecker.qtVersion
+                    }
+                    CheckRow {
+                        width: parent.width
+                        ready: envChecker.resourcesReady
+                        label: qsTr("资源")
+                        detail: envChecker.resourcesReady
+                                ? qsTr("找到: ") + envChecker.modelsDirectory
+                                : qsTr("未找到")
+                    }
+                    CheckRow {
+                        width: parent.width
+                        ready: envChecker.modelsAvailable
+                        label: qsTr("模型")
+                        detail: envChecker.modelsAvailable
+                                ? qsTr("%1 个可用: %2")
+                                  .arg(envChecker.availableModels.length)
+                                  .arg(envChecker.availableModels.join(", "))
+                                : qsTr("无模型")
+                    }
+                    CheckRow {
+                        width: parent.width
+                        ready: envChecker.portBindable
+                        label: qsTr("WS 端口 %1").arg(envChecker.port)
+                        detail: envChecker.portBindable
+                                ? qsTr("可绑定（空闲）")
+                                : qsTr("被占用")
+                    }
+                }
             }
         }
     }
 
-    // ── Inline components ──────────────────────────────────────────────────
-    component MetricCard : FluFrame {
+    component MetricCard : Card {
         id: card
         property string titleText: ""
         property string valueText: ""
+        property string deltaText: ""
         property color valueColor: Theme.textColor
+        property var sparkSeries: []
+        property color sparkColor: Theme.accentColor
+        property bool sparkVisible: true
         padding: 16
+
         Column {
             width: parent.width
             spacing: 4
             Text {
                 text: card.titleText
-                color: Theme.mutedTextColor
+                color: Theme.text3Color
                 font.pixelSize: 11
                 font.capitalization: Font.AllUppercase
                 font.weight: Font.DemiBold
@@ -449,19 +513,32 @@ Rectangle {
                 width: parent.width
                 text: card.valueText
                 color: card.valueColor
-                font.pixelSize: 19
+                font.pixelSize: 20
                 font.weight: Font.DemiBold
+                elide: Text.ElideRight
+            }
+            Sparkline {
+                visible: card.sparkVisible
+                width: parent.width
+                series: card.sparkSeries
+                lineColor: card.sparkColor
+            }
+            Text {
+                visible: card.deltaText.length > 0
+                text: card.deltaText
+                color: card.valueColor === Theme.successColor
+                       ? Theme.successColor : Theme.text3Color
+                font.pixelSize: 11
             }
         }
     }
 
-    component CheckRow : Rectangle {
+    component CheckRow : Item {
         id: rowItem
         property bool ready: false
         property string label: ""
         property string detail: ""
 
-        color: "transparent"
         height: Math.max(dot.height, rowCol.implicitHeight)
 
         Rectangle {
@@ -470,7 +547,7 @@ Rectangle {
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.topMargin: 4
-            color: rowItem.ready ? root._okColor : root._errColor
+            color: rowItem.ready ? Theme.successColor : Theme.errorColor
         }
 
         Column {
@@ -479,19 +556,21 @@ Rectangle {
             anchors.leftMargin: 12
             anchors.right: parent.right
 
-            FluText { text: rowItem.label; font: FluTextStyle.BodyStrong }
-            FluText {
+            Text {
+                text: rowItem.label
+                color: Theme.textColor
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+            }
+            Text {
                 text: rowItem.detail
                 color: root._mutedColor
-                font: FluTextStyle.Caption
+                font.pixelSize: 11
                 wrapMode: Text.WordWrap
                 width: rowCol.width
             }
         }
     }
-
-    readonly property color _okColor: Theme.successColor
-    readonly property color _errColor: Theme.errorColor
 
     Component.onCompleted: envChecker.runChecks()
 }

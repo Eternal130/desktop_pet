@@ -24,6 +24,8 @@ void PanelConfigController::loadFromDisk()
     // which match the Q_PROPERTY defaults, so the QML bindings render the
     // correct initial state without any post-construction signaling.
     PanelStateManager psm(m_configDir);
+    if (m_db != nullptr)
+        psm.setDatabase(m_db);
     const PanelConfig cfg = psm.load();
     m_closeAction = cfg.closeAction;
     m_confirmOnExit = cfg.confirmOnExit;
@@ -43,6 +45,8 @@ bool PanelConfigController::updateField(std::function<void(PanelConfig&)> mutato
     // field the setter touched, and persist atomically via PanelStateManager
     // (QSaveFile — T20 pattern). Mirrors WindowStateSaver::saveWindowState.
     PanelStateManager psm(m_configDir);
+    if (m_db != nullptr)
+        psm.setDatabase(m_db);
     PanelConfig cfg = psm.load();
     mutator(cfg);
     if (!psm.save(cfg)) {

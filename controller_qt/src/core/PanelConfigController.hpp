@@ -4,6 +4,8 @@
 #include <QString>
 #include <functional>
 
+#include "core/DatabaseManager.hpp"
+
 struct PanelConfig;
 
 // PanelConfigController (Wave 7 todo 15) — the QML bridge for the 4
@@ -44,6 +46,10 @@ public:
     explicit PanelConfigController(const QString& configDir = {},
                                    QObject* parent = nullptr);
 
+    // Share main.cpp's DatabaseManager (SQLite backend). Optional — without
+    // it, each load-modify-save opens its own connection at <configDir>/app.db.
+    void setDatabase(DatabaseManager* db) { m_db = db; }
+
     // ── READ accessors (backed by m_cache, loaded once in ctor) ───────────
     QString closeAction() const     { return m_closeAction; }
     bool    confirmOnExit() const   { return m_confirmOnExit; }
@@ -79,6 +85,7 @@ private:
     bool updateField(std::function<void(PanelConfig&)> mutator);
 
     QString m_configDir;
+    DatabaseManager* m_db = nullptr;
     QString m_closeAction;
     bool    m_confirmOnExit = false;
     bool    m_startMinimized = false;

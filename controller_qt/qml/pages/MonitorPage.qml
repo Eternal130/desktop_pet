@@ -1,66 +1,80 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import QtCharts
 import FluentUI
 import DesktopPet
 
-// Monitor page — Phase 5 Wave 8 todo 18.
+// Monitor page — Fluent UI redesign (design doc §③).
 //
-// 2×3 grid of live LineSeries charts fed by InstanceSession::monitorModel()
-// (a MonitorDataModel with a 60-sample ring buffer). Each tick (2s QTimer in
-// InstanceSession) appends a controller sample + sends get_stats; the renderer
-// responds via stats_state → the model's mergeRenderer → snapshotAppended →
-// this page refreshes the 6 series + the value labels + the stale banner.
+// Changes vs the previous version:
+//   - Instance selector row at the top (FluToggleButton group bound to
+//     InstanceManager; selection rebinds monitorModel).
+//   - 6 chart cards in a 3×2 grid (wide) / 2-col (narrow), each with
+//     current value + peak + trend arrow computed from the 60-sample ring.
+//   - Stale banner restyled as a Fluent InfoBar (isStaleNow unchanged).
+//   - Crash-recovery status card: restartAttempts is not exposed to QML
+//     (core-side gap), so the card renders session status/connected —
+//     honest presentation instead of fabricated numbers.
 //
-// GPU/VRAM cells render "—" when null (Linux Stub returns null gpu_percent /
-// vram_used_bytes). The stale banner appears when no renderer update has
-// arrived within 10s (5 missed polls).
-//
-// Visual language mirrors InstanceDetailPage: Theme-bound palette, 32px outer
-// margins, 10px-radius surface panels, muted text at 0.6 alpha.
+// Data pipeline unchanged: MonitorDataModel ring buffer + snapshotAppended.
 Rectangle {
     id: root
-    // Transparent so the FluWindow material shows through.
     color: "transparent"
 
     property var instance: null
-    // Nav-url loading passes no initial properties; self-select the first
-    // instance so live charts render without an external selector.
-    Component.onCompleted: {
-        if (!instance && instanceManager.instanceAt)
-            instance = instanceManager.instanceAt(0)
-        if (instance) root.monitorModel = instance.monitorModel()
-    }
     property var monitorModel: null
+    property int selectedRow: 0
+
+    Component.onCompleted: {
+        root._selectInstance(0)
+    }
+
+    function _selectInstance(row) {
+        if (!instanceManager.instanceAt) return
+        const inst = instanceManager.instanceAt(row)
+        if (!inst) return
+        selectedRow = row
+        instance = inst
+        monitorModel = inst.monitorModel()
+    }
 
     readonly property color _mutedColor: Theme.mutedTextColor
     readonly property color _faintColor: Qt.rgba(
         Theme.textColor.r, Theme.textColor.g, Theme.textColor.b, 0.35)
     readonly property color _warnColor: Theme.warningColor
-    readonly property color _accent2:   Theme.chartColors[1]   // sky
-    readonly property color _accent3:   Theme.chartColors[2]   // green
-    readonly property color _accent4:   Theme.chartColors[3]   // amber
-    readonly property color _accent5:   Theme.chartColors[4]   // pink
-    readonly property color _accent6:   Theme.chartColors[5]   // teal
-    readonly property color _accent7:   Theme.chartColors[0]   // indigo
 
-    // ── formatBytes / formatPercent helpers (ported from Java) ─────────────
-    // bytes can be -1 (null sentinel) → returns "—".
     function formatBytes(b) {
         if (b < 0) return "—"
         if (b <= 0) return "0 B"
         const units = ["B", "KB", "MB", "GB", "TB"]
         let digit = Math.floor(Math.log(b) / Math.log(1024))
         if (digit > units.length - 1) digit = units.length - 1
-        const v = b / Math.pow(1024, digit)
-        return v.toFixed(1) + " " + units[digit]
+        return (b / Math.pow(1024, digit)).toFixed(1) + " " + units[digit]
     }
     function formatPercent(p) {
         if (p < 0) return "—"
         return p.toFixed(1) + "%"
     }
+    // Peak / trend from the ring buffer series (pure QML-side reduction).
+    function seriesPeak(series) {
+        let m = -Infinity
+        for (let i = 0; i < series.length; ++i)
+            if (series[i] > m) m = series[i]
+        return m === -Infinity ? 0 : m
+    }
+    function seriesTrend(series) {
+        const n = series.length
+        if (n < 4) return 0
+        const recent = series[n-1] - series[n-4]
+        return recent
+    }
+    function trendText(t, fmt) {
+        if (!isFinite(t) || t === 0) return "→ 0"
+        const v = fmt === "bytes" ? formatBytes(Math.abs(t)) : Math.abs(t).toFixed(1)
+        return t > 0 ? "↗ +" + v : "↘ −" + v
+    }
 
-    // ── Empty state (pre-sidebar-selection) ────────────────────────────────
     Text {
         anchors.centerIn: parent
         visible: instance === null
@@ -69,164 +83,182 @@ Rectangle {
         font: FluTextStyle.Body
     }
 
-    // ── Header ─────────────────────────────────────────────────────────────
-    Text {
-        id: header
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.topMargin: 24
-        anchors.leftMargin: 32
-        visible: instance !== null
-        text: qsTr("Resource Monitor")
-        color: Theme.textColor
-        font: FluTextStyle.Subtitle
-    }
-    Text {
-        id: subhead
-        anchors.top: header.bottom
-        anchors.topMargin: 4
-        anchors.left: header.left
-        visible: instance !== null
-        text: instance ? qsTr("Polling every 2s · %1 samples max").arg(60) : ""
-        color: _mutedColor
-        font.pixelSize: 12
-    }
-
-    // ── Stale banner (visible when no renderer update in 10s) ──────────────
-    Rectangle {
-        id: staleBanner
-        anchors.top: subhead.bottom
-        anchors.topMargin: 12
-        anchors.left: header.left
-        anchors.right: parent.right
-        anchors.rightMargin: 32
-        height: 28
-        visible: instance !== null && monitorModel && monitorModel.isStaleNow()
-        radius: 6
-        color: Qt.rgba(_warnColor.r, _warnColor.g, _warnColor.b, 0.18)
-        border.color: _warnColor
-        border.width: 1
-        Text {
-            anchors.centerIn: parent
-            text: qsTr("⚠ Renderer data stale (no stats_state in >10s)")
-            color: _warnColor
-            font: FluTextStyle.Caption
-        }
-    }
-
-    // ── Charts grid (2 columns × 3 rows = 6 LineSeries) ────────────────────
     Flickable {
-        anchors.top: staleBanner.visible ? staleBanner.bottom : subhead.bottom
-        anchors.topMargin: 16
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.leftMargin: 32
-        anchors.rightMargin: 32
-        anchors.bottomMargin: 24
+        anchors.fill: parent
         visible: instance !== null
-        contentWidth: width
-        contentHeight: grid.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        contentWidth: width
+        contentHeight: contentCol.implicitHeight + 48
+        ScrollBar.vertical: FluScrollBar {}
 
-        Grid {
-            id: grid
-            columns: 2
-            spacing: 12
-            width: parent.width
+        Column {
+            id: contentCol
+            width: root.width - 2 * Theme.spacePage
+            x: Theme.spacePage
+            spacing: Theme.spaceGroup
+            topPadding: 28
 
-            // Left column: ctrlCpu, ctrlMem, rendCpu
-            ChartCard {
-                width: (grid.width - 12) / 2
-                titleText: qsTr("Controller CPU")
-                valueText: monitorModel ? formatPercent(monitorModel.latestControllerCpuPercent()) : "—"
-                lineColor: _accent2
-                series: monitorModel ? monitorModel.controllerCpuSeries() : []
-                valueFormat: "percent"
+            // ── Header + instance selector ────────────────────────────────
+            RowLayout {
+                width: parent.width
+                spacing: 12
+                FluText {
+                    text: qsTr("资源监控")
+                    font: FluTextStyle.Title
+                }
+
+                Row {
+                    spacing: 4
+                    visible: instanceManager.rowCount() > 1
+                    Repeater {
+                        model: instanceManager
+                        delegate: FluToggleButton {
+                            text: label
+                            checked: root.selectedRow === index
+                            onClicked: root._selectInstance(index)
+                        }
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+                StatusPill {
+                    status: instance ? instance.status : "stopped"
+                    Layout.alignment: Qt.AlignVCenter
+                }
             }
-            ChartCard {
-                width: (grid.width - 12) / 2
-                titleText: qsTr("Renderer Memory (RSS)")
-                valueText: monitorModel ? formatBytes(monitorModel.latestRendererRssBytes()) : "—"
-                lineColor: _accent5
-                series: monitorModel ? monitorModel.rendererRssSeries() : []
-                valueFormat: "bytes"
+            FluText {
+                text: qsTr("每 2 秒轮询 · 环形缓冲保留 60 个样本（约 2 分钟历史）")
+                color: _mutedColor
+                font: FluTextStyle.Caption
             }
-            ChartCard {
-                width: (grid.width - 12) / 2
-                titleText: qsTr("Controller Memory (RSS)")
-                valueText: monitorModel ? formatBytes(monitorModel.latestControllerRssBytes()) : "—"
-                lineColor: _accent3
-                series: monitorModel ? monitorModel.controllerRssSeries() : []
-                valueFormat: "bytes"
+
+            // ── Stale InfoBar ─────────────────────────────────────────────
+            Rectangle {
+                width: parent.width
+                height: 32
+                visible: instance !== null && monitorModel
+                         && monitorModel.isStaleNow()
+                radius: Theme.radiusMd
+                color: Qt.rgba(_warnColor.r, _warnColor.g, _warnColor.b, 0.14)
+                border.color: Qt.rgba(_warnColor.r, _warnColor.g,
+                                      _warnColor.b, 0.5)
+                border.width: 1
+                Text {
+                    anchors.centerIn: parent
+                    text: qsTr("⚠ 渲染器数据陈旧 — 超过 10 秒未收到 stats_state，请检查渲染进程")
+                    color: _warnColor
+                    font: FluTextStyle.Caption
+                }
             }
-            ChartCard {
-                width: (grid.width - 12) / 2
-                titleText: qsTr("Renderer GPU")
-                valueText: monitorModel ? formatPercent(monitorModel.latestRendererGpuPercent()) : "—"
-                subText: monitorModel && monitorModel.latestRendererGpuName().length > 0
-                    ? monitorModel.latestRendererGpuName() : ""
-                lineColor: _accent6
-                series: monitorModel ? monitorModel.rendererGpuSeries() : []
-                valueFormat: "percent"
+
+            // ── Charts grid 3×2 ───────────────────────────────────────────
+            GridLayout {
+                width: parent.width
+                columns: root.width > 860 ? 3 : 2
+                columnSpacing: Theme.spaceGroup
+                rowSpacing: Theme.spaceGroup
+
+                ChartCard {
+                    Layout.fillWidth: true
+                    titleText: qsTr("控制器 CPU")
+                    valueText: monitorModel ? formatPercent(monitorModel.latestControllerCpuPercent()) : "—"
+                    lineColor: Theme.chartColors[1]
+                    series: monitorModel ? monitorModel.controllerCpuSeries() : []
+                    valueFormat: "percent"
+                }
+                ChartCard {
+                    Layout.fillWidth: true
+                    titleText: qsTr("渲染器 CPU")
+                    valueText: monitorModel ? formatPercent(monitorModel.latestRendererCpuPercent()) : "—"
+                    lineColor: Theme.chartColors[3]
+                    series: monitorModel ? monitorModel.rendererCpuSeries() : []
+                    valueFormat: "percent"
+                }
+                ChartCard {
+                    Layout.fillWidth: true
+                    titleText: qsTr("渲染器 GPU")
+                    valueText: monitorModel ? formatPercent(monitorModel.latestRendererGpuPercent()) : "—"
+                    subText: monitorModel && monitorModel.latestRendererGpuName().length > 0
+                        ? monitorModel.latestRendererGpuName() : ""
+                    lineColor: Theme.chartColors[5]
+                    series: monitorModel ? monitorModel.rendererGpuSeries() : []
+                    valueFormat: "percent"
+                }
+                ChartCard {
+                    Layout.fillWidth: true
+                    titleText: qsTr("控制器内存 RSS")
+                    valueText: monitorModel ? formatBytes(monitorModel.latestControllerRssBytes()) : "—"
+                    lineColor: Theme.chartColors[2]
+                    series: monitorModel ? monitorModel.controllerRssSeries() : []
+                    valueFormat: "bytes"
+                }
+                ChartCard {
+                    Layout.fillWidth: true
+                    titleText: qsTr("渲染器内存 RSS")
+                    valueText: monitorModel ? formatBytes(monitorModel.latestRendererRssBytes()) : "—"
+                    lineColor: Theme.chartColors[4]
+                    series: monitorModel ? monitorModel.rendererRssSeries() : []
+                    valueFormat: "bytes"
+                }
+                ChartCard {
+                    Layout.fillWidth: true
+                    titleText: qsTr("渲染器 VRAM")
+                    valueText: monitorModel ? formatBytes(monitorModel.latestRendererVramUsedBytes()) : "—"
+                    subText: (monitorModel && monitorModel.latestRendererVramTotalBytes() >= 0)
+                        ? qsTr("共 %1").arg(formatBytes(monitorModel.latestRendererVramTotalBytes()))
+                        : ""
+                    lineColor: Theme.chartColors[0]
+                    series: monitorModel ? monitorModel.rendererVramSeries() : []
+                    valueFormat: "bytes"
+                }
             }
-            ChartCard {
-                width: (grid.width - 12) / 2
-                titleText: qsTr("Renderer CPU")
-                valueText: monitorModel ? formatPercent(monitorModel.latestRendererCpuPercent()) : "—"
-                lineColor: _accent4
-                series: monitorModel ? monitorModel.rendererCpuSeries() : []
-                valueFormat: "percent"
-            }
-            ChartCard {
-                width: (grid.width - 12) / 2
-                titleText: qsTr("Renderer VRAM Used")
-                valueText: monitorModel ? formatBytes(monitorModel.latestRendererVramUsedBytes()) : "—"
-                subText: (monitorModel && monitorModel.latestRendererVramTotalBytes() >= 0)
-                    ? qsTr("of %1").arg(formatBytes(monitorModel.latestRendererVramTotalBytes()))
-                    : ""
-                lineColor: _accent7
-                series: monitorModel ? monitorModel.rendererVramSeries() : []
-                valueFormat: "bytes"
+
+            // ── Crash-recovery status card ────────────────────────────────
+            SectionCard {
+                width: parent.width
+                title: qsTr("崩溃恢复状态 · RestartController")
+
+                Row {
+                    spacing: 12
+                    FluText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: instance && instance.connected
+                              ? qsTr("连接正常 · 崩溃恢复未触发")
+                              : qsTr("渲染器未连接")
+                        color: instance && instance.connected
+                               ? Theme.successColor : Theme.mutedTextColor
+                        font: FluTextStyle.Body
+                    }
+                }
+                FluText {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: root._faintColor
+                    font: FluTextStyle.Caption
+                    text: qsTr("重启尝试计数（0–5 · 指数退避 2s→30s）尚未暴露到 QML，" +
+                               "此处展示会话连接状态。")
+                }
             }
         }
     }
 
-    // ── Refresh on every snapshot append + on instance swap ────────────────
-    // The bound properties above re-evaluate automatically when snapshotAppended
-    // fires (because they read monitorModel.X() which mutates). The 6 ChartCards
-    // each bind `series` to a fresh QVariantList on every signal; the ChartView
-    // inside replaces its LineSeries points from that list in onSeriesChanged.
     Connections {
         target: root.monitorModel
         ignoreUnknownSignals: true
-        // Force re-evaluation by touching a property the ChartCards bind to.
-        // (Qt's binding engine already re-evaluates on signal-of-dependency;
-        // this empty handler is a no-op safety net in case a future refactor
-        // breaks the auto-binding chain.)
         function onSnapshotAppended() { /* bindings auto-refresh */ }
         function onHistoryCleared()  { /* bindings auto-refresh */ }
     }
 
-    // Re-bind monitorModel + clear chart series when the user switches
-    // instances via the sidebar.
     Connections {
         target: root
         function onInstanceChanged() {
-            if (instance) {
-                root.monitorModel = instance.monitorModel()
-            } else {
-                root.monitorModel = null
-            }
+            if (instance) root.monitorModel = instance.monitorModel()
+            else root.monitorModel = null
         }
     }
 
     // ── Inline ChartCard component ─────────────────────────────────────────
-    // Each card shows: title (top-left) + current value (top-right) + an
-    // optional sub-line (e.g. GPU name / "of 8 GB") + a ChartView. The chart
-    // is a sparkline-style LineSeries (axes hidden, no legend, no gridlines)
-    // per the Java reference's configureChart().
     component ChartCard : FluFrame {
         id: card
         property string titleText: ""
@@ -235,8 +267,12 @@ Rectangle {
         property color lineColor: Theme.accentColor
         property var series: []
         property string valueFormat: "percent"
-        height: 160
-        padding: 0
+        // FluFrame (Rectangle-based) has NO implicit size — inside GridLayout
+        // the row would collapse to 0 and stack all cards. Give it an
+        // implicit height (layouts use implicitHeight for cell sizing).
+        implicitHeight: 170
+        height: 170
+        padding: 14
 
         Text {
             id: title
@@ -278,17 +314,14 @@ Rectangle {
             anchors.top: title.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.bottom: parent.bottom
+            anchors.bottom: legendRow.top
             anchors.topMargin: 4
-            anchors.margins: 0
+            anchors.bottomMargin: 2
             antialiasing: true
             legend.visible: false
-            backgroundColor: Theme.surfaceColor
-            // Drop the built-in chart padding so the line fills the card.
-            margins.top: 0
-            margins.bottom: 0
-            margins.left: 0
-            margins.right: 0
+            backgroundColor: "transparent"
+            margins.top: 0; margins.bottom: 0
+            margins.left: 0; margins.right: 0
 
             ValueAxis {
                 id: axisX
@@ -299,9 +332,6 @@ Rectangle {
             ValueAxis {
                 id: axisY
                 visible: false
-                // Auto-range. The Java reference uses autoRanging=true too;
-                // percent charts settle near 0..100, bytes charts scale to
-                // the working set. min pinned at 0 so the line bottom-anchors.
                 min: 0
                 max: computeYMax(card.series, card.valueFormat)
             }
@@ -318,37 +348,53 @@ Rectangle {
             }
         }
 
-        // Rebuild the LineSeries points whenever the bound series list changes.
-        // Each chart card reads its slice of the model on snapshotAppended (the
-        // binding re-evaluates because series is a function call on monitorModel).
+        // Peak + trend footer row.
+        Row {
+            id: legendRow
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 14
+            anchors.rightMargin: 14
+            anchors.bottomMargin: 10
+            spacing: 12
+
+            Text {
+                text: qsTr("峰值 ") + (card.valueFormat === "percent"
+                    ? formatPercent(seriesPeak(card.series))
+                    : formatBytes(seriesPeak(card.series)))
+                color: _faintColor
+                font.pixelSize: 11
+            }
+            Text {
+                text: trendText(seriesTrend(card.series), card.valueFormat)
+                color: _faintColor
+                font.pixelSize: 11
+            }
+        }
+
         onSeriesChanged: rebuildPoints()
         Component.onCompleted: rebuildPoints()
+        Layout.preferredHeight: 170
 
         function rebuildPoints() {
             line.removePoints(0, line.count)
             const n = card.series.length
             if (n === 0) return
-            for (let i = 0; i < n; ++i) {
+            for (let i = 0; i < n; ++i)
                 line.append(i, card.series[i])
-            }
             axisX.min = 0
             axisX.max = Math.max(1, n - 1)
         }
     }
 
-    // Auto-range helper: returns the Y-axis max for a given series. Percent
-    // charts clamp to a fixed 0..100 scale (CPU/GPU); bytes charts auto-scale
-    // to the max sample (rounded up to the next "nice" power of 1024).
     function computeYMax(series, fmt) {
         if (series.length === 0) return 1.0
         let m = 0
-        for (let i = 0; i < series.length; ++i) {
-            const v = series[i]
-            if (v > m) m = v
-        }
+        for (let i = 0; i < series.length; ++i)
+            if (series[i] > m) m = series[i]
         if (m <= 0) return 1.0
         if (fmt === "percent") return Math.max(10, Math.ceil(m / 10) * 10)
-        // bytes — round up to next power-of-1024 step
         const step = Math.pow(1024, Math.floor(Math.log(m) / Math.log(1024)))
         return Math.ceil(m / step) * step
     }

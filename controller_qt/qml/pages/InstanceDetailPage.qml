@@ -271,7 +271,7 @@ Rectangle {
                                     ? instance.hitAreaNames() : []
                                 delegate: Chip {
                                     text: modelData
-                                    onActivated: instance.playMotion(modelData, 0)
+                                    onActivated: instance.triggerHitArea(modelData)
                                 }
                             }
                         }
@@ -392,6 +392,17 @@ Rectangle {
                                 font.pixelSize: 13
                             }
                         }
+                        ParamRow {
+                            width: parent.width
+                            labelText: qsTr("自动启动")
+                            descText: qsTr("控制面板启动时自动启动该实例")
+                            ToggleSwitch {
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: instance ? instance.autoStartEnabled() : false
+                                onToggled: if (instance)
+                                    instance.setAutoStart(checked)
+                            }
+                        }
                     }
                 }
 
@@ -438,8 +449,8 @@ Rectangle {
                         }
                         SettingRow {
                             width: parent.width
-                            title: qsTr("自动适应区域")
-                            desc: qsTr("按窗口尺寸缩放字幕")
+                            title: qsTr("字幕显示区域")
+                            desc: qsTr("调整/缩放字幕")
                             ToggleSwitch {
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: instance

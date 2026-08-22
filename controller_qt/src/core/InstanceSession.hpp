@@ -189,6 +189,14 @@ public slots:
     // to PriorityNormal (2). The renderer silently ignores unknown group/index.
     Q_INVOKABLE void playMotion(const QString& group, int index);
 
+    // Manually trigger a hit area as if the renderer had reported a `hit`
+    // event for it — runs the SAME decision chain (MountedBehaviorEngine →
+    // play_motion_ext when a pack is mounted, else InteractionHandler →
+    // play_motion). This is what the hit-area chips and voice-pack preview
+    // chips call; playMotion(group) is wrong for them because a hit-area
+    // name is not a motion group name.
+    Q_INVOKABLE void triggerHitArea(const QString& areaId);
+
     // Build + send a set_expression command (interface.md §B.4). The renderer
     // silently ignores an unknown expression_id.
     Q_INVOKABLE void setExpression(const QString& expressionId);
@@ -242,6 +250,7 @@ public slots:
     Q_INVOKABLE QString dragMode() const;         // "direct" | "physics"
     Q_INVOKABLE int idleIntervalSeconds() const;  // 1..60
     Q_INVOKABLE bool autoStartEnabled() const;    // start-with-panel flag
+    Q_INVOKABLE void setAutoStart(bool enabled);  // persist + no command (renderer not up yet at toggle time)
 
     // ── Phase-5 Wave 8 todo 18 (monitor UI helper) ───────────────────────────
     // Returns the per-session MonitorDataModel as a QObject* so QML can bind

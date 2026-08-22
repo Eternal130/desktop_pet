@@ -91,6 +91,20 @@ void InstanceSession::playMotion(const QString& group, int index)
     sendCommand(Protocol::buildPlayMotion(group, index, 2));
 }
 
+void InstanceSession::triggerHitArea(const QString& areaId)
+{
+    LOG_INFO("InstanceSession[{}]: manual trigger of hit area=\"{}\"",
+             m_instanceId, areaId.toStdString());
+    // Synthesize the same envelope the renderer's `hit` event carries so the
+    // decision chain (MountedBehaviorEngine → InteractionHandler) runs
+    // identically to a real click on the pet.
+    Envelope env;
+    env.type = QStringLiteral("event");
+    env.action = QStringLiteral("hit");
+    env.payload.insert(QStringLiteral("area_id"), areaId);
+    handleHitEvent(env);
+}
+
 void InstanceSession::setExpression(const QString& expressionId)
 {
     LOG_INFO("InstanceSession[{}]: setExpression id=\"{}\"",
@@ -116,6 +130,20 @@ int InstanceSession::idleIntervalSeconds() const
 bool InstanceSession::autoStartEnabled() const
 {
     return m_config.autoStart;
+}
+
+void InstanceSession::setAutoStart(bool enabled)
+{
+    if (m_config.autoStart == enabled)
+        return;
+    m_config.autoStart = enabled;
+    if (m_configManager.save(m_config)) {
+        LOG_INFO("InstanceSession[{}]: autoStart={} persisted",
+                 m_instanceId, enabled);
+    } else {
+        LOG_ERROR("InstanceSession[{}]: failed to persist autoStart={}",
+                  m_instanceId, enabled);
+    }
 }
 
 // 鈹€鈹€ Phase-5 Wave 8 todo 21 (subtitle UI helpers) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€

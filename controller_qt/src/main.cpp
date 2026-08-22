@@ -283,6 +283,21 @@ int main(int argc, char *argv[])
     // (qt_add_qml_module, URI "DesktopPet").
     engine.loadFromModule("DesktopPet", "Main");
 
+    // Auto-start (per-instance config.autoStart): launch every instance whose
+    // flag is set once the QML UI is up — the renderer windows appear
+    // alongside the panel. Queued via QTimer::singleShot(0) so the first
+    // frame paints before the (blocking, process-spawning) start() calls run.
+    QTimer::singleShot(0, [&instanceManager]() {
+        for (int i = 0; i < instanceManager.rowCount(); ++i) {
+            InstanceSession* s = instanceManager.instanceAt(i);
+            if (s != nullptr && s->autoStartEnabled()) {
+                LOG_INFO("autoStart: launching instance \"{}\"",
+                         s->label().toStdString());
+                s->start();
+            }
+        }
+    });
+
     // ── Screenshot mode (visual QA, 方案3) ─────────────────────────────────
     // Usage: controller --screenshot [--out DIR] [--pages welcome,monitor,settings]
     // [--delay MS]. Waits for the window to render, then for each requested

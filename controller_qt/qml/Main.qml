@@ -1,86 +1,62 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
-import QtQuick.Layouts
-import FluentUI
 import DesktopPet
 
-// FluentUI full-shell rewrite (feat/qt-fluentui-rewrite branch).
+// Native Fluent-style shell (design doc fluent-ui-redesign.html), no third-
+// party QML library. Frameless window + custom titlebar + nav pane with
+// groups / badges / instance section / search filter.
 //
-// Window chrome is now FluentUI: FluWindow (frameless) + FluAppBar (drag /
-// minimize / maximize / close) + FluNavigationView (left nav pane hosting the
-// three pages). All business surfaces are preserved verbatim:
-//   - switchPage(name) — same names ("welcome"|"monitor"|"settings"), still
-//     called by the --screenshot harness in main.cpp
-//   - selectInstance(row, uuid) — sidebar instance selection
-//   - tray Connections, delete/exit confirm dialogs, closeAction branching
-//   - context properties (instanceManager, panelConfig, trayManager, ...)
-//
-// The old custom TitleBar/Sidebar/ResizeHandles files stay on disk but are no
-// longer instantiated here.
-FluWindow {
+// Preserved business surface: switchPage(name) / selectInstance(row, uuid),
+// tray Connections, delete/exit confirm dialogs, closeAction branching,
+// context properties (instanceManager, panelConfig, trayManager, ...).
+Window {
     id: root
-    width: initialWidth > 0 ? initialWidth : 1200
-    height: initialHeight > 0 ? initialHeight : 760
+
+    width: initialWidth > 0 ? initialWidth : 1180
+    height: initialHeight > 0 ? initialHeight : 720
+    minimumWidth: 920
+    minimumHeight: 600
     x: initialX >= 0 ? initialX : (Screen.width - width) / 2
     y: initialY >= 0 ? initialY : (Screen.height - height) / 2
     visible: true
     title: qsTr("Desktop Pet Controller")
-    launchMode: FluWindowType.SingleInstance
-    // Win11 system backdrop — this FluentUI version drives Mica through the
-    // frameless effect, not a FluTheme flag. "mica" tints the window with
-    // the user's wallpaper (the official demo's signature look); degrades
-    // to "dwm-blur"/"normal" below Win11.
-    // Win11 backdrop. NOTE: in this FluentUI version FluWindow only renders
-    // a TRANSPARENT base under "dwm-blur" (mica still paints an opaque
-    // windowActiveBackgroundColor over the DWM material) — dwm-blur is the
-    // effect that actually shows the wallpaper-tinted backdrop, matching
-    // the official demo's look. Selected via the demo's own Theme page.
-    effect: "dwm-blur"
+    color: Theme.bgColor
 
-    appBar: FluAppBar {
-        title: qsTr("Desktop Pet Controller")
-        showDark: true
-        z: 7
-    }
+    flags: Qt.Window | Qt.FramelessWindowHint
 
-    // ── Page bookkeeping ────────────────────────────────────────────────────
+    // ── Page bookkeeping ────────────────────────────────────────────────
     property string currentPage: "welcome"
     property var currentInstance: null
     property string currentInstanceUuid: ""
 
     function switchPage(name) {
-        // Main items: startPageByItem (framework selection + onTapListener
-        // load hook). Footer Settings: startPageByItem cannot resolve footer
-        // items (verified empirically — getItems() misses them), so drive
-        // the load directly; footer selection highlight is a known gap.
-        if (name === "settings") {
-            navSettings.onTapListener()
-            return
-        }
-        let item = null
-        if (name === "welcome")        item = navHome
-        else if (name === "instance")  item = navInstance
-        else if (name === "monitor")   item = navMonitor
-        else if (name === "voicepack") { navVoicePack.onTapListener(); return }
-        if (item !== null) navView.startPageByItem(item)
+        navPane.activeKey = name
+        _loadPage(name)
     }
 
     function selectInstance(row, uuid) {
         root.currentInstanceUuid = uuid
         root.currentInstance = instanceManager.instanceAt(row)
-        navView.startPageByItem(navInstance)
+        switchPage("instance")
     }
 
-    // Tray window-toggle helpers (Wave 7 todo 13 — unchanged behavior).
+    function _loadPage(name) {
+        root.currentPage = name
+        if (name === "instance" && root.currentInstance === null)
+            root.currentInstance = instanceManager.instanceAt(0)
+        pageLoader.sourceComponent = {
+            "welcome":   welcomePageComp,
+            "instance":  instanceDetailPageComp,
+            "monitor":   monitorPageComp,
+            "voicepack": voicePackPageComp,
+            "settings":  settingsPageComp
+        }[name] ?? welcomePageComp
+    }
+
     function toggleVisibility() {
-        if (root.visible) {
-            root.hide()
-        } else {
-            root.show()
-            root.raise()
-            root.requestActivate()
-        }
+        if (root.visible) root.hide()
+        else { root.show(); root.raise(); root.requestActivate() }
     }
     function showWindow() {
         if (!root.visible) root.show()
@@ -88,9 +64,6 @@ FluWindow {
         root.requestActivate()
     }
 
-    // Unified exit path (Wave 7 todo 15): stopAll → saveState → tray shutdown
-    // → quit. The screenshot harness never calls this (it quits via
-    // QApplication::quit from C++), but tray "退出" and close-with-confirm do.
     function doExit() {
         instanceManager.stopAll()
         windowStateSaver.saveWindowState(root.x, root.y, root.width,
@@ -105,7 +78,7 @@ FluWindow {
         if (panelConfig.closeAction === "minimize") {
             root.hide()
             close.accepted = false
-        } else if (panelConfig.confirmOnExit) {
+        } else if (panelConfig.confirmOnExit || panelConfig.closeAction === "ask") {
             exitConfirmDialog.open()
             close.accepted = false
         } else {
@@ -113,110 +86,399 @@ FluWindow {
         }
     }
 
-    // Central page loader driven by nav onTapListener callbacks. Declared
-    // BEFORE navView so the nav pane (later sibling, higher z) always paints
-    // above page content; leftMargin mirrors the framework's own
-    // loader_content margin (cellWidth expanded / navCompactWidth compact).
-    Loader {
-        id: pageLoader
-        anchors.fill: parent
-        anchors.leftMargin: navView.cellWidth
-        sourceComponent: welcomePageComp
+    function _runningCount() {
+        let n = 0
+        for (let i = 0; i < instanceManager.rowCount(); ++i) {
+            const s = instanceManager.instanceAt(i)
+            if (s && s.status === "running") ++n
+        }
+        return n
     }
 
-    FluNavigationView {
-        id: navView
+    // ── Canvas gradient (design body: 135deg 3-stop, sits under everything;
+    // content pages stay transparent so cards float on it) ────────────────
+    Rectangle {
+        id: canvasLayer
+        z: 0
         anchors.fill: parent
-        items: navItems
-        footerItems: FluObject {
-            FluPaneItem {
-                id: navSettings
-                title: qsTr("Settings")
-                icon: FluentIcons.Settings
-                // Same load contract as main items: onTapListener. The
-                // framework's footer selection sync only runs when this is
-                // unset, but then page loading would need `url` (which its
-                // loader can't reach) — accept no footer highlight for now.
-                onTapListener: function() {
-                    root.currentPage = "settings"
-                    pageLoader.sourceComponent = settingsPageComp
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: Theme.bgGradA }
+            GradientStop { position: 0.5; color: Theme.bgGradB }
+            GradientStop { position: 1.0; color: Theme.bgGradC }
+        }
+    }
+
+    // ── Window resize edges (frameless windows lose the system border;
+    // 8 invisible strips call startSystemResize, same family as the
+    // titlebar's startSystemMove) ────────────────────────────────────────
+    component ResizeEdge : MouseArea {
+        id: edge
+        property int edges: 0          // combination of Qt.LeftEdge etc.
+        z: 50
+        hoverEnabled: true
+        cursorShape: {
+            const l = edges & Qt.LeftEdge, r = edges & Qt.RightEdge
+            const t = edges & Qt.TopEdge,  b = edges & Qt.BottomEdge
+            if ((l && t) || (r && b)) return Qt.SizeFDiagCursor
+            if ((l && b) || (r && t)) return Qt.SizeBDiagCursor
+            if (l || r) return Qt.SizeHorCursor
+            return Qt.SizeVerCursor
+        }
+        onPressed: (mouse) => {
+            const accepted = root.startSystemResize(edge.edges)
+            if (accepted) mouse.accepted = true
+        }
+    }
+
+    ResizeEdge { // left
+        anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+        width: 6; edges: Qt.LeftEdge
+    }
+    ResizeEdge { // right
+        anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
+        width: 6; edges: Qt.RightEdge
+    }
+    ResizeEdge { // top
+        anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+        height: 6; edges: Qt.TopEdge
+    }
+    ResizeEdge { // bottom
+        anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+        height: 6; edges: Qt.BottomEdge
+    }
+    ResizeEdge { // top-left
+        anchors.left: parent.left; anchors.top: parent.top
+        width: 12; height: 12; edges: Qt.LeftEdge | Qt.TopEdge
+    }
+    ResizeEdge { // top-right
+        anchors.right: parent.right; anchors.top: parent.top
+        width: 12; height: 12; edges: Qt.RightEdge | Qt.TopEdge
+    }
+    ResizeEdge { // bottom-left
+        anchors.left: parent.left; anchors.bottom: parent.bottom
+        width: 12; height: 12; edges: Qt.LeftEdge | Qt.BottomEdge
+    }
+    ResizeEdge { // bottom-right
+        anchors.right: parent.right; anchors.bottom: parent.bottom
+        width: 12; height: 12; edges: Qt.RightEdge | Qt.BottomEdge
+    }
+
+    // ── Titlebar (design .titlebar: 44px translucent band + hairline) ────
+    Rectangle {
+        id: titleBar
+        z: 10
+        height: 44
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        color: Theme.titleBarOverlay
+
+        Rectangle {
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 1
+            color: Theme.hairlineColor
+        }
+
+        Rectangle {
+            width: 18; height: 18; radius: 4
+            x: 16; y: (parent.height - height) / 2
+            color: Theme.accentColor
+            Text {
+                anchors.centerIn: parent
+                text: "🐾"; font.pixelSize: 11
+            }
+        }
+        Text {
+            x: 44
+            y: (parent.height - height) / 2
+            text: {
+                const pageNames = {
+                    "welcome":   qsTr("主页"),
+                    "monitor":   qsTr("资源监控"),
+                    "voicepack": qsTr("语音包"),
+                    "settings":  qsTr("设置")
+                }
+                if (root.currentInstance && root.currentPage === "instance")
+                    return root.currentInstance.label + " — " + root.title
+                return (pageNames[root.currentPage] ?? root.title) +
+                       " — " + root.title
+            }
+            color: Theme.text2Color
+            font.pixelSize: 12
+        }
+
+        Row {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+
+            TitleBarButton { kind: "min";  onActivated: root.showMinimized() }
+            TitleBarButton {
+                kind: root.visibility === Window.Maximized ? "restore" : "max"
+                onActivated: root.visibility === Window.Maximized
+                           ? root.showNormal() : root.showMaximized()
+            }
+            TitleBarButton {
+                kind: "close"
+                isClose: true
+                onActivated: root.close()
+            }
+        }
+
+        DragHandler {
+            target: null
+            onActiveChanged: if (active) {
+                if (root.visibility === Window.Maximized)
+                    root.showNormal()
+                root.startSystemMove()
+            }
+        }
+        TapHandler {
+            onDoubleTapped: root.visibility === Window.Maximized
+                            ? root.showNormal() : root.showMaximized()
+        }
+    }
+
+    // ── Nav pane (design .nav: 75% translucent + right hairline) ─────────
+    Rectangle {
+        id: navPane
+        z: 5
+        anchors.left: parent.left
+        anchors.top: titleBar.bottom
+        anchors.bottom: parent.bottom
+        width: 256
+        color: Theme.navOverlay
+
+        property string activeKey: "welcome"
+        property string searchFilter: ""
+
+        Rectangle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 1
+            color: Theme.hairlineColor
+        }
+
+        // search box (design .nav-search: visible Fluent field stroke).
+        // Two-layer trick: outer = stroke color, inner (inset 1px) = a
+        // near-pane opaque fill. A transparent inner let the focused
+        // accent fill the whole box (blue-background bug) and made the
+        // 1px ring too faint at high DPI.
+        Rectangle {
+            id: searchBox
+            x: 10; y: 12
+            width: parent.width - 20
+            height: 32
+            radius: Theme.radiusMd
+            color: searchInput.activeFocus ? Theme.accentColor
+                : (Theme.dark ? "#ffffff" : "#5c5c5c")
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 1
+                radius: Theme.radiusMd - 1
+                color: Theme.dark ? "#262626" : "#fafafa"
+
+                Rectangle {
+                    // Fluent field: heavier bottom edge inside the stroke
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: Theme.dark ? "#ffffff59" : "#00000059"
+                }
+
+                Text {
+                    visible: searchInput.text.length === 0
+                    x: 10
+                    y: (parent.height - height) / 2
+                    text: qsTr("🔍 搜索页面、实例、语音包…")
+                    color: Theme.text3Color
+                    font.pixelSize: 12
+                }
+                TextInput {
+                    id: searchInput
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: Theme.textColor
+                    font.pixelSize: 12
+                    clip: true
+                    onTextChanged: navPane.searchFilter = text.toLowerCase()
                 }
             }
         }
-        autoSuggestBox: FluAutoSuggestBox {
-            placeholderText: qsTr("Search")
-            items: [
-                { title: navHome.title, key: "welcome" },
-                { title: navInstance.title, key: "instance" },
-                { title: navMonitor.title, key: "monitor" },
-                { title: navVoicePack.title, key: "voicepack" },
-                { title: navSettings.title, key: "settings" }
-            ]
-            onItemClicked:
-                (data) => root.switchPage(data.key ?? data.title)
+
+        // scrollable nav list between search box and pinned settings item
+        Flickable {
+            id: navScroll
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: searchBox.bottom
+            anchors.topMargin: 8
+            anchors.bottom: settingsNavItem.top
+            contentHeight: navCol.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: AppScrollBar {}
+
+            Column {
+                id: navCol
+                width: parent.width
+                spacing: 0
+
+                NavGroupLabel { text: qsTr("宠物") }
+
+                NavItem {
+                    itemKey: "welcome"
+                    icon: "🏠"; label: qsTr("主页")
+                    match: navPane.searchFilter
+                }
+                NavItem {
+                    itemKey: "instance"
+                    icon: "🐱"; label: qsTr("实例详情")
+                    badgeText: instanceManager.rowCount() > 0
+                               ? instanceManager.rowCount() : ""
+                    match: navPane.searchFilter
+                }
+                NavItem {
+                    itemKey: "monitor"
+                    icon: "📊"; label: qsTr("资源监控")
+                    match: navPane.searchFilter
+                }
+                NavItem {
+                    itemKey: "voicepack"
+                    icon: "🎙"; label: qsTr("语音包")
+                    badgeText: voicePacks.packCount > 0
+                               ? voicePacks.packCount : ""
+                    match: navPane.searchFilter
+                }
+
+                Item { width: 1; height: 12 }
+
+                // design mock: the nav swaps to per-instance items only on
+                // the instance page; other pages show just the 4 main items.
+                NavGroupLabel {
+                    text: qsTr("宠物 · 实例切换")
+                    visible: root.currentPage === "instance"
+                             && instanceManager.rowCount() > 0
+                }
+                Repeater {
+                    model: instanceManager
+                    delegate: NavInstanceItem {
+                        id: instNav
+                        required property string label
+                        required property string uuid
+                        required property bool connected
+                        required property int index
+                        instanceLabel: instNav.label
+                        live: instNav.connected
+                        match: navPane.searchFilter
+                        visible: root.currentPage === "instance"
+                        onClicked: root.selectInstance(instNav.index, instNav.uuid)
+                    }
+                }
+            }
         }
-        // Framework contract: items WITHOUT url get their onTapListener()
-        // invoked by setCurrentIndex/startPageByItem — that's our page-load
-        // hook. Selection state (accent pill) is managed by the nav view.
-        title: qsTr("Desktop Pet")
-        onLogoClicked: navView.startPageByItem(navHome)
-        Component.onCompleted: navView.startPageByItem(navHome)
+
+        NavItem {
+            id: settingsNavItem
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: profileRow.top
+            itemKey: "settings"
+            icon: "⚙"; label: qsTr("设置")
+            match: navPane.searchFilter
+        }
+
+        // profile footer
+        Rectangle {
+            id: profileRow
+            width: parent.width
+            height: 54
+            anchors.bottom: parent.bottom
+            color: "transparent"
+
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: Theme.borderColor
+            }
+
+            Row {
+                x: 16; y: (parent.height - height) / 2
+                spacing: 10
+                Rectangle {
+                    width: 30; height: 30; radius: 15
+                    anchors.verticalCenter: parent.verticalCenter
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: "#8b8bf0" }
+                        GradientStop { position: 1; color: Theme.accentColor }
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "🐾"; font.pixelSize: 13
+                    }
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("v2.0 · %1 实例运行中").arg(
+                        root._runningCount())
+                    color: Theme.text2Color
+                    font.pixelSize: 12
+                }
+            }
+        }
     }
 
-    FluObject {
-        id: navItems
-        FluPaneItem {
-            id: navHome
-            title: qsTr("Home")
-            icon: FluentIcons.Home
-            onTapListener: function() {
-                root.currentPage = "welcome"
-                pageLoader.sourceComponent = welcomePageComp
-            }
-        }
-        FluPaneItem {
-            id: navInstance
-            title: qsTr("Instance")
-            icon: FluentIcons.Contact
-            onTapListener: function() {
-                if (root.currentInstance === null)
-                    root.currentInstance = instanceManager.instanceAt(0)
-                pageLoader.sourceComponent = instanceDetailPageComp
-            }
-        }
-        FluPaneItem {
-            id: navMonitor
-            title: qsTr("Monitor")
-            icon: FluentIcons.Diagnostic
-            onTapListener: function() {
-                root.currentPage = "monitor"
-                if (root.currentInstance === null)
-                    root.currentInstance = instanceManager.instanceAt(0)
-                pageLoader.sourceComponent = monitorPageComp
-            }
-        }
-        FluPaneItem {
-            id: navVoicePack
-            title: qsTr("Voice Packs")
-            icon: FluentIcons.Microphone
-            onTapListener: function() {
-                root.currentPage = "voicepack"
-                pageLoader.sourceComponent = voicePackPageComp
-            }
-        }
+    // ── Content ─────────────────────────────────────────────────────────
+    Loader {
+        id: pageLoader
+        anchors.left: navPane.right
+        anchors.top: titleBar.bottom
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        sourceComponent: welcomePageComp
     }
 
     Component { id: welcomePageComp;        WelcomePage {} }
     Component { id: instanceDetailPageComp; InstanceDetailPage { instance: root.currentInstance } }
     Component { id: monitorPageComp;        MonitorPage { instance: root.currentInstance } }
-    Component { id: settingsPageComp;       SettingsPage {} }
     Component { id: voicePackPageComp;      VoicePackPage {} }
+    Component { id: settingsPageComp;       SettingsPage {} }
 
-    // Detail-page delete request: with FluNavigationView's own content
-    // loader the page instance isn't directly reachable from here, so
-    // InstanceDetailPage calls instanceManager.requestDelete itself (the
-    // uuid travels via root.currentInstanceUuid); deleteConfirmed below
-    // still drives the confirm dialog from Main.
+    // ── Dialogs ─────────────────────────────────────────────────────────
+    AppDialog {
+        id: deleteConfirmDialog
+        title: qsTr("删除实例")
+        message: qsTr("删除该实例？此操作不可撤销。")
+        positiveText: qsTr("删除")
+        onPositiveClicked: {
+            instanceManager.deleteInstance(pendingUuid)
+            pendingUuid = ""
+            // the detail/monitor page binds the now-deleted session — fall
+            // back to Home (or the next remaining instance if any)
+            root.currentInstance = null
+            root.currentInstanceUuid = ""
+            root.switchPage("welcome")
+        }
+        property string pendingUuid: ""
+    }
+
+    AppDialog {
+        id: exitConfirmDialog
+        title: qsTr("退出确认")
+        message: qsTr("确定要退出桌面宠物控制器吗？所有运行中的实例将被停止。")
+        positiveText: qsTr("退出")
+        onPositiveClicked: root.doExit()
+    }
 
     Connections {
         target: instanceManager
@@ -227,32 +489,7 @@ FluWindow {
         }
     }
 
-    FluContentDialog {
-        id: deleteConfirmDialog
-        title: qsTr("Delete Instance")
-        message: qsTr("Delete this instance? This cannot be undone.")
-        buttonFlags: FluContentDialogType.NegativeButton | FluContentDialogType.PositiveButton
-        negativeText: qsTr("Cancel")
-        positiveText: qsTr("Delete")
-        onPositiveClicked: {
-            instanceManager.deleteInstance(deleteConfirmDialog.pendingUuid)
-            deleteConfirmDialog.pendingUuid = ""
-        }
-        property string pendingUuid: ""
-    }
-
-    FluContentDialog {
-        id: exitConfirmDialog
-        title: qsTr("Exit Confirmation")
-        message: qsTr("Are you sure you want to exit the desktop pet controller? " +
-                      "All running instances will be stopped.")
-        buttonFlags: FluContentDialogType.NegativeButton | FluContentDialogType.PositiveButton
-        negativeText: qsTr("Cancel")
-        positiveText: qsTr("Exit")
-        onPositiveClicked: root.doExit()
-    }
-
-    // ── Tray menu (Wave 7 todo 13) ───────────────────────────────────────
+    // ── Tray menu ───────────────────────────────────────────────────────
     Menu {
         id: trayMenu
         Action {
@@ -283,10 +520,233 @@ FluWindow {
 
     Component.onCompleted: {
         console.log("COLD_START_MS=" + (Date.now() - coldStartT0Ms))
-        // FluentUI default darkMode is Light; the AppBar moon toggle lets the
-        // user switch at runtime. Do NOT pin darkMode here — respect the
-        // in-session choice.
-        FluTheme.primaryColor = Theme.accentColor
         Theme.setTheme(initialTheme)
+    }
+
+    // ── Inline components ───────────────────────────────────────────────
+    // Caption glyphs drawn as vector shapes (Win11 style) — Unicode
+    // ▢/❐/✕ glyphs render at inconsistent sizes across font fallbacks, so
+    // minimize/maximize/restore/close are hand-drawn strokes instead.
+    component TitleBarGlyph : Item {
+        id: glyph
+        property string kind: "min"   // min | max | restore | close
+        width: 10
+        height: 10
+
+        // minimize: thin centered dash, slightly above optical center
+        Rectangle {
+            visible: glyph.kind === "min"
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.verticalCenterOffset: 1.5
+            width: parent.width
+            height: 1
+            radius: 0.5
+            color: glyph._c
+        }
+        // maximize: 10x10 square outline (1px)
+        Rectangle {
+            visible: glyph.kind === "max"
+            anchors.fill: parent
+            radius: 1
+            border.width: 1
+            border.color: glyph._c
+            color: "transparent"
+        }
+        // restore: two offset squares (back 8x8 top-right, front 8x8 bottom-left)
+        Rectangle {
+            visible: glyph.kind === "restore"
+            x: 2; y: 0
+            width: 8; height: 8
+            radius: 1
+            border.width: 1
+            border.color: glyph._c
+            color: "transparent"
+        }
+        Rectangle {
+            visible: glyph.kind === "restore"
+            x: 0; y: 2
+            width: 8; height: 8
+            radius: 1
+            border.width: 1
+            border.color: glyph._c
+            color: Theme.dark ? "#2b2b2b" : "#ffffff"
+        }
+        Rectangle {
+            visible: glyph.kind === "restore"
+            x: 0; y: 2
+            width: 8; height: 8
+            radius: 1
+            border.width: 1
+            border.color: glyph._c
+            color: "transparent"
+        }
+        // close: X of two rotated bars
+        Rectangle {
+            visible: glyph.kind === "close"
+            anchors.centerIn: parent
+            width: parent.width * 1.35
+            height: 1
+            rotation: 45
+            color: glyph._c
+        }
+        Rectangle {
+            visible: glyph.kind === "close"
+            anchors.centerIn: parent
+            width: parent.width * 1.35
+            height: 1
+            rotation: -45
+            color: glyph._c
+        }
+
+        readonly property color _c: Theme.text2Color
+    }
+
+    component TitleBarButton : Rectangle {
+        id: btn
+        property string glyph: ""   // unused; kept for compat
+        property string kind: "min"
+        property bool isClose: false
+        signal activated()
+        width: 46
+        height: 44
+        color: _hover.hovered
+               ? (isClose ? Theme.closeHoverColor
+                          : Theme.withAlpha(Theme.textColor, 0.07))
+               : "transparent"
+
+        TitleBarGlyph {
+            anchors.centerIn: parent
+            kind: btn.kind
+        }
+        HoverHandler { id: _hover }
+        TapHandler { onTapped: btn.activated() }
+    }
+
+    component NavGroupLabel : Item {
+        id: grp
+        property string text: ""
+        height: visible ? 26 : 0
+        width: parent.width
+        Text {
+            x: 24; y: 12
+            text: grp.text
+            color: Theme.text3Color
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
+        }
+    }
+
+    component NavItem : Item {
+        id: item
+        property string itemKey: ""
+        property string icon: ""
+        property string label: ""
+        property string badgeText: ""
+        property string match: ""
+
+        readonly property bool active: navPane.activeKey === itemKey
+        readonly property bool hidden: match.length > 0
+            && label.toLowerCase().indexOf(match) === -1
+
+        height: hidden ? 0 : 36
+        visible: !hidden
+        width: parent.width
+
+        Rectangle {
+            x: 8; y: 2
+            width: parent.width - 16
+            height: parent.height - 4
+            radius: Theme.radiusMd
+            color: item.active ? Theme.accentAlpha(0.12)
+                : (_hover.hovered ? Theme.withAlpha(Theme.textColor, 0.05)
+                                  : "transparent")
+            Rectangle {
+                visible: item.active
+                x: -8; y: parent.height * 0.25
+                width: 3; height: parent.height * 0.5
+                radius: 2
+                color: Theme.accentColor
+            }
+            Row {
+                x: 12; y: (parent.height - height) / 2
+                spacing: 14
+                Text {
+                    text: item.icon
+                    font.pixelSize: 14
+                    opacity: 0.85
+                }
+                Text {
+                    text: item.label
+                    color: Theme.textColor
+                    font.pixelSize: 13
+                    font.weight: item.active ? Font.DemiBold : Font.Normal
+                }
+            }
+            Rectangle {
+                visible: item.badgeText.length > 0
+                anchors.right: parent.right
+                anchors.rightMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                width: badgeTextItem.implicitWidth + 14
+                height: 17
+                radius: 9
+                color: Theme.accentColor
+                Text {
+                    id: badgeTextItem
+                    anchors.centerIn: parent
+                    text: item.badgeText
+                    color: "#ffffff"
+                    font.pixelSize: 10
+                    font.weight: Font.DemiBold
+                }
+            }
+            HoverHandler { id: _hover }
+            TapHandler { onTapped: root.switchPage(item.itemKey) }
+        }
+    }
+
+    component NavInstanceItem : Item {
+        id: iitem
+        property string instanceLabel: ""
+        property bool live: false
+        property string match: ""
+        signal clicked()
+
+        readonly property bool hidden: match.length > 0
+            && instanceLabel.toLowerCase().indexOf(match) === -1
+
+        height: hidden ? 0 : 36
+        visible: !hidden
+        width: parent.width
+
+        Rectangle {
+            x: 8; y: 2
+            width: parent.width - 16
+            height: parent.height - 4
+            radius: Theme.radiusMd
+            color: _hover.hovered ? Theme.withAlpha(Theme.textColor, 0.05)
+                                  : "transparent"
+            Row {
+                x: 12; y: (parent.height - height) / 2
+                spacing: 14
+                Text { text: "🐾"; font.pixelSize: 14 }
+                Text {
+                    text: iitem.instanceLabel
+                    color: Theme.textColor
+                    font.pixelSize: 13
+                }
+            }
+            Rectangle {
+                visible: iitem.live
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                width: 8; height: 8; radius: 4
+                color: Theme.successColor
+            }
+            HoverHandler { id: _hover }
+            TapHandler { onTapped: iitem.clicked() }
+        }
     }
 }

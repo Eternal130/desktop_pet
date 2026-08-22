@@ -165,6 +165,7 @@ InstanceSession::~InstanceSession() = default;
 // ── Read accessors ───────────────────────────────────────────────────────────
 
 QString InstanceSession::label() const      { return m_config.label; }
+QString InstanceSession::uuid() const       { return m_config.id; }
 QString InstanceSession::modelName() const   { return m_config.modelName; }
 QString InstanceSession::status() const      { return m_status; }
 bool    InstanceSession::connected() const   { return m_connected; }

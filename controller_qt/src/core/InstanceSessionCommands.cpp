@@ -63,6 +63,23 @@ QStringList InstanceSession::expressionNames() const
     return m_modelInfo->expressions;
 }
 
+// Design-doc §② third stage tab: hit-area names from the parsed
+// .model3.json. Empty until model_loaded fires.
+QStringList InstanceSession::hitAreaNames() const
+{
+    if (!m_modelInfo.has_value()) {
+        return {};
+    }
+    return m_modelInfo->hitAreas;
+}
+
+// Design-doc §③ crash-recovery card: live restart-attempt count from the
+// owned RestartController (0..5, reset on successful connect).
+int InstanceSession::restartAttempts() const
+{
+    return m_restartController.attempts();
+}
+
 void InstanceSession::playMotion(const QString& group, int index)
 {
     LOG_INFO("InstanceSession[{}]: playMotion group=\"{}\" index={}",

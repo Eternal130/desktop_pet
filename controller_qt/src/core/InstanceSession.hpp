@@ -80,6 +80,7 @@ class PendingRequests;
 class InstanceSession : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString label       READ label       CONSTANT)
+    Q_PROPERTY(QString uuid        READ uuid        CONSTANT)
     Q_PROPERTY(QString modelName   READ modelName   NOTIFY modelNameChanged)
     Q_PROPERTY(QString status      READ status      NOTIFY statusChanged)
     Q_PROPERTY(bool     connected  READ connected   NOTIFY connectedChanged)
@@ -110,6 +111,7 @@ public:
 
     // ── Read accessors (back the Q_PROPERTYs) ───────────────────────────────
     QString label() const;
+    QString uuid() const;
     QString modelName() const;
     QString status() const;
     bool    connected() const;
@@ -172,6 +174,14 @@ public slots:
 
     // Expression names from the parsed .model3.json (empty when none / unloaded).
     Q_INVOKABLE QStringList expressionNames() const;
+
+    // Hit-area names from the parsed .model3.json HitAreas[].Name (empty
+    // until model_loaded). Design-doc §② third stage tab.
+    Q_INVOKABLE QStringList hitAreaNames() const;
+
+    // Live crash-recovery attempt count (0..RestartController::kMaxAttempts,
+    // reset on successful reconnect). Design-doc §③ crash-recovery card.
+    Q_INVOKABLE int restartAttempts() const;
 
     // Build + send a play_motion command (interface.md §B.1). priority defaults
     // to PriorityNormal (2). The renderer silently ignores unknown group/index.

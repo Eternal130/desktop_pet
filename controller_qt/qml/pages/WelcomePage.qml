@@ -267,118 +267,125 @@ Rectangle {
 
                 Repeater {
                     model: instanceManager
-                    delegate: Card {
+                    delegate: Item {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 150
-                        padding: 16
 
-                        readonly property var _inst: instanceManager.instanceAt(index)
-
-                        // Whole-card click opens the detail page. MouseArea
-                        // (not TapHandler) so the child buttons (启动/停止/
-                        // 重启/管理) consume their own clicks first and do
-                        // NOT trigger navigation.
+                        // MouseArea wraps the Card (NOT inside it): Card's
+                        // default property funnels children into a Column,
+                        // and a Column child with anchors.fill kills the
+                        // Column's layout — the card collapsed to 0 height,
+                        // rendering the grid blank.
                         MouseArea {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            z: 0
                             onClicked: Window.window.selectInstance(
                                 index, model.uuid)
                         }
 
-                        Row {
-                            width: parent.width
-                            spacing: 14
-                            opacity: model.status === "stopped" ? 0.75 : 1.0
+                        Card {
+                            anchors.fill: parent
+                            padding: 16
+                            z: 1
 
-                            Rectangle {
-                                width: 64; height: 64; radius: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                gradient: Gradient {
-                                    GradientStop {
-                                        position: 0
-                                        color: root._thumbGradients[
-                                            index % root._thumbGradients.length][0]
-                                    }
-                                    GradientStop {
-                                        position: 1
-                                        color: root._thumbGradients[
-                                            index % root._thumbGradients.length][1]
-                                    }
-                                }
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: model.avatar
-                                    font.pixelSize: 28
-                                }
-                            }
+                            readonly property var _inst: instanceManager.instanceAt(index)
 
-                            Column {
-                                width: parent.width - 78
-                                spacing: 5
-                                anchors.verticalCenter: parent.verticalCenter
+                            Row {
+                                width: parent.width
+                                spacing: 14
+                                opacity: model.status === "stopped" ? 0.75 : 1.0
 
-                                Row {
-                                    spacing: 8
-                                    Text {
-                                        text: label
-                                        color: Theme.textColor
-                                        font.pixelSize: 14
-                                        font.weight: Font.DemiBold
-                                    }
-                                    StatusPill { status: model.status }
-                                }
-                                Text {
-                                    width: parent.width
-                                    text: {
-                                        const parts = []
-                                        parts.push(model.modelName.length > 0
-                                            ? model.modelName : qsTr("未加载模型"))
-                                        const inst = instanceManager.instanceAt(index)
-                                        if (inst && inst.targetFps > 0)
-                                            parts.push(inst.targetFps + " FPS")
-                                        else if (inst)
-                                            parts.push(qsTr("自适应 FPS"))
-                                        if (inst && inst.muted)
-                                            parts.push(qsTr("静音"))
-                                        else if (inst)
-                                            parts.push(qsTr("音量 ") +
-                                                Math.round(inst.volume * 100) + "%")
-                                        return parts.join(" · ")
-                                    }
-                                    color: root._faintColor
-                                    font.pixelSize: 11
-                                    elide: Text.ElideRight
-                                }
-                                Row {
-                                    spacing: 8
-                                    AppButton {
-                                        style: "subtle"
-                                        text: model.status === "running"
-                                              ? qsTr("⏸ 停止") : qsTr("▶ 启动")
-                                        implicitHeight: 26
-                                        fontSize: 12
-                                        onClicked: {
-                                            if (!_inst) return
-                                            if (model.status === "running") _inst.stop()
-                                            else _inst.start()
+                                Rectangle {
+                                    width: 64; height: 64; radius: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    gradient: Gradient {
+                                        GradientStop {
+                                            position: 0
+                                            color: root._thumbGradients[
+                                                index % root._thumbGradients.length][0]
+                                        }
+                                        GradientStop {
+                                            position: 1
+                                            color: root._thumbGradients[
+                                                index % root._thumbGradients.length][1]
                                         }
                                     }
-                                    AppButton {
-                                        style: "subtle"
-                                        text: qsTr("↻ 重启")
-                                        implicitHeight: 26
-                                        fontSize: 12
-                                        enabled: model.status === "running"
-                                        onClicked: if (_inst) _inst.restart()
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: model.avatar
+                                        font.pixelSize: 28
                                     }
-                                    AppButton {
-                                        style: "subtle"
-                                        text: qsTr("管理 →")
-                                        implicitHeight: 26
-                                        fontSize: 12
-                                        onClicked: Window.window.selectInstance(
-                                            index, model.uuid)
+                                }
+
+                                Column {
+                                    width: parent.width - 78
+                                    spacing: 5
+                                    anchors.verticalCenter: parent.verticalCenter
+
+                                    Row {
+                                        spacing: 8
+                                        Text {
+                                            text: label
+                                            color: Theme.textColor
+                                            font.pixelSize: 14
+                                            font.weight: Font.DemiBold
+                                        }
+                                        StatusPill { status: model.status }
+                                    }
+                                    Text {
+                                        width: parent.width
+                                        text: {
+                                            const parts = []
+                                            parts.push(model.modelName.length > 0
+                                                ? model.modelName : qsTr("未加载模型"))
+                                            const inst = instanceManager.instanceAt(index)
+                                            if (inst && inst.targetFps > 0)
+                                                parts.push(inst.targetFps + " FPS")
+                                            else if (inst)
+                                                parts.push(qsTr("自适应 FPS"))
+                                            if (inst && inst.muted)
+                                                parts.push(qsTr("静音"))
+                                            else if (inst)
+                                                parts.push(qsTr("音量 ") +
+                                                    Math.round(inst.volume * 100) + "%")
+                                            return parts.join(" · ")
+                                        }
+                                        color: root._faintColor
+                                        font.pixelSize: 11
+                                        elide: Text.ElideRight
+                                    }
+                                    Row {
+                                        spacing: 8
+                                        AppButton {
+                                            style: "subtle"
+                                            text: model.status === "running"
+                                                  ? qsTr("⏸ 停止") : qsTr("▶ 启动")
+                                            implicitHeight: 26
+                                            fontSize: 12
+                                            onClicked: {
+                                                if (!_inst) return
+                                                if (model.status === "running") _inst.stop()
+                                                else _inst.start()
+                                            }
+                                        }
+                                        AppButton {
+                                            style: "subtle"
+                                            text: qsTr("↻ 重启")
+                                            implicitHeight: 26
+                                            fontSize: 12
+                                            enabled: model.status === "running"
+                                            onClicked: if (_inst) _inst.restart()
+                                        }
+                                        AppButton {
+                                            style: "subtle"
+                                            text: qsTr("管理 →")
+                                            implicitHeight: 26
+                                            fontSize: 12
+                                            onClicked: Window.window.selectInstance(
+                                                index, model.uuid)
+                                        }
                                     }
                                 }
                             }

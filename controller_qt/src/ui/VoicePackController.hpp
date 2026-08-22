@@ -35,10 +35,17 @@ class InstanceManager;
 class VoicePackController : public QObject {
     Q_OBJECT
     Q_PROPERTY(int packCount READ packCount NOTIFY packsChanged)
+    // Revision counter bumped on every successful mount/unmount. QML bindings
+    // that call the Q_INVOKABLE instanceVoicePack() cannot observe it directly
+    // (invokables are not bindable properties) — referencing mountsRevision in
+    // the same binding expression creates a re-evaluation dependency on
+    // mountsChanged, which is what refreshes the mount matrix UI.
+    Q_PROPERTY(int mountsRevision READ mountsRevision NOTIFY mountsChanged)
 public:
     explicit VoicePackController(QObject* parent = nullptr);
 
     int packCount() const { return static_cast<int>(m_packs.size()); }
+    int mountsRevision() const { return m_mountsRevision; }
 
     Q_INVOKABLE void rescan();
     Q_INVOKABLE QString voicePackDir() const;
@@ -67,4 +74,5 @@ private:
     QList<core::VoicePackInfo> m_packs;
     QString m_voicePackDir;
     InstanceManager* m_manager = nullptr;
+    int m_mountsRevision = 0;
 };

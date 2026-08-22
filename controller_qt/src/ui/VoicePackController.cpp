@@ -101,6 +101,7 @@ bool VoicePackController::setInstanceVoicePack(const QString& instanceUuid,
         if (s == nullptr || s->uuid() != instanceUuid) continue;
         const bool ok = packPath.isEmpty() ? (s->unmountVoicePack(), true)
                                            : s->mountVoicePack(packPath);
+        ++m_mountsRevision;
         emit mountsChanged();
         return ok;
     }

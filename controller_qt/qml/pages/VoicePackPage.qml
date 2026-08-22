@@ -216,11 +216,13 @@ Rectangle {
                                 delegate: SettingRow {
                                     width: parent.width
                                     title: label
-                                    desc: qsTr("当前：") + (
-                                        voicePacks.instanceVoicePack(model.uuid).length > 0
-                                        ? voicePacks.packDisplayNameFor(
-                                              voicePacks.instanceVoicePack(model.uuid))
-                                        : qsTr("无"))
+                                    desc: voicePacks.mountsRevision >= 0
+                                        ? (qsTr("当前：") + (
+                                            voicePacks.instanceVoicePack(model.uuid).length > 0
+                                            ? voicePacks.packDisplayNameFor(
+                                                  voicePacks.instanceVoicePack(model.uuid))
+                                            : qsTr("无")))
+                                        : ""
                                     Segmented {
                                         options: {
                                             const opts = [qsTr("无")]
@@ -229,6 +231,7 @@ Rectangle {
                                             return opts
                                         }
                                         currentValue: {
+                                            voicePacks.mountsRevision
                                             const mounted = voicePacks.instanceVoicePack(model.uuid)
                                             if (mounted.length === 0) return qsTr("无")
                                             for (let i = 0; i < voicePacks.packCount; ++i)

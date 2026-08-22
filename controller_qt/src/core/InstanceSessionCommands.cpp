@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 #include "logging/Logging.hpp"
 #include "core/ModelScanner.hpp"
+#include "core/PathResolve.hpp"
 #include "core/SubtitlePresets.hpp"
 #include "network/Envelope.hpp"
 #include "network/Protocol.hpp"
@@ -28,11 +29,13 @@ QStringList InstanceSession::availableModels() const
 {
     // Prefer m_rendererDir (stored in start()) so the list matches what the
     // running renderer actually sees; fall back to the persisted
-    // config.rendererPath so the ComboBox can populate before start().
-    const QString dir = m_rendererDir.isEmpty() ? m_config.rendererPath : m_rendererDir;
-    if (dir.isEmpty()) {
-        return {};
-    }
+    // config.rendererPath, then defaultRendererDir() — the same fallback
+    // chain start() uses, so the ComboBox populates before start().
+    QString dir = m_rendererDir;
+    if (dir.isEmpty())
+        dir = m_config.rendererPath;
+    if (dir.isEmpty())
+        dir = core::defaultRendererDir();
     return core::scanAvailableModels(dir);
 }
 

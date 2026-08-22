@@ -65,14 +65,27 @@ std::optional<QString> resolveRendererPath(const QString& rendererDir,
 
 QString defaultRendererDir()
 {
-    // build.py places the controller_qt exe and the renderer exes side-by-side
-    // in build/bin/. applicationDirPath() + "/../build/bin" resolves to the
-    // shared bin directory when the controller runs from a sibling layout
-    // (e.g. an installed distribution where the exe sits one level below
-    // build/bin). Returned verbatim — no existence check — so the caller can
-    // react to a missing directory without a hidden side effect.
-    return QCoreApplication::applicationDirPath()
-           + QStringLiteral("/../build/bin");
+    // Two layouts must resolve:
+    //   1. Deployed: build.py places the controller_qt exe and the renderer
+    //      exes side-by-side in build/bin/ — rendererDir == applicationDirPath
+    //      (matches EnvironmentChecker::resolveRendererDir).
+    //   2. Build tree: the exe still sits in the CMake build dir
+    //      (build/controller_qt/), one level below build/bin.
+    // Probe the app dir first; fall back to the sibling layout only when no
+    // renderer exe lives next to the controller.
+    const QString appDir = QCoreApplication::applicationDirPath();
+#ifdef Q_OS_WIN
+    const QString suffix = QStringLiteral(".exe");
+#else
+    const QString suffix;
+#endif
+    const bool rendererInAppDir =
+        QFile::exists(QDir(appDir).absoluteFilePath(
+            QStringLiteral("desktop-pet-renderer") + suffix))
+        || QFile::exists(QDir(appDir).absoluteFilePath(
+            QStringLiteral("desktop-pet-renderer-vulkan") + suffix));
+    return rendererInAppDir ? appDir
+                            : appDir + QStringLiteral("/../build/bin");
 }
 
 } // namespace core

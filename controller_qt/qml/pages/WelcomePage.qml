@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 import FluentUI
 import DesktopPet
 
@@ -61,10 +62,22 @@ Rectangle {
 
                 FluFilledButton {
                     id: createButton
-                    text: qsTr("Create First Instance")
+                    text: instanceManager.rowCount() > 0
+                          ? qsTr("Create Instance")
+                          : qsTr("Create First Instance")
                     implicitWidth: 220
                     implicitHeight: 40
-                    onClicked: console.log("create first instance clicked")
+                    onClicked: {
+                        const label = qsTr("Pet %1")
+                            .arg(instanceManager.rowCount() + 1)
+                        const uuid = instanceManager.createInstance(label)
+                        if (uuid !== "") {
+                            const row = instanceManager.rowCount() - 1
+                            Window.window.selectInstance(
+                                row, instanceManager.instanceAt(row).instanceId)
+                            Window.window.switchPage("instance")
+                        }
+                    }
                 }
             }
 

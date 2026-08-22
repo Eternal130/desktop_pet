@@ -19,6 +19,7 @@ find_package(Qt6 6.8 COMPONENTS
     QuickControls2
     Concurrent
     Charts
+    Sql
     Test
     REQUIRED
 )
@@ -217,6 +218,15 @@ qt_add_executable(desktop-pet-controller-qt
     src/ui/VoicePackController.cpp
     src/ui/VoicePackController.hpp
     src/core/InstanceSessionMonitor.cpp
+    # SQLite config backend: DatabaseManager owns <configDir>/app.db (schema:
+    # panel_config kv, instance_configs, assets, asset_refs). PanelStateManager
+    # + InstanceConfigManager persist through it (no JSON files, no migration).
+    # AssetManager is the QML bridge for the image library + logo/instance-icon
+    # refs. The .hpp files are listed so AUTOMOC processes Q_OBJECT metadata.
+    src/core/DatabaseManager.cpp
+    src/core/DatabaseManager.hpp
+    src/core/AssetManager.cpp
+    src/core/AssetManager.hpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES
@@ -250,6 +260,8 @@ target_link_libraries(desktop-pet-controller-qt PRIVATE
     # windeployqt auto-detects Qt6Charts.dll via the exe's import table — no
     # --modules charts flag needed in build.py's windeployqt invocation.
     Qt6::Charts
+    # SQLite config backend (app.db) + asset metadata store.
+    Qt6::Sql
     spdlog::spdlog
 )
 
@@ -303,6 +315,7 @@ qml/pages/InstanceDetailPage.qml
 qml/pages/SettingsPage.qml
 qml/pages/MonitorPage.qml
 qml/pages/VoicePackPage.qml
+qml/pages/AssetPage.qml
 )
 
 # ── Phase 0 PoC (task T6) ───────────────────────────────────────────────────

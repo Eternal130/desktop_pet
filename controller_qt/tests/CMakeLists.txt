@@ -822,9 +822,11 @@ add_test(NAME PanelConfigTest COMMAND PanelConfigTest)
 # QFile / QDir::entryList are synchronous, no event loop needed.
 qt_add_executable(InstanceConfigManagerTest InstanceConfigManagerTest.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
     ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
-target_link_libraries(InstanceConfigManagerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_link_libraries(InstanceConfigManagerTest PRIVATE
+    Qt6::Core Qt6::Sql Qt6::Test spdlog::spdlog)
 target_include_directories(InstanceConfigManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(InstanceConfigManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
@@ -870,11 +872,13 @@ add_test(NAME InstanceConfigManagerTest COMMAND InstanceConfigManagerTest)
 # — QSaveFile / QFile / QDir are synchronous, no event loop needed.
 qt_add_executable(PanelStateManagerTest PanelStateManagerTest.cpp
     ${CMAKE_SOURCE_DIR}/src/core/PanelStateManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/PanelConfig.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
-target_link_libraries(PanelStateManagerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_link_libraries(PanelStateManagerTest PRIVATE
+    Qt6::Core Qt6::Sql Qt6::Test spdlog::spdlog)
 target_include_directories(PanelStateManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(PanelStateManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
@@ -926,10 +930,12 @@ add_test(NAME PanelStateManagerTest COMMAND PanelStateManagerTest)
 qt_add_executable(RobustnessTest RobustnessTest.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/PanelStateManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/PanelConfig.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
     ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
-target_link_libraries(RobustnessTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
+target_link_libraries(RobustnessTest PRIVATE
+    Qt6::Core Qt6::Sql Qt6::Test spdlog::spdlog)
 target_include_directories(RobustnessTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(RobustnessTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
@@ -1028,6 +1034,7 @@ qt_add_executable(InstanceSessionTest InstanceSessionTest.cpp
     ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/HitAreaCacheManager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/RestartController.cpp
     ${CMAKE_SOURCE_DIR}/src/core/StartupSalvo.cpp
@@ -1046,7 +1053,7 @@ qt_add_executable(InstanceSessionTest InstanceSessionTest.cpp
     ${CMAKE_SOURCE_DIR}/src/network/EventRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(InstanceSessionTest PRIVATE
-    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Sql Qt6::Test spdlog::spdlog)
 target_include_directories(InstanceSessionTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(InstanceSessionTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
@@ -1202,6 +1209,7 @@ qt_add_executable(InstanceManagerTest InstanceManagerTest.cpp
     ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
     ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/HitAreaCacheManager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/RestartController.cpp
     ${CMAKE_SOURCE_DIR}/src/core/PanelConfig.cpp
@@ -1222,7 +1230,7 @@ qt_add_executable(InstanceManagerTest InstanceManagerTest.cpp
     ${CMAKE_SOURCE_DIR}/src/network/EventRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(InstanceManagerTest PRIVATE
-    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Sql Qt6::Test spdlog::spdlog)
 target_include_directories(InstanceManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(InstanceManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
@@ -1944,3 +1952,81 @@ if(WIN32)
 endif()
 
 add_test(NAME MonitorDataModelTest COMMAND MonitorDataModelTest)
+
+# DatabaseManagerTest (SQLite config backend): schema creation, kv round-trip,
+# instance config round-trip, asset insert + duplicate-sha reject, ref
+# attach/detach + inUse, closed-db safe no-op. Recompiles DatabaseManager.cpp
+# + InstanceConfig.cpp (serde). Links Qt6::Sql + Qt6::Test + spdlog.
+# QTEST_APPLESS_MAIN - QSqlDatabase is synchronous.
+qt_add_executable(DatabaseManagerTest DatabaseManagerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp)
+target_link_libraries(DatabaseManagerTest PRIVATE
+    Qt6::Core Qt6::Sql Qt6::Test spdlog::spdlog)
+target_include_directories(DatabaseManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(DatabaseManagerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET DatabaseManagerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:DatabaseManagerTest>"
+            COMMENT "Running windeployqt for DatabaseManagerTest")
+    else()
+        message(WARNING "windeployqt not found; DatabaseManagerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME DatabaseManagerTest COMMAND DatabaseManagerTest)
+
+# AssetManagerTest (image library + logo/instance-icon refs): import pipeline
+# (ok / duplicate / invalid), delete blocked when referenced, setLogo /
+# resetLogo, setInstanceIcon + instanceIconUrl. Recompiles AssetManager.cpp +
+# DatabaseManager.cpp. Links Qt6::Sql + Qt6::Gui (QImage) + Qt6::Test + spdlog.
+# QTEST_APPLESS_MAIN - QImage + QFile + QSqlDatabase are synchronous.
+qt_add_executable(AssetManagerTest AssetManagerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/AssetManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
+target_link_libraries(AssetManagerTest PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Sql Qt6::Test spdlog::spdlog)
+target_include_directories(AssetManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(AssetManagerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET AssetManagerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:AssetManagerTest>"
+            COMMENT "Running windeployqt for AssetManagerTest")
+    else()
+        message(WARNING "windeployqt not found; AssetManagerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME AssetManagerTest COMMAND AssetManagerTest)

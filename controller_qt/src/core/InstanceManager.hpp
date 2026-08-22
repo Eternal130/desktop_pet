@@ -57,6 +57,7 @@ public:
         StatusRole,
         ConnectedRole,
         UuidRole,
+        AvatarRole,
     };
     Q_ENUM(Roles)
 
@@ -89,7 +90,8 @@ public:
     // via defaultInstanceConfig), set its label, persist it, append a row,
     // rebuild instanceIds, call savePanel. Returns the new UUID, or an empty
     // string if the persist failed (no row is added on failure).
-    Q_INVOKABLE QString createInstance(const QString& label);
+    Q_INVOKABLE QString createInstance(const QString& label,
+                                       const QString& avatar = QStringLiteral("🐱"));
 
     // Delete-protection pattern (blueprint §4.2): requestDelete emits
     // deleteConfirmed(uuid); the UI (todo 7 Sidebar) wires that to a confirm

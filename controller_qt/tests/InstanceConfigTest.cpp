@@ -34,7 +34,9 @@ namespace {
 // Phase 5 Wave 8 todo 21 — the Java reference kept it as runtime-only state,
 // but the Qt port persists it so the user's adjust-mode preference survives
 // restarts. Every other ground-truth source agrees on the original 28.
-constexpr int kFieldCount = 29;
+// The create-instance dialog later added a 30th (avatar) — a user-picked
+// single-glyph emoji persisted per instance.
+constexpr int kFieldCount = 30;
 
 // Build a config where EVERY field carries a distinctive, non-default value.
 // Used by the round-trip test so a single missed field surfaces immediately.

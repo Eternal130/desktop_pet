@@ -56,6 +56,7 @@ QJsonObject instanceConfigToJson(const InstanceConfig& cfg)
     QJsonObject obj;
     obj.insert(QStringLiteral("id"), cfg.id);
     obj.insert(QStringLiteral("label"), cfg.label);
+    obj.insert(QStringLiteral("avatar"), cfg.avatar);
     obj.insert(QStringLiteral("renderer_path"), cfg.rendererPath);
     obj.insert(QStringLiteral("graphics_backend"), cfg.graphicsBackend);
     obj.insert(QStringLiteral("current_model_name"), cfg.modelName);
@@ -100,6 +101,7 @@ InstanceConfig instanceConfigFromJson(const QJsonObject& json)
 
     cfg.id = readString(json, QLatin1String("id"), cfg.id);
     cfg.label = readString(json, QLatin1String("label"), cfg.label);
+    cfg.avatar = readString(json, QLatin1String("avatar"), cfg.avatar);
     cfg.rendererPath = readString(json, QLatin1String("renderer_path"), cfg.rendererPath);
     cfg.graphicsBackend = readString(json, QLatin1String("graphics_backend"), cfg.graphicsBackend);
     cfg.modelName = readString(json, QLatin1String("current_model_name"), cfg.modelName);

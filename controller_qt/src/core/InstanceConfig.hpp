@@ -31,6 +31,8 @@ struct InstanceConfig {
     // ── identity / paths ───────────────────────────────────────────────────
     QString id;                            // UUID; persistence primary key
     QString label;                         // user-visible display name
+    // Single-glyph avatar (emoji or letter) shown on cards/nav. Empty → 🐱.
+    QString avatar = QStringLiteral("🐱");
     QString rendererPath;                  // absolute path to renderer exe
 
     // ── model + window ─────────────────────────────────────────────────────
@@ -80,6 +82,7 @@ struct InstanceConfig {
     bool operator==(const InstanceConfig& other) const {
         return id == other.id
             && label == other.label
+            && avatar == other.avatar
             && rendererPath == other.rendererPath
             && graphicsBackend == other.graphicsBackend
             && modelName == other.modelName

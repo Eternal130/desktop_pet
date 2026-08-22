@@ -182,6 +182,9 @@ InstanceSession::~InstanceSession() = default;
 // ── Read accessors ───────────────────────────────────────────────────────────
 
 QString InstanceSession::label() const      { return m_config.label; }
+QString InstanceSession::avatar() const {
+    return m_config.avatar.isEmpty() ? QStringLiteral("🐱") : m_config.avatar;
+}
 QString InstanceSession::uuid() const       { return m_config.id; }
 QString InstanceSession::modelName() const   { return m_config.modelName; }
 QString InstanceSession::status() const      { return m_status; }

@@ -80,6 +80,7 @@ class PendingRequests;
 class InstanceSession : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString label       READ label       CONSTANT)
+    Q_PROPERTY(QString avatar      READ avatar      CONSTANT)
     Q_PROPERTY(QString uuid        READ uuid        CONSTANT)
     Q_PROPERTY(QString modelName   READ modelName   NOTIFY modelNameChanged)
     Q_PROPERTY(QString status      READ status      NOTIFY statusChanged)
@@ -111,6 +112,7 @@ public:
 
     // ── Read accessors (back the Q_PROPERTYs) ───────────────────────────────
     QString label() const;
+    QString avatar() const;
     QString uuid() const;
     QString modelName() const;
     QString status() const;

@@ -64,6 +64,7 @@ QVariant InstanceManager::data(const QModelIndex& index, int role) const
         case StatusRole:    return session->status();
         case ConnectedRole: return session->connected();
         case UuidRole:      return session->config().id;
+        case AvatarRole:    return session->avatar();
     }
     return {};
 }
@@ -76,16 +77,19 @@ QHash<int, QByteArray> InstanceManager::roleNames() const
         {StatusRole,    "status"},
         {ConnectedRole, "connected"},
         {UuidRole,      "uuid"},
+        {AvatarRole,    "avatar"},
     };
 }
 
 // ── Roster operations ────────────────────────────────────────────────────────
 
-QString InstanceManager::createInstance(const QString& label)
+QString InstanceManager::createInstance(const QString& label, const QString& avatar)
 {
     // defaultInstanceConfig mints a fresh UUID as the persistence primary key.
     InstanceConfig cfg = defaultInstanceConfig();
     cfg.label = label;
+    if (!avatar.isEmpty())
+        cfg.avatar = avatar;
 
     if (!m_configManager.save(cfg)) {
         LOG_ERROR("InstanceManager::createInstance: failed to persist \"{}\"; aborting row insert",

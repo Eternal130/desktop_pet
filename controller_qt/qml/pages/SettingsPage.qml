@@ -185,6 +185,208 @@ Rectangle {
                     }
                 }
 
+                // ── Logo 替换 (design §7 — lives in 外观, not its own nav) ──
+                Card {
+                    id: logoCard
+                    width: parent.width
+                    title: qsTr("Logo 替换")
+                    hint: qsTr("控制面板标题栏与导航头像的图标 · 实例图标请在实例详情页更换")
+
+                    property int selectedAssetId: assetManager.logoAssetId()
+
+                    Row {
+                        width: parent.width
+                        spacing: Theme.spaceGroup
+
+                        // left: live preview
+                        Column {
+                            width: (parent.width - Theme.spaceGroup) * 0.45
+                            spacing: 10
+
+                            Rectangle {
+                                width: 96; height: 96
+                                radius: 20
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                gradient: Gradient {
+                                    GradientStop { position: 0; color: "#8b8bf0" }
+                                    GradientStop { position: 1; color: Theme.accentColor }
+                                }
+                                Image {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    source: logoCard.selectedAssetId >= 0
+                                            ? assetManager.assetInfo(
+                                                  logoCard.selectedAssetId).fileUrl ?? ""
+                                            : ""
+                                    fillMode: Image.PreserveAspectFit
+                                    visible: logoCard.selectedAssetId >= 0
+                                }
+                                Text {
+                                    anchors.centerIn: parent
+                                    visible: logoCard.selectedAssetId < 0
+                                    text: "🐾"; font.pixelSize: 44
+                                }
+                            }
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: logoCard.selectedAssetId >= 0
+                                      ? (assetManager.assetInfo(
+                                             logoCard.selectedAssetId).originalName ?? "")
+                                      : qsTr("默认")
+                                color: Theme.textColor
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                            }
+                            Row {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                spacing: 8
+                                AppButton {
+                                    style: "primary"
+                                    text: qsTr("✓ 应用 Logo")
+                                    enabled: logoCard.selectedAssetId >= 0
+                                             && logoCard.selectedAssetId
+                                                !== assetManager.logoAssetId()
+                                    onClicked: assetManager.setLogo(
+                                        logoCard.selectedAssetId)
+                                }
+                                AppButton {
+                                    style: "subtle"
+                                    text: qsTr("↺ 恢复默认")
+                                    onClicked: {
+                                        assetManager.resetLogo()
+                                        logoCard.selectedAssetId = -1
+                                    }
+                                }
+                            }
+                        }
+
+                        // right: source grid
+                        Column {
+                            width: (parent.width - Theme.spaceGroup) * 0.55
+                            spacing: 10
+
+                            Flow {
+                                width: parent.width
+                                spacing: 10
+
+                                // default tile
+                                Rectangle {
+                                    width: 72; height: 92
+                                    radius: Theme.radiusMd
+                                    color: logoCard.selectedAssetId < 0
+                                           ? Theme.accentAlpha(0.14)
+                                           : Theme.surfaceColor
+                                    border.width: logoCard.selectedAssetId < 0 ? 2 : 1
+                                    border.color: logoCard.selectedAssetId < 0
+                                                  ? Theme.accentColor : Theme.borderColor
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: logoCard.selectedAssetId = -1
+                                    }
+                                    Column {
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        Rectangle {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            width: 44; height: 44
+                                            radius: 10
+                                            gradient: Gradient {
+                                                GradientStop { position: 0; color: "#8b8bf0" }
+                                                GradientStop { position: 1; color: Theme.accentColor }
+                                            }
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "🐾"; font.pixelSize: 20
+                                            }
+                                        }
+                                        Text {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            text: qsTr("默认")
+                                            color: Theme.text2Color
+                                            font.pixelSize: 11
+                                        }
+                                    }
+                                }
+
+                                Repeater {
+                                    model: assetManager.assets()
+
+                                    delegate: Rectangle {
+                                        id: srcTile
+                                        required property var modelData
+                                        width: 72; height: 92
+                                        radius: Theme.radiusMd
+                                        color: logoCard.selectedAssetId
+                                               === srcTile.modelData.id
+                                               ? Theme.accentAlpha(0.14)
+                                               : Theme.surfaceColor
+                                        border.width: logoCard.selectedAssetId
+                                                      === srcTile.modelData.id ? 2 : 1
+                                        border.color: logoCard.selectedAssetId
+                                                      === srcTile.modelData.id
+                                                      ? Theme.accentColor : Theme.borderColor
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (logoCard.selectedAssetId
+                                                        === srcTile.modelData.id)
+                                                    logoCard.selectedAssetId = -1
+                                                else
+                                                    logoCard.selectedAssetId =
+                                                        srcTile.modelData.id
+                                            }
+                                        }
+                                        Column {
+                                            anchors.centerIn: parent
+                                            spacing: 6
+                                            Rectangle {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                width: 44; height: 44
+                                                radius: 10
+                                                color: Theme.offBgColor
+                                                clip: true
+                                                Image {
+                                                    anchors.fill: parent
+                                                    source: srcTile.modelData.fileUrl
+                                                    fillMode: Image.PreserveAspectCrop
+                                                    asynchronous: true
+                                                }
+                                            }
+                                            Text {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                text: srcTile.modelData.name
+                                                color: Theme.text2Color
+                                                font.pixelSize: 11
+                                                elide: Text.ElideMiddle
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Text {
+                                width: parent.width
+                                wrapMode: Text.WordWrap
+                                text: qsTr("选中即预览（未应用），点「应用 Logo」持久化；再点一次取消选中。")
+                                color: root._mutedColor
+                                font.pixelSize: 11
+                            }
+                        }
+                    }
+
+                    SettingRow {
+                        width: parent.width
+                        title: qsTr("同步系统托盘图标")
+                        desc: qsTr("应用 Logo 时一并替换托盘图标")
+                        ToggleSwitch {
+                            anchors.verticalCenter: parent.verticalCenter
+                            checked: assetManager.logoSyncTray
+                            onToggled: assetManager.logoSyncTray = checked
+                        }
+                    }
+                }
+
                 Card {
                     id: aboutCard
                     width: parent.width

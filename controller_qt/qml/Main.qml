@@ -50,6 +50,7 @@ Window {
             "instance":  instanceDetailPageComp,
             "monitor":   monitorPageComp,
             "voicepack": voicePackPageComp,
+            "assets":    assetPageComp,
             "settings":  settingsPageComp
         }[name] ?? welcomePageComp
     }
@@ -199,6 +200,7 @@ Window {
                     "welcome":   qsTr("主页"),
                     "monitor":   qsTr("资源监控"),
                     "voicepack": qsTr("语音包"),
+                    "assets":    qsTr("资源管理"),
                     "settings":  qsTr("设置")
                 }
                 if (root.currentInstance && root.currentPage === "instance")
@@ -358,6 +360,13 @@ Window {
                                ? voicePacks.packCount : ""
                     match: navPane.searchFilter
                 }
+                NavItem {
+                    itemKey: "assets"
+                    icon: "🗂"; label: qsTr("资源管理")
+                    badgeText: assetManager.assetCount() > 0
+                               ? assetManager.assetCount() : ""
+                    match: navPane.searchFilter
+                }
 
                 Item { width: 1; height: 12 }
 
@@ -452,6 +461,12 @@ Window {
     Component { id: instanceDetailPageComp; InstanceDetailPage { instance: root.currentInstance } }
     Component { id: monitorPageComp;        MonitorPage { instance: root.currentInstance } }
     Component { id: voicePackPageComp;      VoicePackPage {} }
+    Component {
+        id: assetPageComp
+        AssetPage {
+            onRequestSwitchPage: (name) => root.switchPage(name)
+        }
+    }
     Component { id: settingsPageComp;       SettingsPage {} }
 
     // ── Dialogs ─────────────────────────────────────────────────────────

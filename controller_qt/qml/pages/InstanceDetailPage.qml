@@ -47,6 +47,129 @@ Rectangle {
         }
     }
 
+    // Instance icon picker — same asset grid as the Logo source selector.
+    // Selection calls setInstanceIcon; the 🐾 default entry clears (-1).
+    Popup {
+        id: iconPicker
+        anchors.centerIn: parent
+        width: Math.min(480, root.width - 64)
+        height: Math.min(420, root.height - 64)
+        modal: true
+        padding: 16
+
+        background: Rectangle {
+            radius: Theme.radiusLg
+            color: Theme.surfaceColor
+            border.width: 1
+            border.color: Theme.borderColor
+        }
+
+        contentItem: Flickable {
+            clip: true
+            contentHeight: pickerCol.implicitHeight
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: AppScrollBar {}
+
+            Column {
+                id: pickerCol
+                width: parent.width
+                spacing: 12
+
+                Text {
+                    text: qsTr("选择实例图标")
+                    color: Theme.textColor
+                    font.pixelSize: 15
+                    font.weight: Font.DemiBold
+                }
+
+                Flow {
+                    width: parent.width
+                    spacing: 10
+
+                    Rectangle {
+                        width: 72; height: 92
+                        radius: Theme.radiusMd
+                        color: Theme.surfaceColor
+                        border.width: 1
+                        border.color: Theme.borderColor
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (instance)
+                                    assetManager.setInstanceIcon(instance.uuid, -1)
+                                iconPicker.close()
+                            }
+                        }
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 6
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: instance ? instance.avatar : "🐱"
+                                font.pixelSize: 24
+                            }
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: qsTr("默认")
+                                color: Theme.text2Color
+                                font.pixelSize: 11
+                            }
+                        }
+                    }
+
+                    Repeater {
+                        model: assetManager.assets()
+
+                        delegate: Rectangle {
+                            id: pickTile
+                            required property var modelData
+                            width: 72; height: 92
+                            radius: Theme.radiusMd
+                            color: Theme.surfaceColor
+                            border.width: 1
+                            border.color: Theme.borderColor
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (instance)
+                                        assetManager.setInstanceIcon(
+                                            instance.uuid, pickTile.modelData.id)
+                                    iconPicker.close()
+                                }
+                            }
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 6
+                                Rectangle {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: 44; height: 44
+                                    radius: 10
+                                    color: Theme.offBgColor
+                                    clip: true
+                                    Image {
+                                        anchors.fill: parent
+                                        source: pickTile.modelData.fileUrl
+                                        fillMode: Image.PreserveAspectCrop
+                                        asynchronous: true
+                                    }
+                                }
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    text: pickTile.modelData.name
+                                    color: Theme.text2Color
+                                    font.pixelSize: 11
+                                    elide: Text.ElideMiddle
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Flickable {
         anchors.fill: parent
         visible: instance !== null
@@ -76,6 +199,40 @@ Rectangle {
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 10
+
+                        // clickable avatar: image icon when set, emoji otherwise
+                        Rectangle {
+                            id: avatarButton
+                            width: 36; height: 36
+                            radius: 18
+                            color: Theme.accentAlpha(0.14)
+                            border.width: 1
+                            border.color: Theme.borderColor
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            readonly property string iconUrl: instance
+                                ? assetManager.instanceIconUrl(instance.uuid) : ""
+
+                            Image {
+                                anchors.fill: parent
+                                anchors.margins: 3
+                                source: avatarButton.iconUrl
+                                fillMode: Image.PreserveAspectFit
+                                visible: avatarButton.iconUrl.length > 0
+                                asynchronous: true
+                            }
+                            Text {
+                                anchors.centerIn: parent
+                                visible: avatarButton.iconUrl.length === 0
+                                text: instance ? instance.avatar : "🐱"
+                                font.pixelSize: 16
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: iconPicker.open()
+                            }
+                        }
 
                         Text {
                             text: instance ? instance.label : ""

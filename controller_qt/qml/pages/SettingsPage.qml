@@ -207,10 +207,12 @@ Rectangle {
                                 width: 96; height: 96
                                 radius: 20
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                gradient: Gradient {
-                                    GradientStop { position: 0; color: "#8b8bf0" }
-                                    GradientStop { position: 1; color: Theme.accentColor }
-                                }
+                                // Neutral surface behind the image: user PNGs
+                                // can have transparency — an accent gradient
+                                // here tinted transparent logos indigo.
+                                color: Theme.dark ? "#2a2a2a" : "#eaeaea"
+                                border.width: 1
+                                border.color: Theme.borderColor
                                 Image {
                                     anchors.fill: parent
                                     anchors.margins: 10

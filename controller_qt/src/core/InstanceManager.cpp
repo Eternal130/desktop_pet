@@ -26,6 +26,14 @@ InstanceManager::InstanceManager(const QString& configDir, WsServer& server,
     , m_savePanel(std::move(savePanel))
     , m_configManager(configDir)
 {
+    // Bridge the model-change signals to countChanged so QML bindings on the
+    // `count` property re-evaluate (badges, group-label visibility).
+    connect(this, &QAbstractListModel::rowsInserted,
+            this, &InstanceManager::countChanged);
+    connect(this, &QAbstractListModel::rowsRemoved,
+            this, &InstanceManager::countChanged);
+    connect(this, &QAbstractListModel::modelReset,
+            this, &InstanceManager::countChanged);
     loadFromDisk();
 }
 

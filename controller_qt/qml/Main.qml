@@ -89,7 +89,7 @@ Window {
 
     function _runningCount() {
         let n = 0
-        for (let i = 0; i < instanceManager.rowCount(); ++i) {
+        for (let i = 0; i < instanceManager.count; ++i) {
             const s = instanceManager.instanceAt(i)
             if (s && s.status === "running") ++n
         }
@@ -187,9 +187,9 @@ Window {
             width: 18; height: 18; radius: 4
             x: 16; y: (parent.height - height) / 2
             color: Theme.accentColor
-            Text {
+            PanelLogoGlyph {
                 anchors.centerIn: parent
-                text: "🐾"; font.pixelSize: 11
+                size: 14
             }
         }
         Text {
@@ -344,8 +344,8 @@ Window {
                 NavItem {
                     itemKey: "instance"
                     icon: "🐱"; label: qsTr("实例详情")
-                    badgeText: instanceManager.rowCount() > 0
-                               ? instanceManager.rowCount() : ""
+                    badgeText: instanceManager.count > 0
+                               ? instanceManager.count : ""
                     match: navPane.searchFilter
                 }
                 NavItem {
@@ -375,7 +375,7 @@ Window {
                 NavGroupLabel {
                     text: qsTr("宠物 · 实例切换")
                     visible: root.currentPage === "instance"
-                             && instanceManager.rowCount() > 0
+                             && instanceManager.count > 0
                 }
                 Repeater {
                     model: instanceManager
@@ -431,9 +431,9 @@ Window {
                         GradientStop { position: 0; color: "#8b8bf0" }
                         GradientStop { position: 1; color: Theme.accentColor }
                     }
-                    Text {
+                    PanelLogoGlyph {
                         anchors.centerIn: parent
-                        text: "🐾"; font.pixelSize: 13
+                        size: 22
                     }
                 }
                 Text {
@@ -544,6 +544,29 @@ Window {
     }
 
     // ── Inline components ───────────────────────────────────────────────
+    // Panel logo: the custom logo image when one is applied, else the 🐾
+    // glyph. Shared by the titlebar (top-left) and the nav profile footer
+    // (bottom-left); re-evaluates on AssetManager::logoUrlChanged.
+    component PanelLogoGlyph : Item {
+        id: logoGlyph
+        property int size: 16
+        width: size
+        height: size
+        Image {
+            anchors.fill: parent
+            source: assetManager.logoUrl
+            fillMode: Image.PreserveAspectFit
+            visible: assetManager.logoUrl.length > 0
+                     && status === Image.Ready
+        }
+        Text {
+            anchors.centerIn: parent
+            visible: assetManager.logoUrl.length === 0
+            text: "🐾"
+            font.pixelSize: logoGlyph.size * 0.8
+        }
+    }
+
     // Caption glyphs drawn as vector shapes (Win11 style) — Unicode
     // ▢/❐/✕ glyphs render at inconsistent sizes across font fallbacks, so
     // minimize/maximize/restore/close are hand-drawn strokes instead.

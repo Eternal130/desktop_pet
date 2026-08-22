@@ -45,6 +45,11 @@ class PendingRequests;
 // without deleteLater ceremony).
 class InstanceManager : public QAbstractListModel {
     Q_OBJECT
+    // Roster size for QML badges/labels. Method calls like rowCount() create
+    // no binding dependency, so a nav badge bound to instanceManager.rowCount()
+    // never re-evaluates after a delete; this property re-evaluates on every
+    // rowsInserted/rowsRemoved/modelReset.
+    Q_PROPERTY(int count READ count NOTIFY countChanged)
 
 public:
     // Custom roles exposed to QML via roleNames(). Offset from Qt::UserRole so
@@ -85,6 +90,8 @@ public:
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
+
+    int count() const { return m_sessions.size(); }
 
     // ── Roster operations ────────────────────────────────────────────────────
     // Create a new instance: generate a fresh InstanceConfig (with a random UUID
@@ -144,6 +151,9 @@ public:
 signals:
     // Emitted by requestDelete. The UI connects this to a confirm dialog.
     void deleteConfirmed(const QString& uuid);
+    // countChanged: re-emitted from rowsInserted/rowsRemoved/modelReset so
+    // QML bindings on the `count` property refresh without polling.
+    void countChanged();
 
 private:
     // Rebuild m_panelConfig.instanceIds from the live roster order and persist

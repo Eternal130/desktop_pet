@@ -67,12 +67,22 @@ int VoicePackController::packActionCount(int index) const {
     }
     return n;
 }
-
-QStringList VoicePackController::packGroupNames(int index) const {
+QStringList VoicePackController::packGroupNames(int index) const
+{
     QStringList out;
     if (index < 0 || index >= m_packs.size()) return out;
     for (const auto& g : m_packs.at(index).groups) {
         out << (g.name.isEmpty() ? g.code : g.name);
+    }
+    return out;
+}
+
+QStringList VoicePackController::packGroupCodes(int index) const
+{
+    QStringList out;
+    if (index < 0 || index >= m_packs.size()) return out;
+    for (const auto& g : m_packs.at(index).groups) {
+        out << g.code;
     }
     return out;
 }

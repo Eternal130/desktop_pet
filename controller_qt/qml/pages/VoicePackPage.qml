@@ -14,6 +14,15 @@ Rectangle {
 
     property int selectedPack: 0
 
+    function _mountedRowForPack(packPath) {
+        for (let i = 0; i < instanceManager.rowCount(); ++i) {
+            const s = instanceManager.instanceAt(i)
+            if (s && voicePacks.instanceVoicePack(s.uuid) === packPath)
+                return i
+        }
+        return -1
+    }
+
     Flickable {
         anchors.fill: parent
         clip: true
@@ -183,7 +192,28 @@ Rectangle {
                                 model: voicePacks.packCount > root.selectedPack
                                     ? voicePacks.packGroupNames(root.selectedPack)
                                     : []
-                                delegate: Chip { text: modelData }
+                                // Clicking a mapping-group chip trial-triggers
+                                // that group on the first instance that has THIS
+                                // pack mounted. The chip displays the group NAME
+                                // but triggers by CODE — the behavior engine
+                                // matches hit areas by map key (code), not the
+                                // human-readable name.
+                                delegate: Chip {
+                                    text: voicePacks.packGroupNames(
+                                        root.selectedPack)[index]
+                                    opacity: root._mountedRowForPack(
+                                        voicePacks.packPath(root.selectedPack)) >= 0
+                                        ? 1.0 : 0.45
+                                    onActivated: {
+                                        const row = root._mountedRowForPack(
+                                            voicePacks.packPath(root.selectedPack))
+                                        if (row >= 0)
+                                            instanceManager.instanceAt(row)
+                                                .triggerHitArea(
+                                                    voicePacks.packGroupCodes(
+                                                        root.selectedPack)[index])
+                                    }
+                                }
                             }
                         }
                         Text {

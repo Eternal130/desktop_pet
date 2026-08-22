@@ -55,6 +55,9 @@ public:
     Q_INVOKABLE int packGroupCount(int index) const;
     Q_INVOKABLE int packActionCount(int index) const;
     Q_INVOKABLE QStringList packGroupNames(int index) const;
+    // Group CODES in the same order as packGroupNames — the behavior engine
+    // matches hit areas by code (map key), not display name.
+    Q_INVOKABLE QStringList packGroupCodes(int index) const;
     Q_INVOKABLE QString packPath(int index) const;
     Q_INVOKABLE QString packDisplayNameFor(const QString& packPath) const;
 

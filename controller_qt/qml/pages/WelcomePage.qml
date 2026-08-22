@@ -267,30 +267,23 @@ Rectangle {
 
                 Repeater {
                     model: instanceManager
-                    delegate: Item {
+                    delegate: Card {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 150
+                        padding: 16
 
-                        // MouseArea wraps the Card (NOT inside it): Card's
-                        // default property funnels children into a Column,
-                        // and a Column child with anchors.fill kills the
-                        // Column's layout — the card collapsed to 0 height,
-                        // rendering the grid blank.
-                        MouseArea {
-                            anchors.fill: parent
-                            hoverEnabled: true
+                        // TapHandler (not a MouseArea): handlers are not
+                        // positioner children, so this cannot trip the
+                        // "Column child with anchors" collapse again, and it
+                        // does not compete with the inner AppButtons for
+                        // grabs the way a full-card MouseArea layer did.
+                        TapHandler {
                             cursorShape: Qt.PointingHandCursor
-                            z: 0
-                            onClicked: Window.window.selectInstance(
+                            onTapped: Window.window.selectInstance(
                                 index, model.uuid)
                         }
 
-                        Card {
-                            anchors.fill: parent
-                            padding: 16
-                            z: 1
-
-                            readonly property var _inst: instanceManager.instanceAt(index)
+                        readonly property var _inst: instanceManager.instanceAt(index)
 
                             Row {
                                 width: parent.width
@@ -391,7 +384,6 @@ Rectangle {
                             }
                         }
                     }
-                }
             }
 
             // ── Env check summary (collapsible) ────────────────────────

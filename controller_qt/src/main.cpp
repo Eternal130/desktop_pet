@@ -27,6 +27,7 @@ Q_IMPORT_QML_PLUGIN(FluentUIPlugin)
 #include "core/InstanceSession.hpp"
 #include "core/PanelConfig.hpp"
 #include "core/PanelConfigController.hpp"
+#include "ui/VoicePackController.hpp"
 #include "core/PanelStateManager.hpp"
 #include "core/WindowStateSaver.hpp"
 #include "core/StartupSalvo.hpp"
@@ -235,6 +236,12 @@ int main(int argc, char *argv[])
     // panelConfig.closeAction + panelConfig.confirmOnExit to decide minimize-
     // to-tray vs confirm-then-exit.
     engine.rootContext()->setContextProperty("panelConfig", &panelConfigController);
+
+    // VoicePackController context property (Fluent UI redesign Phase 5).
+    // Read-only discovery surface (VoicePackScanner + MetaMkoParser) for
+    // VoicePackPage.qml. Mount wiring to InstanceSession is todo 21.
+    VoicePackController voicePackController;
+    engine.rootContext()->setContextProperty("voicePacks", &voicePackController);
 
     // Start the WS server on the hardcoded protocol port (blueprint §3.1).
     // A listen failure is non-fatal — the panel still opens; todo 11 adds

@@ -78,7 +78,9 @@ void VoicePackScannerTest::testScanFindsSinglePack()
 
     const QStringList result = core::scanAvailableVoicePacks(dir.path());
     QCOMPARE(result.size(), 1);
-    QCOMPARE(result.first(), QStringLiteral("TestPack"));
+    QCOMPARE(result.first(),
+             QDir(dir.path()).absoluteFilePath(
+                 QStringLiteral("Resources/VoicePacks/TestPack")));
 }
 
 void VoicePackScannerTest::testScanReturnsSortedMultiple()
@@ -95,10 +97,17 @@ void VoicePackScannerTest::testScanReturnsSortedMultiple()
 
     const QStringList result = core::scanAvailableVoicePacks(dir.path());
     QCOMPARE(result.size(), 3);
-    // Case-insensitive sort: Alpha < mid < zebra
-    QCOMPARE(result.at(0), QStringLiteral("Alpha"));
-    QCOMPARE(result.at(1), QStringLiteral("mid"));
-    QCOMPARE(result.at(2), QStringLiteral("zebra"));
+    // Case-insensitive sort: Alpha < mid < zebra (entries are absolute
+    // pack paths under Resources/VoicePacks/)
+    QCOMPARE(result.at(0),
+             QDir(dir.path()).absoluteFilePath(
+                 QStringLiteral("Resources/VoicePacks/Alpha")));
+    QCOMPARE(result.at(1),
+             QDir(dir.path()).absoluteFilePath(
+                 QStringLiteral("Resources/VoicePacks/mid")));
+    QCOMPARE(result.at(2),
+             QDir(dir.path()).absoluteFilePath(
+                 QStringLiteral("Resources/VoicePacks/zebra")));
 }
 
 void VoicePackScannerTest::testScanFiltersDirWithoutMetaMko()
@@ -117,7 +126,9 @@ void VoicePackScannerTest::testScanFiltersDirWithoutMetaMko()
 
     const QStringList result = core::scanAvailableVoicePacks(dir.path());
     QCOMPARE(result.size(), 1);
-    QCOMPARE(result.first(), QStringLiteral("HasFile"));
+    QCOMPARE(result.first(),
+             QDir(dir.path()).absoluteFilePath(
+                 QStringLiteral("Resources/VoicePacks/HasFile")));
     QVERIFY2(!result.contains(QStringLiteral("NoFile")),
              "Subdir without meta.mko must NOT be reported");
 }
@@ -136,7 +147,9 @@ void VoicePackScannerTest::testScanSkipsHiddenDir()
 
     const QStringList result = core::scanAvailableVoicePacks(dir.path());
     QCOMPARE(result.size(), 1);
-    QCOMPARE(result.first(), QStringLiteral("Visible"));
+    QCOMPARE(result.first(),
+             QDir(dir.path()).absoluteFilePath(
+                 QStringLiteral("Resources/VoicePacks/Visible")));
     QVERIFY2(!result.contains(QStringLiteral(".hidden")),
              "Hidden subdir must be skipped even if it has meta.mko");
 }

@@ -58,11 +58,14 @@ QStringList scanAvailableVoicePacks(const QString& rendererDir)
         if (name.startsWith(QLatin1Char('.'))) continue;
 
         // Qualify: subdir must contain the meta.mko index file.
+        // Returns ABSOLUTE pack paths (Resources/VoicePacks/<name>) — the
+        // caller feeds each entry straight into parseMetaMko; returning
+        // bare dir names made the parser probe build/bin/<name>/meta.mko.
         const QString candidate = QDir(voicePacksDir.absoluteFilePath(name))
                                       .absoluteFilePath(
                                           QString::fromLatin1(kVoicePackIndex));
         if (QFile::exists(candidate)) {
-            packs.append(name);
+            packs.append(voicePacksDir.absoluteFilePath(name));
         }
     }
 

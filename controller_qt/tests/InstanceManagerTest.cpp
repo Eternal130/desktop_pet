@@ -78,6 +78,7 @@ private slots:
     void testDelete();
     void testCorruptInstanceDegrades();
     void testRoute();
+    void testSetDatabaseDoesNotDuplicateRoster();
 };
 
 void InstanceManagerTest::initTestCase()
@@ -290,6 +291,48 @@ void InstanceManagerTest::testRoute()
     // value is impossible (InstanceSession masks qHash with 0x7FFFFFFF).
     mgr.route(-1, resp);
     QCOMPARE(resolvedSpy.count(), 1); // unchanged — no spurious resolution
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 5. setDatabase() after construction must not duplicate the roster.
+// Regression: the ctor runs loadFromDisk() once (own lazily-opened db), then
+// main.cpp calls setDatabase() which loads again — without clearing the
+// roster first, every persisted instance appears TWICE on restart.
+// ────────────────────────────────────────────────────────────────────────────
+
+void InstanceManagerTest::testSetDatabaseDoesNotDuplicateRoster()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+
+    // Seed: one instance + roster persisted in <base>/app.db (SQLite backend).
+    {
+        WsServer server;
+        PendingRequests pending;
+        DatabaseManager db;
+        QVERIFY(db.open(base.path() + QStringLiteral("/app.db")));
+        InstanceManager mgr(base.path(), server, pending,
+                            [&base](const PanelConfig& cfg) {
+                                PanelStateManager(base.path()).save(cfg);
+                            });
+        mgr.setDatabase(&db);
+        QVERIFY(!mgr.createInstance(QStringLiteral("Solo")).isEmpty());
+    }
+
+    // Replay main.cpp's wiring: construct (loads once), then setDatabase.
+    WsServer server;
+    PendingRequests pending;
+    DatabaseManager db;
+    QVERIFY(db.open(base.path() + QStringLiteral("/app.db")));
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& cfg) {
+                            PanelStateManager(base.path()).save(cfg);
+                        });
+    const int before = mgr.rowCount();
+    QCOMPARE(before, 1);
+    mgr.setDatabase(&db);
+    QCOMPARE(mgr.rowCount(), 1);
+    QCOMPARE(mgr.instanceAt(0)->label(), QStringLiteral("Solo"));
 }
 
 QTEST_MAIN(InstanceManagerTest)

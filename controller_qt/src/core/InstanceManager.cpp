@@ -190,6 +190,15 @@ void InstanceManager::stopAll()
 
 void InstanceManager::setDatabase(DatabaseManager* db)
 {
+    // The constructor already ran loadFromDisk() once (against the manager's
+    // lazily-opened own db or an empty backend). Reload here against the
+    // shared db WITHOUT duplicating: drop the roster first, then load fresh.
+    if (!m_sessions.isEmpty()) {
+        beginResetModel();
+        qDeleteAll(m_sessions);
+        m_sessions.clear();
+        endResetModel();
+    }
     m_configManager.setDatabase(db);
     m_db = db;
     loadFromDisk();

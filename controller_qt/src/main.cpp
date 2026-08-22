@@ -6,6 +6,8 @@
 #include <QQuickWindow>
 #include <QTimer>
 #include <QDir>
+#include <QGuiApplication>
+#include <QIcon>
 
 #include <cstdlib>
 #include <chrono>
@@ -260,21 +262,25 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("voicePacks", &voicePackController);
 
     // AssetManager context property (资源管理 page + Settings logo section +
-    // InstanceDetailPage icon picker). Tray icon sync: when logo_sync_tray is
-    // on and a custom logo is set, replace the tray icon with its PNG.
+    // InstanceDetailPage icon picker). Logo applies to THREE surfaces:
+    //   1. taskbar/window icon — QGuiApplication::setWindowIcon (default for
+    //      every QQuickWindow, incl. the Main.qml panel)
+    //   2. tray icon — TrayManager::setIconPixmap, gated by logo_sync_tray
+    //   3. QML bindings read assetManager.logoUrl directly (titlebar/nav)
+    // Unconditional for 1 (the user explicitly applied a logo), opt-in for 2.
+    const auto applyLogo = [&assetManager, &trayManager]() {
+        const QString file = QUrl(assetManager.logoUrl()).toLocalFile();
+        if (!file.isEmpty()) {
+            QGuiApplication::setWindowIcon(QIcon(file));
+        }
+        if (assetManager.logoSyncTray() && !file.isEmpty()) {
+            trayManager.setIconPixmap(file);
+        }
+    };
     engine.rootContext()->setContextProperty("assetManager", &assetManager);
-    if (assetManager.logoSyncTray() && !assetManager.logoUrl().isEmpty()) {
-        trayManager.setIconPixmap(
-            QUrl(assetManager.logoUrl()).toLocalFile());
-    }
-    QObject::connect(&assetManager, &AssetManager::logoUrlChanged, &trayManager,
-                     [&assetManager, &trayManager]() {
-                         if (assetManager.logoSyncTray() &&
-                             !assetManager.logoUrl().isEmpty()) {
-                             trayManager.setIconPixmap(QUrl(
-                                 assetManager.logoUrl()).toLocalFile());
-                         }
-                     });
+    applyLogo();
+    QObject::connect(&assetManager, &AssetManager::logoUrlChanged,
+                     &trayManager, applyLogo);
 
     // Start the WS server on the hardcoded protocol port (blueprint §3.1).
     // A listen failure is non-fatal — the panel still opens; todo 11 adds

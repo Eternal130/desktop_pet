@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QGuiApplication>
 #include <QIcon>
+#include <QImage>
 #include <QPainter>
 #include <QPixmap>
 
@@ -121,6 +122,23 @@ void TrayManager::onActivated(QSystemTrayIcon::ActivationReason reason)
         // Unknown reason (some platforms emit this on focus changes). Ignore.
         break;
     }
+}
+
+void TrayManager::setIconPixmap(const QString& path)
+{
+    if (m_tray == nullptr) {
+        LOG_INFO("TrayManager::setIconPixmap: no tray available — no-op");
+        return;
+    }
+    QImage image(path);
+    if (image.isNull()) {
+        LOG_WARN("TrayManager::setIconPixmap: cannot load \"{}\"",
+                 path.toStdString());
+        return;
+    }
+    m_tray->setIcon(QIcon(QPixmap::fromImage(image)));
+    LOG_INFO("TrayManager: tray icon replaced with \"{}\"",
+             path.toStdString());
 }
 
 QIcon TrayManager::loadIcon()

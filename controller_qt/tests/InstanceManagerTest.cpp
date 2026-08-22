@@ -23,6 +23,7 @@
 // writes via PanelStateManager into the QTemporaryDir, mimicking main.cpp's
 // production wiring. InstanceManager itself never depends on PanelStateManager.
 
+#include "core/DatabaseManager.hpp"
 #include "core/InstanceConfig.hpp"
 #include "core/InstanceConfigManager.hpp"
 #include "core/InstanceManager.hpp"
@@ -125,11 +126,15 @@ void InstanceManagerTest::testCreateAndPersist()
     QCOMPARE(reloaded.instanceIds.at(0), uuid1);
     QCOMPARE(reloaded.instanceIds.at(1), uuid2);
 
-    // The instance files exist on disk.
-    QVERIFY2(QFile::exists(instanceFile(base.path(), uuid1)),
-             "instance file for uuid1 not created");
-    QVERIFY2(QFile::exists(instanceFile(base.path(), uuid2)),
-             "instance file for uuid2 not created");
+    // The instance rows exist in the SQLite db (SQLite backend — no files).
+    {
+        DatabaseManager db;
+        QVERIFY(db.open(base.path() + QStringLiteral("/app.db")));
+        QVERIFY2(db.loadInstance(uuid1).has_value(),
+                 "instance row for uuid1 not created");
+        QVERIFY2(db.loadInstance(uuid2).has_value(),
+                 "instance row for uuid2 not created");
+    }
 
     // Out-of-range instanceAt → nullptr (never derefs a bad index).
     QVERIFY(mgr.instanceAt(-1) == nullptr);

@@ -7,6 +7,7 @@
 #include <QString>
 #include <functional>
 
+#include "core/DatabaseManager.hpp"
 #include "core/InstanceConfigManager.hpp"
 #include "core/PanelConfig.hpp"
 #include "network/Envelope.hpp"
@@ -124,6 +125,22 @@ public:
     // roster. Safe to call from the GUI thread (QML onClosing handler).
     Q_INVOKABLE void stopAll();
 
+    // Asset ref detachment hook (AssetManager wiring): when set,
+    // deleteInstance calls it with the deleted uuid so the instance's
+    // image-icon refs are detached. Images are referenced, never owned —
+    // this NEVER deletes image files. Injected by main.cpp; empty default
+    // keeps tests decoupled from the asset system.
+    void setAssetRefDetacher(std::function<void(const QString&)> detacher)
+    { m_detachAssetRefs = std::move(detacher); }
+
+    // Share main.cpp's DatabaseManager (SQLite config backend). Forwards to
+    // the owned InstanceConfigManager and replaces the construction-time
+    // panel.json read with a panel_config kv read. Must be called before the
+    // manager is used (main.cpp calls it right after construction, before
+    // any roster mutation; the ctor-time loadFromDisk still works without it
+    // via the managers' lazily-opened own connections).
+    void setDatabase(DatabaseManager* db);
+
 signals:
     // Emitted by requestDelete. The UI connects this to a confirm dialog.
     void deleteConfirmed(const QString& uuid);
@@ -147,6 +164,8 @@ private:
     WsServer& m_server;
     PendingRequests& m_pending;
     std::function<void(const PanelConfig&)> m_savePanel;
+    std::function<void(const QString&)> m_detachAssetRefs;
+    DatabaseManager* m_db = nullptr; // shared SQLite backend (main.cpp)
     InstanceConfigManager m_configManager; // member by value; parent=nullptr (no Qt parent)
     PanelConfig m_panelConfig;
     QList<InstanceSession*> m_sessions; // owned — deleted in dtor + deleteInstance

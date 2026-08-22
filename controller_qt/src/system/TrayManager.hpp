@@ -91,6 +91,11 @@ public:
     // flushes logs via Logging::shutdown in main.cpp's post-exec() path).
     Q_INVOKABLE void activateQuit() { emit quitRequested(); }
 
+    // Logo sync (AssetManager) — replace the tray icon with the PNG at
+    // `path`. No-op (WARN) when no tray is available or the file is not a
+    // loadable image. Never throws.
+    Q_INVOKABLE void setIconPixmap(const QString& path);
+
 signals:
     // Right-click on the tray icon (ActivationReason::Context). Main.qml's
     // Connections handler calls trayMenu.popup() — opens the QML Menu.

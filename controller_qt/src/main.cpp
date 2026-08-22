@@ -15,6 +15,8 @@
 #include "logging/Logging.hpp"
 
 #include "core/ConfigDir.hpp"
+#include "core/DatabaseManager.hpp"
+#include "core/AssetManager.hpp"
 #include "core/EnvironmentChecker.hpp"
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
@@ -72,11 +74,22 @@ int main(int argc, char *argv[])
     ConfigDir::ensureDirectories();
     Logging::init(ConfigDir::logsDir());
 
+    // ── SQLite config backend ─────────────────────────────────────────────
+    // ONE DatabaseManager owns <configDir>/app.db; every config consumer
+    // (PanelStateManager, InstanceConfigManager, AssetManager) shares it by
+    // reference. A failed open is non-fatal — the managers degrade to
+    // defaults / failed writes (never-throws contract).
+    DatabaseManager databaseManager;
+    if (!databaseManager.open(ConfigDir::configDir() +
+                              QStringLiteral("app.db"))) {
+        LOG_WARN("main: app.db open failed — config persistence degraded");
+    }
+
     // Load the persisted panel-level config (T28 window-state restore) so the
     // QML window can restore its initial position/size + theme on startup.
-    // PanelStateManager handles: fresh install (writes defaults), legacy
-    // panel-state.json migration, and corrupt-file fallback to defaults.
-    PanelStateManager psm(ConfigDir::configDir());
+    // SQLite backend (panel_config kv); empty db → defaults.
+    PanelStateManager psm;
+    psm.setDatabase(&databaseManager);
     const PanelConfig panelCfg = psm.load();
     LOG_INFO("Restored panel config: panelX={} panelY={} {}x{} theme=\"{}\"",
              panelCfg.panelX, panelCfg.panelY,
@@ -130,6 +143,7 @@ int main(int argc, char *argv[])
         ConfigDir::configDir(), wsServer, pendingRequests,
         [&psm](const PanelConfig& cfg) { psm.save(cfg); },
         nullptr);
+    instanceManager.setDatabase(&databaseManager);
 
     // WsServer::messageReceived(int instanceId, env) → InstanceManager::route.
     // Phase 5 todo 11: per-instanceId demux — the WsServer carries the parsed
@@ -163,6 +177,16 @@ int main(int argc, char *argv[])
     // the same panel.json as WindowStateSaver + InstanceManager.
     AutoLaunchManager autoLaunchManager;
     PanelConfigController panelConfigController(ConfigDir::configDir());
+    panelConfigController.setDatabase(&databaseManager);
+
+    // AssetManager (image library + logo/instance-icon refs). Shares the
+    // DatabaseManager; exposed as the "assetManager" context property for
+    // AssetPage / SettingsPage / InstanceDetailPage.
+    AssetManager assetManager(databaseManager, ConfigDir::configDir());
+    instanceManager.setAssetRefDetacher(
+        [&assetManager](const QString& uuid) {
+            assetManager.detachInstanceIconRefs(uuid);
+        });
 
     QQmlApplicationEngine engine;
 
@@ -234,6 +258,23 @@ int main(int argc, char *argv[])
     VoicePackController voicePackController;
     voicePackController.setInstanceManager(&instanceManager);
     engine.rootContext()->setContextProperty("voicePacks", &voicePackController);
+
+    // AssetManager context property (资源管理 page + Settings logo section +
+    // InstanceDetailPage icon picker). Tray icon sync: when logo_sync_tray is
+    // on and a custom logo is set, replace the tray icon with its PNG.
+    engine.rootContext()->setContextProperty("assetManager", &assetManager);
+    if (assetManager.logoSyncTray() && !assetManager.logoUrl().isEmpty()) {
+        trayManager.setIconPixmap(
+            QUrl(assetManager.logoUrl()).toLocalFile());
+    }
+    QObject::connect(&assetManager, &AssetManager::logoUrlChanged, &trayManager,
+                     [&assetManager, &trayManager]() {
+                         if (assetManager.logoSyncTray() &&
+                             !assetManager.logoUrl().isEmpty()) {
+                             trayManager.setIconPixmap(QUrl(
+                                 assetManager.logoUrl()).toLocalFile());
+                         }
+                     });
 
     // Start the WS server on the hardcoded protocol port (blueprint §3.1).
     // A listen failure is non-fatal — the panel still opens; todo 11 adds

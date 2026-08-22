@@ -2,8 +2,6 @@
 
 #include <QDir>
 #include <QFile>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QModelIndex>
 #include <QVariant>
 #include <QtAlgorithms>
@@ -12,13 +10,10 @@
 #include "logging/Logging.hpp"
 #include "core/InstanceConfig.hpp"
 #include "core/InstanceSession.hpp"
+#include "core/PanelStateManager.hpp"
 #include "network/Envelope.hpp"
 #include "network/PendingRequests.hpp"
 #include "network/WsServer.hpp"
-
-namespace {
-constexpr const char* kPanelJsonName = "panel.json";
-} // namespace
 
 InstanceManager::InstanceManager(const QString& configDir, WsServer& server,
                                  PendingRequests& pending,
@@ -141,6 +136,10 @@ void InstanceManager::deleteInstance(const QString& uuid)
     // deleteInstance is idempotent (returns true if absent) — safe even if the
     // file was already removed out-of-band.
     m_configManager.deleteInstance(uuid);
+    // Detach image-icon refs (never deletes image files — images are
+    // referenced, not owned). No-op when the hook is not injected (tests).
+    if (m_detachAssetRefs)
+        m_detachAssetRefs(uuid);
     persistRoster();
     LOG_INFO("InstanceManager: deleted instance uuid=\"{}\" (row={})", uuid.toStdString(), row);
 }
@@ -189,6 +188,13 @@ void InstanceManager::stopAll()
     LOG_INFO("InstanceManager::stopAll: stopped {} instance(s)", count);
 }
 
+void InstanceManager::setDatabase(DatabaseManager* db)
+{
+    m_configManager.setDatabase(db);
+    m_db = db;
+    loadFromDisk();
+}
+
 // ── Private helpers ──────────────────────────────────────────────────────────
 
 void InstanceManager::persistRoster()
@@ -216,16 +222,14 @@ int InstanceManager::rowForUuid(const QString& uuid) const
 
 void InstanceManager::loadFromDisk()
 {
-    // Load panel.json directly (m5 decouples save via callback; load is a one-
-    // time construction-time read, mirroring PanelStateManager's parse branch
-    // without taking a PanelStateManager dependency). Missing/corrupt → defaults.
-    m_panelConfig = defaultPanelConfig();
-    QFile f(QDir(m_configDir).absoluteFilePath(QString::fromLatin1(kPanelJsonName)));
-    if (f.open(QIODevice::ReadOnly)) {
-        const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
-        if (doc.isObject())
-            m_panelConfig = panelConfigFromJson(doc.object());
-    }
+    // Load the panel config from the SQLite kv store (panel_config key
+    // "panel"); missing/corrupt → defaults. When no shared DatabaseManager
+    // is injected, PanelStateManager opens its own connection at
+    // <m_configDir>/app.db — same backend, same semantics.
+    PanelStateManager psm(m_configDir);
+    if (m_db != nullptr)
+        psm.setDatabase(m_db);
+    m_panelConfig = psm.load();
 
     // m4 fix (CRITICAL): iterate instanceIds IN ORDER — NOT loadAll() (which
     // returns instances sorted by id alphabetically). Sidebar order is the

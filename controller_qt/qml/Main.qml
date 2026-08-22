@@ -463,11 +463,16 @@ Window {
         onPositiveClicked: {
             instanceManager.deleteInstance(pendingUuid)
             pendingUuid = ""
-            // the detail/monitor page binds the now-deleted session — fall
-            // back to Home (or the next remaining instance if any)
             root.currentInstance = null
             root.currentInstanceUuid = ""
-            root.switchPage("welcome")
+            // stay on the instance page when other instances remain —
+            // selectInstance(row, uuid) rebinds the detail page to the
+            // first surviving instance; only fall back to Home when the
+            // roster is now empty.
+            if (instanceManager.rowCount() > 0)
+                root.selectInstance(0, instanceManager.instanceAt(0).uuid)
+            else
+                root.switchPage("welcome")
         }
         property string pendingUuid: ""
     }

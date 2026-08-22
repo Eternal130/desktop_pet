@@ -9,6 +9,7 @@
 // the SPDLOG_* macros but does NOT include spdlog headers itself (T5 finding
 // in .omo/notepads/qt-controller-foundation/learnings.md).
 #include <spdlog/spdlog.h>
+#include "core/ConfigDir.hpp"
 #include "core/PathResolve.hpp"
 #include "logging/Logging.hpp"
 
@@ -169,6 +170,11 @@ QString EnvironmentChecker::vulkanRendererPath() const
 
 QString EnvironmentChecker::modelsDirectory() const{
     return m_modelsDir;
+}
+
+QString EnvironmentChecker::configDirectory() const
+{
+    return ConfigDir::configDir();
 }
 
 QString EnvironmentChecker::qtVersion() const

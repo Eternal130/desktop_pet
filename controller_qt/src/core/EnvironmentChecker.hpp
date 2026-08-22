@@ -45,6 +45,8 @@ class EnvironmentChecker : public QObject {
     Q_PROPERTY(QString modelsDirectory READ modelsDirectory NOTIFY checksChanged)
     Q_PROPERTY(QString qtVersion READ qtVersion CONSTANT)
     Q_PROPERTY(int port READ port CONSTANT)
+    // The ~/.config/desktop-pet/ root (settings page "open directory" button).
+    Q_PROPERTY(QString configDirectory READ configDirectory CONSTANT)
 
 public:
     explicit EnvironmentChecker(QObject* parent = nullptr);
@@ -76,6 +78,7 @@ public:
     QString openglRendererPath() const;
     QString vulkanRendererPath() const;
     QString modelsDirectory() const;
+    QString configDirectory() const;
     // qVersion() result (e.g. "6.10.0") — the QML Qt global object exposes no
     // reliable version property, so the checker publishes it for WelcomePage.
     QString qtVersion() const;

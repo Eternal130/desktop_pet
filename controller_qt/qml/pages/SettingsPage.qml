@@ -211,7 +211,7 @@ Rectangle {
                             implicitHeight: 26; fontSize: 12
                             anchors.verticalCenter: parent.verticalCenter
                             onClicked: Qt.openUrlExternally(
-                                "file:///" + voicePacks.voicePackDir())
+                                "file:///" + envChecker.configDirectory)
                         }
                     }
                 }

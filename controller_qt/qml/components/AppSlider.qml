@@ -69,6 +69,6 @@ Rectangle {
             }
         }
         onPressed: (mouse) => apply(mouse.x)
-        onPositionChanged: (mouse) => apply(mouse.x)
+        onPositionChanged: (mouse) => { if (pressed) apply(mouse.x) }
     }
 }

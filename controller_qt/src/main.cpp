@@ -14,13 +14,6 @@
 #include <spdlog/spdlog.h>
 #include "logging/Logging.hpp"
 
-// FluentUI static-lib registration. The FLUENTUI_BUILD_STATIC_LIB guard from
-// FluentUI's own example does NOT apply here: that macro is only defined on
-// FluentUI's targets, not propagated to consumers. We always build FluentUI
-// in static mode (CMakeLists FetchContent), so register unconditionally.
-#include <FluentUI.h>
-Q_IMPORT_QML_PLUGIN(FluentUIPlugin)
-
 #include "core/ConfigDir.hpp"
 #include "core/EnvironmentChecker.hpp"
 #include "core/InstanceManager.hpp"
@@ -172,8 +165,6 @@ int main(int argc, char *argv[])
     PanelConfigController panelConfigController(ConfigDir::configDir());
 
     QQmlApplicationEngine engine;
-
-    FluentUI::registerTypes(&engine);
 
     // EnvironmentChecker (T27) — exposed as a global QML context property
     // "envChecker" so every page can read the readiness probes without
@@ -355,10 +346,6 @@ int main(int argc, char *argv[])
                     }
                     runner->setProperty("idx", idx + 1);
                     if (idx + 1 >= pages.size()) {
-                        // No deleteLater here: quitting right after queueing a
-                        // deferred delete raced app teardown and corrupted the
-                        // heap (0xC0000374). runner is parented to app and is
-                        // reclaimed by app's own destructor.
                         ticker->stop();
                         QApplication::quit();
                     }
@@ -371,13 +358,11 @@ int main(int argc, char *argv[])
             QTimer::singleShot(1200, runner, [ticker]() { ticker->start(); });
             const int shotExit = app.exec();
             Logging::shutdown();
-            // Test-only path: exit directly instead of unwinding the stack.
-            // With FluentUI statically linked, destroying the QML engine +
-            // FluentUI plugin singletons after an in-exec quit corrupts the
-            // heap (0xC0000374). Screenshots are already on disk and the log
-            // sink is flushed, so skipping teardown loses nothing here. The
-            // PRODUCTION exit path (normal window close) is unaffected —
-            // verified EXIT=0.
+            // Test-only path: exit directly. Destroying the QML engine
+            // after an in-exec quit still corrupts the heap (0xC0000374,
+            // reproducible WITHOUT FluentUI — so not a plugin artifact).
+            // Screenshots are already on disk; the production close path
+            // (normal window close) is unaffected.
             std::exit(shotExit);
         }
     }

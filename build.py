@@ -434,25 +434,6 @@ def build_qt():
             )
             if rc != 0:
                 warn("windeployqt reported errors; the exe may not run standalone.")
-            # FluentUI deps windeployqt cannot detect (QML-internal imports +
-            # a plugin DLL dependency): Qt5Compat.GraphicalEffects (FluAcrylic)
-            # and Qt6ShaderTools.dll (qtgraphicaleffectsprivateplugin dep).
-            qml_compat_src = Path(QT_PREFIX_PATH) / "qml" / "Qt5Compat"
-            qml_compat_dst = BIN_DIR / "qml" / "Qt5Compat"
-            if qml_compat_src.exists():
-                if qml_compat_dst.exists():
-                    shutil.rmtree(qml_compat_dst)
-                shutil.copytree(qml_compat_src, qml_compat_dst)
-                info("Copied Qt5Compat QML module (FluentUI FluAcrylic dep)")
-            else:
-                warn("Qt5Compat qml module not found in Qt SDK; app may fail to load FluWindow.")
-            st_dll_src = Path(QT_PREFIX_PATH) / "bin" / "Qt6ShaderTools.dll"
-            st_dll_dst = BIN_DIR / "Qt6ShaderTools.dll"
-            if st_dll_src.exists():
-                shutil.copy2(st_dll_src, st_dll_dst)
-                info("Copied Qt6ShaderTools.dll (Qt5Compat plugin dep)")
-            else:
-                warn("Qt6ShaderTools.dll not found in Qt SDK bin.")
         else:
             warn(f"windeployqt not found at {QT_WINDEPLOYQT}; exe may not run standalone.")
 

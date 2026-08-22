@@ -46,21 +46,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spdlog)
 
-# FluentUI QML component library (Fluent Design for Qt). No release tag
-# supports Qt 6.10 (latest 1.7.7 = 2024-07), so we pin a main-branch commit.
-# Static-lib mode: types registered via FluentUI::registerTypes(&engine) in
-# main.cpp + Q_IMPORT_QML_PLUGIN(FluentUIPlugin) — single-exe deploy intact.
-find_package(Qt6 6.8 COMPONENTS ShaderTools QuickControls2 Svg REQUIRED)
-set(FLUENTUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(FLUENTUI_BUILD_STATIC_LIB ON CACHE BOOL "" FORCE)
-FetchContent_Declare(
-    FluentUI
-    GIT_REPOSITORY https://github.com/zhuzichu520/FluentUI.git
-    GIT_TAG        7e33a2f672d18239ef49ab960075b1137a1d18e7
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(FluentUI)
-
 # Executable. Output lands in <root>/build/bin next to the renderer so the
 # WebSocket/port + relative resource paths line up with the rest of the app.
 set(_bin_output_dir "${PROJECT_SOURCE_DIR}/../build/bin")
@@ -266,11 +251,6 @@ target_link_libraries(desktop-pet-controller-qt PRIVATE
     # --modules charts flag needed in build.py's windeployqt invocation.
     Qt6::Charts
     spdlog::spdlog
-    # FluentUI (static lib mode; PUBLIC deps Widgets/PrintSupport come
-    # transitively). `fluentuiplugin` carries the Q_IMPORT_QML_PLUGIN symbol
-    # referenced by main.cpp's static import.
-    fluentui
-    fluentuiplugin
 )
 
 # Force the spdlog *active* macros (SPDLOG_DEBUG/INFO/... which LOG_* wrap) to
@@ -278,11 +258,6 @@ target_link_libraries(desktop-pet-controller-qt PRIVATE
 # builds can override by appending -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO.
 target_compile_definitions(desktop-pet-controller-qt PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
-
-# Static-lib FluentUI target doesn't export its include dir; FluentUI.h lives
-# in the FetchContent src/ tree.
-target_include_directories(desktop-pet-controller-qt PRIVATE
-    ${fluentui_SOURCE_DIR}/src)
 
 # Windows-only system-library link for ResourceStatsCollector (todo 17):
 # GetProcessMemoryInfo lives in Psapi.lib. MinGW ships libpsapi.a so the
@@ -310,10 +285,18 @@ qt_add_qml_module(desktop-pet-controller-qt
         QML_FILES
 qml/Theme.qml
 qml/Main.qml
-qml/components/StatusPill.qml
-qml/components/SettingRow.qml
-qml/components/SectionCard.qml
+qml/components/AppButton.qml
+qml/components/AppComboBox.qml
+qml/components/AppDialog.qml
+qml/components/AppScrollBar.qml
+qml/components/AppSlider.qml
+qml/components/Card.qml
 qml/components/Chip.qml
+qml/components/Segmented.qml
+qml/components/SettingRow.qml
+qml/components/Sparkline.qml
+qml/components/StatusPill.qml
+qml/components/ToggleSwitch.qml
 qml/pages/WelcomePage.qml
 qml/pages/InstanceDetailPage.qml
 qml/pages/SettingsPage.qml

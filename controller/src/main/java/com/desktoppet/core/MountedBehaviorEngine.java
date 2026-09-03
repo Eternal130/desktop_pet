@@ -102,11 +102,6 @@ public class MountedBehaviorEngine {
             payload.addProperty("lip_sync_path", basePath.resolve(chosen.lipSyncPath()).toString());
         }
 
-        if (subtitleText != null && !subtitleText.isEmpty()) {
-            payload.addProperty("subtitle_text", subtitleText);
-            payload.addProperty("subtitle_duration", audioDurationMs);
-        }
-
         Envelope command = Protocol.createCommand("play_motion_ext", payload);
         String commandJson = Protocol.serialize(command);
 

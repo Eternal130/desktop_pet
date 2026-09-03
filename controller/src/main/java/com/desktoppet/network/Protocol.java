@@ -1,7 +1,6 @@
 package com.desktoppet.network;
 
 import com.desktoppet.model.Envelope;
-import com.desktoppet.model.SubtitleStyle;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -92,76 +91,6 @@ public class Protocol {
 
     public static Envelope createResponse(String originalId, String action, boolean success, int errorCode, String errorMessage) {
         return new Envelope("response", action, originalId, new JsonObject(), currentTimestampMs(), success, errorCode, errorMessage);
-    }
-
-    /**
-     * Builds a "show_subtitle" command. Payload keys are snake_case (marginV keeps
-     * ASS-native camelCase as it mirrors the ASS directive name). Colors are RRGGBBTT
-     * uint32 values — the renderer converts to ASS AABBGGRR internally.
-     */
-    public static Envelope showSubtitle(String text, SubtitleStyle style, long durationMs) {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("text", text);
-        payload.addProperty("duration", durationMs);
-        payload.addProperty("font_name", style.fontName());
-        payload.addProperty("font_size", style.fontSize());
-        payload.addProperty("primary_color", style.primaryColor());
-        payload.addProperty("outline_color", style.outlineColor());
-        payload.addProperty("outline_width", style.outlineWidth());
-        payload.addProperty("shadow_color", style.shadowColor());
-        payload.addProperty("shadow_depth", style.shadowDepth());
-        payload.addProperty("alignment", style.alignment());
-        payload.addProperty("marginV", style.marginV());
-        payload.addProperty("edge_blur", style.edgeBlur());
-        payload.addProperty("font_weight", style.fontWeight());
-        payload.addProperty("letter_spacing", style.letterSpacing());
-        payload.addProperty("bg_box_enabled", style.bgBoxEnabled());
-        payload.addProperty("bg_box_color", style.bgBoxColor());
-        payload.addProperty("bg_box_padding_x", style.bgBoxPaddingX());
-        payload.addProperty("bg_box_padding_y", style.bgBoxPaddingY());
-        return createCommand("show_subtitle", payload);
-    }
-
-    public static Envelope hideSubtitle() {
-        return createCommand("hide_subtitle", new JsonObject());
-    }
-
-    public static Envelope setSubtitleStyle(SubtitleStyle style) {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("font_name", style.fontName());
-        payload.addProperty("font_size", style.fontSize());
-        payload.addProperty("primary_color", style.primaryColor());
-        payload.addProperty("outline_color", style.outlineColor());
-        payload.addProperty("outline_width", style.outlineWidth());
-        payload.addProperty("shadow_color", style.shadowColor());
-        payload.addProperty("shadow_depth", style.shadowDepth());
-        payload.addProperty("alignment", style.alignment());
-        payload.addProperty("marginV", style.marginV());
-        payload.addProperty("edge_blur", style.edgeBlur());
-        payload.addProperty("font_weight", style.fontWeight());
-        payload.addProperty("letter_spacing", style.letterSpacing());
-        payload.addProperty("bg_box_enabled", style.bgBoxEnabled());
-        payload.addProperty("bg_box_color", style.bgBoxColor());
-        payload.addProperty("bg_box_padding_x", style.bgBoxPaddingX());
-        payload.addProperty("bg_box_padding_y", style.bgBoxPaddingY());
-        return createCommand("set_subtitle_style", payload);
-    }
-
-    public static Envelope setSubtitleAdjustMode(boolean enabled) {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("enabled", enabled);
-        return createCommand("set_subtitle_adjust_mode", payload);
-    }
-
-    public static Envelope setSubtitleLayout(double offsetX, double offsetY,
-            int areaWidth, int areaHeight, double fontSize) {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("offset_x", offsetX);
-        payload.addProperty("offset_y", offsetY);
-        payload.addProperty("area_width", areaWidth);
-        payload.addProperty("area_height", areaHeight);
-        payload.addProperty("font_size", fontSize);
-        return createCommand("set_subtitle_layout", payload);
     }
 
     public static String generateId() {

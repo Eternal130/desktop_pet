@@ -18,7 +18,6 @@ import com.desktoppet.model.ModelConfig;
 import com.desktoppet.model.PanelConfig;
 import com.desktoppet.model.PetInstance;
 import com.desktoppet.model.RendererStats;
-import com.desktoppet.model.SubtitleStyle;
 import com.desktoppet.model.VoicePackInfo;
 import com.desktoppet.network.MessageDispatcher;
 import com.desktoppet.network.PetWebSocketServer;
@@ -225,8 +224,6 @@ public class MainWindowController {
     @FXML private TextField posXField;
     @FXML private TextField posYField;
     @FXML private CheckBox autoStartCheck;
-    @FXML private CheckBox subtitleAdjustCheck;
-    @FXML private ComboBox<String> subtitleStyleCombo;
     @FXML private ComboBox<String> voicePackCombo;
     @FXML private ListView<String> logListView;
     @FXML private StackPane contentStackPane;
@@ -345,40 +342,12 @@ public class MainWindowController {
             currentInstance.setAutoStart(newValue);
         });
 
-        subtitleAdjustCheck.selectedProperty().addListener((obs, oldValue, val) -> {
-            if (updatingUI || currentInstance == null) {
-                return;
-            }
-            int id = currentInstance.getId();
-            if (wsServer != null && wsServer.hasActiveConnection(id)) {
-                Envelope cmd = Protocol.setSubtitleAdjustMode(val);
-                wsServer.sendToInstance(id, Protocol.serialize(cmd));
-                currentInstance.addLog(val ? "▶ 字幕调整模式开启" : "▶ 字幕调整模式关闭");
-            }
-        });
-
-        subtitleStyleCombo.valueProperty().addListener((obs, oldValue, val) -> {
-            if (updatingUI || currentInstance == null || val == null) {
-                return;
-            }
-            currentInstance.setSubtitleStylePreset(val);
-            saveInstanceConfig(currentInstance);
-            int id = currentInstance.getId();
-            if (wsServer != null && wsServer.hasActiveConnection(id)) {
-                SubtitleStyle style = mapPresetToStyle(val);
-                Envelope cmd = Protocol.setSubtitleStyle(style);
-                wsServer.sendToInstance(id, Protocol.serialize(cmd));
-            }
-        });
-
         clipSliderToBounds(opacitySlider);
         clipSliderToBounds(volumeSlider);
         clipSliderToBounds(idleSlider);
         clipSliderToBounds(fpsSlider);
         setupToggleSwitch(autoStartCheck);
         setupToggleSwitch(muteCheckBox);
-        setupToggleSwitch(subtitleAdjustCheck);
-        subtitleStyleCombo.getItems().addAll("默认", "阴影", "气泡框", "极简", "樱花粉", "赛博霓虹", "星空紫", "橙焰活力", "和风墨韵", "极简投影", "流媒体盒", "毛玻璃", "终端绿", "暗夜卡片", "消息气泡");
 
         dragDirectBtn.pseudoClassStateChanged(SEG_ACTIVE, true);
         dragPhysicsBtn.pseudoClassStateChanged(SEG_ACTIVE, false);
@@ -900,91 +869,6 @@ public class MainWindowController {
         updateContentPaneVisibility();
     }
 
-    private SubtitleStyle mapPresetToStyle(String preset) {
-        if (preset == null) return SubtitleStyle.defaultStyle();
-        return switch (preset) {
-            // — 朴素预设（加 edgeBlur 现代化）—
-            case "阴影" -> new SubtitleStyle(
-                "Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00111111L, 1.8,
-                0x00000000L, 3.0, 2, 30,
-                0.6, -1, 0.5,
-                false, 0x80000000L, 12.0, 6.0);
-            case "气泡框" -> new SubtitleStyle(
-                "Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0,
-                0x99000000L, 2.0, 2, 30,
-                0.0, -1, 0.0,
-                true, 0x80000000L, 12.0, 6.0);
-            case "极简" -> new SubtitleStyle(
-                "Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0,
-                0x00000000L, 0.0, 2, 30,
-                0.0, -1, 0.0,
-                false, 0x80000000L, 12.0, 6.0);
-            // — 现代二次元预设 —
-            // 颜色为 RRGGBBTT 格式, TT=00 不透明
-            case "樱花粉" -> new SubtitleStyle(   // 桜色柔光
-                "Noto Sans CJK SC", 48.0, 0x00FFB7C5L, 0x004A1020L, 1.8,
-                0x99FFB6C1L, 2.0, 2, 30,
-                0.8, 0, 1.0,
-                false, 0x80000000L, 12.0, 6.0);
-            case "赛博霓虹" -> new SubtitleStyle( // 霓虹光晕
-                "Orbitron", 46.0, 0x0000F5FFL, 0x000B0F14L, 2.0,
-                0xA600F5FFL, 0.5, 2, 30,
-                2.5, 1, 2.0,
-                false, 0x80000000L, 12.0, 6.0);
-            case "星空紫" -> new SubtitleStyle(   // 薰衣草星夜
-                "Source Han Serif CN", 48.0, 0x00CDB7FFL, 0x001C1630L, 2.0,
-                0x8C000000L, 3.0, 2, 30,
-                0.8, 0, 1.0,
-                false, 0x80000000L, 12.0, 6.0);
-            case "橙焰活力" -> new SubtitleStyle( // 琥珀暖阳
-                "Noto Sans CJK SC", 50.0, 0x00FFB347L, 0x002B1810L, 1.8,
-                0x99FF6B00L, 2.0, 2, 30,
-                0.6, 0, 0.5,
-                false, 0x80000000L, 12.0, 6.0);
-            case "和风墨韵" -> new SubtitleStyle( // 和風墨韵
-                "Source Han Serif CN", 46.0, 0x001A1A2EL, 0x00F5F0E6L, 1.5,
-                0xA68B4513L, 1.5, 2, 30,
-                0.4, 0, 2.0,
-                false, 0x80000000L, 12.0, 6.0);
-            // — 现代化风格（非二次元）—
-            case "极简投影" -> new SubtitleStyle(
-                "Noto Sans CJK SC", 50.0, 0x00FAFAFAL, 0x00000000L, 0.0,
-                0x33000000L, 3.0, 2, 30,
-                1.0, 0, 2.0,
-                false, 0x80000000L, 12.0, 6.0);
-            case "流媒体盒" -> new SubtitleStyle(
-                "Noto Sans CJK SC", 48.0, 0x00FFFFFFL, 0x00000000L, 0.0,
-                0x00000000L, 0.0, 2, 30,
-                0.5, 0, 1.0,
-                true, 0x40000000L, 14.0, 8.0);
-            case "毛玻璃" -> new SubtitleStyle(
-                "Noto Sans CJK SC", 46.0, 0x00FFFFFFL, 0x40FFFFFFL, 2.0,
-                0x00000000L, 0.0, 2, 30,
-                1.5, 0, 0.0,
-                true, 0xD0FFFFFFL, 16.0, 10.0);
-            case "终端绿" -> new SubtitleStyle(
-                "Consolas", 42.0, 0x0033FF33L, 0x0033FF33L, 0.0,
-                0x6033FF33L, 2.0, 2, 30,
-                1.5, 0, 1.0,
-                true, 0x260B0D10L, 12.0, 8.0);
-            case "暗夜卡片" -> new SubtitleStyle(
-                "Noto Sans CJK SC", 46.0, 0x00E9EEF5L, 0x000B0D10L, 1.0,
-                0x660B0D10L, 2.0, 2, 30,
-                1.0, 1, 0.5,
-                true, 0x33151A21L, 14.0, 8.0);
-            case "消息气泡" -> new SubtitleStyle(
-                "Microsoft YaHei", 44.0, 0x00FFFFFFL, 0x00000000L, 0.0,
-                0xCC000000L, 0.0, 2, 30,
-                0.5, 0, 0.0,
-                true, 0x003B82F6L, 16.0, 10.0);
-            default -> new SubtitleStyle(         // 默认（现代化基线）
-                "Microsoft YaHei", 48.0, 0x00FFFFFFL, 0x00111111L, 1.8,
-                0x00000000L, 0.0, 2, 30,
-                0.6, -1, 0.5,
-                false, 0x80000000L, 12.0, 6.0);
-        };
-    }
-
     private void renderDetail() {
         if (currentInstance == null) {
             return;
@@ -1084,9 +968,6 @@ public class MainWindowController {
             posXField.setText(String.valueOf(currentInstance.getPosX()));
             posYField.setText(String.valueOf(currentInstance.getPosY()));
             autoStartCheck.setSelected(currentInstance.isAutoStart());
-
-            subtitleAdjustCheck.setSelected(false); // Always start off — user toggles manually
-            subtitleStyleCombo.setValue(currentInstance.getSubtitleStylePreset());
 
             String vp = currentInstance.getVoicePack();
             voicePackCombo.setValue(vp != null ? vp : "(无)");
@@ -1664,21 +1545,6 @@ public class MainWindowController {
 
             sendLayout(instance);
 
-            if (wsServer != null && wsServer.hasActiveConnection(id)) {
-                Envelope layoutCmd = Protocol.setSubtitleLayout(
-                    instance.getSubtitleOffsetX(),
-                    instance.getSubtitleOffsetY(),
-                    instance.getSubtitleAreaWidth(),
-                    instance.getSubtitleAreaHeight(),
-                    instance.getSubtitleFontSize()
-                );
-                wsServer.sendToInstance(id, Protocol.serialize(layoutCmd));
-
-                SubtitleStyle style = mapPresetToStyle(instance.getSubtitleStylePreset());
-                Envelope styleCmd = Protocol.setSubtitleStyle(style);
-                wsServer.sendToInstance(id, Protocol.serialize(styleCmd));
-            }
-
             renderSidebar();
             if (currentInstance == instance) renderDetail();
         }));
@@ -1765,10 +1631,6 @@ public class MainWindowController {
             InteractionHandler handler = interactionHandlers.get(id);
             if (handler != null) {
                 handler.handleHitEvent(envelope);
-                if (wsServer != null && wsServer.hasActiveConnection(id)) {
-                    Envelope subCmd = Protocol.showSubtitle("？", mapPresetToStyle(instance.getSubtitleStylePreset()), 3000);
-                    wsServer.sendToInstance(id, Protocol.serialize(subCmd));
-                }
             }
         }));
 
@@ -1794,21 +1656,6 @@ public class MainWindowController {
             instance.setLayoutOffsetX(ox);
             instance.setLayoutOffsetY(oy);
             instance.setLayoutScale(sc);
-            saveInstanceConfig(instance);
-        }));
-
-        dispatcher.registerEventHandler("subtitle_layout_changed", envelope -> Platform.runLater(() -> {
-            if (envelope.payload() == null) return;
-            double offsetX = envelope.payload().has("offset_x") ? envelope.payload().get("offset_x").getAsDouble() : 0;
-            double offsetY = envelope.payload().has("offset_y") ? envelope.payload().get("offset_y").getAsDouble() : 0;
-            int areaW = envelope.payload().has("area_width") ? envelope.payload().get("area_width").getAsInt() : 0;
-            int areaH = envelope.payload().has("area_height") ? envelope.payload().get("area_height").getAsInt() : 0;
-            double fontSize = envelope.payload().has("font_size") ? envelope.payload().get("font_size").getAsDouble() : 48.0;
-            instance.setSubtitleOffsetX(offsetX);
-            instance.setSubtitleOffsetY(offsetY);
-            instance.setSubtitleAreaWidth(areaW);
-            instance.setSubtitleAreaHeight(areaH);
-            instance.setSubtitleFontSize(fontSize);
             saveInstanceConfig(instance);
         }));
 
@@ -2007,23 +1854,6 @@ public class MainWindowController {
         if (wsServer != null && wsServer.hasActiveConnection(id)) {
             wsServer.sendToInstance(id, serializedJson);
             instance.addLog("→ play_motion_ext");
-        }
-    }
-
-    /**
-     * Sends a show_subtitle command to the current instance's renderer. Subtitles are
-     * time-sensitive — dropped (not cached) when disconnected, matching play_motion.
-     */
-    public void sendSubtitle(String text, long durationMs) {
-        PetInstance instance = currentInstance;
-        if (instance == null) {
-            return;
-        }
-        int id = instance.getId();
-        if (wsServer != null && wsServer.hasActiveConnection(id)) {
-            Envelope cmd = Protocol.showSubtitle(text, mapPresetToStyle(instance.getSubtitleStylePreset()), durationMs);
-            wsServer.sendToInstance(id, Protocol.serialize(cmd));
-            instance.addLog("→ show_subtitle");
         }
     }
 

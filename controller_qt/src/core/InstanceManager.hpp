@@ -140,6 +140,18 @@ public:
     void setAssetRefDetacher(std::function<void(const QString&)> detacher)
     { m_detachAssetRefs = std::move(detacher); }
 
+    // Dialogue sink seam (bubble-stream phase): when set, sessions forward
+    // voice-pack dialogue lines here as (instanceId, name, avatar, text).
+    // main.cpp wires it to the notification stream; empty default = no-op.
+    // Stores the seam AND applies it to already-created sessions — main.cpp
+    // sets this AFTER setDatabase→loadFromDisk created the initial roster,
+    // so a store-only setter would leave those sessions with an empty sink.
+    void setDialogueSink(std::function<void(const QString& instanceId,
+                                              const QString& name,
+                                              const QString& avatar,
+                                              const QString& text,
+                                              int durationMs)> sink);
+
     // Share main.cpp's DatabaseManager (SQLite config backend). Forwards to
     // the owned InstanceConfigManager and replaces the construction-time
     // panel.json read with a panel_config kv read. Must be called before the
@@ -162,6 +174,11 @@ private:
     // behind by a corrupt file skipped at load — self-healing on next mutation.
     void persistRoster();
 
+    // Inject the manager-level dialogue sink seam into a freshly constructed
+    // session. Called from every session-creation site (createInstance /
+    // loadFromDisk).
+    void wireSession(InstanceSession* session);
+
     // Locate the row whose InstanceSession config().id == uuid; -1 if not found.
     int rowForUuid(const QString& uuid) const;
 
@@ -175,6 +192,9 @@ private:
     PendingRequests& m_pending;
     std::function<void(const PanelConfig&)> m_savePanel;
     std::function<void(const QString&)> m_detachAssetRefs;
+    std::function<void(const QString&, const QString&,
+                       const QString&, const QString&,
+                       int)> m_dialogueSink;
     DatabaseManager* m_db = nullptr; // shared SQLite backend (main.cpp)
     InstanceConfigManager m_configManager; // member by value; parent=nullptr (no Qt parent)
     PanelConfig m_panelConfig;

@@ -87,6 +87,8 @@ QJsonObject panelConfigToJson(const PanelConfig& cfg)
     obj.insert(QStringLiteral("start_minimized"), cfg.startMinimized);
     obj.insert(QStringLiteral("close_action"), cfg.closeAction);
     obj.insert(QStringLiteral("confirm_on_exit"), cfg.confirmOnExit);
+    obj.insert(QStringLiteral("notifications_enabled"), cfg.notificationsEnabled);
+    obj.insert(QStringLiteral("notification_duration_ms"), cfg.notificationDurationMs);
     return obj;
 }
 
@@ -110,6 +112,8 @@ PanelConfig panelConfigFromJson(const QJsonObject& json)
     cfg.startMinimized = readBool(json, QLatin1String("start_minimized"), cfg.startMinimized);
     cfg.closeAction = readString(json, QLatin1String("close_action"), cfg.closeAction);
     cfg.confirmOnExit = readBool(json, QLatin1String("confirm_on_exit"), cfg.confirmOnExit);
+    cfg.notificationsEnabled = readBool(json, QLatin1String("notifications_enabled"), cfg.notificationsEnabled);
+    cfg.notificationDurationMs = readInt(json, QLatin1String("notification_duration_ms"), cfg.notificationDurationMs);
 
     return cfg;
 }

@@ -1,4 +1,4 @@
-# Protocol fixture tests (QTest).
+﻿# Protocol fixture tests (QTest).
 #
 # T3 adds a single test binary, ProtocolFixturesTest, that loads the JSON
 # fixtures under protocol/ and asserts the structural invariants every later
@@ -597,14 +597,13 @@ add_test(NAME ProcessManagerTest COMMAND ProcessManagerTest)
 # runtime if the renderer binary is absent; the unit tier always runs).
 set_tests_properties(ProcessManagerTest PROPERTIES LABELS "REQUIRES_RENDERER")
 
-# StartupSalvo (T16): the 9-command bootstrap salvo + set_hit_areas. Two tiers:
-#   - Unit tier (4 slots, no renderer): capturing-sender harness asserts the 9
-#     commands fire in order, that set_scale NEVER appears in the stream, that
-#     set_subtitle_style carries all 16 named style fields, and that every
-#     salvo action is in the command_all_25.json catalog.
+# StartupSalvo (T16): the 7-command bootstrap salvo + set_hit_areas. Two tiers:
+#   - Unit tier (3 slots, no renderer): capturing-sender harness asserts the 7
+#     commands fire in order, that set_scale NEVER appears in the stream, and
+#     that every salvo action is in the command catalog fixture.
 #   - Integration tier (1 slot, REQUIRES_RENDERER): WsServer + ProcessManager +
 #     StartupSalvo wired against the real renderer; ready → sendSalvo,
-#     model_loaded → sendSetHitAreas, asserts 10 commands captured in order
+#     model_loaded → sendSetHitAreas, asserts 8 commands captured in order
 #     with no set_scale. Tolerates the known renderer teardown crash (T6/T13).
 # Recompiles StartupSalvo.cpp + Protocol.cpp + WsServer.cpp + ProcessManager.cpp
 # + PathResolve.cpp + Envelope.cpp directly (same pattern as the other tests —
@@ -1735,64 +1734,13 @@ endif()
 
 add_test(NAME MetaMkoParserTest COMMAND MetaMkoParserTest)
 
-# SubtitlePresetsTest (Phase 5 Wave 8 todo 21): 15-preset data table ported
-# VERBATIM from Java mapPresetToStyle. Five slots lock the port:
-#   - testPresetNamesHas15Entries: 15 names in Java ComboBox-list order.
-#   - testDefaultPresetMatchesSubtitleStyleDefaults: mapPresetToStyle("默认")
-#     == SubtitleStyle{} (the struct's default initializers).
-#   - testAllNamedPresetsAreDistinct: every named preset differs from 默认 in
-#     at least one field (catches a missed field that silently clones 默认).
-#   - testUnknownPresetReturnsDefault: Java's `default ->` case fallback.
-#   - testB1RegressionGuardAABBGGRR: 赛博霓虹's primaryColor/outlineColor/
-#     shadowColor pinned to the EXACT Java uint32 values (AABBGGRR per
-#     interface.md §1.3, NOT RRGGBBTT despite the Java comment). The Belief-1
-#     regression guard at the preset layer -- ProtocolFactoryTest pins it at
-#     the wire-format layer too.
-#
-# Header-only table (SubtitlePresets.hpp is all inline). The transitive
-# include chain pulls in Protocol.hpp (for SubtitleStyle) + Envelope.hpp,
-# but the test calls ONLY inline functions from SubtitlePresets namespace --
-# no factory or serialize() linkage needed. Same single-.cpp pattern as
-# VoicePackScannerTest/MetaMkoParserTest. Links Qt6::Core + Qt6::Test +
-# spdlog (the include chain references SPDLOG_* macros; spdlog is statically
-# linked, no extra DLL). QTEST_APPLESS_MAIN -- pure data queries, no loop.
-qt_add_executable(SubtitlePresetsTest SubtitlePresetsTest.cpp)
-target_link_libraries(SubtitlePresetsTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(SubtitlePresetsTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(SubtitlePresetsTest PRIVATE
-    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
-
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET SubtitlePresetsTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:SubtitlePresetsTest>"
-            COMMENT "Running windeployqt for SubtitlePresetsTest")
-    else()
-        message(WARNING "windeployqt not found; SubtitlePresetsTest may fail to run under ctest on Windows.")
-    endif()
-endif()
-
-add_test(NAME SubtitlePresetsTest COMMAND SubtitlePresetsTest)
-
 # MountedBehaviorEngineTest (Phase 5 Wave 8 todo 20): voice-pack behavior engine
 # that routes hit events to play_motion_ext when a voice pack is mounted. Six
 # slots lock the contract:
 #   - testBuildBehaviorCommand: synthetic VoicePackInfo with one head-tap action
 #     (motion + audio + lipSync) → returns a play_motion_ext Envelope with
-#     absolute paths, group priority, fade in/out seconds, subtitle_text +
-#     subtitle_duration (the latter from the OGG heuristic).
+#     absolute paths, group priority, fade in/out seconds, and the action's
+#     doc text as BehaviorResult::dialogueText.
 #   - testHasGroupForAreaFalse: unknown area → false; case-insensitive lookup
 #     (HEAD == head).
 #   - testNullVoicePack: default-constructed engine → hasGroupForArea always
@@ -2030,3 +1978,74 @@ if(WIN32)
 endif()
 
 add_test(NAME AssetManagerTest COMMAND AssetManagerTest)
+
+# ── Bubble-stream (气泡信息流) tests ────────────────────────────────────────
+# QTest binaries locking the notification-stream contract: model
+# (prepend/cap/expiry/dismiss/roles) and the QML bridge controller. Same
+# recompile-the-.cpp pattern + windeployqt post-build step as every test
+# above (no shared lib yet; ctest runs with Qt's bin NOT on PATH).
+
+qt_add_executable(NotificationStreamModelTest NotificationStreamModelTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/NotificationStreamModel.cpp)
+target_link_libraries(NotificationStreamModelTest PRIVATE
+    Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(NotificationStreamModelTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(NotificationStreamModelTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET NotificationStreamModelTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:NotificationStreamModelTest>"
+            COMMENT "Running windeployqt for NotificationStreamModelTest")
+    else()
+        message(WARNING "windeployqt not found; NotificationStreamModelTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME NotificationStreamModelTest COMMAND NotificationStreamModelTest)
+
+qt_add_executable(NotificationStreamControllerTest NotificationStreamControllerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/NotificationStreamController.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/NotificationStreamModel.cpp)
+target_link_libraries(NotificationStreamControllerTest PRIVATE
+    Qt6::Core Qt6::Test spdlog::spdlog)
+target_include_directories(NotificationStreamControllerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(NotificationStreamControllerTest PRIVATE
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+if(WIN32)
+    if(NOT QT_WINDEPLOYQT_EXE)
+        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+        find_program(QT_WINDEPLOYQT_EXE
+            NAMES windeployqt
+            HINTS "${_qt_bin_dir}"
+            NO_DEFAULT_PATH)
+    endif()
+    if(QT_WINDEPLOYQT_EXE)
+        add_custom_command(TARGET NotificationStreamControllerTest POST_BUILD
+            COMMAND "${QT_WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-system-d3d-compiler
+                    --no-opengl-sw
+                    --no-quick-import
+                    "$<TARGET_FILE:NotificationStreamControllerTest>"
+            COMMENT "Running windeployqt for NotificationStreamControllerTest")
+    else()
+        message(WARNING "windeployqt not found; NotificationStreamControllerTest may fail to run under ctest on Windows.")
+    endif()
+endif()
+
+add_test(NAME NotificationStreamControllerTest COMMAND NotificationStreamControllerTest)

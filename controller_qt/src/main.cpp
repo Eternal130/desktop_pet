@@ -29,6 +29,7 @@
 #include "core/WindowStateSaver.hpp"
 #include "core/StartupSalvo.hpp"
 #include "core/ProcessManager.hpp"
+#include "ui/NotificationStreamController.hpp"
 #include "network/Envelope.hpp"
 #include "network/Protocol.hpp"
 #include "network/WsServer.hpp"
@@ -190,6 +191,31 @@ int main(int argc, char *argv[])
             assetManager.detachInstanceIconRefs(uuid);
         });
 
+    // ── Notification bubble stream (气泡信息流) ─────────────────────────
+    // Declared BEFORE the engine (same stack-ordering discipline as
+    // TrayManager/PanelConfigController above): the engine is destroyed
+    // first during stack unwind, so the bubble stream outlives the QML
+    // context. Owns the shared bubble model; registered as the
+    // "notificationStream" context property right after the engine exists
+    // (below). The dialogue sink seam lets InstanceSession push bubbles
+    // through the same stream without depending on this controller's type —
+    // voice-pack behavior dialogue is the ONLY bubble text source (design
+    // revision: no dialogue-pack system).
+    NotificationStreamController notificationStream;
+    instanceManager.setDialogueSink(
+        [&notificationStream](const QString& instanceId, const QString& name,
+                              const QString& avatar, const QString& text,
+                              int durationMs) {
+            Q_UNUSED(instanceId);
+            notificationStream.push(name, avatar, text, durationMs);
+        });
+
+    // Required BEFORE any QQuickWindow is created: enables alpha in the
+    // window surface format so BubbleStreamWindow's color "transparent"
+    // actually composites against the desktop instead of an opaque black
+    // surface (Qt docs, "Window and view coordinates"/translucency note).
+    QQuickWindow::setDefaultAlphaBuffer(true);
+
     QQmlApplicationEngine engine;
 
     // EnvironmentChecker (T27) — exposed as a global QML context property
@@ -253,6 +279,11 @@ int main(int argc, char *argv[])
     // panelConfig.closeAction + panelConfig.confirmOnExit to decide minimize-
     // to-tray vs confirm-then-exit.
     engine.rootContext()->setContextProperty("panelConfig", &panelConfigController);
+
+    // Notification bubble stream context property. BubbleStreamWindow.qml
+    // binds visible to notificationStream.count/enabled and its Repeater to
+    // notificationStream.model; QML calls push/dismiss/testBubble on it.
+    engine.rootContext()->setContextProperty("notificationStream", &notificationStream);
 
     // VoicePackController context property. Discovery over VoicePackScanner
     // + MetaMkoParser; todo 21 mount wiring reaches the per-instance
@@ -355,6 +386,8 @@ int main(int argc, char *argv[])
     // Purely additive: without --screenshot the run loop below is unchanged.
     {
         bool screenshotMode = false;
+        bool bubbleShot = false;
+        int bubbleWaitMs = 0;
         QString outDir = QStringLiteral("screenshots");
         QStringList pages = {QStringLiteral("welcome"), QStringLiteral("monitor"),
                              QStringLiteral("settings")};
@@ -362,6 +395,9 @@ int main(int argc, char *argv[])
         for (int i = 1; i < argc; ++i) {
             const QString arg = QString::fromUtf8(argv[i]);
             if (arg == QStringLiteral("--screenshot")) screenshotMode = true;
+            else if (arg == QStringLiteral("--bubble")) bubbleShot = true;
+            else if (arg == QStringLiteral("--bubble-wait") && i + 1 < argc)
+                bubbleWaitMs = QString::fromUtf8(argv[++i]).toInt();
             else if (arg == QStringLiteral("--out") && i + 1 < argc)
                 outDir = QString::fromUtf8(argv[++i]);
             else if (arg == QStringLiteral("--pages") && i + 1 < argc)
@@ -369,6 +405,43 @@ int main(int argc, char *argv[])
                                                            Qt::SkipEmptyParts);
             else if (arg == QStringLiteral("--delay") && i + 1 < argc)
                 delayMs = QString::fromUtf8(argv[++i]).toInt();
+        }
+        // Bubble visual-QA mode: push a bubble, grab the FULL SCREEN (the
+        // BubbleStreamWindow is a separate native window — the main window's
+        // grabWindow cannot capture it; QScreen::grabWindow can).
+        if (bubbleShot && !engine.rootObjects().isEmpty()) {
+            auto* runner = new QObject(&app);
+            auto* ticker = new QTimer(runner);
+            ticker->setInterval(1500);
+            const int n = 2;
+            QObject::connect(ticker, &QTimer::timeout, runner,
+                             [&notificationStream, runner, ticker, n,
+                              bubbleWaitMs]() {
+                static int pushed = 0;
+                static int settledTicks = 0;
+                static bool grabbed = false;
+                if (pushed < n) {
+                    notificationStream.testBubble();
+                    ++pushed;
+                } else if (settledTicks * 1500 < bubbleWaitMs) {
+                    ++settledTicks;
+                } else if (!grabbed) {
+                    grabbed = true;
+                    QScreen* screen = QGuiApplication::primaryScreen();
+                    const QPixmap img = screen->grabWindow(0);
+                    const QString path = QDir(QStringLiteral("."))
+                        .filePath(QStringLiteral("bubble-screen.png"));
+                    img.save(path);
+                    printf("BUBBLE_SHOT_SAVED=%s\n", path.toStdString().c_str());
+                    fflush(stdout);
+                    ticker->stop();
+                    QApplication::quit();
+                }
+            });
+            QTimer::singleShot(1500, runner, [ticker]() { ticker->start(); });
+            const int bubbleExit = app.exec();
+            Logging::shutdown();
+            std::exit(bubbleExit == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
         }
         if (screenshotMode && !engine.rootObjects().isEmpty()) {
             // Two-phase state machine on one repeating QTimer: odd ticks switch

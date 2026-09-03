@@ -227,6 +227,16 @@ qt_add_executable(desktop-pet-controller-qt
     src/core/DatabaseManager.hpp
     src/core/AssetManager.cpp
     src/core/AssetManager.hpp
+    # Bubble stream (气泡信息流): the shared bubble list model + the QML
+    # bridge exposed as the "notificationStream" context property (Main.qml
+    # instantiates BubbleStreamWindow). Text source is the voice-pack
+    # behavior engine's dialogue sink (design revision: no dialogue-pack
+    # system). The .hpp files are listed so AUTOMOC processes their Q_OBJECT
+    # metadata.
+    src/ui/NotificationStreamModel.cpp
+    src/ui/NotificationStreamModel.hpp
+    src/ui/NotificationStreamController.cpp
+    src/ui/NotificationStreamController.hpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES
@@ -316,6 +326,8 @@ qml/pages/SettingsPage.qml
 qml/pages/MonitorPage.qml
 qml/pages/VoicePackPage.qml
 qml/pages/AssetPage.qml
+qml/BubbleStreamWindow.qml
+qml/components/BubbleCard.qml
 )
 
 # ── Phase 0 PoC (task T6) ───────────────────────────────────────────────────

@@ -48,6 +48,10 @@ struct PanelConfig {
     QString closeAction = QStringLiteral("exit");    // "exit" | "minimize"
     bool confirmOnExit = false;      // prompt before quitting
 
+    // ── notification bubble stream (气泡信息流) ───────────────────────────────
+    bool notificationsEnabled = true;          // bubble stream master switch
+    int notificationDurationMs = 20000;        // per-bubble auto-dismiss delay
+
     // Member-wise equality — used by round-trip identity tests (QJsonObject,
     // QString, and QStringList all compare by content, so ordering of
     // instanceIds matters but JSON key ordering does not).
@@ -63,13 +67,15 @@ struct PanelConfig {
             && autoLaunchSystem == other.autoLaunchSystem
             && startMinimized == other.startMinimized
             && closeAction == other.closeAction
-            && confirmOnExit == other.confirmOnExit;
+            && confirmOnExit == other.confirmOnExit
+            && notificationsEnabled == other.notificationsEnabled
+            && notificationDurationMs == other.notificationDurationMs;
     }
 };
 
 // Serialize a PanelConfig to a QJsonObject with snake_case keys for JavaFX
 // interop (configuration.md §5). Every field is written; instance_ids becomes a
-// JSON array of strings. The result always has exactly 12 keys (one per field).
+// JSON array of strings. The result always has exactly 14 keys (one per field).
 QJsonObject panelConfigToJson(const PanelConfig& cfg);
 
 // Deserialize a QJsonObject into a PanelConfig. Missing fields are merged from

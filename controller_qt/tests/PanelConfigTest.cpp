@@ -33,8 +33,10 @@
 namespace {
 
 // Number of fields / serialized keys. Every ground-truth source (blueprint
-// §5.2, the Java record, this struct's own definition) agrees on 12.
-constexpr int kFieldCount = 12;
+// §5.2, the Java record, this struct's own definition) agrees on 12 core
+// fields; the notification-bubble stream adds 2 (notifications_enabled,
+// notification_duration_ms) → 14.
+constexpr int kFieldCount = 14;
 
 // Build a config where EVERY field carries a distinctive, non-default value.
 // Used by the round-trip test so a single missed field surfaces immediately.
@@ -55,6 +57,8 @@ PanelConfig makeFullyPopulated()
     c.startMinimized = true;
     c.closeAction = QStringLiteral("minimize");
     c.confirmOnExit = true;
+    c.notificationsEnabled = false;
+    c.notificationDurationMs = 35000;
     return c;
 }
 
@@ -115,6 +119,8 @@ void PanelConfigTest::testEmptyObjectReturnsDefaults()
     QCOMPARE(cfg.startMinimized, false);
     QCOMPARE(cfg.closeAction, QStringLiteral("exit"));
     QCOMPARE(cfg.confirmOnExit, false);
+    QCOMPARE(cfg.notificationsEnabled, true);
+    QCOMPARE(cfg.notificationDurationMs, 20000);
 }
 
 void PanelConfigTest::testInstanceIdsArrayToStringList()
@@ -214,6 +220,8 @@ void PanelConfigTest::testGarbageJsonReturnsDefaults()
     wrongTypes.insert(QStringLiteral("close_action"), 42);
     wrongTypes.insert(QStringLiteral("instance_ids"), QStringLiteral("not-an-array"));
     wrongTypes.insert(QStringLiteral("confirm_on_exit"), QStringLiteral("true"));
+    wrongTypes.insert(QStringLiteral("notifications_enabled"), QStringLiteral("yes"));
+    wrongTypes.insert(QStringLiteral("notification_duration_ms"), QStringLiteral("slow"));
 
     // When: deserialize — must succeed without throwing.
     const PanelConfig fromWrong = panelConfigFromJson(wrongTypes);
@@ -226,6 +234,8 @@ void PanelConfigTest::testGarbageJsonReturnsDefaults()
     QCOMPARE(fromWrong.closeAction, QStringLiteral("exit"));
     QVERIFY(fromWrong.instanceIds.isEmpty());
     QCOMPARE(fromWrong.confirmOnExit, false);
+    QCOMPARE(fromWrong.notificationsEnabled, true);
+    QCOMPARE(fromWrong.notificationDurationMs, 20000);
 
     // Given: instance_ids as a non-array (number). Must fall back to empty.
     QJsonObject idsWrong;
@@ -241,9 +251,8 @@ void PanelConfigTest::testKeyCount()
     // When: serialize.
     const QJsonObject json = panelConfigToJson(cfg);
     // Then: exactly one JSON key per field. blueprint §5.2, the Java record,
-    // and the struct definition each define 12 fields, so 12 keys — not 11.
-    // (The task narrative's "11" is an off-by-one; the struct/blueprint/Java
-    // ground truth is 12.)
+    // and the struct definition each define 12 core fields, plus the 2
+    // notification-stream fields added by the bubble-stream phase → 14 keys.
     QCOMPARE(json.size(), kFieldCount);
 }
 

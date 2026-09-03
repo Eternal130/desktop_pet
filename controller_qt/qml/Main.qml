@@ -554,6 +554,11 @@ Window {
         function onQuitRequested() { root.doExit() }
     }
 
+    // ── Notification bubble stream (气泡信息流) ─────────────────────────
+    // Window-in-Window: a Window declared as a child of the Main Window
+    // creates its own native always-on-top overlay sharing the engine.
+    BubbleStreamWindow { }
+
     Component.onCompleted: {
         console.log("COLD_START_MS=" + (Date.now() - coldStartT0Ms))
         Theme.setTheme(initialTheme)

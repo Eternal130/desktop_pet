@@ -171,7 +171,7 @@
 
 ### 3.1 按功能分组目录
 
-共 **25 条命令**（含 2 条保留/stub）。按功能分为 8 组：
+共 **20 条命令**。按功能分为 7 组：
 
 | 组 | 命令 | 用途 | 回执 |
 |:---|:---|:---|:---:|
@@ -188,18 +188,14 @@
 | **C. 音频（Phase 3b）** | [`play_audio`](#c1-play_audio--播放音频-phase-3b) | 播放独立音频 | ✓ |
 | | [`stop_audio`](#c2-stop_audio--停止音频-phase-3b) | 停止所有音频 | ✓ |
 | | [`set_volume`](#c3-set_volume--设置音量静音-phase-3b) | 设置音量/静音 | ✓ |
-| **D. 字幕** | [`show_subtitle`](#d1-show_subtitle--显示字幕) | 显示一条字幕 | ✓ |
-| | [`hide_subtitle`](#d2-hide_subtitle--隐藏字幕) | 隐藏所有字幕 | ✓ |
-| | [`set_subtitle_style`](#d3-set_subtitle_style--设置字幕默认样式) | 设置默认字幕样式 | ✓ |
-| | [`set_subtitle_adjust_mode`](#d4-set_subtitle_adjust_mode--字幕调整模式) | 进入/退出调整模式 | ✓ |
-| | [`set_subtitle_layout`](#d5-set_subtitle_layout--设置字幕布局) | 设置字幕位置与区域 | ✓ |
+| **D. 字幕（已移除）** | ~~`show_subtitle` / `hide_subtitle` / `set_subtitle_style` / `set_subtitle_adjust_mode` / `set_subtitle_layout`~~ | 字幕系统已被 Qt 控制器通知流（气泡信息流）取代，渲染器不再注册（返回 5003）。详见 [§五 D 组](#d-字幕组已移除) 与 [notification-stream.md](../system/notification-stream.md) | — |
 | **E. 布局** | [`set_layout`](#e1-set_layout--设置用户布局) | 设置模型偏移与缩放 | ✓ |
 | | [`get_layout`](#e2-get_layout--查询用户布局) | 查询当前布局（响应走事件） | ✗ |
 | | [`reset_layout`](#e3-reset_layout--重置用户布局) | 重置布局为默认 | ✓ |
 | **F. 监控** | [`get_stats`](#f1-get_stats--请求资源占用快照) | 请求资源快照（响应走事件） | ✗ |
 | **G. 生命周期** | [`shutdown`](#g1-shutdown--优雅关闭) | 请求渲染器优雅关闭 | ✓ |
-| **H. 保留/Stub** | [`hello`](#h1-hello--握手保留) | 版本协商（保留，不发送） | ✗ |
-| | [`set_scale`](#h2-set_scale--设置缩放-stub) | ⚠️ **stub**，用 `set_layout` 替代 | ✗ |
+| **H. 保留/兼容** | [`hello`](#h1-hello--握手保留) | 版本协商（保留，不发送） | ✗ |
+| | [`set_scale`](#h2-set_scale--设置缩放-已实现) | `set_layout` scale 轴兼容别名 | ✓ |
 
 ### 3.2 命令-事件配对关系
 
@@ -392,8 +388,6 @@
 | `fade_out` | float | 否 | `1.0` | 淡出时长（**秒**） |
 | `audio_path` | string? | 否 | `""` | 附带音频文件绝对路径。引擎已初始化且文件存在则播放 |
 | `lip_sync_path` | string? | 否 | — | ⚠️ 口型同步文件路径。**代码中发送，协议文档未记录**（Phase 3c 待实现） |
-| `subtitle_text` | string? | 否 | — | ⚠️ 字幕文本。**代码中发送，协议文档未记录** |
-| `subtitle_duration` | int64? | 否 | — | ⚠️ 字幕持续时长（毫秒）。**代码中发送，协议文档未记录** |
 
 **渲染器处理**：校验非空（`3001`）→ 校验路径安全（`3004`）→ 校验文件存在（`3002`）→ 校验已加载模型（`2001`）→ 加载播放（`3003` 若被优先级守卫拒绝）→ Response(success)
 
@@ -404,7 +398,9 @@
 | `3003` | 被优先级守卫拒绝或加载失败 | `"Motion rejected by priority guard or failed to load"` |
 | `3004` | 路径含 `..`/`~` 等穿越字符 | `"motion_path contains unsafe traversal"` |
 
-> ⚠️ **代码/文档偏差**：`lip_sync_path`、`subtitle_text`、`subtitle_duration` 三个字段在 Java 参考实现（`MountedBehaviorEngine.java`）中已构造并发送，但 [commands.md §10.1](./commands.md#101-play_motion_ext--播放外部动作文件phase-3a-已实现) 未记录。渲染器当前接受这些字段，但 lipSync 功能待 Phase 3c 实现。
+> ⚠️ **代码/文档偏差**：`lip_sync_path` 字段在 Java 参考实现（`MountedBehaviorEngine.java`）中已构造并发送，但 [commands.md §10.1](./commands.md#101-play_motion_ext--播放外部动作文件phase-3a-已实现) 未记录。渲染器当前接受此字段，但 lipSync 功能待 Phase 3c 实现。
+>
+> **已移除字段**：历史版本曾随本指令发送 `subtitle_text`/`subtitle_duration`——字幕系统已由 Qt 控制器通知流（气泡信息流）取代，文案现经由通知流展示，payload 不再包含字幕字段（参见 [notification-stream.md](../system/notification-stream.md)）。
 
 ---
 
@@ -480,98 +476,9 @@
 
 ---
 
-### D. 字幕组
+### D. 字幕组（已移除）
 
-#### D.1 `show_subtitle` — 显示字幕
-
-在渲染窗口叠加显示一条字幕，支持自动消失或常驻。
-
-- **回执**：✓ 需要 Response
-
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|:---|:---|:---:|:---|:---|
-| `text` | string | ✓ | — | 字幕文本。缺失返回 `10001` |
-| `duration` | int64 | 否 | `0` | 显示时长（**毫秒**）。`0` = 不自动隐藏，需 `hide_subtitle` 清除 |
-| `font_name` | string? | 否 | `"Microsoft YaHei"` | 字体名称 |
-| `font_size` | double? | 否 | `48.0` | 字号（ASS points） |
-| `primary_color` | uint32? | 否 | `0x00FFFFFF` | 文字颜色（AABBGGRR，见 [§1.3](#13-颜色字段格式)） |
-| `outline_color` | uint32? | 否 | `0x00111111` | 描边颜色 |
-| `outline_width` | double? | 否 | `1.8` | 描边宽度 |
-| `shadow_color` | uint32? | 否 | `0x00000000` | 阴影颜色 |
-| `shadow_depth` | double? | 否 | `0.0` | 阴影深度（`0.0` = 无阴影） |
-| `alignment` | int? | 否 | `2` | ASS 数字键盘对齐（`1`=左下 … `2`=中下 … `9`=右上） |
-| `margin_v` | double? | 否 | `30.0` | 垂直边距（像素） |
-| `edge_blur` | double? | 否 | `0.6` | ⚠️ 边缘模糊（ASS `\blur`）。代码中已实现，文档未记录 |
-| `font_weight` | int? | 否 | `-1` | ⚠️ 字重（`-1`=不注入，`0`=normal，`1`=bold）。代码中已实现，文档未记录 |
-| `letter_spacing` | double? | 否 | `0.5` | ⚠️ 字间距（ASS `\fsp`）。代码中已实现，文档未记录 |
-| `bg_box_enabled` | bool? | 否 | `false` | ⚠️ 是否启用背景框。代码中已实现，文档未记录 |
-| `bg_box_color` | uint32? | 否 | `0x80000000` | ⚠️ 背景框颜色（50% 透明黑）。代码中已实现，文档未记录 |
-| `bg_box_padding_x` | double? | 否 | `12.0` | ⚠️ 背景框水平内边距。代码中已实现，文档未记录 |
-| `bg_box_padding_y` | double? | 否 | `6.0` | ⚠️ 背景框垂直内边距。代码中已实现，文档未记录 |
-
-| error_code | 触发场景 | error_message |
-|:---:|:---|:---|
-| `10001` | `text` 为空或缺失 | `"text is required"` |
-| `10002` | 字幕引擎未初始化 | `"Subtitle engine not initialized"` |
-
-> ⚠️ **代码/文档偏差**：`margin_v`、`edge_blur`、`font_weight`、`letter_spacing`、`bg_box_enabled`、`bg_box_color`、`bg_box_padding_x`、`bg_box_padding_y` 这 8 个字段在 Java 参考实现（`Protocol.java` + `SubtitleStyle.java`）中已构造并发送，但 [commands.md §18](./commands.md#18-show_subtitle--显示字幕) 仅记录了前 10 个基础样式字段。
->
-> **v1 限制**：不发送 `subtitle_shown`/`subtitle_hidden` 事件。控制面板若需知道字幕何时消失，应自行用 `duration` 计时。
-
----
-
-#### D.2 `hide_subtitle` — 隐藏字幕
-
-立即清除所有字幕。无字幕时静默成功。
-
-- **回执**：✓ 需要 Response
-- **Payload**：`{}`
-- 无论引擎状态如何，均返回 `success: true`
-
----
-
-#### D.3 `set_subtitle_style` — 设置字幕默认样式
-
-更新默认样式参数（写入 ASS 轨道 style 0）。后续 `show_subtitle` 若不携带样式覆盖字段，则使用此默认样式。
-
-- **回执**：✓ 需要 Response
-- **Payload 字段**：同 [D.1 `show_subtitle`](#d1-show_subtitle--显示字幕) 的全部样式字段（不含 `text`/`duration`）。所有字段均可选，仅传入的字段更新，未传入字段保持当前值。
-
-| error_code | 触发场景 | error_message |
-|:---:|:---|:---|
-| `10002` | 字幕引擎未初始化 | `"Subtitle engine not initialized"` |
-
----
-
-#### D.4 `set_subtitle_adjust_mode` — 字幕调整模式
-
-进入/退出字幕调整模式（启用/关闭字幕区域边框预览）。
-
-- **回执**：✓ 需要 Response
-
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|:---|:---|:---:|:---|:---|
-| `enabled` | bool | ✓ | — | `true` = 进入调整模式（启用边框预览），`false` = 退出 |
-
-> 本指令恒成功，无错误码。
-
----
-
-#### D.5 `set_subtitle_layout` — 设置字幕布局
-
-设置字幕位置偏移、渲染区域与字号。即使字幕引擎未初始化也接受——参数被缓存待后续生效。
-
-- **回执**：✓ 需要 Response
-
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|:---|:---|:---:|:---|:---|
-| `offset_x` | double | ✓ | — | 字幕水平偏移（像素） |
-| `offset_y` | double | ✓ | — | 字幕垂直偏移（像素） |
-| `area_width` | int | ✓ | — | 字幕区域宽度（像素，`0` = 自动） |
-| `area_height` | int | ✓ | — | 字幕区域高度（像素，`0` = 自动） |
-| `font_size` | double | ✓ | — | 字号（ASS points） |
-
-> 本指令恒成功，无错误码（即使引擎未初始化也缓存参数并返回成功）。
+> **已移除**：字幕系统已被 Qt 控制器通知流（气泡信息流）取代。参见 [docs/system/notification-stream.md](../system/notification-stream.md)。渲染器不再注册此组指令（`show_subtitle`/`hide_subtitle`/`set_subtitle_style`/`set_subtitle_adjust_mode`/`set_subtitle_layout`），未知指令返回 5003。
 
 ---
 
@@ -662,15 +569,15 @@
 
 ---
 
-#### H.2 `set_scale` — 设置缩放（⚠️ STUB）
+#### H.2 `set_scale` — 设置缩放（✅ 已实现）
 
-- **回执**：✗ 无 Response
+- **回执**：✓ 需要 Response
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |:---|:---|:---:|:---|:---|
-| `scale` | float | ✓ | `1.0` | 缩放比例 |
+| `scale` | float | ✓ | 当前值 | 缩放比例，钳制到 0.1–5.0 |
 
-> ⚠️ **当前为 stub**：渲染器收到后仅记录日志（`"set_scale: <value> (not fully implemented)"`），**不产生实际效果**。模型缩放请改用 [`set_layout`](#e1-set_layout--设置用户布局) 的 `scale` 字段。
+> [`set_layout`](#e1-set_layout--设置用户布局) scale 轴的兼容别名：仅更新 `scale`，保留当前用户偏移。历史上曾长期为 stub（仅记日志、无 Response），现已实现。**控制面板仍应优先使用 `set_layout`**（可合并任意布局轴）。错误：无模型时返回 `8001`。
 
 ---
 
@@ -685,7 +592,7 @@ WS 连接建立后渲染器**主动发送**，通知控制面板可以下发指�
 | `version` | string | 渲染器协议版本（当前 `"1.0.0"`） |
 | `capabilities` | array&lt;string&gt; | 渲染器支持的能力列表（当前 `["live2d"]`） |
 
-**控制面板必须的行为**：发送启动齐射（`load_model` → `set_position` → `set_size` → `set_opacity` → `set_fps` → `set_volume` → `set_layout` → `set_subtitle_layout` → `set_subtitle_style`）。
+**控制面板必须的行为**：发送启动齐射（`load_model` → `set_position` → `set_size` → `set_opacity` → `set_fps` → `set_volume` → `set_layout`，共 7 条；历史版本曾含 `set_subtitle_layout`/`set_subtitle_style`，随字幕系统移除而取消）。
 
 **`ready` 之前发送的 command 不保证被处理。**
 
@@ -889,7 +796,7 @@ WS 连接建立后渲染器**主动发送**，通知控制面板可以下发指�
 
 控制面板发送命令后**不等待任何回执**，继续后续操作。
 
-**适用命令**：`set_position`、`set_opacity`、`play_motion`、`stop_motion`、`set_expression`、`set_scale`、`hello`
+**适用命令**：`set_position`、`set_opacity`、`play_motion`、`stop_motion`、`set_expression`、`hello`
 
 ```
 控制面板 ──command──► 渲染器（无 Response）
@@ -903,7 +810,7 @@ WS 连接建立后渲染器**主动发送**，通知控制面板可以下发指�
 
 控制面板发送命令后等待 Response（按 `id` 匹配），建议 10 秒超时。
 
-**适用命令**：`load_model`、`set_size`、`set_fps`、`set_hit_areas`、`play_motion_ext`、`play_audio`、`stop_audio`、`set_volume`、`set_layout`、`reset_layout`、`show_subtitle`、`hide_subtitle`、`set_subtitle_style`、`set_subtitle_adjust_mode`、`set_subtitle_layout`、`shutdown`
+**适用命令**：`load_model`、`set_size`、`set_fps`、`set_hit_areas`、`play_motion_ext`、`play_audio`、`stop_audio`、`set_volume`、`set_layout`、`reset_layout`、`shutdown`
 
 ```
 控制面板 ──command──► 渲染器
@@ -968,7 +875,7 @@ WS 连接建立后渲染器**主动发送**，通知控制面板可以下发指�
 | 7000 | 音频（Phase 3b） | 7000–7099 | `7001`（audio_path 为空）、`7002`（引擎未初始化）、`7003`（文件不存在）、`7004`（路径不安全） |
 | 8000 | 布局相关 | 8000–8099 | `8001`（无模型加载） |
 | 9000 | 资源监视 | 9000–9099 | `9001`（采集失败，预留） |
-| 10000 | 字幕相关 | 10000–10099 | `10001`（text 为空）、`10002`（引擎未初始化） |
+| 10000 | 字幕相关（已废弃） | 10000–10099 | 段位已随字幕系统移除而废弃（原 `10001`/`10002` 不再触发；段位保留） |
 
 ### 未知 action 的处理
 
@@ -982,10 +889,10 @@ WS 连接建立后渲染器**主动发送**，通知控制面板可以下发指�
 
 | # | 位置 | 偏差描述 | 实际情况（以代码为准） |
 |:---:|:---|:---|:---|
-| 1 | `play_motion_ext` | [commands.md §10.1](./commands.md#101-play_motion_ext--播放外部动作文件phase-3a-已实现) 未记录 `lip_sync_path`/`subtitle_text`/`subtitle_duration` | `MountedBehaviorEngine.java` 中已构造并发送这三个字段 |
-| 2 | `show_subtitle` / `set_subtitle_style` | [commands.md §18/§20](./commands.md#18-show_subtitle--显示字幕) 仅记录 10 个样式字段 | `Protocol.java` + `SubtitleStyle.java` 实际发送 18 个样式字段（多出 `margin_v`、`edge_blur`、`font_weight`、`letter_spacing`、`bg_box_*` 等 8 个） |
+| 1 | `play_motion_ext` | [commands.md §10.1](./commands.md#101-play_motion_ext--播放外部动作文件phase-3a-已实现) 未记录 `lip_sync_path` | `MountedBehaviorEngine.java` 中已构造并发送此字段（历史版本还发送 `subtitle_text`/`subtitle_duration`，已随字幕系统移除） |
+| 2 | 字幕命令组 | ~~`show_subtitle` / `set_subtitle_style` 样式字段~~ | **已移除**：字幕系统已被 Qt 控制器通知流（气泡信息流）取代，5 条字幕指令不再注册（返回 5003），样式偏差不再适用 |
 | 3 | 颜色格式 | 部分文档描述为 "RRGGBBTT" | 代码默认值（如 `0x00FFFFFF` = 不透明白）表明实际格式为 **AABBGGRR**（与 ASS 一致）。本文档以 AABBGGRR 为准 |
-| 4 | `set_scale` | 协议中存在此命令 | 渲染器侧为 **stub**，仅记日志不生效。应使用 `set_layout` 的 `scale` 字段 |
+| 4 | `set_scale` | 协议中存在此命令 | 曾为 stub（仅记日志）；现已实现为 `set_layout` scale 轴的兼容别名（回执 Response，无模型返回 `8001`）。控制面板仍优先 `set_layout` |
 | 5 | `model_loaded` 的 `motions`/`expressions` | 字段存在但始终为空 `[]` | 控制面板必须自行解析 `.model3.json` |
 | 6 | request-response 机制 | Java 参考实现定义了 `CompletableFuture` 关联 | **当前生产代码未调用 `expectResponse`**，所有命令实际为 fire-and-forget |
 
@@ -1010,17 +917,15 @@ WS 连接建立后渲染器**主动发送**，通知控制面板可以下发指�
    │ ◄───── event: ready ─────────────────────── │
    │       {version:"1.0.0", capabilities:["live2d"]} │
    │                                            │
-   │  收到 ready → 发送 9 条启动齐射：             │
-   │ ── load_model ───────────────────────────►  │
-   │ ── set_position ─────────────────────────►  │
-   │ ── set_size ─────────────────────────────►  │
-   │ ── set_opacity ──────────────────────────►  │
-   │ ── set_fps ──────────────────────────────►  │
-   │ ── set_volume ───────────────────────────►  │
-   │ ── set_layout（仅非默认时）────────────────► │
-   │ ── set_subtitle_layout ─────────────────►  │
-   │ ── set_subtitle_style ───────────────────►  │
-   │                                            │
+    │  收到 ready → 发送 7 条启动齐射：             │
+    │ ── load_model ───────────────────────────►  │
+    │ ── set_position ─────────────────────────►  │
+    │ ── set_size ─────────────────────────────►  │
+    │ ── set_opacity ──────────────────────────►  │
+    │ ── set_fps ──────────────────────────────►  │
+    │ ── set_volume ───────────────────────────►  │
+    │ ── set_layout（仅非默认时）────────────────► │
+    │                                            │
    │ ◄───── event: model_loaded ──────────────── │
    │ ── set_hit_areas ────────────────────────►  │
    │                                            │

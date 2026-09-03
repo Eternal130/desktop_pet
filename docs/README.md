@@ -189,8 +189,9 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | **语音包挂载** | 语音包与模型解耦挂载，meta.mko (Protobuf) 解析，Java 侧行为引擎 + 渲染器 `play_motion_ext` 均已实现 | ✅ Java 侧 + 渲染器侧均已实现 | Phase 3a |
 | **渲染后端** | OpenGL/Vulkan 双后端，`IGraphicsBackend` 抽象接口（6 方法），`OpenGLBackend` + `VulkanBackend` 双实现，编译时开关 `USE_VULKAN` 切换（无运行时切换） | ✅ 已实现 | Phase 2.x |
 | **音频播放** | 音频文件独立于模型管理，支持跨模型复用；渲染器侧 miniaudio + libvorbis 播放 OGG（`play_audio`/`stop_audio`/`set_volume`），控制面板管理映射和音量 | ⚠️ 渲染器侧 ✅ 已实现，控制器侧（`AudioMappingManager`/UI）待实现 | Phase 3b |
-| **Qt 控制面板** | Qt 6.10 / C++17 / QML，JavaFX 控制面板的 C++ 后继。多实例管理、完整协议覆盖（25 命令 + 14 事件）、每实例配置持久化（QSaveFile 原子写入）、闲时调度、崩溃恢复（指数退避）、系统托盘、开机自启、资源监视器（QtCharts）、语音包挂载（手写 protobuf）、字幕系统、布局同步 | ✅ Phase 5-9 已完成（38 QTest 全部通过） | Phase 5-9 |
-| **口型同步** | lipSync txt 解析 + 定时驱动 `ParamMouthOpenY`，文案气泡 UI | ❌ 待实现 | Phase 3c |
+| **Qt 控制面板** | Qt 6.10 / C++17 / QML，JavaFX 控制面板的 C++ 后继。多实例管理、完整协议覆盖（20 命令 + 14 事件）、每实例配置持久化（QSaveFile 原子写入）、闲时调度、崩溃恢复（指数退避）、系统托盘、开机自启、资源监视器（QtCharts）、语音包挂载（手写 protobuf）、通知流（气泡信息流）、布局同步 | ✅ Phase 5-9 已完成 | Phase 5-9 |
+| **通知流（气泡信息流）** | 屏幕右上角桌面级气泡堆叠流（多实例共享、cap 6、默认 20s），对话包（interval/hit 触发 + 时间窗），取代原渲染器字幕系统 | ✅ 已实现 | 通知流 |
+| **口型同步** | lipSync txt 解析 + 定时驱动 `ParamMouthOpenY`（文案气泡已由通知流实现，见 [通知流](./system/notification-stream.md)） | ❌ 待实现（口型同步部分） | Phase 3c |
 | **性能**   | 自适应帧率（15-60fps）或固定帧率（15-120fps 可配），闲时低占用 | ✅ 已实现 | MVP/Phase 2 |
 | **平台**   | Ubuntu 22.04 / X11 + Windows 10+ / Win32（MinGW Makefiles） | ✅ 双平台已实现 | MVP + Windows 扩展 |
 | **容错**   | 崩溃自动重启（指数退避，最大 5 次），断连缓存关键指令 | ✅ 已实现 | Phase 2 |
@@ -226,6 +227,7 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | [启动流程](./system/startup.md) | MVP 和控制面板启动/关闭流程、多实例管理 | ✅ 已实现 |
 | [扩展性预留](./system/extensibility.md) | 插件系统、状态系统预留 | 架构预留 |
 | [外置语音包挂载](./system/voice-pack-mounting.md) | 语音包与模型解耦挂载设计、事件映射、口型同步 | ✅ Phase 3a Java 侧已实现，渲染器侧待实现 |
+| [通知流（气泡信息流）](./system/notification-stream.md) | 桌面级气泡通知流架构、对话包格式与触发器、配置（取代原字幕系统） | ✅ 已实现 |
 | [工程化](./engineering/README.md) | 工程化概述索引 | ✅ 持续更新 |
 | [开发语言与工具链](./engineering/toolchain.md) | C++/Java 工具链选型 | ✅ 已确定 |
 | [第三方库选型](./engineering/dependencies.md) | C++/Java 端依赖库 | ✅ 已确定 |

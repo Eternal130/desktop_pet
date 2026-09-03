@@ -66,7 +66,7 @@ Phase 2 (进程编排)   Phase 3 (配置层)
 | 5 | 实例管理 UI | 完整实例管理界面（创建/删除/切换/参数调节） | 5–7 | 4 |
 | 6 | 运行时行为 | 闲时调度 + 点击交互 + 拖拽持久化 + 模型发现 | 3–4 | 5 |
 | 7 | 系统集成 | 系统托盘 + 开机自启 + 崩溃恢复 + 多实例 | 3–5 | 6 |
-| 8 | 高级功能 | 资源监控 + 语音包 + 字幕 + 布局 | 5–8 | 7 |
+| 8 | 高级功能 | 资源监控 + 语音包 + 通知流（原字幕，已改为控制器侧气泡） + 布局 | 5–8 | 7 |
 | 9 | 部署打磨 | 打包分发 + 性能优化 + 多平台验证 | 3–5 | 8 |
 | | | **合计** | **30–46** | |
 
@@ -183,7 +183,7 @@ Phase 2 (进程编排)   Phase 3 (配置层)
 | 2.5 | stdout 日志泵 | 独立线程读取 stdout → 转发到日志系统（不阻塞子进程输出缓冲区） |
 | 2.6 | 退出回调 | 进程退出时通知上层（区分正常退出与崩溃） |
 | 2.7 | 优雅关闭三阶段 | shutdown 指令 → 5s 等待 → destroyForcibly/kill -9 |
-| 2.8 | 启动齐射封装 | 收到 ready 后自动发送 9 条初始化命令（load_model 到 set_subtitle_style） |
+| 2.8 | 启动齐射封装 | 收到 ready 后自动发送 7 条初始化命令（load_model 到 set_layout；原 9 条中的两条字幕指令已随字幕系统移除而取消） |
 
 **验收标准**：
 - [ ] 渲染器启动后自动加载配置的模型
@@ -216,7 +216,7 @@ Phase 2 (进程编排)   Phase 3 (配置层)
 | # | 任务 | 关键细节 |
 |:---:|:---|:---|
 | 3.1 | 配置目录管理 | `~/.config/desktop-pet/`（Linux）/ `%USERPROFILE%\.config\desktop-pet\`（Windows） |
-| 3.2 | InstanceConfig 数据模型 | 29 字段（id, label, rendererPath, graphicsBackend, modelName, ...） |
+| 3.2 | InstanceConfig 数据模型 | 24 字段（id, label, rendererPath, graphicsBackend, modelName, dialoguePack, ...；原 7 个字幕字段已移除） |
 | 3.3 | PanelConfig 数据模型 | 11 字段（窗口位置/主题/字号/实例列表/启动退出行为） |
 | 3.4 | InstanceConfigManager | save/load/delete/loadAll，每实例一个 `instances/<uuid>.json` |
 | 3.5 | PanelStateManager | `panel.json` 读写 + 旧格式 `panel-state.json` 迁移 |
@@ -404,9 +404,11 @@ Phase 2 (进程编排)   Phase 3 (配置层)
 
 ### Phase 8: 高级功能（5–8 天）
 
-**目标**：资源监控、语音包挂载、字幕系统、布局管理——将控制面板从"能用"提升到"好用"。
+**目标**：资源监控、语音包挂载、通知流（气泡信息流）、布局管理——将控制面板从"能用"提升到"好用"。
 
-**里程碑**：监控页显示 CPU/GPU 曲线、语音包可挂载触发扩展动作、字幕可显示和调样式。
+> **历史变更**：本阶段原设计为渲染器字幕系统（show_subtitle/set_subtitle_style 等），后改为 Qt 控制器侧通知流（气泡信息流）——渲染器字幕系统已整体移除，文案由控制器气泡直接显示。参见 [通知流设计](../system/notification-stream.md)。
+
+**里程碑**：监控页显示 CPU/GPU 曲线、语音包可挂载触发扩展动作、对话文案以气泡形式显示。
 
 **任务清单**：
 
@@ -419,8 +421,8 @@ Phase 2 (进程编排)   Phase 3 (配置层)
 | 8.5 | meta.mko 解析 | Protobuf 解析 → VoicePackInfo（groups/modules/actions） | 1 天 |
 | 8.6 | 挂载配置管理 | mount.json 读写；loadForModel/saveForModel | 含上 |
 | 8.7 | 行为引擎 | hit 事件→优先走语音包 play_motion_ext，否则回退基础映射 | 1 天 |
-| 8.8 | 字幕显示 | show_subtitle 命令 + 15 种样式预设 + set_subtitle_style | 1 天 |
-| 8.9 | 字幕调整模式 | set_subtitle_adjust_mode + set_subtitle_layout | 含上 |
+| 8.8 | ~~字幕显示~~ → 通知流气泡 | ~~show_subtitle 命令 + 样式预设~~ 改为控制器侧气泡（NotificationStreamModel/Controller + BubbleStreamWindow） | 1 天 |
+| 8.9 | ~~字幕调整模式~~ → 对话包 | ~~set_subtitle_adjust_mode + set_subtitle_layout~~ 改为 DialoguePackParser/Scanner/Scheduler（对话包发现、解析、调度） | 含上 |
 | 8.10 | 布局管理 | set_layout/get_layout/reset_layout + layout_changed 持久化 | 1 天 |
 
 **验收标准**：
@@ -428,7 +430,7 @@ Phase 2 (进程编排)   Phase 3 (配置层)
 - [ ] GPU 不可用时显示"—"（Linux stub 场景）
 - [ ] 数据陈旧（>10s 无更新）时显示警告
 - [ ] 挂载语音包后点击宠物触发扩展动作（play_motion_ext）
-- [ ] 字幕显示在渲染器窗口，样式可切换
+- [ ] ~~字幕显示在渲染器窗口，样式可切换~~ → 对话文案以通知流气泡显示（屏幕右上角，自动消失）
 - [ ] 布局参数（offset/scale）可调并持久化
 
 **技术栈实现要点**：
@@ -628,7 +630,7 @@ controller_slint/
 | 5 | 手动验收 | 实例 CRUD、模型切换、参数实时生效 |
 | 6 | 手动验收 | 闲时动作触发、点击响应、拖拽持久化 |
 | 7 | 手动验收 | 托盘、自启、崩溃恢复、多实例 |
-| 8 | 手动验收 | 监控数据、语音包动作、字幕显示 |
+| 8 | 手动验收 | 监控数据、语音包动作、通知流气泡显示 |
 | 9 | 端到端 | 全平台干净系统安装、24h 稳定性 |
 
 ### 7.2 共享测试用例
@@ -639,8 +641,8 @@ controller_slint/
 tests/protocol/
 ├── envelope_serialize.json      # Envelope → JSON 序列化用例
 ├── envelope_deserialize.json    # JSON → Envelope 反序列化用例
-├── handshake_flow.json          # 握手全流程用例
-├── command_all_25.json          # 25 条命令的 payload 构造用例
+├── handshake_flow.json          # 握手全流程用例（7 条启动齐射）
+├── command_all_20.json          # 20 条命令的 payload 构造用例（原 command_all_25.json，字幕指令移除后更名）
 └── event_all_13.json            # 13 个事件的 payload 解析用例
 ```
 

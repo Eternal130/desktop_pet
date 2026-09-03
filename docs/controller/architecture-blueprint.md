@@ -56,7 +56,7 @@
 │  │              WebSocket Client + 主循环消息泵                   │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │       Live2D 渲染 │ 音频播放 │ 点击/拖拽检测 │ 字幕             │  │
+│  │       Live2D 渲染 │ 音频播放 │ 点击/拖拽检测                   │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────┘
 ```
@@ -172,11 +172,10 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
    │ ◄───── event: ready ──────────────────────── │
    │       {version:"1.0.0", capabilities:["live2d"]} │
    │                                            │
-   │ ⑤ 收到 ready 后，发送 9 条启动指令齐射        │
+   │ ⑤ 收到 ready 后，发送 7 条启动指令齐射        │
    │    （load_model, set_position, set_size,    │
    │     set_opacity, set_fps, set_volume,       │
-   │     set_layout, set_subtitle_layout,        │
-   │     set_subtitle_style）                    │
+   │     set_layout）                            │
    │ ─────────────────────────────────────────►  │
    │                                            │
    │ ◄───── event: model_loaded ───────────────── │
@@ -235,7 +234,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
   - 渲染：图形后端（OpenGL/Vulkan，分段选择）、帧率模式（自适应/固定，分段选择 + 15–120 滑块）
   - 音频：音量滑块（0.0–1.0）、静音复选框
   - 启动：该实例开机自启开关
-  - 字幕：字幕调整模式开关、字幕样式预设下拉框（15 种）
+  - 对话：对话包选择（文案经通知流气泡显示；原字幕参数组已随渲染器字幕系统移除而取消）
 - **日志面板**：滚动列表，最多保留 50 条；带"清空"按钮。
 
 #### 4.1.4 应用设置页【必须】
@@ -306,7 +305,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 
 #### 4.4.2 点击交互响应【必须】
 - 收到渲染器 `hit` 事件后，按以下优先级决策：
-  1. 若已挂载语音包且语音包定义了该区域的 group → 走 `play_motion_ext`（扩展动作 + 可选音频/字幕）
+  1. 若已挂载语音包且语音包定义了该区域的 group → 走 `play_motion_ext`（扩展动作 + 可选音频；文案经通知流气泡显示）
   2. 否则 → 查模型配置的 HitArea 映射 → 下发 `play_motion`
   3. 默认映射：`head → TapHead`、`body → TapBody`（优先级 2）
 - HitArea 名称大小写容错：渲染器发送小写（`head`/`body`），配置可能用 PascalCase（`Head`/`Body`）。
@@ -451,10 +450,9 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 | `muted` | boolean | false | 是否静音 |
 | `layoutOffsetX`, `layoutOffsetY` | double | 0.0 | 模型布局偏移 |
 | `layoutScale` | double | 1.0 | 模型布局缩放 |
-| `subtitleOffsetX`, `subtitleOffsetY` | double | 0.0 | 字幕偏移 |
-| `subtitleAreaWidth`, `subtitleAreaHeight` | int | 0 | 字幕区域（0=自动） |
-| `subtitleFontSize` | double | 48.0 | 字幕字号 |
-| `subtitleStylePreset` | string | "默认" | 字幕样式预设名 |
+| `dialoguePack` | string? | null | 挂载的对话包名（null=未挂载；文案经通知流气泡显示） |
+
+> **已移除字段**：原 `subtitleOffsetX`/`subtitleOffsetY`/`subtitleAreaWidth`/`subtitleAreaHeight`/`subtitleFontSize`/`subtitleStylePreset` 等字幕字段已随渲染器字幕系统移除而删除（字幕已被 Qt 控制器通知流取代，参见 [通知流设计](../system/notification-stream.md)）。
 
 ### 5.2 面板配置（PanelConfig）
 
@@ -472,6 +470,8 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 | `startMinimized` | boolean | false | 启动时最小化到托盘 |
 | `closeAction` | string | "exit" | `"exit"` / `"hide_to_tray"` |
 | `confirmOnExit` | boolean | false | 退出前确认 |
+| `notificationsEnabled` | boolean | true | 是否启用通知流（气泡信息流）气泡显示 |
+| `notificationDurationMs` | int | 20000 | 气泡默认自动消失时长（毫秒） |
 
 ### 5.3 挂载配置（MountConfig）
 
@@ -511,29 +511,9 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 
 每条 `VoicePackAction`：`id, motionPath, audioPath, lipSyncPath, doc, fadeInMs, fadeOutMs`。
 
-### 5.6 字幕样式（SubtitleStyle）
+### 5.6 字幕样式（SubtitleStyle）— ⚠️ 已移除
 
-15 个字段的字幕样式定义。**颜色格式约定**：`RRGGBBTT`（`TT`=透明度，`0x00`=不透明，`0xFF`=全透明），渲染器内部转 ASS 的 `AABBGGRR`。
-
-| 字段 | 默认值 | 说明 |
-|:---|:---|:---|
-| `fontName` | "Microsoft YaHei" | 字体 |
-| `fontSize` | 48.0 | 字号 |
-| `primaryColor` | `0x00FFFFFF` | 文字色（不透明白） |
-| `outlineColor` | `0x00111111` | 描边色 |
-| `outlineWidth` | 1.8 | 描边宽度 |
-| `shadowColor` | `0x00000000` | 阴影色 |
-| `shadowDepth` | 0.0 | 阴影深度（0=无） |
-| `alignment` | 2 | ASS 数字键盘对齐（2=中下） |
-| `marginV` | 30 | 垂直边距 |
-| `edgeBlur` | 0.6 | 边缘模糊 |
-| `fontWeight` | -1 | 字重（-1=不注入） |
-| `letterSpacing` | 0.5 | 字间距 |
-| `bgBoxEnabled` | false | 是否启用背景框 |
-| `bgBoxColor` | `0x80000000` | 背景框色（50% 透明黑） |
-| `bgBoxPaddingX`, `bgBoxPaddingY` | 12.0, 6.0 | 背景框内边距 |
-
-**15 种字幕预设**：默认、阴影、气泡框、极简、樱花粉、赛博霓虹、星空紫、橙焰活力、和风墨韵、极简投影、流媒体盒、毛玻璃、终端绿、暗夜卡片、消息气泡。
+> **已移除**：渲染器字幕系统（SubtitleManager/libass 及 15 字段样式/15 种预设）已整体移除，字幕文案改由 Qt 控制器通知流（气泡信息流）在控制器侧渲染显示。参见 [通知流设计](../system/notification-stream.md)。
 
 ### 5.7 运行时统计
 
@@ -556,7 +536,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 
 > 完整字段定义见 [Commands](../protocol/commands.md)。下表为快速索引，标注【必须实现】/【推荐】/【可选/Phase 3】。
 
-### 6.1 启动齐射（收到 `ready` 后立即发送，9 条）
+### 6.1 启动齐射（收到 `ready` 后立即发送，7 条）
 
 | 命令 | Payload 关键字段 | 必须? |
 |:---|:---|:---:|
@@ -567,15 +547,15 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 | `set_fps` | `fps`（0=自适应；1–120=固定） | ✓ |
 | `set_volume` | `volume, muted` | ✓ |
 | `set_layout` | `offset_x, offset_y, scale`（仅非默认时发送） | ✓ |
-| `set_subtitle_layout` | `offset_x, offset_y, area_width, area_height, font_size` | ✓ |
-| `set_subtitle_style` | 完整 15 字段样式块 | ✓ |
+
+> 历史版本齐射为 9 条（含 `set_subtitle_layout`/`set_subtitle_style`），两条字幕指令已随字幕系统移除而取消。
 
 ### 6.2 运行时命令
 
 | 命令 | Payload 关键字段 | 触发场景 | 回执 | 必须? |
 |:---|:---|:---|:---:|:---:|
 | `play_motion` | `group, index=0, priority=2` | 闲时调度、点击交互、UI 按钮 | ✗ | ✓ |
-| `play_motion_ext` | `motion_path, priority, fade_in, fade_out, audio_path?, lip_sync_path?, subtitle_text?, subtitle_duration?` | 语音包行为 | ✓ | 可选(3a) |
+| `play_motion_ext` | `motion_path, priority, fade_in, fade_out, audio_path?, lip_sync_path?` | 语音包行为 | ✓ | 可选(3a) |
 | `play_audio` | `audio_path, volume=1.0` | 语音包纯音频 | ✓ | 可选(3b) |
 | `stop_audio` | `{}` | 停止音频 | ✓ | 可选(3b) |
 | `set_expression` | `expression_id` | UI 表情按钮 | ✗ | ✓ |
@@ -584,11 +564,10 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 | `get_layout` | `{}` | 查询布局（响应走 `layout_state` 事件） | ✗ | 推荐 |
 | `reset_layout` | `{}` | 重置布局 | ✓ | 推荐 |
 | `get_stats` | `{}` | 资源监控轮询（响应走 `stats_state` 事件） | ✗ | 推荐 |
-| `show_subtitle` | `text, duration, + 样式字段` | 字幕显示 | ✓ | 推荐 |
-| `hide_subtitle` | `{}` | 字幕隐藏 | ✓ | 推荐 |
-| `set_subtitle_adjust_mode` | `enabled` | 字幕调整模式 | ✓ | 推荐 |
 | `shutdown` | `{}` | 优雅关闭 | ✓ | ✓ |
-| `set_scale` | `scale` | ⚠️ **渲染器侧为 stub**，用 `set_layout` 替代 | ✗ | 不推荐 |
+| `set_scale` | `scale` | 已实现为 `set_layout` scale 轴兼容别名（仅改 scale、保留偏移） | ✓ | 不推荐（优先 `set_layout`） |
+
+> **已移除**：`show_subtitle`/`hide_subtitle`/`set_subtitle_adjust_mode` 等字幕指令已随字幕系统移除（渲染器不再注册，返回 5003）；文案改经通知流气泡显示。
 
 ### 6.3 动作优先级常量
 
@@ -831,9 +810,9 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 
 | # | 问题 | 影响 | 新实现建议 |
 |:---:|:---|:---|:---|
-| 1 | `set_scale` 指令在渲染器侧为 **stub**（仅记日志，不生效） | 模型缩放无效 | 使用 `set_layout` 的 `scale` 字段替代 |
+| 1 | ~~`set_scale` 指令在渲染器侧为 **stub**~~ | 已修复：现为 `set_layout` scale 轴兼容别名（仅改 scale、保留偏移，回执 Response） | 优先使用 `set_layout`（可合并任意布局轴） |
 | 2 | `model_loaded` 事件的 `motions`/`expressions` **始终为空数组** | 无法从事件获取动作/表情列表 | 必须自行解析 `.model3.json` |
-| 3 | `play_motion_ext` 的 `lip_sync_path`/`subtitle_text`/`subtitle_duration` 字段在代码中发送但**协议文档未记录** | 文档/代码偏差 | 新实现可选择是否发送这些字段；渲染器当前接受但 lipSync 待 Phase 3c 实现 |
+| 3 | ~~`play_motion_ext` 的 `lip_sync_path`/`subtitle_text`/`subtitle_duration` 字段未记录~~ | 字幕字段已随字幕系统移除（文案改经通知流气泡显示）；`lip_sync_path` 保留待 Phase 3c 口型同步 | 新实现可不发送字幕字段 |
 | 4 | `CompletableFuture` request-response 关联机制**已实现但未使用** | 所有命令实际 fire-and-forget | 新实现可选择严格 request-response 或保持当前事件驱动模式 |
 | 5 | `PetStateManager` 定义了但**未接入生产代码** | 运行时状态实际通过 UI 可观察属性流转 | 选择显式状态管理器或 UI 绑定方案，但不要两者都做却都不用 |
 | 6 | 命名不一致：`windowX`/`posX`/`positionX` 三种风格并存 | 代码可读性 | 新实现统一命名风格 |
@@ -841,6 +820,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 | 8 | `stats_state`/`layout_state` 用事件而非 Response 承载数据 | 因 Response payload 固定为 `{}` | 这是协议契约，不可改变；按 action 路由 |
 | 9 | Vulkan 后端的 VRAM 数值依赖 WDDM 驱动报告，可能偏低或为 0 | 监控数值不准 | 已知限制，非回归；UI 应容忍 null/0 值 |
 | 10 | 音频播放采用 fire-and-forget，无播放完成事件 | 无法精确知道音频何时结束 | 自行用 duration 计时，或通过 OGG 头估算时长 |
+| 11 | 渲染器字幕系统已移除 | 历史字幕指令（5 条）返回 5003；文案显示改由控制器侧通知流承担 | 使用 Qt 控制器通知流（气泡信息流），参见 [通知流设计](../system/notification-stream.md) |
 
 ---
 
@@ -850,7 +830,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 
 ### 11.1 协议互通（必须）
 - [ ] 控制面板启动后，现有 C++ 渲染器能连接到 9001 端口
-- [ ] 渲染器发送 `ready` 后，收到 9 条启动齐射
+- [ ] 渲染器发送 `ready` 后，收到 7 条启动齐射
 - [ ] `load_model` 能成功加载模型并收到 `model_loaded`
 - [ ] `hit` 事件能触发 `play_motion` 回送
 - [ ] `drag_end` 事件的窗口坐标能被正确持久化
@@ -917,7 +897,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 |:---|:---|
 | [架构总览](../README.md) | 项目整体架构、技术栈、设计原则 |
 | [通信协议](../protocol/README.md) | WebSocket 协议规范（权威） |
-| [协议 - Commands](../protocol/commands.md) | 全部 25 条指令定义 |
+| [协议 - Commands](../protocol/commands.md) | 全部 20 条指令定义 |
 | [协议 - Events](../protocol/events.md) | 全部 13 个事件定义 |
 | [协议 - 握手流程](../protocol/handshake.md) | 连接建立时序图 |
 | [协议 - 错误码](../protocol/error-codes.md) | 错误码体系 |

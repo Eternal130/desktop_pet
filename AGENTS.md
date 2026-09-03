@@ -40,7 +40,7 @@ desktop_pet/
 | Add controller_qt UI page | `controller_qt/qml/pages/` | QML pages: Welcome (dashboard), InstanceDetail (two-column workbench), Monitor (3×2 charts), VoicePack, Settings (anchor nav) |
 | Add controller_qt shared QML component | `controller_qt/qml/components/` | StatusPill, SettingRow, SectionCard, Chip; register new files in qt_add_qml_module QML_FILES |
 | Add controller_qt business logic | `controller_qt/src/core/` | InstanceSession (+ split TUs), InstanceManager, Scheduler, InteractionHandler, config |
-| Add controller_qt protocol command | `controller_qt/src/network/Protocol.hpp` | 25 typed command factories + envelope helpers |
+| Add controller_qt protocol command | `controller_qt/src/network/Protocol.hpp` | 20 typed command factories + envelope helpers |
 | Add controller_qt system integration | `controller_qt/src/system/` | TrayManager, AutoLaunchManager, ResourceStatsCollector |
 | Change controller_qt instance config | `controller_qt/src/core/InstanceConfigManager.cpp` | Persists to `~/.config/desktop-pet/instances/{uuid}.json` (atomic write via QSaveFile) |
 | Add controller_qt monitor feature | `controller_qt/src/ui/MonitorDataModel.cpp` | 60-sample ring buffer for QtCharts sparklines |
@@ -74,7 +74,7 @@ desktop_pet/
 | `VoicePackScanner` | C++ | `controller_qt/src/core/VoicePackScanner.hpp` | Discovers voice packs containing `meta.mko` (takes renderer BASE dir, appends `Resources/VoicePacks` internally) |
 | `VoicePackController` | C++ | `controller_qt/src/ui/VoicePackController.hpp` | QML bridge (`voicePacks` ctx prop): pack discovery + metadata for VoicePackPage |
 | `MetaMkoParser` | C++ | `controller_qt/src/core/MetaMkoParser.hpp` | Hand-rolled protobuf wire-format reader for `.mko` (no libprotobuf dep) |
-| `SubtitlePresets` | C++ | `controller_qt/src/core/SubtitlePresets.hpp` | 16 named style fields, `set_subtitle_style` |
+| `NotificationStreamController` | C++ | `controller_qt/src/ui/NotificationStreamController.hpp` | QML bridge (`notificationStream` ctx prop): bubble push/dismiss + testBubble; voice-pack dialogue sink is the only text source (no pack system); owns NotificationStreamModel |
 | `PanelConfigController` | C++ | `controller_qt/src/core/PanelConfigController.hpp` | QML bridge for 4 PanelConfig behavior fields |
 | `HitAreaCacheManager` | C++ | `controller_qt/src/core/HitAreaCacheManager.hpp` | JSON cache of modelName → hitAreas |
 
@@ -154,11 +154,11 @@ cmake --build build/renderer_vulkan --config Release -j
 ## NOTES
 
 - `third_party/CubismSdkForNative/` is NOT a git submodule — manually placed
-- `renderer/third_party/freetype-gl/` IS a git submodule
-- `set_scale` command is stubbed (logs only, no actual scale change)
+- `set_scale` command is implemented as a `set_layout` scale-axis compatibility alias (responds; preserves offsets; clamps 0.1–5.0)
+- The subtitle system (libass, renderer-side) has been REMOVED and replaced by the Qt-controller notification bubble stream — see `docs/system/notification-stream.md`. The 5 subtitle commands are unregistered in the renderer (unknown actions return 5003).
 - VulkanBackend.cpp: **Fully implemented** (Instance → Device → Swapchain → Render → Present, 979 lines, Phase 2.1–2.6 complete). Compile-time switch via `-DUSE_VULKAN=ON`; no runtime switching. See `renderer/AGENTS.md`.
 - AudioManager.cpp/hpp: Implemented (miniaudio + libvorbis, OGG playback). `play_audio`/`stop_audio`/`set_volume` commands wired (error codes 7001/7002/7003).
 - Dual platform: Ubuntu/X11 (original MVP) + Windows/MinGW (current). `build.py` builds both OpenGL and Vulkan variants.
 - Build artifacts: `build/bin/desktop-pet-renderer.exe`, `build/bin/desktop-pet-controller.jar`
 - Renderer CLI args: `--port`, `--instance-id`, `--model`, `--token`, `--x`, `--y`, `--width`, `--height`
-- **controller_qt Phase 5-9: COMPLETE** — Qt 6.10 / C++17 / QML control panel, the C++ successor to the JavaFX `controller/`. Multi-instance pet management with full protocol coverage (25 commands + 14 events), sidebar roster (`QAbstractListModel`), per-instance config persistence, idle motion scheduler, hit→motion handler, crash-recovery with exponential backoff (max 5 attempts), system tray (QSystemTrayIcon), OS auto-launch (Win registry / Linux `.desktop`), resource monitor (QtCharts sparklines: CPU% + RSS), voice pack discovery + mounting (hand-rolled protobuf reader, no libprotobuf dep), subtitle system (16 named style fields), layout sync. **38 QTest binaries**, all green. Atomic config writes via QSaveFile. Blueprint §9.5 "永不崩溃" compliance audited (T25). See `controller_qt/README.md` for details. Known limitations (documented, NOT bugs): R4 (Wayland transparent window), R5 (GNOME tray AppIndicator), R6 (Wayland global hotkeys).
+- **controller_qt Phase 5-9: COMPLETE** — Qt 6.10 / C++17 / QML control panel, the C++ successor to the JavaFX `controller/`. Multi-instance pet management with full protocol coverage (20 commands + 14 events), sidebar roster (`QAbstractListModel`), per-instance config persistence, idle motion scheduler, hit→motion handler, crash-recovery with exponential backoff (max 5 attempts), system tray (QSystemTrayIcon), OS auto-launch (Win registry / Linux `.desktop`), resource monitor (QtCharts sparklines: CPU% + RSS), voice pack discovery + mounting (hand-rolled protobuf reader, no libprotobuf dep), notification bubble stream (voice-pack dialogue only, screen top-right stack — replaced the renderer subtitle system, see `docs/system/notification-stream.md`), layout sync. **41 QTest binaries**, all green. Atomic config writes via QSaveFile. Blueprint §9.5 "永不崩溃" compliance audited (T25). See `controller_qt/README.md` for details. Known limitations (documented, NOT bugs): R4 (Wayland transparent window), R5 (GNOME tray AppIndicator), R6 (Wayland global hotkeys).

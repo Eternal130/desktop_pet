@@ -141,17 +141,28 @@
 
 ## 6. `set_scale` — 设置模型缩放
 
-设置模型的显示缩放比例。
+设置模型的显示缩放比例（`set_layout` scale 轴的兼容别名）。
 
-**回执**：✗ 无 Response
+**回执**：✓ 需要 Response
 
 **Payload**：
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |:---|:---|:---:|:---|:---|
-| `scale` | float | ✓ | `1.0` | 缩放比例 |
+| `scale` | float | ✓ | 当前值 | 缩放比例，实际值钳制到 0.1–5.0 范围 |
 
-> ⚠️ **当前状态：stub**。该指令已在 `CommandHandlers.cpp` 注册但**未实际实现缩放**，收到后仅调用 `LAppPal::PrintLogLn` 记录日志（输出 `"set_scale: <value> (not fully implemented)"`），不产生实际效果。模型缩放请改用 `set_layout`（通过 `scale` 字段调用 `LAppModel::SetUserLayout`）。
+**渲染器处理流程**：
+1. 校验已加载模型，否则返回错误 `8001`
+2. 保留当前用户布局偏移（`offset_x`/`offset_y` 不变），仅更新 `scale`（经 `LAppModel::SetUserLayout` 钳制后生效）
+3. 发送 Response（`success: true`）
+
+> **与 `set_layout` 的关系**：本指令历史上长期为 stub（仅记日志），现已实现为 `set_layout` scale 轴的兼容别名——只改 scale、保留当前偏移。`set_layout` 仍是一等入口（可同时合并任意布局轴）。模型缩放后点击命中自动跟随（`HitTest` 含用户布局逆变换）。
+
+**错误码**：
+
+| error_code | 触发场景 | error_message |
+|:---:|:---|:---|
+| `8001` | 当前无模型加载 | `"No model loaded"` |
 
 ---
 
@@ -233,6 +244,8 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 5. 加载并播放动作；若被优先级守卫拒绝或加载失败，返回 `3003`
 6. 若附带 `audio_path` 且 `AudioManager` 已初始化：停止当前音频 → 播放指定音频（文件不存在则仅记录日志）
 7. 返回 Response（`success: true`）
+
+> **已移除字段**：历史实现中控制面板曾随本指令发送 `subtitle_text`/`subtitle_duration` 字段，渲染器侧的相应处理分支已删除——字幕系统已由 Qt 控制器通知流（气泡信息流）取代，文档文案现经由通知流展示（参见 [docs/system/notification-stream.md](../system/notification-stream.md)）。`lip_sync_path` 字段保留（Phase 3c 口型同步待实现）。
 
 **事件**：动作开始时不发送 `motion_started`；动作播放完成时发送 `motion_finished` 事件，**payload 与 `play_motion` 不同**——使用 `{ "motion_path": "<原路径>" }` 而非 `{ "group", "index" }`。详见 [Events §10](./events.md#10-phase-3-事件)。
 
@@ -406,7 +419,7 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 
 ## 15. `set_layout` — 设置用户布局
 
-设置模型用户布局偏移（手动位置与缩放调整）。与 stub 状态的 [`set_scale`](#6-set_scale--设置模型缩放) 不同，`set_layout` 通过 `LAppModel::SetUserLayout` 实际生效。
+设置模型用户布局偏移（手动位置与缩放调整）。与 [`set_scale`](#6-set_scale--设置模型缩放)（scale 轴兼容别名）不同，`set_layout` 可同时合并任意布局轴。
 
 **回执**：✓ 需要 Response
 
@@ -481,182 +494,28 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 
 ## 18. `show_subtitle` — 显示字幕
 
-在渲染窗口叠加显示一条字幕，接入 `SubtitleManager`（libass）。字幕带样式显示，支持自动消失或常驻直到手动隐藏。v1 不上报字幕消失事件。
-
-**回执**：✓ 需要 Response
-
-**Payload**：
-
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|:---|:---|:---:|:---|:---|
-| `text` | string | ✓ | — | 字幕文本内容。缺失返回 `10001` |
-| `duration` | int64 | 否 | `0` | 显示时长（毫秒）。`0` = 不自动隐藏，需调用 `hide_subtitle` 手动清除 |
-| `font_name` | string | 否 | `"Microsoft YaHei"` | 字体名称 |
-| `font_size` | double | 否 | `48.0` | 字号 |
-| `primary_color` | uint32 | 否 | `0x00FFFFFF` | 文字颜色，AABBGGRR 格式（不透明白） |
-| `outline_color` | uint32 | 否 | `0x00000000` | 描边颜色，AABBGGRR 格式（不透明黑） |
-| `outline_width` | double | 否 | `2.0` | 描边宽度 |
-| `shadow_color` | uint32 | 否 | `0x00000000` | 阴影颜色，AABBGGRR 格式 |
-| `shadow_depth` | double | 否 | `0.0` | 阴影深度（`0.0` = 无阴影） |
-| `alignment` | int | 否 | `2` | ASS 数字键盘布局对齐（`1`=左下 … `2`=中下 … `9`=右上） |
-
-> **颜色格式**：控制面板发送 RRGGBBTT（`TT` 为透明度，`0x00`=不透明，`0xFF`=全透明），渲染器内部转换为 ASS 的 AABBGGRR。详见 [错误码 §十](./error-codes.md#十字幕相关10000-10099)。
-
-**示例**：
-
-```json
-{
-  "type": "command", "action": "show_subtitle",
-  "id": "...", "payload": { "text": "你好世界", "duration": 3000 },
-  "timestamp": ...
-}
-```
-
-**渲染器处理流程**：
-1. 校验 `text` 非空，否则返回错误 `10001`
-2. 校验字幕引擎（`SubtitleManager`）已初始化，否则返回错误 `10002`
-3. 将样式参数应用到 ASS 轨道 style 0，注入字幕事件
-4. 若 `duration > 0`，调度定时器到期后自动隐藏
-5. 发送 Response（`success: true`）
-
-**错误码**：
-
-| error_code | 触发场景 | error_message |
-|:---:|:---|:---|
-| `10001` | `text` 为空或缺失 | `"text is required"` |
-| `10002` | 字幕引擎未初始化 | `"Subtitle engine not initialized"` |
-
-> **v1 限制**：不发送 `subtitle_shown`/`subtitle_hidden` 事件。控制面板若需知道字幕何时消失，应自行用 `duration` 计时。
+> **已移除**：字幕系统已被 Qt 控制器通知流（气泡信息流）取代。参见 [docs/system/notification-stream.md](../system/notification-stream.md)。渲染器不再注册此指令（未知指令返回 5003）。
 
 ---
 
 ## 19. `hide_subtitle` — 隐藏字幕
 
-立即清除当前显示的所有字幕（调用 `SubtitleManager::Hide()`，刷新全部 ASS 事件）。若无字幕在显示，静默成功。
-
-**回执**：✓ 需要 Response
-
-**Payload**：空对象 `{}`
-
-**示例**：
-
-```json
-{
-  "type": "command", "action": "hide_subtitle",
-  "id": "...", "payload": {}, "timestamp": ...
-}
-```
-
-**渲染器处理**：刷新 ASS 事件队列，清除所有可见字幕。无论引擎状态如何均返回 `success: true`。
+> **已移除**：字幕系统已被 Qt 控制器通知流（气泡信息流）取代。参见 [docs/system/notification-stream.md](../system/notification-stream.md)。渲染器不再注册此指令（未知指令返回 5003）。
 
 ---
 
 ## 20. `set_subtitle_style` — 设置字幕默认样式
 
-更新字幕的默认样式参数（写入 ASS 轨道 style 0）。后续 `show_subtitle` 若不携带样式覆盖字段，则使用此默认样式。
-
-**回执**：✓ 需要 Response
-
-**Payload**：
-
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|:---|:---|:---:|:---|:---|
-| `font_name` | string | 否 | `"Microsoft YaHei"` | 字体名称 |
-| `font_size` | double | 否 | `48.0` | 字号 |
-| `primary_color` | uint32 | 否 | `0x00FFFFFF` | 文字颜色，AABBGGRR 格式 |
-| `outline_color` | uint32 | 否 | `0x00000000` | 描边颜色，AABBGGRR 格式 |
-| `outline_width` | double | 否 | `2.0` | 描边宽度 |
-| `shadow_color` | uint32 | 否 | `0x00000000` | 阴影颜色，AABBGGRR 格式 |
-| `shadow_depth` | double | 否 | `0.0` | 阴影深度 |
-| `alignment` | int | 否 | `2` | ASS 数字键盘布局对齐 |
-| `margin_v` | double | 否 | `40.0` | 垂直边距（像素） |
-
-> 所有字段均为可选，仅传入的字段更新对应属性，未传入字段保持当前值不变。
-
-**示例**：
-
-```json
-{
-  "type": "command", "action": "set_subtitle_style",
-  "id": "...", "payload": { "font_size": 36.0, "primary_color": 255 },
-  "timestamp": ...
-}
-```
-
-**渲染器处理流程**：
-1. 校验字幕引擎已初始化，否则返回错误 `10002`
-2. 合并传入的样式参数到 ASS 轨道 style 0（未传入字段保留当前值）
-3. 发送 Response（`success: true`）
-
-**错误码**：
-
-| error_code | 触发场景 | error_message |
-|:---:|:---|:---|
-| `10002` | 字幕引擎未初始化 | `"Subtitle engine not initialized"` |
+> **已移除**：字幕系统已被 Qt 控制器通知流（气泡信息流）取代。参见 [docs/system/notification-stream.md](../system/notification-stream.md)。渲染器不再注册此指令（未知指令返回 5003）。
 
 ---
 
 ## 21. `set_subtitle_adjust_mode` — 进入/退出字幕调整模式
 
-切换渲染器的字幕调整模式。进入调整模式时，渲染器启用字幕区域边框预览显示，便于控制面板侧的用户可视化调整字幕位置与区域；退出时关闭边框预览。
-
-**回执**：✓ 需要 Response
-
-**Payload**：
-
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|:---|:---|:---:|:---|:---|
-| `enabled` | bool | ✓ | — | `true` = 进入字幕调整模式（启用边框预览），`false` = 退出 |
-
-**示例**：
-
-```json
-{
-  "type": "command", "action": "set_subtitle_adjust_mode",
-  "id": "...", "payload": { "enabled": true },
-  "timestamp": ...
-}
-```
-
-**渲染器处理流程**：
-1. 切换内部 `_subtitleAdjustMode` 标志
-2. `true` 时启用字幕区域边框预览显示，`false` 时关闭
-3. 发送 Response（`success: true`）
-
-> 本指令恒成功，无错误码。
+> **已移除**：字幕系统已被 Qt 控制器通知流（气泡信息流）取代。参见 [docs/system/notification-stream.md](../system/notification-stream.md)。渲染器不再注册此指令（未知指令返回 5003）。
 
 ---
 
 ## 22. `set_subtitle_layout` — 设置字幕布局
 
-设置字幕的位置偏移、渲染区域与字号，写入 `SubtitleManager`。即使 `SubtitleManager` 尚未初始化也接受指令——参数会被缓存，待初始化后生效。
-
-**回执**：✓ 需要 Response
-
-**Payload**：
-
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|:---|:---|:---:|:---|:---|
-| `offset_x` | double | ✓ | — | 字幕水平偏移（像素） |
-| `offset_y` | double | ✓ | — | 字幕垂直偏移（像素） |
-| `area_width` | int | ✓ | — | 字幕区域宽度（像素，`0` = 自动） |
-| `area_height` | int | ✓ | — | 字幕区域高度（像素，`0` = 自动） |
-| `font_size` | double | ✓ | — | 字号（ASS points） |
-
-**示例**：
-
-```json
-{
-  "type": "command", "action": "set_subtitle_layout",
-  "id": "...", "payload": { "offset_x": 100, "offset_y": 50, "area_width": 300, "area_height": 200, "font_size": 36.0 },
-  "timestamp": ...
-}
-```
-
-**渲染器处理流程**：
-1. 设置 `SubtitleManager` 的位置偏移、区域尺寸与字号
-2. 使用 `area_width`/`area_height` 调用 `ass_set_frame_size` 更新字幕渲染区域
-3. 若 `SubtitleManager` 尚未初始化，缓存参数待后续初始化时应用
-4. 发送 Response（`success: true`）
-
-> 本指令恒成功，无错误码（即使 `SubtitleManager` 未初始化也缓存参数并返回成功）。
+> **已移除**：字幕系统已被 Qt 控制器通知流（气泡信息流）取代。参见 [docs/system/notification-stream.md](../system/notification-stream.md)。渲染器不再注册此指令（未知指令返回 5003）。

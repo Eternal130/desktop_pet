@@ -3,7 +3,7 @@
 > **文档目的**:对 Qt 控制面板(controller_qt)进行端到端的人工 UI 验证,覆盖
 > `docs/controller/development-plan.md` 中 Phase 4–9 的全部 UI 验收标准。
 >
-> **配套代码测试**:`controller_qt/tests/`(38 个 QTest 二进制)覆盖单元/集成层;
+> **配套代码测试**:`controller_qt/tests/`(44 个 QTest 二进制)覆盖单元/集成层;
 > 本文档聚焦**只有人眼+人手才能验证**的视觉、交互、跨进程、跨会话行为。
 >
 > **自动化批次**:`controller_qt/tests/ui_automation/run_ui_tests.py` 已自动化
@@ -45,8 +45,8 @@ giwa-idol2023, Haru, Hiyori, jinse-specialB, Mao, Mark, Natori, Ren, Rice, Wanko
 | Linux | `~/.config/desktop-pet/` |
 
 关键文件:
-- `panel.json` — 窗口几何、主题、实例列表、4 个 PanelConfig 行为字段
-- `instances\<uuid>.json` — 每实例配置(29 字段)
+- `panel.json` — 窗口几何、主题、实例列表、PanelConfig 行为字段(含 notifications_enabled/notification_duration_ms)
+- `instances\<uuid>.json` — 每实例配置(24 字段,含 dialogue_pack;原 7 个字幕字段已移除)
 - `hit_area_cache.json` — hit 区域缓存
 
 ### 1.4 干净状态准备(每个测试章节前按需执行)
@@ -275,7 +275,7 @@ $env:QT_LOGGING_RULES="*=true"
 |:---|:---|
 | **前置** | 详情页绑定到某实例(状态 "stopped") |
 | **步骤** | 1. 点 "Start" 按钮 |
-| **预期** | (a) 状态徽章变 "CONNECTING" 黄色<br>(b) 几秒后一个新的渲染器窗口出现,显示默认模型(通常 Hiyori)<br>(c) 控制器状态徽章变 "RUNNING" 绿色<br>(d) 右侧连接指示灯从灰变绿<br>(e) "Model" ComboBox 自动选中 "Hiyori"(或当前默认模型)<br>(f) "Motions" 区出现按钮网格(每个动作组一个按钮 + 计数)<br>(g) "Command Log" 出现多条日志:`load_model`、`set_opacity`、`set_volume`、`set_subtitle_style` 等(9 条启动齐射)<br>(h) Start 按钮变灰,Stop/Restart 变可用 |
+| **预期** | (a) 状态徽章变 "CONNECTING" 黄色<br>(b) 几秒后一个新的渲染器窗口出现,显示默认模型(通常 Hiyori)<br>(c) 控制器状态徽章变 "RUNNING" 绿色<br>(d) 右侧连接指示灯从灰变绿<br>(e) "Model" ComboBox 自动选中 "Hiyori"(或当前默认模型)<br>(f) "Motions" 区出现按钮网格(每个动作组一个按钮 + 计数)<br>(g) "Command Log" 出现多条日志:`load_model`、`set_opacity`、`set_volume`、`set_layout` 等(7 条启动齐射)<br>(h) Start 按钮变灰,Stop/Restart 变可用 |
 | **通过标准** | (a)~(h) 全部出现 |
 | **备注** | 启动失败时状态变 "ERROR" 红色,查看日志诊断 |
 
@@ -606,23 +606,33 @@ $env:QT_LOGGING_RULES="*=true"
 | **预期** | (a) 10 秒后监控页顶部出现黄色警告条:"⚠ Renderer data stale (no stats_state in >10s)"<br>(b) 警告条带黄色边框 + 半透明黄色背景 |
 | **通过标准** | (a)(b) 出现 |
 
-### TC-8.5 字幕样式 — 预设切换
+### TC-8.5 通知流 — 气泡显示与自动消失（原字幕样式用例已随字幕系统移除废弃）
 
 | 项目 | 内容 |
 |:---|:---|
-| **前置** | 实例运行中 |
-| **步骤** | 1. 在详情页滚到 "Subtitle" 卡片<br>2. "Style Preset" ComboBox 下拉<br>3. 选择不同预设(共 15+ 个,如 "默认"、"极简"、"赛博朋克" 等) |
-| **预期** | (a) ComboBox 列出所有预设名(中文)<br>(b) 选不同预设 → Command Log 出现 `set_subtitle_style`<br>(c) 渲染器若显示字幕,样式实时变化(字体/颜色/描边等) |
-| **通过标准** | (a)~(c) 全部出现(字幕视觉变化需触发显示字幕场景,如语音包触发) |
+| **前置** | 实例运行中;`build\bin\Resources\DialoguePacks\` 含一个有效对话包(含 `dialogue.json`),或在详情页使用 testBubble 测试按钮 |
+| **步骤** | 1. 在详情页"对话气泡"卡片挂载对话包(或点击 testBubble 测试按钮)<br>2. 触发一条对话(interval 触发需等待;hit 触发可点击宠物对应区域)<br>3. 观察屏幕右上角 |
+| **预期** | (a) 屏幕右上角出现一条气泡卡片(BubbleCard):角色名 + 头像(若有)+ 文本<br>(b) 气泡置顶显示,不抢焦点(点击面板不受影响)<br>(c) 默认约 20 秒后自动消失<br>(d) 点击气泡可立即关闭 |
+| **通过标准** | (a)~(d) 全部出现 |
 
-### TC-8.6 字幕自动调整
+### TC-8.6 通知流 — 气泡堆叠与上限（原字幕自动调整用例已随字幕系统移除废弃）
 
 | 项目 | 内容 |
 |:---|:---|
-| **前置** | 实例运行中 |
-| **步骤** | 1. 在 "Auto-adjust to area" 行取消勾选(若已勾选)<br>2. 重新勾选 |
-| **预期** | (a) Command Log 出现 `set_subtitle_adjust_mode` true<br>(b) 取消勾选时 → `set_subtitle_adjust_mode` false<br>(c) 渲染器行为:启用时字幕字号自适应区域大小 |
-| **通过标准** | (a)(b) 出现 |
+| **前置** | TC-8.5 通过;对话包含多条 interval 间隔较短的行(或连续点击宠物触发 hit 台词) |
+| **步骤** | 1. 连续触发多条对话(3 条以上)<br>2. 观察屏幕右上角气泡堆叠<br>3. 继续触发至超过 6 条 |
+| **预期** | (a) 新气泡从右上角顶部进入,已有气泡向下堆叠<br>(b) 最多同时显示 6 条,超过上限时最旧的气泡被移除<br>(c) 旧气泡到期消失后,下方气泡上移补位 |
+| **通过标准** | (a)~(c) 全部出现 |
+| **备注** | 若对话包 trigger 为 interval,可将 min_s/max_s 配小(如 3-5 秒)加速验证;hit 台词有每行 60 秒冷却 |
+
+### TC-8.6a 通知流 — 对话包挂载与设置开关
+
+| 项目 | 内容 |
+|:---|:---|
+| **前置** | 实例运行中;`Resources\DialoguePacks\` 含一个有效对话包 |
+| **步骤** | 1. 在详情页"对话气泡"卡片选择对话包并挂载<br>2. 观察气泡流恢复显示<br>3. 打开设置页,关闭"通知气泡"(notifications_enabled)<br>4. 再次触发对话 |
+| **预期** | (a) 挂载后 Command Log 无字幕指令(通知流为控制器本地功能,不经协议)<br>(b) 气泡按 TC-8.5 规则显示<br>(c) 关闭 notifications_enabled 后不再出现新气泡<br>(d) 重新开启后恢复 |
+| **通过标准** | (a)~(d) 全部出现 |
 
 ### TC-8.7 布局 — Shift+drag 调整宠物位置
 
@@ -882,7 +892,7 @@ $env:QT_LOGGING_RULES="*=true"
 | GPU 不可用时显示 "—" | TC-8.3 |
 | 数据陈旧(>10s 无更新)时显示警告 | TC-8.4 |
 | 挂载语音包后点击宠物触发扩展动作(play_motion_ext) | TC-8.12 |
-| 字幕显示在渲染器窗口,样式可切换 | TC-8.5 |
+| ~~字幕显示在渲染器窗口,样式可切换~~ → 对话文案以通知流气泡显示(可开关、自动消失) | TC-8.5, TC-8.6, TC-8.6a |
 | 布局参数(offset/scale)可调并持久化 | TC-8.7~TC-8.10 |
 
 > **dev-plan Phase 9** 验收标准(分发包、冷启动、闲置内存、双平台、24h 稳定性)

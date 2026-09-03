@@ -113,13 +113,11 @@
 
 ---
 
-## 十、字幕相关（10000-10099）
+## 十、字幕相关（10000-10099）— ⚠️ 已废弃
 
-> 对应字幕模块（`SubtitleManager`，libass）。相关指令详见 [Commands §18–20](./commands.md#18-show_subtitle--显示字幕)。
+> **已废弃（原字幕系统，已移除；段位保留）**：字幕系统已被 Qt 控制器通知流（气泡信息流）取代（参见 [docs/system/notification-stream.md](../system/notification-stream.md)），渲染器不再注册字幕指令。以下错误码不再触发，未知指令统一返回 [5003](#五通信相关5000-5099)。10000 段位保留，可用于未来模块。
 
 | 错误码 | 触发场景 | 伴随消息 |
 |:---:|:---|:---|
-| 10001 | `show_subtitle` 时 `text` 为空或缺失 | `"text is required"` |
-| 10002 | `show_subtitle` 或 `set_subtitle_style` 时字幕引擎（`SubtitleManager`）未初始化 | `"Subtitle engine not initialized"` |
-
-> **v1 限制**：`hide_subtitle` 无论引擎状态如何均返回 `success: true`，不触发 10002。
+| 10001 | ~~`show_subtitle` 时 `text` 为空或缺失~~ | ~~`"text is required"`~~ |
+| 10002 | ~~字幕引擎（`SubtitleManager`）未初始化~~ | ~~`"Subtitle engine not initialized"`~~ |

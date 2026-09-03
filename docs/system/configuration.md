@@ -111,6 +111,8 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
     "height": 760,
     "theme": "深紫梦幻"
   },
+  "notifications_enabled": true,
+  "notification_duration_ms": 20000,
   "instances": [
     "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "f0e1d2c3-b4a5-6789-0fed-cba987654321"
@@ -125,6 +127,8 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 | `panel.width` | double | 1200 | 面板窗口宽度 |
 | `panel.height` | double | 760 | 面板窗口高度 |
 | `panel.theme` | string | "深紫梦幻" | UI 主题名称 |
+| `notifications_enabled` | bool | true | 是否启用通知流（气泡信息流）气泡显示。参见 [通知流设计](./notification-stream.md) |
+| `notification_duration_ms` | int | 20000 | 气泡默认自动消失时长（毫秒） |
 | `instances` | string[] | [] | 宠物实例配置 ID 列表（UUID），顺序即为显示顺序 |
 
 **旧版迁移**：若存在 `panel-state.json`（旧格式），`PanelStateManager` 自动迁移——将旧实例数据拆分为独立 `instances/{uuid}.json`，备份旧文件为 `.bak`。
@@ -184,6 +188,8 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 | `current_expression` | string | "F01" | 当前表情 |
 | `voice_pack` | string\|null | null | 挂载的语音包目录名（null = 未挂载） |
 | `volume` | double | 1.0 | 音量（0.0-1.0） |
+
+> **历史字段**：旧版本实例配置中的 7 个字幕字段（`subtitle_offset_x`/`subtitle_offset_y`/`subtitle_area_width`/`subtitle_area_height`/`subtitle_font_size`/`subtitle_style_preset`/`subtitle_adjust_mode` 等）已随字幕系统移除而删除；`dialogue_pack` 字段已随对话包系统移除而删除。加载时均被忽略。
 
 ---
 

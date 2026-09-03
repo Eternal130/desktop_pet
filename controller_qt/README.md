@@ -41,9 +41,9 @@ protocol (controller = WS server, renderer = WS client).
 | **System integration** | System tray (`QSystemTrayIcon` + QML menu popup), OS auto-launch (Win registry / Linux `.desktop`), close-action policy (close / minimize-to-tray / confirm) |
 | **Resource monitor** | Live CPU% + RSS sparklines via QtCharts (6 lines, 2s poll), `GetProcessTimes`/`GetProcessMemoryInfo` on Win, `/proc/self/*` on Linux |
 | **Voice packs** | Discovery + mounting, hand-rolled protobuf reader (no libprotobuf dep), priority behavior engine over the default InteractionHandler when a pack is mounted |
-| **Subtitle system** | 16 named style fields, `set_subtitle_style` wired into the startup salvo |
+| **Dialogue bubbles** | Desktop notification bubble stream (气泡信息流): voice-pack hit dialogue surfaces as controller-side bubbles (the only text source — the dialogue-pack system was removed by design revision) |
 | **Layout sync** | Per-instance position/size persisted, `layout_state` event handling |
-| **Protocol coverage** | **25 commands** (9-command startup salvo + `set_hit_areas` + 15 runtime setters/triggers) and **14 events** routed by action |
+| **Protocol coverage** | **20 commands** (7-command startup salvo + `set_hit_areas` + 12 runtime setters/triggers; the 5 subtitle commands were removed — dialogue text flows through the bubble stream) and **14 events** routed by action |
 
 ---
 
@@ -104,7 +104,7 @@ covers every Qt module consumed by Phase 5–9:
 | **Translations** | `translations/qt_*.qm` |
 
 > **Note:** `Qt6Test.dll` is **NOT** in the main `build/bin/` — the main app
-> does not link `Qt6::Test`. Each of the 38 test binaries gets its own
+> does not link `Qt6::Test`. Each of the 41 test binaries gets its own
 > `windeployqt` post-build step (declared in `tests/CMakeLists.txt`) so ctest
 > can run them in isolation.
 
@@ -116,23 +116,24 @@ generation is deferred to a later task — out of scope for Phase 5–9.
 ## Testing
 
 ```bash
-ctest --test-dir build/controller_qt            # run all 38 QTest binaries
+ctest --test-dir build/controller_qt            # run all 41 QTest binaries
 ctest --test-dir build/controller_qt -j8        # parallel
 ctest --test-dir build/controller_qt -L REQUIRES_RENDERER   # integration tier only
 ctest --test-dir build/controller_qt -E 'REQUIRES_RENDERER' # unit tier only
 ```
 
-**38 QTest binaries** under `tests/` cover every module: network (Envelope,
+**41 QTest binaries** under `tests/` cover every module: network (Envelope,
 WsServer, MessageDispatcher, Handshake, PendingRequests, EventRegistry,
 ThreadMarshal, ProtocolFactory, WsServerMulti), core (InstanceSession,
 InstanceManager, Scheduler, InteractionHandler, RestartController,
 HitAreaCacheManager, ModelInfoParser, ModelScanner, MountedBehaviorEngine,
-VoicePackScanner, MetaMkoParser, SubtitlePresets, OggDurationHeuristic,
+VoicePackScanner, MetaMkoParser, OggDurationHeuristic,
 MonitorDataModel, NetworkWiring), system (AutoLaunchManager, TrayManager,
 ResourceStatsCollector), config (InstanceConfig, PanelConfig,
 InstanceConfigManager, PanelStateManager, ConfigDir, Robustness, PathResolve),
 infrastructure (Logging, PoCIntegration, ProcessManager, StartupSalvo,
-ProtocolFixtures).
+ProtocolFixtures), bubble stream (NotificationStreamModel,
+NotificationStreamController).
 
 Each test exe links `Qt6::Test` and gets its own `windeployqt` post-build step
 so ctest can launch it standalone (Qt's `bin/` is NOT on `PATH` under ctest).
@@ -241,7 +242,7 @@ Why this matters:
 
 | Class | Role | Location |
 |:---|:---|:---|
-| `Protocol` | 25 typed command factories + envelope helpers | `src/network/Protocol.hpp` |
+| `Protocol` | 20 typed command factories + envelope helpers | `src/network/Protocol.hpp` |
 | `ResourceStatsCollector` | Win `GetProcessTimes`+`GetProcessMemoryInfo` / Linux `/proc/self/*`; never-throws contract | `src/system/ResourceStatsCollector.hpp` |
 | `TrayManager` | `QSystemTrayIcon` wrapper (QGuiApplication — no `QApplication`, no `QMenu`; the QML `Menu` is the popup) | `src/system/TrayManager.hpp` |
 | `AutoLaunchManager` | Win `reg.exe` via `QProcess` / Linux `~/.config/autostart/desktop-pet.desktop`; injectable suppliers for testing | `src/system/AutoLaunchManager.hpp` |
@@ -260,7 +261,7 @@ Why this matters:
 | `components/SectionCard.qml` | FluFrame card with title/hint header + optional action slot |
 | `components/Chip.qml` | Pill chip for motions/expressions/mapping groups |
 | `WelcomePage.qml` | Dashboard: metric strip (aggregate CPU/RSS/WS health), instance card grid, collapsible env-check summary |
-| `InstanceDetailPage.qml` | Two-column workbench: stage (model + motion/expression chips) + params left; subtitle (live preview)/layout/voice-pack right; command-log drawer |
+| `InstanceDetailPage.qml` | Two-column workbench: stage (model + motion/expression chips) + params left; dialogue-bubble (对话气泡)/layout/voice-pack right; command-log drawer |
 | `MonitorPage.qml` | Instance selector + 3×2 chart grid with peak/trend footers + InfoBar stale banner + crash-recovery card |
 | `VoicePackPage.qml` | Voice-pack library (scanner + meta.mko metadata), mapping preview, per-instance mount matrix (mount pending todo 21) |
 | `SettingsPage.qml` | Anchor nav (行为/启动/外观/关于) + SettingRow cards; theme mode, accent swatches, about |
@@ -309,7 +310,7 @@ controller_qt/
 │   ├── core/                   # InstanceSession (+ 4 split TUs), InstanceManager, Scheduler,
 │   │                           #   InteractionHandler, HitAreaCacheManager, RestartController,
 │   │                           #   MountedBehaviorEngine, VoicePackScanner, MetaMkoParser,
-│   │                           #   ModelInfoParser, ModelScanner, SubtitlePresets, PanelConfigController,
+│   │                           #   ModelInfoParser, ModelScanner, PanelConfigController,
 │   │                           #   ProcessManager, StartupSalvo, InstanceConfig(+Manager),
 │   │                           #   PanelConfig(+StateManager), ConfigDir, PathResolve,
 │   │                           #   EnvironmentChecker, WindowStateSaver
@@ -323,7 +324,7 @@ controller_qt/
 │   └── pages/                # WelcomePage, InstanceDetailPage, MonitorPage,
 │                             #   VoicePackPage, SettingsPage
 │   └── # (legacy Sidebar/TitleBar/ResizeHandles remain on disk, unused)
-└── tests/                      # 38 QTest binaries (see Testing section)
+└── tests/                      # 41 QTest binaries (see Testing section)
 ```
 
 ---

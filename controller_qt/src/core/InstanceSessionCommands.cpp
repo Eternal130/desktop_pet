@@ -7,7 +7,6 @@
 #include "core/MetaMkoParser.hpp"
 #include "core/ModelScanner.hpp"
 #include "core/PathResolve.hpp"
-#include "core/SubtitlePresets.hpp"
 #include "network/Envelope.hpp"
 #include "network/Protocol.hpp"
 #include "network/WsServer.hpp"
@@ -146,57 +145,6 @@ void InstanceSession::setAutoStart(bool enabled)
     }
 }
 
-// 鈹€鈹€ Phase-5 Wave 8 todo 21 (subtitle UI helpers) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-// Mirror of Java MainWindowController subtitleStyleCombo/subtitleAdjustCheck
-// handlers. Each setter: update m_config 鈫?send Protocol command via
-// sendCommand 鈫?persist via m_configManager. No NOTIFY signal: the QML
-// ComboBox/CheckBox read the getter once at panel construction and manage
-// their own checked-state afterward (same pattern as dragMode/idleInterval/
-// autoStart accessors above).
-
-QStringList InstanceSession::subtitlePresetNames() const
-{
-    return SubtitlePresets::presetNames();
-}
-
-QString InstanceSession::subtitleStylePreset() const
-{
-    return m_config.subtitleStylePreset;
-}
-
-void InstanceSession::setSubtitleStylePreset(const QString& presetName)
-{
-    if (m_config.subtitleStylePreset == presetName)
-        return;
-    LOG_INFO("InstanceSession[{}]: setSubtitleStylePreset \"{}\"",
-             m_instanceId, presetName.toStdString());
-    m_config.subtitleStylePreset = presetName;
-    sendCommand(Protocol::buildSetSubtitleStyle(
-        SubtitlePresets::mapPresetToStyle(presetName)));
-    if (!m_configManager.save(m_config)) {
-        LOG_ERROR("InstanceSession[{}]: failed to persist subtitle preset", m_instanceId);
-    }
-}
-
-bool InstanceSession::subtitleAdjustModeEnabled() const
-{
-    return m_config.subtitleAdjustMode;
-}
-
-void InstanceSession::setSubtitleAdjustMode(bool enabled)
-{
-    if (m_config.subtitleAdjustMode == enabled)
-        return;
-    LOG_INFO("InstanceSession[{}]: setSubtitleAdjustMode {}",
-             m_instanceId, enabled);
-    m_config.subtitleAdjustMode = enabled;
-    sendCommand(Protocol::buildSetSubtitleAdjustMode(enabled));
-    if (!m_configManager.save(m_config)) {
-        LOG_ERROR("InstanceSession[{}]: failed to persist subtitle adjust mode", m_instanceId);
-    }
-}
-
-// 鈹€鈹€ Phase-5 Wave 8 todo 22 (layout command triggers) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 // ── Voice-pack mount (todo 21) ───────────────────────────────────────────
 
 bool InstanceSession::mountVoicePack(const QString& packPath)

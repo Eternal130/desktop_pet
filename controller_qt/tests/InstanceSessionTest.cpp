@@ -314,8 +314,8 @@ void InstanceSessionTest::testStopSuppressesCrashSignal()
     server.close();
 }
 
-// The full blueprint §8.1 lifecycle: start → ready → 9-command salvo →
-// model_loaded → set_hit_areas. Asserts the salvo fires in the exact 9-action
+// The full blueprint §8.1 lifecycle: start → ready → 7-command salvo →
+// model_loaded → set_hit_areas. Asserts the salvo fires in the exact 7-action
 // order AND that set_hit_areas carries Hiyori's real hitAreas (["Body"]).
 // Spies on InstanceSession::commandSent — the unified outbound-command signal
 // that re-emits both the salvo commands and sendCommand (set_hit_areas).
@@ -348,7 +348,7 @@ void InstanceSessionTest::testFullLifecycleSalvoAndHitAreas()
     session.start();
 
     // ready → status=running → salvo fires synchronously inside the ready
-    // handler, so by the time we observe status=running the 9 salvo commands
+    // handler, so by the time we observe status=running the 7 salvo commands
     // are already captured.
     QVERIFY2(waitForStatus(session, "running", 15000),
              "renderer did not reach status='running' within 15s");
@@ -364,7 +364,7 @@ void InstanceSessionTest::testFullLifecycleSalvoAndHitAreas()
     // Flush any in-flight commandSent emissions.
     QTest::qWait(100);
 
-    // The 9 salvo commands in exact order (StartupSalvo.cpp sendSalvo).
+    // The 7 salvo commands in exact order (StartupSalvo.cpp sendSalvo).
     const QStringList expectedSalvo{
         QStringLiteral("load_model"),
         QStringLiteral("set_position"),
@@ -373,25 +373,23 @@ void InstanceSessionTest::testFullLifecycleSalvoAndHitAreas()
         QStringLiteral("set_fps"),
         QStringLiteral("set_volume"),
         QStringLiteral("set_layout"),
-        QStringLiteral("set_subtitle_layout"),
-        QStringLiteral("set_subtitle_style"),
     };
 
     // Extract all captured actions.
-    QVERIFY2(cmdSpy.count() >= 10,
-             qPrintable(QStringLiteral("expected >=10 commands (9 salvo + "
+    QVERIFY2(cmdSpy.count() >= 8,
+             qPrintable(QStringLiteral("expected >=8 commands (7 salvo + "
                                        "set_hit_areas), got %1").arg(cmdSpy.count())));
     QStringList actions;
     for (int i = 0; i < cmdSpy.count(); ++i)
         actions.append(cmdSpy.at(i).at(0).toString());
 
-    // The first 9 must be the salvo in order.
-    QCOMPARE(actions.mid(0, 9), expectedSalvo);
+    // The first 7 must be the salvo in order.
+    QCOMPARE(actions.mid(0, 7), expectedSalvo);
 
     // set_hit_areas must appear after the salvo (it fires on model_loaded,
     // which arrives after ready + load_model).
     int hitAreasIdx = actions.indexOf(QStringLiteral("set_hit_areas"));
-    QVERIFY2(hitAreasIdx >= 9,
+    QVERIFY2(hitAreasIdx >= 7,
              qPrintable(QStringLiteral("set_hit_areas not found after salvo "
                                        "(actions=%1)").arg(actions.join(','))));
 

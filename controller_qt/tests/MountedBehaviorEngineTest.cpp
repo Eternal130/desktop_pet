@@ -174,12 +174,14 @@ private slots:
         QCOMPARE(result->command.payload.value(
             QStringLiteral("fade_out")).toDouble(), 0.3);
 
-        QCOMPARE(result->command.payload.value(
-            QStringLiteral("subtitle_text")).toString(), QStringLiteral("Ouch!"));
-        QCOMPARE(result->subtitleText, QStringLiteral("Ouch!"));
-
-        QVERIFY(result->command.payload.contains(QStringLiteral("subtitle_duration")));
-        QCOMPARE(result->audioDurationMs, 1000);
+        // The doc text surfaces ONLY as BehaviorResult::dialogueText (fed to
+        // the notification bubble stream by InstanceSession) — the payload
+        // must NOT carry any subtitle side-channel fields.
+        QCOMPARE(result->dialogueText, QStringLiteral("Ouch!"));
+        QVERIFY(!result->command.payload.contains(
+            QStringLiteral("subtitle_text")));
+        QVERIFY(!result->command.payload.contains(
+            QStringLiteral("subtitle_duration")));
     }
 
     void testHasGroupForAreaFalse()

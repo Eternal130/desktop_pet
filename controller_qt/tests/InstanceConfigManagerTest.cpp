@@ -1,4 +1,4 @@
-// InstanceConfigManagerTest 鈥?SQLite-backed per-instance config CRUD.
+﻿// InstanceConfigManagerTest 鈥?SQLite-backed per-instance config CRUD.
 //
 // Behaviors locked (SQLite semantics 鈥?same API, no JSON files):
 //   1. save 鈫?load round-trip: every field survives.
@@ -43,12 +43,6 @@ InstanceConfig makeInstance(const QString& id)
     c.layoutOffsetX = -12.5;
     c.layoutOffsetY = 7.25;
     c.layoutScale = 0.9;
-    c.subtitleOffsetX = 3.0;
-    c.subtitleOffsetY = -2.0;
-    c.subtitleAreaWidth = 800;
-    c.subtitleAreaHeight = 120;
-    c.subtitleFontSize = 32.0;
-    c.subtitleStylePreset = QStringLiteral("缁堢榛戝");
     return c;
 }
 
@@ -83,7 +77,6 @@ void InstanceConfigManagerTest::testSaveLoadRoundTrip()
              QStringLiteral("voice-11111111-2222-3333-4444-555555555555"));
     QCOMPARE(loaded->autoStart, true);
     QCOMPARE(loaded->layoutOffsetX, -12.5);
-    QCOMPARE(loaded->subtitleStylePreset, QStringLiteral("缁堢榛戝"));
 
     // Absent id 鈫?nullopt.
     QVERIFY(!mgr.load(QStringLiteral("nope")).has_value());

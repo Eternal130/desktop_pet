@@ -71,8 +71,8 @@ QJsonObject instanceConfigToJson(const InstanceConfig& cfg)
     obj.insert(QStringLiteral("target_fps"), cfg.targetFps);
     obj.insert(QStringLiteral("auto_start"), cfg.autoStart);
     obj.insert(QStringLiteral("current_expression"), cfg.currentExpression);
-    // voice_pack: null when empty (byte-compatible with Java's null default),
-    // the string otherwise. fromJson accepts both forms.
+    // voice_pack: null when empty (byte-compatible with Java's null
+    // default), the string otherwise. fromJson accepts both forms.
     obj.insert(QStringLiteral("voice_pack"),
                cfg.voicePack.isEmpty() ? QJsonValue(QJsonValue::Null)
                                        : QJsonValue(cfg.voicePack));
@@ -81,13 +81,6 @@ QJsonObject instanceConfigToJson(const InstanceConfig& cfg)
     obj.insert(QStringLiteral("layout_offset_x"), cfg.layoutOffsetX);
     obj.insert(QStringLiteral("layout_offset_y"), cfg.layoutOffsetY);
     obj.insert(QStringLiteral("layout_scale"), cfg.layoutScale);
-    obj.insert(QStringLiteral("subtitle_offset_x"), cfg.subtitleOffsetX);
-    obj.insert(QStringLiteral("subtitle_offset_y"), cfg.subtitleOffsetY);
-    obj.insert(QStringLiteral("subtitle_area_width"), cfg.subtitleAreaWidth);
-    obj.insert(QStringLiteral("subtitle_area_height"), cfg.subtitleAreaHeight);
-    obj.insert(QStringLiteral("subtitle_font_size"), cfg.subtitleFontSize);
-    obj.insert(QStringLiteral("subtitle_style_preset"), cfg.subtitleStylePreset);
-    obj.insert(QStringLiteral("subtitle_adjust_mode"), cfg.subtitleAdjustMode);
     return obj;
 }
 
@@ -122,13 +115,6 @@ InstanceConfig instanceConfigFromJson(const QJsonObject& json)
     cfg.layoutOffsetX = readDouble(json, QLatin1String("layout_offset_x"), cfg.layoutOffsetX);
     cfg.layoutOffsetY = readDouble(json, QLatin1String("layout_offset_y"), cfg.layoutOffsetY);
     cfg.layoutScale = readDouble(json, QLatin1String("layout_scale"), cfg.layoutScale);
-    cfg.subtitleOffsetX = readDouble(json, QLatin1String("subtitle_offset_x"), cfg.subtitleOffsetX);
-    cfg.subtitleOffsetY = readDouble(json, QLatin1String("subtitle_offset_y"), cfg.subtitleOffsetY);
-    cfg.subtitleAreaWidth = readInt(json, QLatin1String("subtitle_area_width"), cfg.subtitleAreaWidth);
-    cfg.subtitleAreaHeight = readInt(json, QLatin1String("subtitle_area_height"), cfg.subtitleAreaHeight);
-    cfg.subtitleFontSize = readDouble(json, QLatin1String("subtitle_font_size"), cfg.subtitleFontSize);
-    cfg.subtitleStylePreset = readString(json, QLatin1String("subtitle_style_preset"), cfg.subtitleStylePreset);
-    cfg.subtitleAdjustMode = readBool(json, QLatin1String("subtitle_adjust_mode"), cfg.subtitleAdjustMode);
 
     return cfg;
 }

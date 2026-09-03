@@ -192,7 +192,7 @@ private slots:
     void testEnvelopeSerializeFixture();
     void testEnvelopeDeserializeFixture();
     void testHandshakeFlowFixture();
-    void testCommandAll25Fixture();
+    void testCommandAll20Fixture();
     void testEventAll13Fixture();
 
     // Failure path: the validators must REJECT deliberately malformed inputs.
@@ -296,7 +296,7 @@ void ProtocolFixturesTest::testEnvelopeDeserializeFixture()
 }
 
 // handshake_flow.json — events[] is an ordered sequence; each message is a
-// valid envelope, the sequence starts with a ready event, contains the 9
+// valid envelope, the sequence starts with a ready event, contains the 7
 // startup-volley commands, and includes a model_loaded event.
 void ProtocolFixturesTest::testHandshakeFlowFixture()
 {
@@ -339,7 +339,7 @@ void ProtocolFixturesTest::testHandshakeFlowFixture()
         }
     }
     QVERIFY2(seenModelLoaded, "handshake must include a model_loaded event");
-    QVERIFY2(volley.size() >= 9, "startup volley should have >=9 commands");
+    QVERIFY2(volley.size() >= 7, "startup volley should have >=7 commands");
     QCOMPARE(volley.first(), QStringLiteral("load_model"));
 
     // Cross-check the declared assertions block.
@@ -347,17 +347,18 @@ void ProtocolFixturesTest::testHandshakeFlowFixture()
     QVERIFY(assertions.value("starts_with_ready_event").toBool());
 }
 
-// command_all_25.json — exactly 25 commands, all type==command, all payloads
-// objects, unique actions, matching the catalog in interface.md §3.1.
-void ProtocolFixturesTest::testCommandAll25Fixture()
+// command_all_20.json — exactly 20 commands (the Qt controller's catalog; the
+// 5 subtitle commands were removed in the bubble-stream switch), all
+// type==command, all payloads objects, unique actions.
+void ProtocolFixturesTest::testCommandAll20Fixture()
 {
-    const QJsonObject doc = loadFixtureObject(QStringLiteral("command_all_25.json"));
+    const QJsonObject doc = loadFixtureObject(QStringLiteral("command_all_20.json"));
     QVERIFY(!doc.isEmpty());
 
-    QCOMPARE(doc.value("command_count").toInt(), 25);
+    QCOMPARE(doc.value("command_count").toInt(), 20);
 
     const QJsonArray cases = doc.value("cases").toArray();
-    QCOMPARE(cases.size(), 25);
+    QCOMPARE(cases.size(), 20);
 
     QSet<QString> actions;
     for (const QJsonValue &c : cases) {
@@ -376,16 +377,22 @@ void ProtocolFixturesTest::testCommandAll25Fixture()
                  qPrintable(QStringLiteral("duplicate command action: %1").arg(action)));
         actions.insert(action);
     }
-    QCOMPARE(actions.size(), 25);
+    QCOMPARE(actions.size(), 20);
 
     // Cross-check against the fixture's self-declared expected_action_set.
     const QJsonArray declared = doc.value("expected_action_set").toArray();
-    QCOMPARE(declared.size(), 25);
+    QCOMPARE(declared.size(), 20);
     QSet<QString> declaredSet;
     for (const QJsonValue &a : declared) {
         declaredSet.insert(a.toString());
     }
     QCOMPARE(actions, declaredSet);
+
+    // No subtitle command may appear in the Qt controller's catalog.
+    for (const QString &a : std::as_const(actions)) {
+        QVERIFY2(!a.contains(QLatin1String("subtitle")),
+                 qPrintable(QStringLiteral("subtitle command leaked into catalog: %1").arg(a)));
+    }
 
     // Spot-check a few load-bearing details from §5 so a later refactor cannot
     // silently drop fields without a fixture-test failure.
@@ -399,12 +406,6 @@ void ProtocolFixturesTest::testCommandAll25Fixture()
         } else if (action == QLatin1String("set_hit_areas")) {
             QVERIFY2(payload.value("hit_areas").isArray(),
                      "set_hit_areas payload must have hit_areas array");
-        } else if (action == QLatin1String("set_subtitle_style")) {
-            // §5 D.3 / §9 deviation #2: 16 style fields, colors AABBGGRR uint32.
-            QVERIFY(payload.contains("font_name"));
-            QVERIFY(payload.contains("primary_color"));
-            QVERIFY(payload.contains("bg_box_color"));
-            QVERIFY(payload.contains("bg_box_padding_y"));
         } else if (action == QLatin1String("play_motion_ext")) {
             QVERIFY(payload.contains("motion_path"));
         }

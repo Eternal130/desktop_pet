@@ -12,7 +12,7 @@
 
 // ProtocolFactoryTest (T9) — verifies the typed builders produce payloads that
 // match interface.md §5 field-for-field, cross-checked against the T3 fixture
-// command_all_25.json. Also covers the three cross-cutting Envelope invariants
+// command_all_20.json. Also covers the three cross-cutting Envelope invariants
 // the builders inherit from createCommand/createResponse:
 //   1. command JSON carries NO response fields (§2.3);
 //   2. response JSON carries success/error_code/error_message at TOP LEVEL and
@@ -36,8 +36,6 @@ private slots:
     void testSetFps();
     void testSetVolume();
     void testSetLayout();
-    void testSetSubtitleLayout();
-    void testSetSubtitleStyle();
     void testSetHitAreas();
     void testShutdown();
 
@@ -49,9 +47,6 @@ private slots:
     void testPlayMotionExtOmitsEmpty();
     void testPlayAudio();
     void testStopAudio();
-    void testShowSubtitle();
-    void testHideSubtitle();
-    void testSetSubtitleAdjustMode();
     void testGetStats();
     void testGetLayout();
     void testResetLayout();
@@ -67,14 +62,14 @@ private:
     // a representative one).
     void verifyCommand(const QString& action, const Envelope& env);
 
-    QJsonObject m_fixture; // parsed command_all_25.json root
+    QJsonObject m_fixture; // parsed command_all_20.json root
 
     QJsonObject fixturePayload(const QString& action) const;
 };
 
 void ProtocolFactoryTest::initTestCase() {
     const QString path = QStringLiteral(PROTOCOL_FIXTURES_DIR)
-                         + QStringLiteral("/command_all_25.json");
+                         + QStringLiteral("/command_all_20.json");
     QFile f(path);
     QVERIFY2(f.open(QIODevice::ReadOnly),
              qPrintable(QStringLiteral("cannot open fixture: %1").arg(path)));
@@ -167,18 +162,6 @@ void ProtocolFactoryTest::testSetLayout() {
                   Protocol::buildSetLayout(10.0, -5.0, 1.2));
 }
 
-void ProtocolFactoryTest::testSetSubtitleLayout() {
-    verifyCommand(QStringLiteral("set_subtitle_layout"),
-                  Protocol::buildSetSubtitleLayout(0.0, -40.0, 0, 0));
-}
-
-void ProtocolFactoryTest::testSetSubtitleStyle() {
-    // Defaults reproduce the fixture payload exactly (interface.md §D.1
-    // 默认值 column == command_all_25.json set_subtitle_style case).
-    verifyCommand(QStringLiteral("set_subtitle_style"),
-                  Protocol::buildSetSubtitleStyle());
-}
-
 void ProtocolFactoryTest::testSetHitAreas() {
     const QJsonArray areas = fixturePayload(QStringLiteral("set_hit_areas"))
                                  .value(QStringLiteral("hit_areas")).toArray();
@@ -194,7 +177,7 @@ void ProtocolFactoryTest::testShutdown() {
 // ── Runtime command factories (T16) ────────────────────────────────────────
 //
 // Each factory's payload is asserted field-for-field against the corresponding
-// command_all_25.json case via verifyCommand(). Fixture values mirror
+// command_all_20.json case via verifyCommand(). Fixture values mirror
 // interface.md §B/C/D/E/F exactly.
 
 void ProtocolFactoryTest::testPlayMotion() {
@@ -215,16 +198,21 @@ void ProtocolFactoryTest::testSetExpression() {
 }
 
 void ProtocolFactoryTest::testPlayMotionExt() {
-    // Fixture: all 8 fields populated (theMountedBehaviorEngine full-payload
-    // shape — audio + lipSync + subtitle all opted in).
+    // Fixture: 6 fields populated (motion + fades + audio + lipSync; the
+    // subtitle side-channel was removed in the bubble-stream switch).
     verifyCommand(QStringLiteral("play_motion_ext"),
                   Protocol::buildPlayMotionExt(
                       QStringLiteral("C:/pets/motions/wave.motion3.json"),
                       2, 1.0, 1.0,
                       QStringLiteral("C:/pets/audio/wave.ogg"),
-                      QStringLiteral("C:/pets/lipsync/wave.txt"),
-                      QStringLiteral("Hello there!"),
-                      2000));
+                      QStringLiteral("C:/pets/lipsync/wave.txt")));
+    // Subtitle fields must NEVER appear in the payload (bubble-stream switch).
+    const Envelope env = Protocol::buildPlayMotionExt(
+        QStringLiteral("C:/pets/motions/wave.motion3.json"), 2, 1.0, 1.0,
+        QStringLiteral("C:/pets/audio/wave.ogg"),
+        QStringLiteral("C:/pets/lipsync/wave.txt"));
+    QVERIFY(!env.payload.contains(QStringLiteral("subtitle_text")));
+    QVERIFY(!env.payload.contains(QStringLiteral("subtitle_duration")));
 }
 
 void ProtocolFactoryTest::testPlayMotionExtOmitsEmpty() {
@@ -259,25 +247,6 @@ void ProtocolFactoryTest::testPlayAudio() {
 void ProtocolFactoryTest::testStopAudio() {
     verifyCommand(QStringLiteral("stop_audio"),
                   Protocol::buildStopAudio());
-}
-
-void ProtocolFactoryTest::testShowSubtitle() {
-    // Fixture: text="Hello!", duration=3000, then the default SubtitleStyle
-    // (16 fields). Default-constructed SubtitleStyle reproduces the fixture
-    // style block byte-for-byte (Protocol.hpp:31-48 defaults match §D.1).
-    verifyCommand(QStringLiteral("show_subtitle"),
-                  Protocol::buildShowSubtitle(QStringLiteral("Hello!"), 3000));
-}
-
-void ProtocolFactoryTest::testHideSubtitle() {
-    verifyCommand(QStringLiteral("hide_subtitle"),
-                  Protocol::buildHideSubtitle());
-}
-
-void ProtocolFactoryTest::testSetSubtitleAdjustMode() {
-    // Fixture: {enabled:true}
-    verifyCommand(QStringLiteral("set_subtitle_adjust_mode"),
-                  Protocol::buildSetSubtitleAdjustMode(true));
 }
 
 void ProtocolFactoryTest::testGetStats() {

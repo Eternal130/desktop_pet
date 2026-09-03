@@ -1,5 +1,6 @@
 #include "core/InstanceSession.hpp"
 
+#include <QDateTime>
 #include <QJsonObject>
 
 #include <spdlog/spdlog.h>
@@ -32,11 +33,37 @@ void InstanceSession::handleHitEvent(const Envelope& env)
         QStringLiteral("area_id")).toString();
 
     if (m_behaviorEngine.hasGroupForArea(areaId)) {
+        // Cooldown gate: while the previous behavior's motion/audio is still
+        // playing, swallow the hit entirely — no re-trigger, no bubble.
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        if (nowMs < m_behaviorActiveUntilMs) {
+            LOG_DEBUG("InstanceSession[{}]: hit during behavior cooldown "
+                      "({}ms left) — ignored", m_instanceId,
+                      int(m_behaviorActiveUntilMs - nowMs));
+            return;
+        }
         auto result = m_behaviorEngine.buildBehaviorCommand(areaId);
         if (result.has_value()) {
             LOG_INFO("InstanceSession[{}]: hit area=\"{}\" → play_motion_ext "
                      "(voice pack)", m_instanceId, areaId.toStdString());
             sendCommand(result->command);
+            // Cooldown window = the behavior's audio length (estimated from
+            // the OGG header; the engine's 5s fallback covers no-audio and
+            // parse-failure cases).
+            const QString audioPath = result->command.payload
+                .value(QStringLiteral("audio_path")).toString();
+            const qint64 audioMs = audioPath.isEmpty()
+                ? 0
+                : core::MountedBehaviorEngine::estimateOggDurationMs(audioPath);
+            m_behaviorActiveUntilMs = nowMs + (audioMs > 0 ? audioMs : 4000);
+            // Voice-pack dialogue text goes to the notification bubble stream
+            // (never to the renderer — the subtitle side-channel is gone).
+            // Bubble lifetime = audio length + 8s display margin; 0 = default.
+            if (!result->dialogueText.isEmpty() && m_dialogueSink) {
+                m_dialogueSink(m_config.id, label(), avatar(),
+                               result->dialogueText,
+                               audioMs > 0 ? int(audioMs + 8000) : 0);
+            }
             m_scheduler.pause();
             return;
         }
@@ -154,66 +181,6 @@ void InstanceSession::startIdleScheduler()
 
     LOG_INFO("InstanceSession[{}]: Scheduler started (interval={}ms, idleGroup=\"{}\")",
              m_instanceId, intervalMs, Scheduler::kDefaultGroup.toStdString());
-}
-
-void InstanceSession::handleSubtitleLayoutChangedEvent(const Envelope& env)
-{
-    // interface.md §4.1 subtitle_layout_changed payload:
-    //   { offset_x, offset_y, area_width, area_height, font_size }
-    // The renderer emits this when its auto-adjust mode rescales the subtitle
-    // region (e.g. font_size shrunk to fit area_width). The controller mirrors
-    // the runtime values into InstanceConfig so the next launch restores them
-    // via set_subtitle_layout in the startup salvo.
-    //
-    // Missing/null/non-numeric fields preserve the prior value (never partial-
-    // writes, never crashes). The renderer always emits all 5 together; the
-    // per-field guard is defensive against a malformed payload.
-    const QJsonObject& p = env.payload;
-    bool changed = false;
-
-    const QJsonValue ox = p.value(QStringLiteral("offset_x"));
-    if (ox.isDouble()) {
-        m_config.subtitleOffsetX = ox.toDouble();
-        changed = true;
-    }
-    const QJsonValue oy = p.value(QStringLiteral("offset_y"));
-    if (oy.isDouble()) {
-        m_config.subtitleOffsetY = oy.toDouble();
-        changed = true;
-    }
-    const QJsonValue aw = p.value(QStringLiteral("area_width"));
-    if (aw.isDouble()) {
-        m_config.subtitleAreaWidth = static_cast<int>(aw.toDouble());
-        changed = true;
-    }
-    const QJsonValue ah = p.value(QStringLiteral("area_height"));
-    if (ah.isDouble()) {
-        m_config.subtitleAreaHeight = static_cast<int>(ah.toDouble());
-        changed = true;
-    }
-    const QJsonValue fs = p.value(QStringLiteral("font_size"));
-    if (fs.isDouble()) {
-        m_config.subtitleFontSize = fs.toDouble();
-        changed = true;
-    }
-
-    if (!changed) {
-        LOG_DEBUG("InstanceSession[{}]: subtitle_layout_changed with no numeric fields; ignoring",
-                  m_instanceId);
-        return;
-    }
-
-    if (m_configManager.save(m_config)) {
-        LOG_INFO("InstanceSession[{}]: persisted subtitle layout "
-                 "(ox={}, oy={}, aw={}, ah={}, fs={}) after subtitle_layout_changed",
-                 m_instanceId,
-                 m_config.subtitleOffsetX, m_config.subtitleOffsetY,
-                 m_config.subtitleAreaWidth, m_config.subtitleAreaHeight,
-                 m_config.subtitleFontSize);
-    } else {
-        LOG_ERROR("InstanceSession[{}]: failed to persist subtitle layout after subtitle_layout_changed",
-                  m_instanceId);
-    }
 }
 
 void InstanceSession::handleLayoutChangedEvent(const Envelope& env)

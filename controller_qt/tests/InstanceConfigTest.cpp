@@ -1,24 +1,19 @@
 // allow: SIZE_OK — single cohesive QTest SUT for the InstanceConfig ser/deser
 // model. Splitting the private slots across executables would fragment one
-// logical contract (the 28-field round-trip + merge + snake_case + garbage
+// logical contract (the 23-field round-trip + merge + snake_case + garbage
 // invariants); kept as one class by intent.
 //
 // InstanceConfigTest — TDD for the InstanceConfig data model (T18).
 //
 // Six behaviors locked (matches the task spec MUST DO list):
-//   1. Round-trip identity: toJson -> fromJson preserves all 28 fields.
+//   1. Round-trip identity: toJson -> fromJson preserves all 23 fields.
 //   2. Missing fields merge from defaults (only id+label present).
 //   3. snake_case key mapping (graphics_backend, current_model_name, ...).
 //   4. Unknown fields are silently ignored (interface.md §1.5).
 //   5. Garbage / empty JSON -> default-constructed InstanceConfig, no throw.
-//   6. toJson emits exactly 28 keys (one per field).
+//   6. toJson emits exactly 23 keys (one per field).
 //
 // QTEST_APPLESS_MAIN: pure JSON struct manipulation, no event loop needed.
-//
-// NOTE on field count: the task narrative says "29 fields" in several places,
-// but the task's own struct definition, blueprint §5.1, and the Java
-// InstanceConfig record each define exactly 28 fields. The key-count test
-// therefore asserts 28 — the real, ground-truth count.
 
 #include "core/InstanceConfig.hpp"
 
@@ -29,14 +24,10 @@
 
 namespace {
 
-// Number of fields / serialized keys. Blueprint §5.1 + the Java record each
-// define 28 fields; the Qt struct added a 29th (subtitle_adjust_mode) in
-// Phase 5 Wave 8 todo 21 — the Java reference kept it as runtime-only state,
-// but the Qt port persists it so the user's adjust-mode preference survives
-// restarts. Every other ground-truth source agrees on the original 28.
-// The create-instance dialog later added a 30th (avatar) — a user-picked
-// single-glyph emoji persisted per instance.
-constexpr int kFieldCount = 30;
+// 23 fields (the 7 subtitle_* fields were removed in the bubble-stream
+// switch, dialogue_pack in the dialogue-pack-system removal; legacy keys in
+// existing files are silently ignored).
+constexpr int kFieldCount = 23;
 
 // Build a config where EVERY field carries a distinctive, non-default value.
 // Used by the round-trip test so a single missed field surfaces immediately.
@@ -67,13 +58,6 @@ InstanceConfig makeFullyPopulated()
     c.layoutOffsetX = -12.5;
     c.layoutOffsetY = 7.25;
     c.layoutScale = 0.9;
-    c.subtitleOffsetX = 3.0;
-    c.subtitleOffsetY = -2.0;
-    c.subtitleAreaWidth = 800;
-    c.subtitleAreaHeight = 120;
-    c.subtitleFontSize = 32.0;
-    c.subtitleStylePreset = QStringLiteral("终端黑客");
-    c.subtitleAdjustMode = true;
     return c;
 }
 
@@ -101,7 +85,7 @@ void InstanceConfigTest::testRoundTripAllFields()
     const QJsonObject json = instanceConfigToJson(original);
     const InstanceConfig roundTripped = instanceConfigFromJson(json);
 
-    // Then: every field survived intact. operator== is member-wise (28 fields),
+    // Then: every field survived intact. operator== is member-wise (24 fields),
     // so a single dropped or mis-typed field fails here.
     QCOMPARE(roundTripped, original);
     // Belt-and-suspenders: explicitly check the trickiest fields that defaults
@@ -124,7 +108,7 @@ void InstanceConfigTest::testMissingFieldsMergeFromDefaults()
 
     // Then: the two provided fields are honored, and the rest take defaults
     // matching blueprint §5.1 (a sample of representative fields across each
-    // group: backend, model, window, behavior, audio, layout, subtitle).
+    // group: backend, model, window, behavior, audio, layout).
     QCOMPARE(cfg.id, QStringLiteral("deadbeef-0000-1111-2222-333333333333"));
     QCOMPARE(cfg.label, QStringLiteral("OnlyName"));
     QCOMPARE(cfg.graphicsBackend, QStringLiteral("opengl"));
@@ -144,8 +128,6 @@ void InstanceConfigTest::testMissingFieldsMergeFromDefaults()
     QCOMPARE(cfg.volume, 1.0);
     QCOMPARE(cfg.muted, false);
     QCOMPARE(cfg.layoutScale, 1.0);
-    QCOMPARE(cfg.subtitleFontSize, 48.0);
-    QCOMPARE(cfg.subtitleStylePreset, QStringLiteral("默认"));
 }
 
 void InstanceConfigTest::testSnakeCaseMapping()
@@ -239,13 +221,31 @@ void InstanceConfigTest::testGarbageJsonReturnsDefaults()
     QCOMPARE(fromWrong.windowX, 1200);
     QCOMPARE(fromWrong.targetFps, 0);
 
-    // voice_pack accepts BOTH JSON null (Java's default) and a real string.
+    // voice_pack accepts BOTH JSON null (Java's default) and a real string;
+    // a missing key falls back to the empty default.
     QJsonObject nullVoice;
     nullVoice.insert(QStringLiteral("voice_pack"), QJsonValue(QJsonValue::Null));
     QCOMPARE(instanceConfigFromJson(nullVoice).voicePack, QString());
     QJsonObject strVoice;
     strVoice.insert(QStringLiteral("voice_pack"), QStringLiteral("pack-a"));
     QCOMPARE(instanceConfigFromJson(strVoice).voicePack, QStringLiteral("pack-a"));
+
+    // toJson writes JSON null for an empty voice_pack.
+    const QJsonObject emptyJson = instanceConfigToJson(InstanceConfig{});
+    QVERIFY(emptyJson.value(QStringLiteral("voice_pack")).isNull());
+
+    // Legacy subtitle / dialogue_pack keys in an old file are silently
+    // ignored (§1.5) — they must not resurrect removed fields or corrupt the
+    // parse.
+    QJsonObject legacy;
+    legacy.insert(QStringLiteral("id"), QStringLiteral("legacy-id"));
+    legacy.insert(QStringLiteral("subtitle_offset_x"), 5.0);
+    legacy.insert(QStringLiteral("subtitle_style_preset"), QStringLiteral("阴影"));
+    legacy.insert(QStringLiteral("subtitle_adjust_mode"), true);
+    legacy.insert(QStringLiteral("dialogue_pack"), QStringLiteral("hiyori-daily"));
+    const InstanceConfig fromLegacy = instanceConfigFromJson(legacy);
+    QCOMPARE(fromLegacy.id, QStringLiteral("legacy-id"));
+    QCOMPARE(fromLegacy.voicePack, QString());
 }
 
 void InstanceConfigTest::testKeyCount()
@@ -255,10 +255,8 @@ void InstanceConfigTest::testKeyCount()
     const InstanceConfig cfg;
     // When: serialize.
     const QJsonObject json = instanceConfigToJson(cfg);
-    // Then: exactly one JSON key per field. blueprint §5.1, the Java record,
-    // and the struct definition each define 28 fields, so 28 keys — not 29.
-    // (The task narrative's "29" is an off-by-one; the struct/blueprint/Java
-    // ground truth is 28.)
+    // Then: exactly one JSON key per field (23 after the dialogue_pack
+    // removal).
     QCOMPARE(json.size(), kFieldCount);
 }
 

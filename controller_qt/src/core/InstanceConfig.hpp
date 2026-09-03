@@ -10,23 +10,22 @@
 // controller/.../model/InstanceConfig.java record, and the FULL superset of the
 // minimal InstanceConfigLike view that StartupSalvo (T16) used provisionally.
 //
-// Field set & defaults: architecture-blueprint.md §5.1 (the authoritative 28-
-// field table). The struct's default member initializers mirror that table
-// exactly. JSON keys are snake_case (matching the Java Gson FieldNamingPolicy +
-// configuration.md §5 examples) so the Qt and JavaFX controllers read/write the
-// SAME instance files byte-for-byte.
+// Field set & defaults: architecture-blueprint.md §5.1. The struct's default
+// member initializers mirror that table. JSON keys are snake_case (matching
+// the Java Gson FieldNamingPolicy + configuration.md §5 examples) so the Qt
+// and JavaFX controllers read/write the SAME instance files byte-for-byte.
 //
-// NOTE on field count: blueprint §5.1, the Java record, AND this struct each
-// define 28 fields (id … subtitleStylePreset). Some task prose says "29"; that
-// is an off-by-one in the narrative — every ground-truth source agrees on 28,
-// and the test asserts exactly 28 serialized keys.
+// The 7 former subtitle_* fields were removed in the bubble-stream switch
+// phase (the Qt controller no longer drives renderer subtitles). fromJson
+// silently ignores those keys in existing files written by older builds or
+// by the JavaFX controller (interface.md §1.5 unknown-field tolerance).
 //
-// voicePack nullability: the Java side treats voice_pack as a nullable string
-// (null = not mounted). Qt has no null QString, so the empty QString is the
-// "not mounted" sentinel. toJson writes JSON null for an empty voicePack
-// (byte-compatible with Java's null default) and a real string otherwise;
-// fromJson accepts both null and a string (and treats a missing key as the
-// default empty string).
+// voicePack nullability: the Java side treats this as a nullable string
+// (null = none). Qt has no null QString, so the empty QString is the
+// "none" sentinel. toJson writes JSON null for an empty value (byte-compatible
+// with Java's null default) and a real string otherwise; fromJson accepts
+// both null and a string (and treats a missing key as the default empty
+// string).
 struct InstanceConfig {
     // ── identity / paths ───────────────────────────────────────────────────
     QString id;                            // UUID; persistence primary key
@@ -51,7 +50,7 @@ struct InstanceConfig {
     int targetFps = 0;                     // 0 = adaptive; 15–120 = fixed
     bool autoStart = false;                // start with the panel
 
-    // ── expression / audio ─────────────────────────────────────────────────
+    // ── expression / audio ──────────────────────────────────────────────────
     QString currentExpression = QStringLiteral("F01");
     QString voicePack;                     // empty = no voice pack mounted
     double volume = 1.0;                   // 0.0–1.0
@@ -61,21 +60,6 @@ struct InstanceConfig {
     double layoutOffsetX = 0.0;
     double layoutOffsetY = 0.0;
     double layoutScale = 1.0;
-
-    // ── subtitle overlay ───────────────────────────────────────────────────
-    double subtitleOffsetX = 0.0;
-    double subtitleOffsetY = 0.0;
-    int subtitleAreaWidth = 0;             // 0 = auto
-    int subtitleAreaHeight = 0;            // 0 = auto
-    double subtitleFontSize = 48.0;
-    QString subtitleStylePreset = QStringLiteral("默认"); // "default" (Chinese)
-    // Phase 5 Wave 8 todo 21: subtitle auto-adjust mode (font scaling to area).
-    // Bound to the InstanceDetailPage adjust-mode CheckBox; toggled via
-    // InstanceSession::setSubtitleAdjustMode which sends set_subtitle_adjust_mode
-    // (§D.4) + persists. NOTE: added in todo 21 — the Java reference kept this
-    // as runtime-only state (no persisted field); the Qt port persists it so
-    // the user's preference survives restarts. Field count goes 28 → 29.
-    bool subtitleAdjustMode = false;
 
     // Member-wise equality — used by round-trip identity tests (QJsonObject and
     // QString compare by content, so ordering is irrelevant).
@@ -102,21 +86,14 @@ struct InstanceConfig {
             && muted == other.muted
             && layoutOffsetX == other.layoutOffsetX
             && layoutOffsetY == other.layoutOffsetY
-            && layoutScale == other.layoutScale
-            && subtitleOffsetX == other.subtitleOffsetX
-            && subtitleOffsetY == other.subtitleOffsetY
-            && subtitleAreaWidth == other.subtitleAreaWidth
-            && subtitleAreaHeight == other.subtitleAreaHeight
-            && subtitleFontSize == other.subtitleFontSize
-            && subtitleStylePreset == other.subtitleStylePreset
-            && subtitleAdjustMode == other.subtitleAdjustMode;
+            && layoutScale == other.layoutScale;
     }
 };
 
 // Serialize an InstanceConfig to a QJsonObject with snake_case keys for JavaFX
 // interop (configuration.md §5). Every field is written; voice_pack is written
 // as JSON null when empty (matching Java's null default) and a string
-// otherwise. The result always has exactly 28 keys (one per field).
+// otherwise. The result always has exactly one key per field (23).
 QJsonObject instanceConfigToJson(const InstanceConfig& cfg);
 
 // Deserialize a QJsonObject into an InstanceConfig. Missing fields are merged

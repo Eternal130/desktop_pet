@@ -71,10 +71,8 @@ QJsonObject makeRandomJsonObject(QRandomGenerator* g)
         "id", "label", "renderer_path", "graphics_backend", "model_name",
         "model_scale", "window_x", "window_y", "window_width", "window_height",
         "opacity", "drag_mode", "idle_interval", "target_fps", "auto_start",
-        "current_expression", "voice_pack", "volume", "muted", "drag_mode",
-        "layout_offset_x", "layout_offset_y", "layout_scale",
-        "subtitle_offset_x", "subtitle_offset_y", "subtitle_area_width",
-        "subtitle_area_height", "subtitle_font_size", "subtitle_style_preset"
+        "current_expression", "voice_pack", "dialogue_pack", "volume", "muted",
+        "drag_mode", "layout_offset_x", "layout_offset_y", "layout_scale"
     };
     static const char* kPanelKeys[] = {
         "panel_x", "panel_y", "panel_width", "panel_height", "theme",

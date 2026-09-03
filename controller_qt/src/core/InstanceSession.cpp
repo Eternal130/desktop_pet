@@ -25,11 +25,11 @@ constexpr const char* kStatusConnecting = "connecting";
 constexpr const char* kStatusRunning    = "running";
 constexpr const char* kStatusError      = "error";
 
-// M1 fix: map the 28-field InstanceConfig to the 16-field InstanceConfigLike
-// view that StartupSalvo::sendSalvo consumes. InstanceConfigLike is NOT
-// implicitly convertible from InstanceConfig (different struct types), so this
-// explicit field-by-field copy is required. The 16 fields are exactly the
-// overlap: the salvo's 9 commands read these and nothing else from the config.
+// M1 fix: map the InstanceConfig to the InstanceConfigLike view that
+// StartupSalvo::sendSalvo consumes. InstanceConfigLike is NOT implicitly
+// convertible from InstanceConfig (different struct types), so this explicit
+// field-by-field copy is required. The 12 fields are exactly the overlap: the
+// salvo's 7 commands read these and nothing else from the config.
 InstanceConfigLike toInstanceConfigLike(const InstanceConfig& cfg)
 {
     InstanceConfigLike v;
@@ -45,11 +45,6 @@ InstanceConfigLike toInstanceConfigLike(const InstanceConfig& cfg)
     v.layoutOffsetX     = cfg.layoutOffsetX;
     v.layoutOffsetY     = cfg.layoutOffsetY;
     v.layoutScale       = cfg.layoutScale;
-    v.subtitleOffsetX   = cfg.subtitleOffsetX;
-    v.subtitleOffsetY   = cfg.subtitleOffsetY;
-    v.subtitleAreaWidth = cfg.subtitleAreaWidth;
-    v.subtitleAreaHeight= cfg.subtitleAreaHeight;
-    v.subtitleStylePreset = cfg.subtitleStylePreset;
     return v;
 }
 
@@ -260,11 +255,11 @@ void InstanceSession::start()
     // call wins). The overrides implement the blueprint §8.1 lifecycle.
     m_eventRegistry.registerDefaults();
 
-    // ready → status=running → fire the 9-command startup salvo (blueprint
+    // ready → status=running → fire the 7-command startup salvo (blueprint
     // §8.1 step 6-7). The salvo is the controller's first substantive act
     // after the renderer signals readiness. sendSalvo pushes load_model,
-    // set_position, set_size, set_opacity, set_fps, set_volume, set_layout,
-    // set_subtitle_layout, set_subtitle_style — in that exact order.
+    // set_position, set_size, set_opacity, set_fps, set_volume, set_layout —
+    // in that exact order.
     m_dispatcher.registerEventHandler(
         QStringLiteral("ready"), [this](const Envelope&) {
             LOG_INFO("InstanceSession[{}]: ready → running + salvo", m_instanceId);
@@ -341,16 +336,6 @@ void InstanceSession::start()
     m_dispatcher.registerEventHandler(
         QStringLiteral("motion_finished"), [this](const Envelope& env) {
             handleMotionFinishedEvent(env);
-        });
-
-    // Phase-5 Wave 8 todo 21 + M6: subtitle_layout_changed is the renderer's
-    // 14th event (Protocol.hpp:39; emitted 3× in LAppDelegate.cpp). NOT in
-    // EventRegistry's default 13 (kActiveEvents + kPhase6Events) — must be
-    // registered explicitly here, else the dispatcher logs
-    // "no handler for action" and the layout drift goes unpersisted.
-    m_dispatcher.registerEventHandler(
-        QStringLiteral("subtitle_layout_changed"), [this](const Envelope& env) {
-            handleSubtitleLayoutChangedEvent(env);
         });
 
     // Phase-5 Wave 8 todo 22: layout_changed / window_resized / layout_state

@@ -1,6 +1,5 @@
 #include "core/StartupSalvo.hpp"
 
-#include "core/SubtitlePresets.hpp"
 #include "network/Protocol.hpp"
 
 #include <QJsonDocument>
@@ -12,7 +11,7 @@
 // All command factories live in the Protocol namespace (T9). The salvo is a
 // declarative list of (factory call → sendOne) pairs; no branching, no
 // per-command logic. This keeps the bootstrap auditable: a reviewer reading
-// sendSalvo() sees the EXACT 9 commands in the EXACT order they go on the wire.
+// sendSalvo() sees the EXACT 7 commands in the EXACT order they go on the wire.
 
 namespace {
 // Compact serialization shared by every command. Mirrors the WsServer send
@@ -35,11 +34,11 @@ QStringList StartupSalvo::sendSalvo(const InstanceConfigLike& c) {
         return {};
     }
 
-    // The 9-command salvo in order (architecture-blueprint.md §6.1).
+    // The 7-command salvo in order (architecture-blueprint.md §6.1).
     // Each entry: build envelope → serialize → send → emit commandSent.
-    // set_layout carries `scale` (NOT set_scale — interface.md §H.2 stub).
+    // set_layout carries `scale` (set_scale stays unused — redundant alias).
     QStringList sent;
-    sent.reserve(9);
+    sent.reserve(7);
 
     sent.append(sendOne(Protocol::buildLoadModel(c.modelName)));
     sent.append(sendOne(Protocol::buildSetPosition(c.windowX, c.windowY)));
@@ -49,11 +48,6 @@ QStringList StartupSalvo::sendSalvo(const InstanceConfigLike& c) {
     sent.append(sendOne(Protocol::buildSetVolume(c.volume, c.muted)));
     sent.append(sendOne(Protocol::buildSetLayout(
         c.layoutOffsetX, c.layoutOffsetY, c.layoutScale)));
-    sent.append(sendOne(Protocol::buildSetSubtitleLayout(
-        c.subtitleOffsetX, c.subtitleOffsetY,
-        c.subtitleAreaWidth, c.subtitleAreaHeight)));
-    sent.append(sendOne(Protocol::buildSetSubtitleStyle(
-        SubtitlePresets::mapPresetToStyle(c.subtitleStylePreset))));
 
     SPDLOG_INFO("StartupSalvo: sent {} commands after ready", sent.size());
     return sent;

@@ -12,8 +12,8 @@
 // `controller/.../core/MountedBehaviorEngine.java` (246 LOC). When a voice
 // pack is mounted, this engine has PRIORITY over InteractionHandler for hit
 // events: if the voice pack has a group for the hit area, the engine builds a
-// play_motion_ext command (motion + audio + lipSync + subtitle side-channels);
-// otherwise the hit falls through to InteractionHandler's play_motion path
+// play_motion_ext command (motion + audio + lipSync side-channels); otherwise
+// the hit falls through to InteractionHandler's play_motion path
 // (InstanceSession::handleHitEvent routes between the two).
 //
 // Construction:
@@ -30,9 +30,7 @@
 //   - buildBehaviorCommand(areaId)   — pick a random action with non-empty
 //                                      motionPath from groups[areaId], resolve
 //                                      motion/audio/lipSync against basePath,
-//                                      estimate the OGG duration for the
-//                                      subtitle_duration, and build a
-//                                      play_motion_ext Envelope via
+//                                      and build a play_motion_ext Envelope via
 //                                      Protocol::buildPlayMotionExt.
 //   - buildAudioOnlyCommand(areaId)  — like the above but for actions with NO
 //                                      motionPath (audio-only): builds a
@@ -56,7 +54,10 @@
 //
 // Standalone for todo 20 (tested independently via MountedBehaviorEngineTest).
 // InstanceSession::handleHitEvent consults the engine first (when present) and
-// routes to play_motion_ext; otherwise falls back to InteractionHandler.
+// routes to play_motion_ext; otherwise falls back to InteractionHandler. When
+// the chosen action carries dialogue text (the .mko doc field), the caller
+// forwards it to the notification bubble stream — it is never sent to the
+// renderer as a subtitle.
 //
 // Threading: not thread-safe. Used only on the Qt main thread (the WS callback
 // thread that delivers hit events). No internal mutable state besides the
@@ -65,17 +66,15 @@
 namespace core {
 
 // Result of a successful buildBehaviorCommand call. Carries the built
-// play_motion_ext Envelope + the subtitle metadata the caller may want to
-// observe (subtitle_text echoes what's embedded in the envelope's payload;
-// audioDurationMs is the estimated OGG duration used for subtitle_duration).
+// play_motion_ext Envelope + the action's dialogue text for the caller to
+// forward to the notification bubble stream (bubble duration comes from the
+// stream's own default, not from the audio).
 //
-// `command.action == "play_motion_ext"`; `subtitleText` may be empty when the
-// action had no doc field; `audioDurationMs` is the estimate (or
-// kFallbackDurationMs when no audio / estimation failed).
+// `command.action == "play_motion_ext"`; `dialogueText` is action.doc and may
+// be empty when the action had no doc field.
 struct BehaviorResult {
     Envelope command;
-    QString subtitleText;
-    qint64 audioDurationMs = 0;
+    QString dialogueText;
 };
 
 class MountedBehaviorEngine {
@@ -115,11 +114,10 @@ public:
     //
     // On success: picks a RANDOM action (QRandomGenerator), resolves the
     // action's motion/audio/lipSync paths to ABSOLUTE paths against
-    // voicePack.basePath, estimates the OGG duration (or fallback), and builds
-    // the play_motion_ext Envelope via Protocol::buildPlayMotionExt. The
-    // subtitle_text is action.doc; subtitle_duration is the estimated OGG
-    // duration (or fallback). fadeIn/fadeOut are converted from the action's
-    // ms fields to seconds.
+    // voicePack.basePath, and builds the play_motion_ext Envelope via
+    // Protocol::buildPlayMotionExt. fadeIn/fadeOut are converted from the
+    // action's ms fields to seconds. The action's doc text is returned as
+    // BehaviorResult::dialogueText.
     std::optional<BehaviorResult> buildBehaviorCommand(const QString& areaId) const;
 
     // Build a play_audio command for `areaId`. Picks from actions that have

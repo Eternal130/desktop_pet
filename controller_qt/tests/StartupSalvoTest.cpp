@@ -10,20 +10,18 @@
 // Two tiers:
 //
 //   Unit tier (no renderer needed):
-//     - testSalvoOrderAndCount: sendSalvo → exactly 9 commands in order
+//     - testSalvoOrderAndCount: sendSalvo → exactly 7 commands in order
 //       (load_model, set_position, set_size, set_opacity, set_fps, set_volume,
-//        set_layout, set_subtitle_layout, set_subtitle_style)
+//        set_layout)
 //     - testNoSetScaleEverSent: PRIMARY acceptance criterion — the captured
 //       JSON stream MUST NOT contain "set_scale" anywhere
-//     - testSubtitleStyleHasAll16Fields: set_subtitle_style payload carries
-//       the full 16-field style block from interface.md §D.1
 //     - testSalvoCommandsInProtocolCatalog: every sent action exists in
-//       command_all_25.json's expected_action_set (cross-check against T3)
+//       command_all_20.json's expected_action_set (cross-check against T3)
 //
 //   Integration tier [REQUIRES_RENDERER]:
 //     - testFullSalvoWithLiveRenderer: WsServer + ProcessManager + StartupSalvo
 //       wired together. After `ready` → sendSalvo, after `model_loaded` →
-//       sendSetHitAreas. Asserts 9 + 1 = 10 commands captured, correct order,
+//       sendSetHitAreas. Asserts 7 + 1 = 8 commands captured, correct order,
 //       no set_scale.
 //
 // QTEST_MAIN (NOT APPLESS) — the integration tier uses QSignalSpy::wait /
@@ -60,7 +58,6 @@ private slots:
     // ── Unit tier (no renderer) ────────────────────────────────────────────
     void testSalvoOrderAndCount();
     void testNoSetScaleEverSent();
-    void testSubtitleStyleHasAll16Fields();
     void testSalvoCommandsInProtocolCatalog();
 
     // ── Integration tier [REQUIRES_RENDERER] ───────────────────────────────
@@ -81,7 +78,7 @@ private:
 
     // Default config used by every unit slot — matches InstanceConfigLike's
     // default-constructed values (modelName="Hiyori", all positions/sizes
-    // populated, layout/subtitle offsets at 0/0/1.0/0/0/0/0).
+    // populated, layout offsets at 0/0/1.0).
     static InstanceConfigLike defaultConfig();
 };
 
@@ -95,7 +92,7 @@ void StartupSalvoTest::initTestCase() {
 
 QJsonObject StartupSalvoTest::loadFixture() {
     const QString path = QStringLiteral(PROTOCOL_FIXTURES_DIR)
-                         + QStringLiteral("/command_all_25.json");
+                         + QStringLiteral("/command_all_20.json");
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) {
         // Cannot QFAIL here — QFAIL expands to `return;` which is invalid in a
@@ -117,7 +114,7 @@ InstanceConfigLike StartupSalvoTest::defaultConfig() {
 // Unit tier
 // ────────────────────────────────────────────────────────────────────────────
 
-// sendSalvo fires exactly 9 commands in the documented order, and each one
+// sendSalvo fires exactly 7 commands in the documented order, and each one
 // is also surfaced via the commandSent signal (so the integration tier can
 // observe the stream without intercepting WsServer::sendText).
 void StartupSalvoTest::testSalvoOrderAndCount() {
@@ -140,18 +137,16 @@ void StartupSalvoTest::testSalvoOrderAndCount() {
         QStringLiteral("set_fps"),
         QStringLiteral("set_volume"),
         QStringLiteral("set_layout"),
-        QStringLiteral("set_subtitle_layout"),
-        QStringLiteral("set_subtitle_style"),
     };
 
-    QCOMPARE(sent.size(), 9);
-    QCOMPARE(captured.size(), 9);
-    QCOMPARE(spy.count(), 9);
+    QCOMPARE(sent.size(), 7);
+    QCOMPARE(captured.size(), 7);
+    QCOMPARE(spy.count(), 7);
     QCOMPARE(sent, expected);
 
     // The commandSent signal carries the same action list — verify the signal
     // path matches the sender path slot-for-slot (anti-drift guard).
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 7; ++i) {
         const QString actionFromSignal = spy.at(i).at(0).toString();
         QCOMPARE(actionFromSignal, expected.at(i));
     }
@@ -189,54 +184,7 @@ void StartupSalvoTest::testNoSetScaleEverSent() {
     }
 }
 
-// set_subtitle_style carries all 16 named style fields from interface.md §D.1.
-// Defaults reproduce the fixture payload in command_all_25.json exactly (the
-// T9 factory already guarantees this; here we lock the field NAME set too).
-void StartupSalvoTest::testSubtitleStyleHasAll16Fields() {
-    StartupSalvo salvo;
-
-    QString styleJson;
-    salvo.setCommandSender([&styleJson](const QString& json) {
-        // Capture the last-sent command (set_subtitle_style is salvo slot 9).
-        styleJson = json;
-    });
-
-    salvo.sendSalvo(defaultConfig());
-
-    const QJsonObject root =
-        QJsonDocument::fromJson(styleJson.toUtf8()).object();
-    QCOMPARE(root.value("action").toString(), QStringLiteral("set_subtitle_style"));
-    const QJsonObject p = root.value("payload").toObject();
-
-    const QStringList expectedFields{
-        QStringLiteral("font_name"),
-        QStringLiteral("font_size"),
-        QStringLiteral("primary_color"),
-        QStringLiteral("outline_color"),
-        QStringLiteral("outline_width"),
-        QStringLiteral("shadow_color"),
-        QStringLiteral("shadow_depth"),
-        QStringLiteral("alignment"),
-        QStringLiteral("margin_v"),
-        QStringLiteral("edge_blur"),
-        QStringLiteral("font_weight"),
-        QStringLiteral("letter_spacing"),
-        QStringLiteral("bg_box_enabled"),
-        QStringLiteral("bg_box_color"),
-        QStringLiteral("bg_box_padding_x"),
-        QStringLiteral("bg_box_padding_y"),
-    };
-    QCOMPARE(expectedFields.size(), 16);
-
-    for (const QString& f : expectedFields) {
-        QVERIFY2(p.contains(f),
-                 qPrintable(QStringLiteral("set_subtitle_style missing field: %1")
-                                .arg(f)));
-    }
-    QCOMPARE(p.size(), 16); // exactly 16 fields — no extras, no missing
-}
-
-// Every sent action is a member of command_all_25.json's expected_action_set.
+// Every sent action is a member of command_all_20.json's expected_action_set.
 // This guards against typos / speculative action names that aren't in the
 // protocol catalog (e.g. a future "set_window_opacity" misspelling).
 void StartupSalvoTest::testSalvoCommandsInProtocolCatalog() {
@@ -265,8 +213,8 @@ void StartupSalvoTest::testSalvoCommandsInProtocolCatalog() {
 // Integration tier [REQUIRES_RENDERER]
 // ────────────────────────────────────────────────────────────────────────────
 
-// Full bootstrap against the REAL renderer: ready → sendSalvo (9 cmds) →
-// model_loaded → sendSetHitAreas (1 cmd). Captures all 10 via commandSent and
+// Full bootstrap against the REAL renderer: ready → sendSalvo (7 cmds) →
+// model_loaded → sendSetHitAreas (1 cmd). Captures all 8 via commandSent and
 // asserts order + no set_scale. Renderer teardown crash is tolerated (same
 // known issue as T6/T13 — see learnings.md).
 void StartupSalvoTest::testFullSalvoWithLiveRenderer() {
@@ -304,11 +252,11 @@ void StartupSalvoTest::testFullSalvoWithLiveRenderer() {
     pm.startRenderer(*path, port, 0, QStringLiteral("salvotoken"),
                      QStringLiteral("Hiyori"));
 
-    // ── ready → fire the 9-command salvo ──────────────────────────────────
+    // ── ready → fire the 7-command salvo ──────────────────────────────────
     QVERIFY2(waitForAction(msgSpy, "ready", 10000),
              "renderer did not send 'ready' within 10s");
     const QStringList sent = salvo.sendSalvo(defaultConfig());
-    QCOMPARE(sent.size(), 9);
+    QCOMPARE(sent.size(), 7);
 
     // ── model_loaded → fire set_hit_areas ─────────────────────────────────
     QVERIFY2(waitForAction(msgSpy, "model_loaded", 15000),
@@ -321,7 +269,7 @@ void StartupSalvoTest::testFullSalvoWithLiveRenderer() {
     // ── Assert the full captured stream ───────────────────────────────────
     // Allow the event loop to flush any in-flight commandSent emissions.
     QTest::qWait(50);
-    QCOMPARE(sentSpy.count(), 10);
+    QCOMPARE(sentSpy.count(), 8);
 
     const QStringList expectedOrder{
         QStringLiteral("load_model"),
@@ -331,11 +279,9 @@ void StartupSalvoTest::testFullSalvoWithLiveRenderer() {
         QStringLiteral("set_fps"),
         QStringLiteral("set_volume"),
         QStringLiteral("set_layout"),
-        QStringLiteral("set_subtitle_layout"),
-        QStringLiteral("set_subtitle_style"),
         QStringLiteral("set_hit_areas"),
     };
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 8; ++i) {
         const QString action = sentSpy.at(i).at(0).toString();
         QCOMPARE(action, expectedOrder.at(i));
         const QString json = sentSpy.at(i).at(1).toString();

@@ -573,47 +573,23 @@ Rectangle {
 
                     Card {
                         width: parent.width
-                        title: qsTr("字幕样式")
+                        title: qsTr("对话气泡")
 
-                        AppComboBox {
-                            id: subtitlePresetCombo
+                        Text {
                             width: parent.width
-                            model: instance ? instance.subtitlePresetNames() : []
-                            onActivated: if (instance && currentText)
-                                instance.setSubtitleStylePreset(currentText)
+                            wrapMode: Text.WordWrap
+                            color: root._mutedColor
+                            font.pixelSize: 12
+                            text: qsTr("台词气泡由语音包行为触发（点击宠物触发动作时显示）。")
                         }
 
-                        Rectangle {
-                            width: parent.width
-                            height: 64
-                            radius: Theme.radiusMd
-                            color: Theme.dark ? "#00000040" : "#0000000d"
-                            Text {
-                                anchors.centerIn: parent
-                                text: qsTr("“今天也要元气满满哦！”")
-                                font.pixelSize: 14
-                                font.weight: Font.DemiBold
-                                color: "#7a4a00"
-                            }
-                            Text {
-                                anchors.bottom: parent.bottom
-                                anchors.bottomMargin: 6
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                text: subtitlePresetCombo.currentText
-                                color: root._faintColor
-                                font.pixelSize: 11
-                            }
-                        }
-                        SettingRow {
-                            width: parent.width
-                            title: qsTr("字幕显示区域")
-                            desc: qsTr("调整/缩放字幕")
-                            ToggleSwitch {
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: instance
-                                    ? instance.subtitleAdjustModeEnabled() : false
-                                onToggled: if (instance)
-                                    instance.setSubtitleAdjustMode(checked)
+                        Row {
+                            spacing: 8
+                            AppButton {
+                                style: "subtle"
+                                text: qsTr("发送测试气泡")
+                                implicitHeight: 26; fontSize: 12
+                                onClicked: notificationStream.testBubble()
                             }
                         }
                     }
@@ -797,8 +773,6 @@ Rectangle {
         if (!instance) return
         const i = modelCombo.find(instance.modelName)
         modelCombo.currentIndex = i >= 0 ? i : -1
-        const j = subtitlePresetCombo.find(instance.subtitleStylePreset())
-        subtitlePresetCombo.currentIndex = j >= 0 ? j : -1
     }
 
     // ── Inline components ──────────────────────────────────────────────

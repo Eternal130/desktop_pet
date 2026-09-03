@@ -116,19 +116,12 @@ MountedBehaviorEngine::buildBehaviorCommand(const QString& areaId) const
     const double fadeInSec  = chosen.fadeInMs  / 1000.0;
     const double fadeOutSec = chosen.fadeOutMs / 1000.0;
 
-    const QString& subtitleText = chosen.doc;
-    qint64 audioDurationMs = kFallbackDurationMs;
-    if (!audioAbs.isEmpty()) {
-        audioDurationMs = estimateOggDurationMs(audioAbs);
-    }
-
     LOG_INFO("MountedBehaviorEngine: area=\"{}\" motion=\"{}\" audio=\"{}\" "
-             "lipSync=\"{}\" durationMs={}",
+             "lipSync=\"{}\"",
              areaId.toStdString(),
              chosen.motionPath.toStdString(),
              chosen.audioPath.toStdString(),
-             chosen.lipSyncPath.toStdString(),
-             audioDurationMs);
+             chosen.lipSyncPath.toStdString());
 
     const Envelope command = Protocol::buildPlayMotionExt(
         motionAbs,
@@ -136,11 +129,9 @@ MountedBehaviorEngine::buildBehaviorCommand(const QString& areaId) const
         fadeInSec,
         fadeOutSec,
         audioAbs,
-        lipSyncAbs,
-        subtitleText,
-        audioDurationMs);
+        lipSyncAbs);
 
-    return BehaviorResult{command, subtitleText, audioDurationMs};
+    return BehaviorResult{command, chosen.doc};
 }
 
 // ── buildAudioOnlyCommand ────────────────────────────────────────────────────

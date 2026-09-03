@@ -106,6 +106,7 @@ QString InstanceManager::createInstance(const QString& label, const QString& ava
     // InstanceConfigManager + HitAreaCacheManager write under the same root
     // (tests inject a QTemporaryDir; production uses the real config dir).
     auto* session = new InstanceSession(cfg, m_server, m_pending, m_configDir, nullptr);
+    wireSession(session);
 
     const int row = m_sessions.size();
     beginInsertRows(QModelIndex(), row, row);
@@ -214,6 +215,28 @@ void InstanceManager::setDatabase(DatabaseManager* db)
 
 // ── Private helpers ──────────────────────────────────────────────────────────
 
+void InstanceManager::setDialogueSink(std::function<void(const QString&,
+                                                         const QString&,
+                                                         const QString&,
+                                                         const QString&,
+                                                         int)> sink)
+{
+    m_dialogueSink = std::move(sink);
+    // Re-apply to existing sessions: main.cpp installs the sink after
+    // setDatabase->loadFromDisk created the roster, so the construction-time
+    // wireSession() copies were empty.
+    for (InstanceSession* session : m_sessions)
+        wireSession(session);
+}
+void InstanceManager::wireSession(InstanceSession* session)
+{
+    // Forward the manager-level dialogue sink so every session (whenever it
+    // was constructed) reaches the shared bubble stream. std::function copies
+    // are cheap handles; empty ones no-op inside the session.
+    if (m_dialogueSink)
+        session->setDialogueSink(m_dialogueSink);
+}
+
 void InstanceManager::persistRoster()
 {
     // Rebuild instanceIds from the live roster order so deletes + inserts are
@@ -265,6 +288,7 @@ void InstanceManager::loadFromDisk()
             continue;
         }
         m_sessions.append(new InstanceSession(*cfg, m_server, m_pending, m_configDir, nullptr));
+        wireSession(m_sessions.last());
     }
     LOG_INFO("InstanceManager: loaded {} instance(s) from \"{}\" (instanceIds had {})",
              m_sessions.size(), m_configDir.toStdString(), ids.size());

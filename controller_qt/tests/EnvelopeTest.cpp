@@ -7,7 +7,7 @@
 // Drives serialize()/deserialize() against the four T3 fixtures:
 //   - envelope_serialize.json   : serialization invariants per §2.1-2.3
 //   - envelope_deserialize.json : valid + malformed cases per §2.4 / §1.5
-//   - command_all_25.json       : round-trip identity for all 25 commands
+//   - command_all_20.json       : round-trip identity for all 20 commands
 //   - event_all_13.json         : round-trip identity for all 13 events
 //
 // Plus targeted tests for the two cross-cutting correctness requirements:
@@ -225,7 +225,7 @@ void EnvelopeTest::testDeserializeFromFixtures()
 void EnvelopeTest::testRoundTripCommands()
 {
     QJsonObject root;
-    loadFixture(QStringLiteral("command_all_25.json"), root);
+    loadFixture(QStringLiteral("command_all_20.json"), root);
     const QJsonArray cases = root.value("cases").toArray();
     QCOMPARE(root.value("command_count").toInteger(), cases.size());
 

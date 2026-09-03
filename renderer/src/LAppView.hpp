@@ -14,7 +14,6 @@
 #endif
 
 class TouchManager_Common;
-class SubtitleManager;
 
 /**
 * @brief 描画クラス
@@ -66,11 +65,6 @@ public:
     */
     void OnTouchesEnded(float pointX, float pointY) const;
 
-    /**
-    * @brief Set the subtitle manager used to draw overlay subtitles inside Render().
-    */
-    void SetSubtitleManager(SubtitleManager* mgr) { _subtitleManager = mgr; }
-
 private:
 #ifdef USE_VULKAN
     void BeginRendering(VkCommandBuffer cmdBuf, float r, float g, float b, float a, bool isClear);
@@ -79,5 +73,4 @@ private:
 #endif
 
     TouchManager_Common* _touchManager; ///< タッチマネージャー
-    SubtitleManager* _subtitleManager = nullptr; ///< 字幕マネージャー（オプション）
 };

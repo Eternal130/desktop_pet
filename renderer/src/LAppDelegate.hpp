@@ -17,7 +17,6 @@
 class LAppView;
 class LAppTextureManager;
 class AudioManager;
-class SubtitleManager;
 
 namespace Network {
     class WebSocketClient;
@@ -50,8 +49,6 @@ public:
     int GetWindowHeight() { return _windowHeight; }
     Network::EventEmitter* GetEventEmitter() { return _eventEmitter; }
     AudioManager* GetAudioManager() { return _audioManager; }
-    SubtitleManager* GetSubtitleManager() { return _subtitleManager; }
-    void SetSubtitleAdjustMode(bool enabled) { _subtitleAdjustMode = enabled; }
     IGraphicsBackend* GetGraphicsBackend() const { return _graphicsBackend; }
     void SetWsUrl(const std::string& url) { _wsUrl = url; }
     void SetStartupModel(const std::string& m) { _startupModel = m; }
@@ -99,12 +96,6 @@ private:
     float _modelDragLastY = 0.0f;
     bool _isClickThrough = false;
 
-    bool _subtitleAdjustMode = false;
-    float _subtitleDragLastX = 0.0f;
-    float _subtitleDragLastY = 0.0f;
-    float _subtitleAreaDragLastX = 0.0f;
-    float _subtitleAreaDragLastY = 0.0f;
-
     Network::WebSocketClient* _wsClient;
     Network::MessageHandler* _messageHandler;
     Network::EventEmitter* _eventEmitter;
@@ -125,7 +116,6 @@ private:
     bool _hasStartupSize;
 
     AudioManager* _audioManager;
-    SubtitleManager* _subtitleManager;
 };
 
 class EventHandler

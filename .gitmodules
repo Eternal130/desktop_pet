@@ -1,3 +1,0 @@
-[submodule "renderer/third_party/freetype-gl"]
-	path = renderer/third_party/freetype-gl
-	url = https://github.com/rougier/freetype-gl.git

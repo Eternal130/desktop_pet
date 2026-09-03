@@ -37,8 +37,7 @@ renderer/
 └── third_party/                # Vendored headers
     ├── nlohmann/               # JSON (header-only)
     ├── googletest/             # Google Test
-    ├── miniaudio.h             # Audio playback (single header)
-    └── freetype-gl/            # [git submodule]
+    └── miniaudio.h             # Audio playback (single header)
 ```
 
 ## WHERE TO LOOK

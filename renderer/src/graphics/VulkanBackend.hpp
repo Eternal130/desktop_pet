@@ -50,10 +50,6 @@ public:
     int32_t GetSwapchainImageCount() const { return static_cast<int32_t>(_swapchainImageCount); }
     VkFormat GetSwapchainImageFormat() const { return _swapchainImageFormat; }
 
-    // Returns the VkImageView for a subtitle overlay texture handle (T8).
-    // Returns VK_NULL_HANDLE if handle is not found.
-    VkImageView GetTextureImageView(uint64_t handle) const;
-
     void RecreateSwapchain();
     bool IsSwapchainInvalid() const { return _isSwapchainInvalid; }
     void SetSwapchainInvalid(bool flag) { _isSwapchainInvalid = flag; }
@@ -90,7 +86,7 @@ private:
     VkBuffer _readbackBuffer = VK_NULL_HANDLE;
     VkDeviceMemory _readbackBufferMemory = VK_NULL_HANDLE;
 
-    // Subtitle overlay textures (RGBA uploads via staging buffer)
+    // Sampled RGBA textures (uploads via staging buffer)
     struct TextureData {
         VkImage image = VK_NULL_HANDLE;
         VkImageView imageView = VK_NULL_HANDLE;

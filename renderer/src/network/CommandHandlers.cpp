@@ -7,8 +7,6 @@
 #include "LAppPal.hpp"
 #include "LAppDefine.hpp"
 #include "AudioManager.hpp"
-#include "subtitle/SubtitleManager.hpp"
-#include "subtitle/SubtitleColorUtils.hpp"
 #include "monitor/GpuMonitorFactory.hpp"
 #include "monitor/IGpuMonitor.hpp"
 #include "monitor/ProcessStatsCollector.hpp"
@@ -191,16 +189,6 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             model->StartLipSyncFromFile(lipSyncPath);
         }
 
-        std::string subtitleText = cmd.payload.value("subtitle_text", "");
-        if (!subtitleText.empty()) {
-            auto* subtitleMgr = delegate->GetSubtitleManager();
-            if (subtitleMgr != nullptr && subtitleMgr->IsInitialized()) {
-                int64_t subtitleDuration = cmd.payload.value("subtitle_duration", 5000LL);
-                int64_t startMs = static_cast<int64_t>(glfwGetTime() * 1000.0);
-                subtitleMgr->SetText(subtitleText, subtitleMgr->GetDefaultStyle(), startMs, subtitleDuration);
-            }
-        }
-
         sendResponse(createResponse(cmd.id, "play_motion_ext", true));
     });
 
@@ -228,9 +216,23 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         delegate->ShowWindowIfHidden();
     });
 
+    // Compatibility alias for set_layout's scale axis (former stub, interface.md §H.2);
+    // exists for protocol stability, preserves current offsets.
     handler.registerCommand("set_scale", [](const Envelope& cmd, auto sendResponse) {
-        float scale = cmd.payload.value("scale", 1.0f);
-        LAppPal::PrintLogLn("[CommandHandlers] set_scale: %f (not fully implemented)", scale);
+        LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
+        if (manager->GetModelNum() == 0) {
+            sendResponse(createResponse(cmd.id, "set_scale", false, 8001, "No model loaded"));
+            return;
+        }
+        LAppModel* model = manager->GetModel(0);
+        if (!model) {
+            sendResponse(createResponse(cmd.id, "set_scale", false, 8001, "No model loaded"));
+            return;
+        }
+
+        float scale = cmd.payload.value("scale", model->GetUserScale());
+        model->SetUserLayout(model->GetUserOffsetX(), model->GetUserOffsetY(), scale);
+        sendResponse(createResponse(cmd.id, "set_scale", true));
     });
 
     handler.registerCommand("set_size", [delegate](const Envelope& cmd, auto sendResponse) {
@@ -339,105 +341,6 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             audio->SetMuted(muted);
         }
         sendResponse(createResponse(cmd.id, "set_volume", true));
-    });
-
-    handler.registerCommand(ACTION_SHOW_SUBTITLE, [delegate](const Envelope& cmd, auto sendResponse) {
-        std::string text = cmd.payload.value("text", "");
-        if (text.empty()) {
-            sendResponse(createResponse(cmd.id, ACTION_SHOW_SUBTITLE, false, ERROR_SUBTITLE_TEXT_REQUIRED, "text is required"));
-            return;
-        }
-        auto* subtitleMgr = delegate->GetSubtitleManager();
-        if (subtitleMgr == nullptr || !subtitleMgr->IsInitialized()) {
-            sendResponse(createResponse(cmd.id, ACTION_SHOW_SUBTITLE, false, ERROR_SUBTITLE_NOT_INITIALIZED, "Subtitle engine not initialized"));
-            return;
-        }
-
-        SubtitleStyle style = subtitleMgr->GetDefaultStyle();
-        if (cmd.payload.contains("font_name"))      style.fontName     = cmd.payload["font_name"].get<std::string>();
-        if (cmd.payload.contains("font_size"))      style.fontSize     = cmd.payload["font_size"].get<double>();
-        if (cmd.payload.contains("primary_color"))  style.primaryColor = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["primary_color"].get<uint32_t>());
-        if (cmd.payload.contains("outline_color"))  style.outlineColor = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["outline_color"].get<uint32_t>());
-        if (cmd.payload.contains("outline_width"))  style.outlineWidth = cmd.payload["outline_width"].get<double>();
-        if (cmd.payload.contains("shadow_color"))   style.shadowColor  = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["shadow_color"].get<uint32_t>());
-        if (cmd.payload.contains("shadow_depth"))   style.shadowDepth  = cmd.payload["shadow_depth"].get<double>();
-        if (cmd.payload.contains("alignment"))      style.alignment    = cmd.payload["alignment"].get<int>();
-        if (cmd.payload.contains("marginV"))        style.marginV      = cmd.payload["marginV"].get<int>();
-        if (cmd.payload.contains("edge_blur"))       style.edgeBlur      = cmd.payload["edge_blur"].get<double>();
-        if (cmd.payload.contains("font_weight"))     style.fontWeight    = cmd.payload["font_weight"].get<int>();
-        if (cmd.payload.contains("letter_spacing"))  style.letterSpacing = cmd.payload["letter_spacing"].get<double>();
-        if (cmd.payload.contains("bg_box_enabled"))  style.bgBoxEnabled  = cmd.payload["bg_box_enabled"].get<bool>();
-        if (cmd.payload.contains("bg_box_color"))    style.bgBoxColor    = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["bg_box_color"].get<uint32_t>());
-        if (cmd.payload.contains("bg_box_padding_x")) style.bgBoxPaddingX = cmd.payload["bg_box_padding_x"].get<double>();
-        if (cmd.payload.contains("bg_box_padding_y")) style.bgBoxPaddingY = cmd.payload["bg_box_padding_y"].get<double>();
-
-        int64_t durationMs = cmd.payload.value("duration", 0LL);
-        int64_t startMs    = static_cast<int64_t>(glfwGetTime() * 1000.0);
-
-        subtitleMgr->SetText(text, style, startMs, durationMs);
-        sendResponse(createResponse(cmd.id, ACTION_SHOW_SUBTITLE, true));
-    });
-
-    handler.registerCommand(ACTION_HIDE_SUBTITLE, [delegate](const Envelope& cmd, auto sendResponse) {
-        auto* subtitleMgr = delegate->GetSubtitleManager();
-        if (subtitleMgr != nullptr && subtitleMgr->IsInitialized()) {
-            subtitleMgr->Hide();
-        }
-        sendResponse(createResponse(cmd.id, ACTION_HIDE_SUBTITLE, true));
-    });
-
-    handler.registerCommand(ACTION_SET_SUBTITLE_STYLE, [delegate](const Envelope& cmd, auto sendResponse) {
-        auto* subtitleMgr = delegate->GetSubtitleManager();
-        if (subtitleMgr == nullptr || !subtitleMgr->IsInitialized()) {
-            sendResponse(createResponse(cmd.id, ACTION_SET_SUBTITLE_STYLE, false, ERROR_SUBTITLE_NOT_INITIALIZED, "Subtitle engine not initialized"));
-            return;
-        }
-        SubtitleStyle style;
-        if (cmd.payload.contains("font_name"))      style.fontName     = cmd.payload["font_name"].get<std::string>();
-        if (cmd.payload.contains("font_size"))      style.fontSize     = cmd.payload["font_size"].get<double>();
-        if (cmd.payload.contains("primary_color"))  style.primaryColor = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["primary_color"].get<uint32_t>());
-        if (cmd.payload.contains("outline_color"))  style.outlineColor = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["outline_color"].get<uint32_t>());
-        if (cmd.payload.contains("outline_width"))  style.outlineWidth = cmd.payload["outline_width"].get<double>();
-        if (cmd.payload.contains("shadow_color"))   style.shadowColor  = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["shadow_color"].get<uint32_t>());
-        if (cmd.payload.contains("shadow_depth"))   style.shadowDepth  = cmd.payload["shadow_depth"].get<double>();
-        if (cmd.payload.contains("alignment"))      style.alignment    = cmd.payload["alignment"].get<int>();
-        if (cmd.payload.contains("marginV"))        style.marginV      = cmd.payload["marginV"].get<int>();
-        if (cmd.payload.contains("edge_blur"))       style.edgeBlur      = cmd.payload["edge_blur"].get<double>();
-        if (cmd.payload.contains("font_weight"))     style.fontWeight    = cmd.payload["font_weight"].get<int>();
-        if (cmd.payload.contains("letter_spacing"))  style.letterSpacing = cmd.payload["letter_spacing"].get<double>();
-        if (cmd.payload.contains("bg_box_enabled"))  style.bgBoxEnabled  = cmd.payload["bg_box_enabled"].get<bool>();
-        if (cmd.payload.contains("bg_box_color"))    style.bgBoxColor    = SubtitleColorUtils::protocolColorToASSColor(cmd.payload["bg_box_color"].get<uint32_t>());
-        if (cmd.payload.contains("bg_box_padding_x")) style.bgBoxPaddingX = cmd.payload["bg_box_padding_x"].get<double>();
-        if (cmd.payload.contains("bg_box_padding_y")) style.bgBoxPaddingY = cmd.payload["bg_box_padding_y"].get<double>();
-
-        subtitleMgr->SetDefaultStyle(style);
-        LAppPal::PrintLogLn("[CommandHandlers] set_subtitle_style: default style updated");
-        sendResponse(createResponse(cmd.id, ACTION_SET_SUBTITLE_STYLE, true));
-    });
-
-    handler.registerCommand(ACTION_SET_SUBTITLE_ADJUST_MODE, [delegate](const Envelope& cmd, auto sendResponse) {
-        bool enabled = cmd.payload.value("enabled", false);
-        delegate->SetSubtitleAdjustMode(enabled);
-        auto* subtitleMgr = delegate->GetSubtitleManager();
-        if (subtitleMgr != nullptr && subtitleMgr->IsInitialized()) {
-            subtitleMgr->SetAdjustMode(enabled);
-        }
-        LAppPal::PrintLogLn("[CommandHandlers] set_subtitle_adjust_mode: %s", enabled ? "ON" : "OFF");
-        sendResponse(createResponse(cmd.id, ACTION_SET_SUBTITLE_ADJUST_MODE, true));
-    });
-
-    handler.registerCommand(ACTION_SET_SUBTITLE_LAYOUT, [delegate](const Envelope& cmd, auto sendResponse) {
-        float offsetX = cmd.payload.value("offset_x", 0.0f);
-        float offsetY = cmd.payload.value("offset_y", 0.0f);
-        int areaWidth = cmd.payload.value("area_width", 0);
-        int areaHeight = cmd.payload.value("area_height", 0);
-        double fontSize = cmd.payload.value("font_size", 48.0);
-
-        auto* subtitleMgr = delegate->GetSubtitleManager();
-        if (subtitleMgr != nullptr && subtitleMgr->IsInitialized()) {
-            subtitleMgr->SetSubtitleLayout(offsetX, offsetY, areaWidth, areaHeight, fontSize);
-        }
-        sendResponse(createResponse(cmd.id, ACTION_SET_SUBTITLE_LAYOUT, true));
     });
 
     handler.registerCommand("set_layout", [](const Envelope& cmd, auto sendResponse) {

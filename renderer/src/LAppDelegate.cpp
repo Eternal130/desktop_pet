@@ -29,7 +29,6 @@
 #include "network/CommandHandlers.hpp"
 #include "network/Protocol.hpp"
 #include "AudioManager.hpp"
-#include "subtitle/SubtitleManager.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -139,13 +138,6 @@ bool LAppDelegate::Initialize()
         LAppPal::PrintLogLn("[LAppDelegate] Audio engine init failed, continuing without audio");
     }
 
-    _subtitleManager = new SubtitleManager();
-    if (_subtitleManager && !_subtitleManager->Init(_graphicsBackend, _windowWidth, _windowHeight)) {
-        LAppPal::PrintLogLn("[LAppDelegate] SubtitleManager Init failed -- subtitles disabled");
-    }
-    // Wire the subtitle manager into the view so it can draw overlays inside Render()
-    _view->SetSubtitleManager(_subtitleManager);
-
     InitializeNetwork();
 
     return true;
@@ -153,12 +145,6 @@ bool LAppDelegate::Initialize()
 
 void LAppDelegate::Release()
 {
-    if (_subtitleManager != nullptr) {
-        _subtitleManager->Uninit();
-        delete _subtitleManager;
-        _subtitleManager = nullptr;
-    }
-
     if (_audioManager) { _audioManager->Uninit(); }
     delete _audioManager; _audioManager = nullptr;
 
@@ -193,9 +179,6 @@ void LAppDelegate::Run()
             _view->Initialize(width, height);
             // モデルのレンダーターゲットのサイズ変更
             LAppLive2DManager::GetInstance()->SetRenderTargetSize(width, height);
-            if (_subtitleManager != nullptr && _subtitleManager->IsInitialized()) {
-                _subtitleManager->Resize(width, height);
-            }
             _windowWidth = width;
             _windowHeight = height;
 #ifdef USE_VULKAN
@@ -253,14 +236,6 @@ void LAppDelegate::Run()
 
         //描画更新
         _view->Render();
-
-        // libass CPU-side render: updates subtitle textures for the next frame.
-        // NOTE: This is NOT the GPU draw -- the GPU overlay draw happens inside
-        // _view->Render() via DrawOverlays() between the model draw and the
-        // PRESENT_SRC_KHR layout transition. This call just refreshes textures.
-        if (_subtitleManager != nullptr && _subtitleManager->IsInitialized()) {
-            _subtitleManager->Render(static_cast<int64_t>(glfwGetTime() * 1000.0));
-        }
 
         if (!_isDragging && !_captured)
         {
@@ -355,8 +330,7 @@ LAppDelegate::LAppDelegate():
     _startupWidth(0),
     _startupHeight(0),
     _hasStartupSize(false),
-    _audioManager(nullptr),
-    _subtitleManager(nullptr)
+    _audioManager(nullptr)
 {
     _executeAbsolutePath = "";
     _view = new LAppView();
@@ -448,30 +422,10 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, int button, int action, i
         return;
     }
 
-    if (_subtitleAdjustMode && _subtitleManager && _subtitleManager->IsInitialized()
-        && button == GLFW_MOUSE_BUTTON_RIGHT
-        && (_windowManager->IsKeyPressed(GLFW_KEY_LEFT_SHIFT)
-            || _windowManager->IsKeyPressed(GLFW_KEY_RIGHT_SHIFT)))
-    {
-        if (action == GLFW_PRESS) {
-            _subtitleAreaDragLastX = _mouseX;
-            _subtitleAreaDragLastY = _mouseY;
-        }
-        return;
-    }
-
     if (GLFW_MOUSE_BUTTON_LEFT == button &&
         (_windowManager->IsKeyPressed(GLFW_KEY_LEFT_SHIFT) ||
          _windowManager->IsKeyPressed(GLFW_KEY_RIGHT_SHIFT)))
     {
-        if (_subtitleAdjustMode && _subtitleManager && _subtitleManager->IsInitialized()) {
-            if (action == GLFW_PRESS) {
-                _subtitleDragLastX = _mouseX;
-                _subtitleDragLastY = _mouseY;
-            }
-            return;
-        }
-
         if (GLFW_PRESS == action)
         {
             _isModelDragging = true;
@@ -529,50 +483,6 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
         return;
     }
 
-    if (_subtitleAdjustMode && _subtitleManager && _subtitleManager->IsInitialized()
-        && glfwGetMouseButton(_windowManager->GetWindow(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS
-        && (_windowManager->IsKeyPressed(GLFW_KEY_LEFT_SHIFT)
-            || _windowManager->IsKeyPressed(GLFW_KEY_RIGHT_SHIFT)))
-    {
-        float dx = _mouseX - _subtitleAreaDragLastX;
-        float dy = _mouseY - _subtitleAreaDragLastY;
-        _subtitleManager->AdjustSubtitleArea(static_cast<int>(dx), static_cast<int>(dy));
-        _subtitleAreaDragLastX = _mouseX;
-        _subtitleAreaDragLastY = _mouseY;
-        if (_eventEmitter && _eventEmitter->isActive()) {
-            _eventEmitter->emit(Network::EVENT_SUBTITLE_LAYOUT_CHANGED, {
-                {"offset_x", _subtitleManager->GetOffsetX()},
-                {"offset_y", _subtitleManager->GetOffsetY()},
-                {"area_width", _subtitleManager->GetAreaWidth()},
-                {"area_height", _subtitleManager->GetAreaHeight()},
-                {"font_size", _subtitleManager->GetFontSize()}
-            });
-        }
-        return;
-    }
-
-    if (_subtitleAdjustMode && _subtitleManager && _subtitleManager->IsInitialized()) {
-        if (glfwGetMouseButton(_windowManager->GetWindow(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-            float dx = _mouseX - _subtitleDragLastX;
-            float dy = _mouseY - _subtitleDragLastY;
-            float ndcDx =  dx * 2.0f / static_cast<float>(_windowHeight);
-            float ndcDy = -dy * 2.0f / static_cast<float>(_windowHeight);
-            _subtitleManager->AdjustSubtitleOffset(ndcDx, ndcDy);
-            _subtitleDragLastX = _mouseX;
-            _subtitleDragLastY = _mouseY;
-            if (_eventEmitter && _eventEmitter->isActive()) {
-                _eventEmitter->emit(Network::EVENT_SUBTITLE_LAYOUT_CHANGED, {
-                    {"offset_x", _subtitleManager->GetOffsetX()},
-                    {"offset_y", _subtitleManager->GetOffsetY()},
-                    {"area_width", _subtitleManager->GetAreaWidth()},
-                    {"area_height", _subtitleManager->GetAreaHeight()},
-                    {"font_size", _subtitleManager->GetFontSize()}
-                });
-            }
-        }
-        return;
-    }
-
     if (_isModelDragging)
     {
         float dx = _mouseX - _modelDragLastX;
@@ -617,20 +527,6 @@ void LAppDelegate::OnScrollCallback(GLFWwindow* window, double xoffset, double y
     if (shiftPressed)
     {
         float factor = 1.0f + static_cast<float>(yoffset) * 0.1f;
-
-        if (_subtitleAdjustMode && _subtitleManager && _subtitleManager->IsInitialized()) {
-            _subtitleManager->AdjustSubtitleFontSize(factor);
-            if (_eventEmitter && _eventEmitter->isActive()) {
-                _eventEmitter->emit(Network::EVENT_SUBTITLE_LAYOUT_CHANGED, {
-                    {"offset_x", _subtitleManager->GetOffsetX()},
-                    {"offset_y", _subtitleManager->GetOffsetY()},
-                    {"area_width", _subtitleManager->GetAreaWidth()},
-                    {"area_height", _subtitleManager->GetAreaHeight()},
-                    {"font_size", _subtitleManager->GetFontSize()}
-                });
-            }
-            return;
-        }
 
         LAppModel* model = LAppLive2DManager::GetInstance()->GetModel(0);
         if (model)

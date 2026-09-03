@@ -90,47 +90,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libvorbis)
 
-# === FreeType (for libass subtitle rendering) ===
-FetchContent_Declare(freetype
-    GIT_REPOSITORY https://github.com/FreeType/freetype.git
-    GIT_TAG VER-2-13-3
-    GIT_SHALLOW TRUE
-)
-set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(freetype)
-
-# === HarfBuzz (for libass subtitle rendering) ===
-FetchContent_Declare(harfbuzz
-    GIT_REPOSITORY https://github.com/harfbuzz/harfbuzz.git
-    GIT_TAG 10.4.0
-    GIT_SHALLOW TRUE
-)
-set(HB_HAVE_FREETYPE OFF CACHE BOOL "" FORCE)
-set(HB_HAVE_GLIB OFF CACHE BOOL "" FORCE)
-set(HB_HAVE_GOBJECT OFF CACHE BOOL "" FORCE)
-set(HB_HAVE_CAIRO OFF CACHE BOOL "" FORCE)
-set(HB_HAVE_ICU OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(harfbuzz)
-
-# === FriBidi (for libass subtitle rendering) ===
-add_subdirectory(third_party/fribidi)
-
-# === libass (subtitle rendering engine) ===
-# libass ships with Meson/Autotools only — no CMakeLists.txt.
-# FetchContent the source, then build via our vendored CMakeLists.txt in
-# third_party/libass-cmake/. That CMakeLists.txt locates the fetched source
-# files through the libass_src_SOURCE_DIR variable (propagated to
-# subdirectories by CMake's variable scope). No file(COPY) needed — avoids
-# FetchContent auto-detecting a stale CMakeLists.txt on reconfigure.
-FetchContent_Declare(libass_src
-    GIT_REPOSITORY https://github.com/libass/libass.git
-    GIT_TAG 0.17.5
-    GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(libass_src)
-
-add_subdirectory(third_party/libass-cmake ${CMAKE_BINARY_DIR}/libass-build)
-
 
 # === Compiler settings ===
 set(CMAKE_CXX_STANDARD 17)
@@ -236,8 +195,6 @@ target_sources(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/CommandHandlers.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/subtitle/SubtitleManager.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/subtitle/SubtitleManager.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/WindowManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/WindowManager.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/IGraphicsBackend.hpp
@@ -296,7 +253,6 @@ target_include_directories(${APP_NAME}
     ${COMMON_SRC_PATH}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-    ${libass_src_SOURCE_DIR}/libass
 )
 
 if(USE_VULKAN)
@@ -311,7 +267,6 @@ if(USE_VULKAN)
       ${Vulkan_LIBRARIES}
       ixwebsocket::ixwebsocket
       vorbisfile
-      ass freetype harfbuzz fribidi
     )
 else()
     target_link_libraries(${APP_NAME}
@@ -320,7 +275,6 @@ else()
       ${OPENGL_LIBRARIES}
       ixwebsocket::ixwebsocket
       vorbisfile
-      ass freetype harfbuzz fribidi
     )
 endif()
 
@@ -377,7 +331,6 @@ if(BUILD_TESTS)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_stats_payload.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/ProtocolTest.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/MessageHandlerTest.cpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/tests/SubtitleColorTest.cpp
       # Implementation files needed by the tests:
       ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/StatsPayload.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/network/Protocol.cpp

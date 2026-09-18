@@ -526,7 +526,7 @@ void ProtocolFixturesTest::testValidatorRejectsMalformedFixture()
     missingId.insert("type", "command");
     missingId.insert("action", "play_motion");
     missingId.insert("payload", QJsonObject{});
-    missingId.insert("timestamp", 1710000000000);
+    missingId.insert("timestamp", qint64(1710000000000));
     QVERIFY(!isEnvelopeValid(missingId)); // missing required field 'id'
 
     QJsonObject nullPayload;
@@ -534,7 +534,7 @@ void ProtocolFixturesTest::testValidatorRejectsMalformedFixture()
     nullPayload.insert("action", "play_motion");
     nullPayload.insert("id", "x");
     nullPayload.insert("payload", QJsonValue::Null); // payload:null — §1.5 rejects
-    nullPayload.insert("timestamp", 1710000000000);
+    nullPayload.insert("timestamp", qint64(1710000000000));
     QVERIFY(!isEnvelopeValid(nullPayload));
 
     QJsonObject wrongType;
@@ -542,7 +542,7 @@ void ProtocolFixturesTest::testValidatorRejectsMalformedFixture()
     wrongType.insert("action", "play_motion");
     wrongType.insert("id", "x");
     wrongType.insert("payload", QJsonObject{});
-    wrongType.insert("timestamp", 1710000000000);
+    wrongType.insert("timestamp", qint64(1710000000000));
     QVERIFY(!isEnvelopeValid(wrongType));
 
     QJsonObject responseMissingTopLevelFields;
@@ -550,7 +550,7 @@ void ProtocolFixturesTest::testValidatorRejectsMalformedFixture()
     responseMissingTopLevelFields.insert("action", "load_model");
     responseMissingTopLevelFields.insert("id", "x");
     responseMissingTopLevelFields.insert("payload", QJsonObject{});
-    responseMissingTopLevelFields.insert("timestamp", 1710000000000);
+    responseMissingTopLevelFields.insert("timestamp", qint64(1710000000000));
     // §2.2: success/error_code/error_message MUST be at top level — absent here.
     QVERIFY(!isEnvelopeValid(responseMissingTopLevelFields));
 

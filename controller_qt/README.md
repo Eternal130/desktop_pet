@@ -1,9 +1,8 @@
 # controller_qt
 
-Qt 6 / C++17 / QML control panel for the desktop pet — the C++ successor to the
-JavaFX `controller/`. A multi-instance desktop pet manager interoperable with
-the existing C++ `renderer/` (Live2D Cubism 5) over the same JSON-over-WebSocket
-protocol (controller = WS server, renderer = WS client).
+Qt 6 / C++17 / QML control panel for the desktop pet. A multi-instance desktop
+pet manager that drives the C++ `renderer/` (Live2D Cubism 5) over a
+JSON-over-WebSocket protocol (controller = WS server, renderer = WS client).
 
 > **Branch note (`feat/qt-fluentui-rewrite`):** the UI is rewritten on the
 > **FluentUI QML component library** (zhuzichu520/FluentUI, main-branch commit,
@@ -25,10 +24,8 @@ protocol (controller = WS server, renderer = WS client).
 >   test-only path exits via `std::exit` to bypass a teardown heap corruption;
 >   the production close path is unaffected (verified EXIT=0).
 
-> **Scope:** This directory is purely additive. It does **not** touch
-> `controller/` (JavaFX — still builds independently) or `renderer/` (C++ Live2D
-> engine). The renderer keeps its own Google Test; controller_qt uses **QTest
-> only**.
+> **Scope:** This directory does **not** touch `renderer/` (C++ Live2D engine).
+> The renderer keeps its own Google Test; controller_qt uses **QTest only**.
 
 ---
 
@@ -52,7 +49,7 @@ protocol (controller = WS server, renderer = WS client).
 ```bash
 # from project root
 python build.py qt            # Qt controller only
-python build.py all           # Qt controller + renderer + JavaFX controller
+python build.py all           # Qt controller + renderer
 ```
 
 Output: `build/bin/desktop-pet-controller-qt.exe` (Windows) /
@@ -182,7 +179,7 @@ Why this matters:
 > This is the Qt-side analogue of the project-wide pitfall documented in the
 > root `AGENTS.md` ("MinGW PATH": Git's bundled MinGW conflicts with the
 > project's MinGW) and constraint **R7 (MinGW version conflict)** in
-> `docs/controller/development-plan.md`. If you build `controller_qt` manually
+> `docs/controller_qt/development-plan.md`. If you build `controller_qt` manually
 > with bare `cmake`, you **must** replicate this PATH filtering yourself — Qt's
   MinGW must be found first.
 
@@ -331,10 +328,10 @@ controller_qt/
 
 ## Protocol interoperability
 
-controller_qt speaks the **same JSON-over-WebSocket protocol** as the JavaFX
-`controller/` — see `docs/protocol/` for the spec (`commands.md`, `events.md`,
-`handshake.md`). Either controller can drive the same renderer binary; the
-protocol envelope format is byte-compatible.
+controller_qt drives the renderer over a **JSON-over-WebSocket protocol** —
+see `docs/protocol/` for the spec (`commands.md`, `events.md`,
+`handshake.md`). The envelope format defined there is the contract both
+sides implement.
 
 Direction is non-intuitive: the **renderer is the WS client**, the
 **controller is the WS server** (listener on `127.0.0.1:9001`).
@@ -343,7 +340,7 @@ Direction is non-intuitive: the **renderer is the WS client**, the
 
 ## See also
 
-- `docs/controller/development-plan.md` — full phase plan (Phases 0–9)
+- `docs/controller_qt/development-plan.md` — full phase plan (Phases 0–9)
 - `docs/protocol/` — JSON protocol specification
 - `docs/system/configuration.md` — config file format and locations
 - Root `AGENTS.md` — project-wide conventions and pitfalls

@@ -40,29 +40,15 @@
 
 ---
 
-## 二、Java 端测试环境配置
+## 二、Qt 控制面板（controller_qt）
 
-JavaFX UI 测试需要配合 Monocle 无头渲染后端运行（CI 环境无显示器）。Maven Surefire 插件需添加以下 JVM 参数：
+| 库 | 版本 | 用途 | 集成方式 | 阶段 |
+|:---|:---|:---|:---|:---:|
+| Qt | 6.8 LTS 起步（开发版本 6.10.0） | UI 框架（QML + Quick Controls 2）、WebSocket 服务端（`QWebSocketServer`）、系统托盘（`QSystemTrayIcon`）、图表（QtCharts）、测试（QTest） | 系统安装 / Qt 在线安装器（`CMAKE_PREFIX_PATH` 指向 Qt 安装目录） | **Phase 5-9** |
+| FluentUI（QML 组件库） | main 分支 | UI 组件（FluWindow / FluNavigationView / FluFrame / FluButton 等） | CMake FetchContent 静态链接 | **Phase 5-9** |
+| spdlog | 1.15.0 | 日志（轮转文件 + Qt 消息桥接，`src/logging/Logging.cpp`） | CMake FetchContent | **Phase 5-9** |
 
-```xml
-<argLine>
-    --add-opens javafx.graphics/com.sun.javafx.application=ALL-UNNAMED
-    --add-opens javafx.graphics/com.sun.glass.ui=ALL-UNNAMED
-    --add-opens javafx.graphics/com.sun.javafx.util=ALL-UNNAMED
-    --add-opens javafx.graphics/com.sun.glass.ui.monocle=ALL-UNNAMED
-    --add-opens javafx.base/com.sun.javafx.logging=ALL-UNNAMED
-    --add-exports javafx.graphics/com.sun.javafx.util=ALL-UNNAMED
-    --add-exports javafx.graphics/com.sun.glass.ui.monocle=ALL-UNNAMED
-    --add-exports javafx.base/com.sun.javafx.logging=ALL-UNNAMED
-    -Dtestfx.robot=glass
-    -Dglass.platform=Monocle
-    -Dmonocle.platform=Headless
-    -Djava.awt.headless=true
-    -Dtestfx.headless=true
-</argLine>
-```
-
-> **Monocle 版本选择说明**：使用 `io.github.sebivenlo:openjfx-monocle:jdk-21.0.1`（非 `org.testfx:openjfx-monocle:jdk-12.0.1+2`，后者与 JavaFX 21 不兼容；也非 `jdk-21.0.2`，该版本仅有 POM 无 JAR）。
+> **说明**：语音包 meta.mko 解析使用**手写 protobuf wire-format reader**（`MetaMkoParser`，约 150 行），**不引入 libprotobuf 依赖**；`bundles.proto` schema 参考文件原样保留于 `controller_qt/src/protobuf/`（不编译）。
 
 ---
 
@@ -200,19 +186,3 @@ target_include_directories(desktop-pet-renderer PRIVATE
 ### 3.6 示例模型资源
 
 SDK 内置 8 个免费示例模型（`Samples/Resources/`），可在开发调试阶段直接使用，但正式发布需遵守 [Free Material License](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html) 及各模型的[使用条款](https://www.live2d.com/eula/live2d-sample-model-terms_en.html)。
-
----
-
-## 四、Java 端「Phase 2」
-
-| 库 | 版本 | 用途 | Maven 坐标 |
-|:---|:---|:---|:---|
-| OpenJFX | 21.0.5 | UI 框架（Controls + FXML + Graphics） | `org.openjfx:javafx-controls`、`javafx-fxml` |
-| Java-WebSocket | 1.6.0 | WebSocket 服务端（控制面板为常驻进程，承担 Server 角色） | `org.java-websocket:Java-WebSocket` |
-| Gson | 2.13.2 | JSON 序列化 / 反序列化 | `com.google.code.gson:gson` |
-| SLF4J | 2.0.17 | 日志门面 | `org.slf4j:slf4j-api` |
-| Logback | 1.5.32 | 日志实现 | `ch.qos.logback:logback-classic` |
-| JUnit Jupiter | 5.11.4 | 单元测试（JUnit 5 平台） | `org.junit.jupiter:junit-jupiter` |
-| Mockito | 5.14.2 | Mock 测试 | `org.mockito:mockito-core` |
-| TestFX | 4.0.18 | JavaFX UI 自动化测试（需配合 Monocle 实现无头测试） | `org.testfx:testfx-junit5` |
-| Monocle | jdk-21.0.1 | JavaFX 无头渲染后端（TestFX 必需） | `io.github.sebivenlo:openjfx-monocle` |

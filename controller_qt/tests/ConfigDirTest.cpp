@@ -8,7 +8,7 @@
 //   3. configDir() / instancesDir() / logsDir() ALWAYS use '/' separators,
 //      even on Windows where the native separator is '\\'.
 //   4. configDir() contains the canonical ".config/desktop-pet" subpath
-//      that mirrors the JavaFX controller's `user.home + "/.config/desktop-pet/"`.
+//      (the legacy config location under the user's home).
 //
 // QTEST_APPLESS_MAIN: no event loop needed. QTemporaryDir + QDir::exists() +
 // QString::contains() are all synchronous. The real (non-injected) configDir()
@@ -96,7 +96,8 @@ void ConfigDirTest::testPathFormat()
     // string literals that already contain '/' (kConfigSubpath, "instances/",
     // "logs/") and QDir::homePath() returns a '/'-normalized path on Qt — so
     // no '\\' may ever leak through. A backslash in any of the three would
-    // break the byte-for-byte compatibility contract with the Java controller.
+    // break the byte-for-byte compatibility contract with the legacy config
+    // format.
     QVERIFY2(cfg.contains(QLatin1Char('/')),
              "configDir() must contain at least one '/' separator");
     QVERIFY2(!cfg.contains(QLatin1Char('\\')),
@@ -119,13 +120,12 @@ void ConfigDirTest::testConfigDirContainsSubpath()
     const QString cfg = ConfigDir::configDir();
 
     // Then: it MUST contain the canonical ".config/desktop-pet" subpath. This
-    // is the byte-for-byte compatibility contract with the JavaFX controller
-    // (ConfigManager.java uses `user.home + "/.config/desktop-pet/"`). Any
-    // deviation here would split the config state between the two controllers
-    // on a dual-install machine.
+    // is the byte-for-byte compatibility contract with the legacy config
+    // format. Any deviation here would orphan config state written by older
+    // builds.
     QVERIFY2(cfg.contains(QStringLiteral("/.config/desktop-pet")),
              "configDir() must contain the canonical '/.config/desktop-pet' "
-             "subpath to stay compatible with the JavaFX controller");
+             "subpath to stay compatible with the legacy config format");
 }
 
 QTEST_APPLESS_MAIN(ConfigDirTest)

@@ -28,11 +28,10 @@ constexpr const char* kExeSuffix = "";
 //   "vulkan" (case-insensitive) -> desktop-pet-renderer-vulkan
 //   "opengl", empty string, or any unrecognized value -> desktop-pet-renderer
 //
-// Matches docs/controller/README.md §2.3: anything that is not vulkan falls
-// back to the OpenGL renderer. The Java reference (MainWindowController.
-// resolveRendererPath) treats unknown backend values the same way rather than
-// failing — a wrong config silently selects the OpenGL build instead of
-// crashing instance startup.
+// Anything that is not vulkan falls back to the OpenGL renderer. Unknown
+// backend values are treated the same way rather than failing — a wrong
+// config silently selects the OpenGL build instead of crashing instance
+// startup.
 QString rendererBaseName(const QString& graphicsBackend)
 {
     if (graphicsBackend.compare(QStringLiteral("vulkan"),

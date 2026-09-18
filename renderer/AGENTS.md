@@ -1,6 +1,6 @@
 # Renderer — C++ Live2D Engine
 
-C++17 rendering engine using Live2D Cubism SDK 5. Displays animated pet models in a transparent, topmost, frameless window. Connects to Java controller via WebSocket.
+C++17 rendering engine using Live2D Cubism SDK 5. Displays animated pet models in a transparent, topmost, frameless window. Connects to the Qt control panel (`controller_qt/`) via WebSocket.
 
 ## STRUCTURE
 
@@ -45,8 +45,8 @@ renderer/
 | Task | File(s) | Notes |
 |------|---------|-------|
 | Add command handler | `network/CommandHandlers.cpp` | Register in `RegisterHandlers()`, match C++ `Protocol.hpp` |
-| Add event emission | `network/EventEmitter.cpp` | Match Java `MessageDispatcher.java` handling |
-| Change protocol format | `network/Protocol.hpp/cpp` + Java `Protocol.java` | Both sides must match |
+| Add event emission | `network/EventEmitter.cpp` | Match `controller_qt` InstanceSession (Handlers TU) handling |
+| Change protocol format | `network/Protocol.hpp/cpp` + `controller_qt/src/network/Protocol.hpp` | Both sides must match |
 | Add graphics feature | `graphics/` | Implement `IGraphicsBackend` for both backends; Vulkan path also touches `LAppView`, `LAppModel`, `LAppLive2DManager` via `#ifdef USE_VULKAN` |
 | Change model rendering | `LAppModel.cpp`, `LAppView.cpp` | Cubism SDK integration point |
 | Change window behavior | `platform/WindowManager.cpp`, `LAppDelegate.cpp` | GLFW window management; WindowManager shared by both GL and Vulkan |
@@ -74,7 +74,7 @@ renderer/
 - **Member vars**: `m_camelCase` prefix
 - **Headers**: `#pragma once` (not `#ifndef` guards)
 - **Logging**: Only `LAppPal::PrintLogLn()` — no `printf`, no `std::cout`, no `spdlog`
-- **No config files**: All configuration comes from Java controller via WebSocket commands
+- **No config files**: All configuration comes from the Qt control panel via WebSocket commands
 - **JSON keys**: `snake_case` in protocol, matching the Envelope spec in `docs/protocol/`
 - **Tests**: Google Test, separate from main executable (no GL/GLFW/Framework linking)
 - **Backend selection**: Compile-time via `USE_VULKAN` cmake option — no runtime switching. `CUBISM_RENDERER_TYPE` macro selects CubismRenderer subclass

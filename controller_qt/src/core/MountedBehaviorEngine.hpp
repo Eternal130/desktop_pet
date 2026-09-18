@@ -8,8 +8,7 @@
 #include "core/VoicePackInfo.hpp"
 #include "network/Envelope.hpp"
 
-// MountedBehaviorEngine (Phase 5 Wave 8 todo 20) — C++ port of Java's
-// `controller/.../core/MountedBehaviorEngine.java` (246 LOC). When a voice
+// MountedBehaviorEngine (Phase 5 Wave 8 todo 20) — when a voice
 // pack is mounted, this engine has PRIORITY over InteractionHandler for hit
 // events: if the voice pack has a group for the hit area, the engine builds a
 // play_motion_ext command (motion + audio + lipSync side-channels); otherwise

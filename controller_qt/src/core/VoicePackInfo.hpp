@@ -5,8 +5,7 @@
 #include <QString>
 
 // VoicePackInfo / VoicePackGroup / VoicePackAction / VoicePackModule
-// (Phase 5 Wave 8 todo 19) — plain-struct ports of the Java records under
-// controller/.../model/VoicePack*.java. These are the parsed view of a voice
+// (Phase 5 Wave 8 todo 19) — plain structs forming the parsed view of a voice
 // pack's meta.mko file (a protobuf Bundle per src/protobuf/bundles.proto),
 // consumed by todo 20 (MountedBehaviorEngine) to map hit events →
 // play_motion_ext commands.

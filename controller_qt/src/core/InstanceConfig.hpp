@@ -6,26 +6,24 @@
 // InstanceConfig (task T18) — the complete persisted configuration for a single
 // pet instance. Stored as JSON at ~/.config/desktop-pet/instances/{uuid}.json
 // (configuration.md §5), consumed by T20 (InstanceConfigManager) and T28
-// (window-state restore). This is the Qt-side analogue of the Java
-// controller/.../model/InstanceConfig.java record, and the FULL superset of the
-// minimal InstanceConfigLike view that StartupSalvo (T16) used provisionally.
+// (window-state restore). This struct is the FULL superset of the minimal
+// InstanceConfigLike view that StartupSalvo (T16) used provisionally.
 //
 // Field set & defaults: architecture-blueprint.md §5.1. The struct's default
-// member initializers mirror that table. JSON keys are snake_case (matching
-// the Java Gson FieldNamingPolicy + configuration.md §5 examples) so the Qt
-// and JavaFX controllers read/write the SAME instance files byte-for-byte.
+// member initializers mirror that table. JSON keys are snake_case
+// (configuration.md §5 examples) so instance files stay byte-for-byte
+// compatible with the legacy config format.
 //
 // The 7 former subtitle_* fields were removed in the bubble-stream switch
 // phase (the Qt controller no longer drives renderer subtitles). fromJson
-// silently ignores those keys in existing files written by older builds or
-// by the JavaFX controller (interface.md §1.5 unknown-field tolerance).
+// silently ignores those keys in existing files written by older builds
+// (interface.md §1.5 unknown-field tolerance).
 //
-// voicePack nullability: the Java side treats this as a nullable string
-// (null = none). Qt has no null QString, so the empty QString is the
-// "none" sentinel. toJson writes JSON null for an empty value (byte-compatible
-// with Java's null default) and a real string otherwise; fromJson accepts
-// both null and a string (and treats a missing key as the default empty
-// string).
+// voicePack nullability: the JSON value is a nullable string (null = none).
+// Qt has no null QString, so the empty QString is the "none" sentinel.
+// toJson writes JSON null for an empty value and a real string otherwise;
+// fromJson accepts both null and a string (and treats a missing key as the
+// default empty string).
 struct InstanceConfig {
     // ── identity / paths ───────────────────────────────────────────────────
     QString id;                            // UUID; persistence primary key
@@ -90,10 +88,10 @@ struct InstanceConfig {
     }
 };
 
-// Serialize an InstanceConfig to a QJsonObject with snake_case keys for JavaFX
-// interop (configuration.md §5). Every field is written; voice_pack is written
-// as JSON null when empty (matching Java's null default) and a string
-// otherwise. The result always has exactly one key per field (23).
+// Serialize an InstanceConfig to a QJsonObject with snake_case keys
+// (configuration.md §5). Every field is written; voice_pack is written
+// as JSON null when empty and a string otherwise. The result always has
+// exactly one key per field (23).
 QJsonObject instanceConfigToJson(const InstanceConfig& cfg);
 
 // Deserialize a QJsonObject into an InstanceConfig. Missing fields are merged

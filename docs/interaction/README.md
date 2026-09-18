@@ -60,13 +60,13 @@ EventEmitter 上报事件到控制面板
   payload: { area_id, x, y, button }
      │
      ▼
-MainWindowController 中注册的 hit 事件处理器
+控制面板（controller_qt）路由到实例的 hit 事件处理器
      │
      ▼
-InteractionHandler.handleHitEvent()
-  ├─ 查找模型行为映射（ModelConfig 或默认映射 head→TapHead, body→TapBody）
-  ├─ 大小写容错：渲染器发送小写 key（如 "head"），映射支持 PascalCase（如 "Head"）
-  └─ 构建 play_motion 指令（Protocol.createCommand）→ 通过 sendOrCache 发送
+InteractionHandler 处理（挂载语音包时由 MountedBehaviorEngine 优先处理）
+  ├─ 查找命中区域→动作映射（3 级大小写容错查找：兼容渲染器小写 key
+  │   如 "head" 与 PascalCase 映射如 "Head"）
+  └─ 构建 play_motion 指令（Protocol 命令工厂）→ 经 WsServer 发送给渲染器
 ```
 
 ### 1.3 设计要点
@@ -115,12 +115,12 @@ InteractionHandler.handleHitEvent()
 └─────────────────────────────────────────┘
 ```
 
-> **Phase 2 已实现**：拖拽开始/结束时上报 `drag_start` / `drag_end` 事件到控制面板。`drag_end` 事件包含窗口最终位置（`window_x`、`window_y`，通过 `glfwGetWindowPos` 获取），控制面板将位置持久化到 `config.json`。
+> **Phase 2 已实现**：拖拽开始/结束时上报 `drag_start` / `drag_end` 事件到控制面板。`drag_end` 事件包含窗口最终位置（`window_x`、`window_y`，通过 `glfwGetWindowPos` 获取），控制面板将位置持久化到实例配置。
 
 ### 2.3 设计要点
 
 - **释放后行为**：窗口停在释放位置，不做贴边吸附或重力下落
 - **拖拽动作**：拖拽期间不播放特殊动作，保持当前动作继续
-- **位置记录**（✅ 已实现）：每次拖拽结束后，`MainWindowController` 从 `drag_end` 事件提取 `window_x`/`window_y`，通过 `ConfigManager.save()` 持久化位置
-- **拖拽状态防护**（✅ 已实现）：`MainWindowController` 维护 `isDragging` 标志。仅在收到 `drag_start` 设置标志后，后续的 `drag_end` 才会触发位置持久化。防止简单点击（未拖拽）被误判为 `drag_end` 并覆盖位置
+- **位置记录**（✅ 已实现）：每次拖拽结束后，控制面板从 `drag_end` 事件提取 `window_x`/`window_y`，持久化到实例配置（`instances/{uuid}.json`，QSaveFile 原子写入）
+- **拖拽状态防护**（✅ 已实现）：控制面板维护拖拽状态标志。仅在收到 `drag_start` 设置标志后，后续的 `drag_end` 才会触发位置持久化。防止简单点击（未拖拽）被误判为 `drag_end` 并覆盖位置
 - **wasDragging 捕获**：渲染器端在 `LAppDelegate` 中，先捕获 `_isDragging` 状态再将其置 `false`，确保 `drag_end` 事件仅在真正拖拽后发出

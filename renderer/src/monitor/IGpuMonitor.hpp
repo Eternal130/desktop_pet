@@ -12,7 +12,7 @@ namespace Monitor {
  * except gpuName; AMD/Windows PDH may leave gpuUtilizationPercent nullopt).
  *
  * Wire contract: these feed the `stats_state` event payload and must stay
- * byte-for-byte consistent with controller model/RendererStats.java.
+ * byte-for-byte consistent with the protocol spec under docs/protocol/.
  */
 struct GpuMetrics {
     std::optional<double> gpuUtilizationPercent;

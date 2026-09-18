@@ -7,7 +7,7 @@
 // MonitorDataModelTest (Phase 5 Wave 8 todo 18) — locks the data-model
 // contract that MonitorPage.qml + InstanceSession's 2s poller rely on.
 //
-// Five slots cover the Java reference's invariants (MonitorDataModel.java):
+// Five slots cover the data-model invariants:
 //   - testRingBufferCap: 65 controller merges → history.size()==60 (FIFO drop)
 //   - testIsStalePredicate: static isStale() boundary (never/just-fresh/stale)
 //   - testMergeRenderer: stats_state payload → renderer history grows; null

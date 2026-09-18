@@ -7,7 +7,6 @@
 > **前置文档**：
 > - [架构蓝图](./architecture-blueprint.md) — 控制面板的功能规格与接口契约
 > - [协议接口规格](../protocol/interface.md) — 25 条命令 + 13 个事件的完整定义
-> - [技术栈调研报告](../research/control-panel-tech-stack.md) — Qt/Slint 选型依据
 
 ---
 
@@ -139,7 +138,7 @@ Phase 2 (进程编排)   Phase 3 (配置层)
 | 1.5 | Origin 守卫 | 拒绝 Origin 以 `http://` 或 `https://` 开头的连接（关闭码 4001） |
 | 1.6 | 连接管理 | 单实例单连接；新连接替换旧连接（Close 1000） |
 | 1.7 | 命令工厂 | `createCommand(action, payload)` / `createEvent(action, payload)` 封装 |
-| 1.8 | pending request 管理 | `expectResponse(id, timeout)` → CompletableFuture/Promise，10s 超时 |
+| 1.8 | pending request 管理 | `PendingRequests`：按命令 id 关联 Response，10s 超时自动清理 |
 | 1.9 | 事件处理器注册 | `registerEventHandler(action, handler)` — 按 action 注册回调 |
 
 **验收标准**：
@@ -457,7 +456,7 @@ Phase 2 (进程编排)   Phase 3 (配置层)
 | 9.4 | 内存优化 | 目标：Qt 闲置 < 30MB / Slint 闲置 < 15MB |
 | 9.5 | Windows 测试 | 10/11 验证：托盘、自启、透明窗口、多实例 |
 | 9.6 | Linux 测试 | Ubuntu(X11)/Fedora(Wayland) 验证：同上 |
-| 9.7 | 日志系统 | 文件轮转日志（按大小/日期）；SLF4J/log4rs/tracing 等价物 |
+| 9.7 | 日志系统 | 文件轮转日志（按大小/日期）；spdlog/spdlog-rs/tracing 等价物 |
 | 9.8 | 异常处理审计 | 确保所有 IO/网络/进程操作有 try-catch，不崩溃 |
 
 **验收标准**：

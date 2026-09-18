@@ -14,9 +14,8 @@
 
 namespace {
 
-// Registry key + value name — byte-for-byte match with the Java reference so
-// the C++ port toggles the SAME Windows registry value the JavaFX controller
-// wrote (interoperable across the two binaries during the migration).
+// Registry key + value name — kept byte-for-byte compatible with the legacy
+// config format so existing installs keep their auto-launch state.
 const QString kRegKey =
     QStringLiteral("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run");
 const QString kRegValueName = QStringLiteral("DesktopPet");

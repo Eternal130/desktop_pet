@@ -3,7 +3,7 @@
 > 协议概述参见 [通信协议](./README.md)。
 > 握手与连接流程参见 [握手流程](./handshake.md)。
 >
-> 本文档分为两部分：§一为语言无关的断连缓存策略（协议层），§二/§三为当前 C++/Java 参考实现的关键接口。
+> 本文档分为两部分：§一为语言无关的断连缓存策略（协议层），§二/§三为当前 C++ 渲染器与 controller_qt 实现的关键接口。
 
 ---
 
@@ -58,15 +58,15 @@
 
 ---
 
-## 三、Java 端关键接口
+## 三、controller_qt 端关键接口
 
 | 类/方法 | 文件 | 说明 |
 |:---|:---|:---|
-| `Envelope` | `model/Envelope.java` | Java Record。response 字段（success, errorCode, errorMessage）为 `null` 表示非 response |
-| `Protocol.serialize()` | `network/Protocol.java` | 手动构建 `JsonObject`，response 字段在顶层 |
-| `Protocol.deserialize()` | `network/Protocol.java` | 返回 `Optional<Envelope>`。非 response 消息的 success/errorCode/errorMessage 为 null |
-| `Protocol.createCommand()` | `network/Protocol.java` | type="command"，id 使用 `UUID.randomUUID()` |
-| `MessageDispatcher` | `network/MessageDispatcher.java` | response → `CompletableFuture` 匹配 id；event → `Consumer<Envelope>` 按 action 路由 |
-| `MessageDispatcher.expectResponse()` | 同上 | 注册 `CompletableFuture<Envelope>`，支持 `Duration` 超时，超时后自动清理 |
-| `PetWebSocketServer` | `network/PetWebSocketServer.java` | 单连接管理，`sendMessage()` / `setMessageCallback()` / `setConnectionCallback()` |
-| `MainWindowController` | `ui/MainWindowController.java` | 生命周期编排，事件处理器注册，`sendOrCache()` 断连策略 |
+| `Envelope` | `src/network/Envelope.hpp` | 消息结构（type, action, id, payload, timestamp + response 字段）。response 字段（success, error_code, error_message）位于 JSON 顶层 |
+| `Protocol` | `src/network/Protocol.hpp` | 20 个类型化命令工厂 + Envelope 辅助函数（序列化/反序列化、createCommand/createEvent/createResponse） |
+| `WsServer` | `src/network/WsServer.hpp` | `QWebSocketServer`（监听 127.0.0.1:9001），三重门令牌握手，按 instanceId 多实例路由，重连时替换旧连接 |
+| `MessageDispatcher` | `src/network/MessageDispatcher.hpp` | 按 type 路由 Envelope：response → `PendingRequests` 匹配 id；event/command → 对应处理器 |
+| `PendingRequests` | `src/network/PendingRequests.hpp` | 按命令 id 的回执表，10 秒超时自动清理 |
+| `EventRegistry` | `src/network/EventRegistry.hpp` | 14 类事件的默认处理（日志）+ 按实例注册 |
+| `ThreadMarshal` | `src/network/ThreadMarshal.hpp` | WS I/O 线程 → GUI 线程编组 |
+| `InstanceSession` | `src/core/InstanceSession.hpp`（含 Handlers TU） | 每宠物编排器：事件处理器注册、指令下发、断连期间的缓存重放 |

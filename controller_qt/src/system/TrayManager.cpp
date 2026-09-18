@@ -163,9 +163,8 @@ QIcon TrayManager::loadIcon()
     }
 
     // Fallback: transparent kFallbackSize × kFallbackSize pixmap with a
-    // filled antialiased circle in the Java reference's brand blue. Matches
-    // TrayManager.java's createTrayImage() default so the Qt port presents
-    // the same default icon the JavaFX controller shipped.
+    // filled antialiased circle in the brand blue — the default tray icon
+    // when no tray-icon.png resource is present.
     QPixmap pm(kFallbackSize, kFallbackSize);
     pm.fill(Qt::transparent);
     QPainter painter(&pm);

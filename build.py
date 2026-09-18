@@ -4,9 +4,8 @@
 Usage:
     python build.py                        # Interactive mode
     python build.py renderer               # Build renderer only
-    python build.py controller             # Build controller only (JavaFX)
     python build.py qt                     # Build Qt controller only
-    python build.py renderer controller    # Build multiple
+    python build.py renderer qt            # Build multiple
     python build.py all                    # Build all
 
 Environment requirements documented in BUILD.md.
@@ -26,7 +25,6 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 RENDERER_DIR = PROJECT_ROOT / "renderer"
-CONTROLLER_DIR = PROJECT_ROOT / "controller"
 CONTROLLER_QT_DIR = PROJECT_ROOT / "controller_qt"
 BUILD_DIR = PROJECT_ROOT / "build"
 BIN_DIR = BUILD_DIR / "bin"
@@ -300,52 +298,6 @@ def build_renderer():
     return True
 
 
-# ── Build: Controller ─────────────────────────────────────────────
-
-def _find_maven():
-    if IS_WINDOWS:
-        mvnw = CONTROLLER_DIR / "mvnw.cmd"
-        if mvnw.exists():
-            return [str(mvnw)]
-    else:
-        mvnw = CONTROLLER_DIR / "mvnw"
-        if mvnw.exists():
-            if not os.access(str(mvnw), os.X_OK):
-                os.chmod(str(mvnw), 0o755)
-            return [str(mvnw)]
-
-    if check_tool("mvn"):
-        return ["mvn"]
-
-    return None
-
-
-def build_controller():
-    header("Building: Controller (Java / Maven)")
-
-    mvn = _find_maven()
-    if mvn is None:
-        error("Maven not found. Install Maven and add to PATH, or ensure mvnw exists in controller/.")
-        return False
-
-    info(f"Using: {' '.join(mvn)}")
-
-    rc = run(
-        mvn + [
-            "clean", "package",
-            "-f", str(CONTROLLER_DIR / "pom.xml"),
-            "-DskipTests",
-            "-q",
-        ],
-    )
-    if rc != 0:
-        error("Controller build failed.")
-        return False
-
-    success("Controller built → build/bin/desktop-pet-controller.jar")
-    return True
-
-
 # ── Build: Controller Qt ───────────────────────────────────────────
 
 def _get_qt_env():
@@ -446,7 +398,6 @@ def build_qt():
 
 TARGETS = [
     ("renderer",   "C++ 渲染引擎 (desktop-pet-renderer)"),
-    ("controller", "Java 控制面板 (desktop-pet-controller.jar)"),
     ("qt",         "Qt 控制面板 (desktop-pet-controller-qt)"),
 ]
 
@@ -487,7 +438,7 @@ def interactive_select():
                     error(f"Invalid option: {p}")
                     valid = False
                     break
-            elif p in ("renderer", "controller", "qt"):
+            elif p in ("renderer", "qt"):
                 selected.append(p)
             elif p == "all":
                 return [name for name, _ in TARGETS]
@@ -504,7 +455,6 @@ def interactive_select():
 
 BUILDERS = {
     "renderer": build_renderer,
-    "controller": build_controller,
     "qt": build_qt,
 }
 
@@ -517,9 +467,9 @@ def main():
     parser.add_argument(
         "targets",
         nargs="*",
-        choices=["renderer", "controller", "qt", "all"],
+        choices=["renderer", "qt", "all"],
         metavar="TARGET",
-        help="renderer | controller | qt | all",
+        help="renderer | qt | all",
     )
     args = parser.parse_args()
 

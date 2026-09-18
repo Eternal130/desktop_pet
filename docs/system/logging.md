@@ -17,7 +17,7 @@
 | 端 | 框架 | 说明 | 阶段 |
 |:---|:---|:---|:---:|
 | C++ 渲染引擎 | `LAppPal::PrintLogLn` | Cubism SDK 内置日志函数（基于 `CubismFramework::CubismLogFunction` 回调），输出到控制台（printf）。当前未引入独立日志库，后期可考虑转发到 spdlog 以支持文件输出和轮转 | ✅ MVP |
-| Java 控制面板 | SLF4J 2.0.17 + Logback 1.5.32 | SLF4J 门面解耦日志 API，Logback 提供实现。生产环境输出到文件（10MB 轮转，保留 5 天），测试环境仅输出到控制台（`logback-test.xml` 自动覆盖） | ✅ Phase 2 |
+| controller_qt | spdlog 1.15.0 + Qt 消息桥接 | `src/logging/Logging.cpp`：spdlog 轮转文件输出，并将 Qt 日志消息桥接到同一日志通道 | ✅ Phase 5-9 |
 
 ---
 
@@ -38,7 +38,7 @@
 | 项目 | 配置 |
 |:---|:---|
 | 存储路径 | `~/.config/desktop-pet/logs/` |
-| 文件命名 | `renderer.log`（C++ 端）、`controller.log`（Java 端，后期） |
+| 文件命名 | `renderer.log`（渲染器，后期）；controller_qt 侧由 spdlog 输出轮转文件日志 |
 | 轮转策略 | 单文件上限 10 MB，保留最近 5 个归档文件 |
 | 默认级别 | Release 构建默认 INFO，Debug 构建默认 DEBUG |
 | 控制台输出 | Debug 构建同时输出到控制台，Release 构建仅文件 |
@@ -72,7 +72,7 @@
   - 静音切换：`[AudioManager] Muted: true|false`
   - 关闭：`[AudioManager] Audio engine shut down`
 
-**控制面板（Java）— Phase 2**：
+**控制面板（controller_qt）— Phase 5-9**：
 
 - 应用启动/关闭
 - 配置文件加载（路径、关键配置值）

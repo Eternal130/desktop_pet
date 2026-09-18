@@ -6,8 +6,7 @@
 #include "core/VoicePackInfo.hpp"
 
 // MetaMkoParser (Phase 5 Wave 8 todo 19) — parses the meta.mko file inside a
-// voice-pack directory into a VoicePackInfo. This is the Qt/C++ port of the
-// Java reference controller/.../core/MetaMkoParser.java (90 LOC).
+// voice-pack directory into a VoicePackInfo.
 //
 // The .mko format is a protobuf Bundle message (see src/protobuf/bundles.proto).
 // The original Java code generates C++ bindings via protoc + links

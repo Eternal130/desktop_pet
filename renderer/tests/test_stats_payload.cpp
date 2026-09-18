@@ -14,8 +14,8 @@ using Monitor::GpuMetrics;
 using Monitor::ProcessStats;
 using Monitor::buildStatsPayload;
 
-// The 7 wire keys defined by controller model/RendererStats.java — adding or
-// removing any of these is a breaking protocol change. This test is the
+// The 7 wire keys defined by the protocol spec under docs/protocol/ — adding
+// or removing any of these is a breaking protocol change. This test is the
 // byte-for-byte gate referenced in plan T3 acceptance criteria.
 static const std::set<std::string> kExpectedKeys = {
     "cpu_percent",

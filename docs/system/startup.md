@@ -31,49 +31,37 @@
 
 ---
 
-## 二、控制面板启动流程 ✅ 已实现（MainWindowController 编排）
+## 二、控制面板启动流程 ✅ 已实现（controller_qt 编排）
 
 ```plain
-1. App.java (JavaFX Application) 启动
+1. controller_qt 进程启动（main.cpp：QGuiApplication + QQmlApplicationEngine，
+   注册上下文属性 instanceManager / trayManager / autoLaunch / panelConfig /
+   environmentChecker / windowStateSaver，加载 QML 主界面）
    │
-   ├─> 2. start() 中创建 MainWindowController 实例
+   ├─> 2. 加载面板配置与实例列表（~/.config/desktop-pet/ 下的 panel.json
+   │      与 instances/{uuid}.json，QSaveFile 原子写入）
    │
-   ├─> 3. MainWindowController.startup() 开始编排：
-   │      │
-   │      ├─> 3a. ConfigManager.load() 加载配置（~/.config/desktop-pet/config.json）
-   │      │       └─ 首次运行 → 创建默认配置文件
-   │      │       └─ JSON 损坏 → 使用默认值，WARN 日志
-   │      │
-   │      ├─> 3b. PetWebSocketServer 启动（监听端口 9001）
-   │      │
-   │      ├─> 3c. 注册事件处理器到 MessageDispatcher
-   │      │       ├─ ready → 发送 load_model + set_position
-   │      │       ├─ model_loaded → ModelInfoParser 解析模型 → 启动 Scheduler
-   │      │       ├─ hit → InteractionHandler → play_motion 指令
-   │      │       ├─ drag_start → 设置 isDragging = true
-   │      │       ├─ drag_end → isDragging guard → 持久化窗口位置到 ConfigManager
-   │      │       ├─ motion_started / motion_finished → 更新 PetState
-   │      │       └─ error → 日志记录
-   │      │
-   │      ├─> 3d. ProcessManager.startRenderer() 启动渲染器进程
-   │      │       └─ 注册 exitCallback（非零退出码 → scheduleRestart）
-   │      │
-   │      └─> 3e. 等待渲染器连接和 ready 事件（异步）
+   ├─> 3. WsServer 启动（QWebSocketServer 监听 127.0.0.1:9001，
+   │      三重门令牌握手，按 instanceId 多实例路由）
    │
-   ├─> 4. 渲染器初始化（同 MVP 步骤 2-4）
-   │      └─> 作为 WebSocket Client 连接 ws://localhost:9001
+   ├─> 4. InstanceManager 为每个实例创建 InstanceSession（每宠物编排器）：
+   │      ├─ ProcessManager 启动渲染器子进程（QProcess，经 CLI 参数传递
+   │      │    --port / --instance-id / --model / --token / --x / --y / --width / --height）
+   │      ├─ MessageDispatcher 路由 Envelope（response / event / command）
+   │      ├─ EventRegistry 登记 14 类事件处理（默认日志 + 按实例注册）
+   │      └─ RestartController 挂接崩溃恢复（指数退避，最大 5 次）
    │
-   ├─> 5. 渲染器发送 ready 事件
-   │      │
-   │      ├─> MainWindowController 发送 load_model（配置中的当前模型短名称）
-   │      ├─> MainWindowController 发送 set_position（配置中的窗口位置）
-   │      └─> flushPendingCommands()（重发缓存指令）
+   ├─> 5. 渲染器初始化（同 MVP 步骤 2-4），作为 WebSocket Client
+   │      连接 ws://127.0.0.1:9001 并完成令牌握手
    │
-   └─> 6. load_model 成功回执 → ModelInfoParser 解析模型 → Scheduler.start() → 正常运行
+   ├─> 6. 渲染器发送 ready 事件 → InstanceSession 下发启动指令序列
+   │      （startup salvo，共 7 条指令 + set_hit_areas）
+   │
+   └─> 7. model_loaded 事件 → 更新实例状态 → Scheduler 启动
+          （QTimer 闲时动作节奏）→ 正常运行
 ```
 
 ---
-
 ## 三、多实例管理 ✅ 已实现
 
 Phase 2 引入多实例管理后，配置采用分层结构：
@@ -87,15 +75,15 @@ Phase 2 引入多实例管理后，配置采用分层结构：
     │
     ├─ 遍历 instanceIds
     │   └─ InstanceConfigManager.load(uuid) → InstanceConfig
-    │       └─ 创建 PetInstance（JavaFX 可观察模型，绑定 UI）
+    │       └─ InstanceManager 建立侧边栏花名册条目（QAbstractListModel）
     │
-    └─ 每个 PetInstance 独立管理：
-        ├─ 独立渲染器进程（ProcessManager）
-        ├─ 独立 WebSocket 连接
-        ├─ 独立 Scheduler（闲时动作）
+    └─ 每个实例由独立 InstanceSession 管理：
+        ├─ 独立渲染器子进程（ProcessManager）
+        ├─ 独立 WebSocket 连接（WsServer 按 instanceId 路由）
+        ├─ 独立 Scheduler（闲时动作，QTimer）
         └─ 独立语音包挂载（MountedBehaviorEngine）
 
-> **渲染器选择与 graphicsBackend**：每个实例启动渲染器进程时，`ProcessManager` 经由 `MainWindowController.resolveRendererPath(backend)` 依据实例配置的 `graphics_backend`（`instances/{uuid}.json`，取值 `opengl` / `vulkan`）解析对应的渲染器可执行文件路径；若实例未指定则回退到全局 `config.json` 的 `system.default_graphics_backend`。OpenGL 与 Vulkan 为编译期切换（`-DUSE_VULKAN=ON`），无运行时切换。
+> **渲染后端选择**：OpenGL 与 Vulkan 为编译期切换（`-DUSE_VULKAN=ON`，无运行时切换），`build.py` 同时产出 OpenGL 与 Vulkan 两个渲染器变体。
 
 配置文件结构：
   ~/.config/desktop-pet/
@@ -107,14 +95,16 @@ Phase 2 引入多实例管理后，配置采用分层结构：
 
 ---
 
-## 四、关闭流程（MainWindowController.shutdown()）
+## 四、关闭流程
+
+控制面板遵循关闭动作策略（直接关闭 / 最小化到托盘 / 确认后关闭）：
 
 ```plain
-App.stop() → MainWindowController.shutdown()
+控制面板退出
    │
-   ├─> 1. Scheduler.shutdown() — 停止闲时动作触发
-   ├─> 2. ConfigManager.save() — 持久化当前配置
-   ├─> 3. 发送 shutdown 指令到渲染器（等待 response）
-   ├─> 4. ProcessManager.stopRenderer() — 优雅停止（5 秒超时后强制终止）
-   └─> 5. PetWebSocketServer.stop() — 关闭 WebSocket 服务
+   ├─> 1. 停止各实例 Scheduler — 停止闲时动作触发
+   ├─> 2. 持久化面板与实例配置（QSaveFile 原子写入）
+   ├─> 3. 向渲染器发送 shutdown 指令（等待 response）
+   ├─> 4. 停止渲染器子进程（ProcessManager）
+   └─> 5. 关闭 WsServer — 关闭 WebSocket 服务
 ```

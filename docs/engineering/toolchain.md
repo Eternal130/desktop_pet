@@ -69,40 +69,25 @@ cmake -S renderer -B build/renderer_vulkan -G "MinGW Makefiles" \
 
 ---
 
-## 二、Java 控制面板「Phase 2」
+## 二、Qt 控制面板（controller_qt，Phase 5-9）
 
 | 项目 | 选型 | 说明 |
 |:---|:---|:---|
-| 语言版本 | **Java 21 LTS (OpenJDK 21)** | 当前最新长期支持版本，提供 Records、Sealed Classes、Pattern Matching、Virtual Threads 等现代特性 |
-| 构建系统 | **Maven ≥ 3.9** | 成熟稳定，依赖管理和插件生态完善 |
-| UI 框架 | **JavaFX 21 (OpenJFX 21.0.5)** | 确定选型，弃用 Swing（决策理由见下方）。选择与 JDK 21 对齐的 LTS 版本（JavaFX 25 需要 JDK 23+，不兼容 JDK 21） |
-| 打包工具 | **jlink + jpackage** | Java 21 内置，生成包含最小化 JRE 的平台原生安装包，用户无需预装 Java |
-| 字节码版本 | **21** | `maven-compiler-plugin` source/target 均设为 21 |
+| 语言标准 | **C++17** | 与渲染引擎一致 |
+| UI 框架 | **Qt 6.8 LTS 起步（开发版本 6.10.0）+ QML** | 所需组件：`Core`、`Gui`、`Widgets`、`Network`、`WebSockets`、`Qml`、`Quick`、`QuickControls2`、`Concurrent`、`Charts`、`Test` |
+| 构建系统 | **CMake ≥ 3.22 + Ninja** | `qt_add_executable` + `qt_add_qml_module`（QTP0001 NEW 布局 `:/qt/qml/<URI>/`） |
+| 编译器 | **MinGW 13.1.0（Qt 自带，Windows）/ GCC / Clang（Linux）** | Windows 下必须使用 Qt 自带的 MinGW（`C:\Qt\Tools\mingw1310_64`），与渲染引擎所用 MinGW 相互独立，不得混用 |
+| 包管理 | **CMake FetchContent** | spdlog 1.15.0、FluentUI QML 组件库（静态链接） |
 
-**UI 框架选型决策（JavaFX vs Swing）**：
+**MinGW 工具链隔离（Windows，关键）**：
 
-| 维度 | JavaFX 21 | Swing |
-|:---|:---|:---|
-| 维护状态 | OpenJFX 社区活跃，持续发布新版 | 仅安全修复，无新特性开发 |
-| 样式系统 | CSS 样式表，主题切换便捷 | Look & Feel 机制，深度定制成本高 |
-| 布局方式 | FXML 声明式布局 + Scene Builder 可视化设计 | 纯代码布局 |
-| 动画支持 | 内置 Animation API（Timeline、Transition） | 需手动实现 Timer + 重绘 |
-| 高 DPI | 原生支持，自动缩放 | 部分场景文字/图标模糊 |
-| 分发集成 | 与 jpackage 深度集成 | 同等支持 |
+`build.py qt`（`_get_qt_env()`）通过以下方式保证隔离：
 
-**结论**：JavaFX 在样式定制、声明式 UI 和动画能力上明显优于 Swing，适合桌面宠物这类强交互、重视视觉体验的应用。
+1. 将 `C:\Qt\Tools\mingw1310_64\bin` **前置**到 `PATH`（Qt 的 MinGW 优先）；
+2. **过滤** `PATH` 中的 `\Git\mingw64\bin`（与渲染引擎侧 `_get_renderer_env()` 同理）；
+3. 前置 Qt 自带 Ninja（`C:\Qt\Tools\ninja`）。
 
-Maven 配置要点：
-
-```xml
-<properties>
-    <java.version>21</java.version>
-    <javafx.version>21.0.5</javafx.version>
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-</properties>
-```
+若手动用裸 `cmake` 构建 `controller_qt`，**必须**自行复刻上述 PATH 过滤——确保 Qt 的 MinGW 被优先找到，否则会链接到错误的 `libstdc++`，导致链接失败或启动即崩溃。
 
 ---
 
@@ -114,5 +99,5 @@ Maven 配置要点：
 | 窗口系统 | X11 | X11 / Win32 |
 | GPU | 支持 OpenGL 3.3+ 的显卡及驱动 | 支持 OpenGL 3.3+ 或 Vulkan 1.2+（Vulkan 后端）的显卡及驱动 |
 | 内存 | ≥ 512 MB 可用（应用运行时预期占用 100-200 MB） | 同左 |
-| 磁盘 | ≥ 200 MB（含内嵌 JRE + 默认模型） | 同左 |
+| 磁盘 | ≥ 200 MB（含 Qt 运行时库 + 默认模型） | 同左 |
 | 额外依赖（Vulkan 后端） | — | Vulkan SDK（仅 Vulkan 后端构建时需要） |

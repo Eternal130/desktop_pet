@@ -17,7 +17,7 @@
 
 // Status string constants used across the session lifecycle. Centralized so a
 // typo in one call site can never invent a new status the QML switch can't
-// match. The values mirror the Java controller's InstanceSession states.
+// match.
 namespace {
 constexpr const char* kStatusStopped    = "stopped";
 constexpr const char* kStatusPending    = "pending";

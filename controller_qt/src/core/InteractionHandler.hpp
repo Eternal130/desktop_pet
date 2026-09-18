@@ -10,8 +10,7 @@
 
 struct Envelope;
 
-// InteractionHandler (Phase 5 todo 9) — QObject port of Java's
-// `controller/.../core/InteractionHandler.java` (103 LOC). Translates an
+// InteractionHandler (Phase 5 todo 9) — QObject that translates an
 // inbound `hit` event (renderer → controller) into an outbound `play_motion`
 // command (controller → renderer), looking up the motion group via a 3-tier
 // case-folding strategy against the model config's hitActions map.

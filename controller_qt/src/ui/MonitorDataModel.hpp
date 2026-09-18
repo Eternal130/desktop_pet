@@ -11,8 +11,7 @@
 #include "system/ResourceStatsCollector.hpp"  // ControllerStats (todo 17)
 
 // MonitorDataModel (Wave 8 todo 18) — copy-on-write ring buffer of resource-
-// monitor snapshots for the MonitorPage. Qt port of Java's
-// `controller/src/main/java/com/desktoppet/ui/MonitorDataModel.java` (127 LOC).
+// monitor snapshots for the MonitorPage.
 //
 // Two merge paths feed the model:
 //   - mergeController(const ControllerStats&) — driven by the 2s QTimer poller
@@ -45,7 +44,7 @@
 // QML page calls isStaleNow() (which reads QDateTime::currentMSecsSinceEpoch
 // + m_lastRendererUpdateMs) for the banner.
 
-// Renderer-process resource snapshot (port of Java RendererStats.java record).
+// Renderer-process resource snapshot.
 // GPU/VRAM fields are std::optional<> because the Linux Stub returns null on
 // the wire (interface.md §K: "vram_used_bytes ... Linux Stub ... null"). The
 // nullable fields MAY be JSON `null` OR absent; fromJson accepts both.

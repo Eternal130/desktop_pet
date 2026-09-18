@@ -1,8 +1,6 @@
 # Build outputs
 build/
 renderer/build/
-controller/target/
-target/generated-sources/
 compile_commands.json
 
 # Caches

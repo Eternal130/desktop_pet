@@ -35,16 +35,16 @@
 
 ### 1.2 各语言类型映射建议
 
-| 协议类型 | Java | C++ | TypeScript | Python | C# |
-|:---|:---|:---|:---|:---|:---|
-| `string` | `String` | `std::string` | `string` | `str` | `string` |
-| `int` | `int` | `int32_t` | `number` | `int` | `int` |
-| `int64` | `long` | `int64_t` | `number` \| `string`* | `int` | `long` |
-| `float` / `double` | `float` / `double` | `float` / `double` | `number` | `float` | `float` / `double` |
-| `bool` | `boolean` | `bool` | `boolean` | `bool` | `bool` |
-| `uint32` | `long` | `uint32_t` | `number` | `int` | `uint` |
-| `array<T>` | `List<T>` | `std::vector<T>` | `T[]` | `list[T]` | `List<T>` |
-| `T?`（可空） | `T`（nullable） | `std::optional<T>` | `T` \| `null` | `Optional[T]` | `T?` |
+| 协议类型 | C++ | TypeScript | Python | C# |
+|:---|:---|:---|:---|:---|
+| `string` | `std::string` | `string` | `str` | `string` |
+| `int` | `int32_t` | `number` | `int` | `int` |
+| `int64` | `int64_t` | `number` \| `string`* | `int` | `long` |
+| `float` / `double` | `float` / `double` | `number` | `float` | `float` / `double` |
+| `bool` | `bool` | `boolean` | `bool` | `bool` |
+| `uint32` | `uint32_t` | `number` | `int` | `uint` |
+| `array<T>` | `std::vector<T>` | `T[]` | `list[T]` | `List<T>` |
+| `T?`（可空） | `std::optional<T>` | `T` \| `null` | `Optional[T]` | `T?` |
 
 > *\*TypeScript 中 `int64` 超过 `Number.MAX_SAFE_INTEGER` 时应改用 `string` 传输并在两端自行解析，或使用 `BigInt`。本协议中 `timestamp`（Unix 毫秒）和 `duration`（毫秒）均为此类型，当前值域（约 1.7 万亿）在 `Number.MAX_SAFE_INTEGER`（约 9 千万亿）范围内，**短期安全**，但 2058 年后 timestamp 会越界。*
 
@@ -398,7 +398,7 @@
 | `3003` | 被优先级守卫拒绝或加载失败 | `"Motion rejected by priority guard or failed to load"` |
 | `3004` | 路径含 `..`/`~` 等穿越字符 | `"motion_path contains unsafe traversal"` |
 
-> ⚠️ **代码/文档偏差**：`lip_sync_path` 字段在 Java 参考实现（`MountedBehaviorEngine.java`）中已构造并发送，但 [commands.md §10.1](./commands.md#101-play_motion_ext--播放外部动作文件phase-3a-已实现) 未记录。渲染器当前接受此字段，但 lipSync 功能待 Phase 3c 实现。
+> ⚠️ **代码/文档偏差**：`lip_sync_path` 字段由控制面板（`MountedBehaviorEngine`）构造并发送，但 [commands.md §10.1](./commands.md#101-play_motion_ext--播放外部动作文件phase-3a-已实现) 未记录。渲染器当前接受此字段，但 lipSync 功能待 Phase 3c 实现。
 >
 > **已移除字段**：历史版本曾随本指令发送 `subtitle_text`/`subtitle_duration`——字幕系统已由 Qt 控制器通知流（气泡信息流）取代，文案现经由通知流展示，payload 不再包含字幕字段（参见 [notification-stream.md](../system/notification-stream.md)）。
 
@@ -818,10 +818,10 @@ WS 连接建立后渲染器**主动发送**，通知控制面板可以下发指�
 ```
 
 **实现建议**：
-- 维护 `Map<id, CompletableFuture/Promise>` pending request 表
+- 维护 `Map<id, pending>` pending request 表
 - 收到 Response 时按 `id` 查找并完成
 - 设置 10 秒超时，超时后清理 entry
-- ⚠️ **参考实现说明**：Java 参考实现定义了此机制（`MessageDispatcher.expectResponse()`）但**当前生产代码未实际调用**——所有命令实际为 fire-and-forget，依赖事件流确认状态。新实现可选择严格 request-response 或保持事件驱动。
+- ⚠️ **实现说明**：controller_qt 的 `PendingRequests` 提供此机制（按命令 id、10 秒超时自动清理），状态变迁主要依赖事件流确认（如 `load_model` 后等 `model_loaded`）。新实现可选择严格 request-response 或保持事件驱动。
 
 ---
 
@@ -889,12 +889,12 @@ WS 连接建立后渲染器**主动发送**，通知控制面板可以下发指�
 
 | # | 位置 | 偏差描述 | 实际情况（以代码为准） |
 |:---:|:---|:---|:---|
-| 1 | `play_motion_ext` | [commands.md §10.1](./commands.md#101-play_motion_ext--播放外部动作文件phase-3a-已实现) 未记录 `lip_sync_path` | `MountedBehaviorEngine.java` 中已构造并发送此字段（历史版本还发送 `subtitle_text`/`subtitle_duration`，已随字幕系统移除） |
+| 1 | `play_motion_ext` | [commands.md §10.1](./commands.md#101-play_motion_ext--播放外部动作文件phase-3a-已实现) 未记录 `lip_sync_path` | 控制面板的 `MountedBehaviorEngine` 已构造并发送此字段（历史版本还发送 `subtitle_text`/`subtitle_duration`，已随字幕系统移除） |
 | 2 | 字幕命令组 | ~~`show_subtitle` / `set_subtitle_style` 样式字段~~ | **已移除**：字幕系统已被 Qt 控制器通知流（气泡信息流）取代，5 条字幕指令不再注册（返回 5003），样式偏差不再适用 |
 | 3 | 颜色格式 | 部分文档描述为 "RRGGBBTT" | 代码默认值（如 `0x00FFFFFF` = 不透明白）表明实际格式为 **AABBGGRR**（与 ASS 一致）。本文档以 AABBGGRR 为准 |
 | 4 | `set_scale` | 协议中存在此命令 | 曾为 stub（仅记日志）；现已实现为 `set_layout` scale 轴的兼容别名（回执 Response，无模型返回 `8001`）。控制面板仍优先 `set_layout` |
 | 5 | `model_loaded` 的 `motions`/`expressions` | 字段存在但始终为空 `[]` | 控制面板必须自行解析 `.model3.json` |
-| 6 | request-response 机制 | Java 参考实现定义了 `CompletableFuture` 关联 | **当前生产代码未调用 `expectResponse`**，所有命令实际为 fire-and-forget |
+| 6 | request-response 机制 | 协议定义了按 id 关联的 pending request 机制 | controller_qt 的 `PendingRequests` 提供按命令 id 的 10 秒超时关联；状态变迁主要依赖事件流确认 |
 
 ---
 

@@ -195,7 +195,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 
 ## 六、Phase 3a：语音包挂载配置 (mount.json) ✅ 已实现
 
-> **Phase 3a 实现**：语音包挂载关系由 `MountConfigManager` 管理。
+> **Phase 3a 实现**：语音包挂载关系由控制面板（controller_qt）管理并持久化。
 
 存储路径：`~/.config/desktop-pet/mount.json`
 

@@ -9,8 +9,7 @@
 // extract the model metadata the controller needs but the renderer's
 // `model_loaded` event does NOT carry (interface.md §B: motions/expressions
 // arrive as EMPTY arrays). The controller therefore parses the .model3.json
-// directly. This is the Qt/C++ port of the Java reference
-// controller/.../core/ModelInfoParser.java (109 LOC).
+// directly.
 //
 // Consumed by:
 //   - todo 5 (InstanceSession lifecycle): on `model_loaded`, call parse() on

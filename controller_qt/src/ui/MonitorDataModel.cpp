@@ -3,8 +3,8 @@
 #include <QDateTime>
 #include <QJsonValue>
 
-// MonitorDataModel — port of Java MonitorDataModel.java (127 LOC). See the
-// .hpp file-level comment for the threading model + ring-buffer semantics.
+// MonitorDataModel — see the .hpp file-level comment for the threading model
+// + ring-buffer semantics.
 //
 // Implementation notes:
 //   - QDateTime::currentMSecsSinceEpoch() does NOT require a QCoreApplication

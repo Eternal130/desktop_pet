@@ -6,9 +6,8 @@
 #include <functional>
 
 // AutoLaunchManager (Wave 7 todo 14) — OS auto-launch (startup) manager.
-// Ported from Java `controller/src/.../util/AutoLaunchManager.java` (206 LOC).
 //
-// Platform split (mirrors the Java reference):
+// Platform split:
 //   Windows: `reg.exe` add/delete/query on
 //            `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value
 //            'DesktopPet' via QProcess. HKCU is per-user — no UAC prompt.

@@ -1,7 +1,7 @@
 # controller_qt 人工 UI 测试文档
 
 > **文档目的**:对 Qt 控制面板(controller_qt)进行端到端的人工 UI 验证,覆盖
-> `docs/controller/development-plan.md` 中 Phase 4–9 的全部 UI 验收标准。
+> `docs/controller_qt/development-plan.md` 中 Phase 4–9 的全部 UI 验收标准。
 >
 > **配套代码测试**:`controller_qt/tests/`(44 个 QTest 二进制)覆盖单元/集成层;
 > 本文档聚焦**只有人眼+人手才能验证**的视觉、交互、跨进程、跨会话行为。
@@ -9,7 +9,7 @@
 > **自动化批次**:`controller_qt/tests/ui_automation/run_ui_tests.py` 已自动化
 > 本文档的 11 个用例(TC-4.1/4.7/4.9/4.10/4.11/4.12/5.6/9.2/9.5/9.6/9.7),
 > 依赖 `--screenshot` CLI 模式;其余用例仍需人工。已有自动化结果见
-> `docs/controller/results/qt-ui-test-result-20260821-auto.md`。
+> `docs/controller_qt/results/qt-ui-test-result-20260821-auto.md`。
 >
 > **测试前置**:Phase 0–3(通信层/进程编排/配置)的底层正确性由 QTest 保证,
 > 本文档不重复验证底层协议字节;但在 UI 操作触发协议时,会用日志面板作为可观察
@@ -852,7 +852,7 @@ $env:QT_LOGGING_RULES="*=true"
 | `BLK` | 前置依赖失败导致本用例无法执行(如 TC-5.8 失败则后续"实例运行中"用例全部 BLK) |
 
 > **注意**:本文档不再保留内联的简短模板,以避免与独立模板文档内容漂移。
-> 测试结果文档的历史记录建议放在 `docs/controller/results/` 下(可按需创建)。
+> 测试结果文档的历史记录建议放在 `docs/controller_qt/results/` 下(可按需创建)。
 
 ---
 

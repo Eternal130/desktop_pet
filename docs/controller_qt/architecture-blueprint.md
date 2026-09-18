@@ -2,9 +2,9 @@
 
 > **文档定位**：本文档是**架构无关**的控制面板功能规格与接口契约，用于在**任意技术栈**中重新实现等效的控制面板（如 Qt、Electron、.NET WPF/WinUI、Flutter Desktop、Tauri、Web+本地服务、甚至另一个 Java 框架）。
 >
-> 现有 JavaFX 参考实现的具体类名、第三方库选型见 [控制面板设计 (Java)](./README.md)；本文档剥离这些实现细节，只保留**必须复刻的功能行为**与**必须遵守的接口契约**。
+> 本文档剥离具体实现细节，只保留**必须复刻的功能行为**与**必须遵守的接口契约**。
 >
-> **读者**：准备在新技术栈中实现桌面宠物控制面板的工程师。阅读本文档后，应能不依赖 Java 参考实现源码，独立产出一个与现有 C++ 渲染引擎完全互通的控制面板。
+> **读者**：准备在新技术栈中实现桌面宠物控制面板的工程师。阅读本文档后，应能不依赖既有实现源码，独立产出一个与现有 C++ 渲染引擎完全互通的控制面板。（当前唯一实现为 `controller_qt/`，见 [controller_qt/README.md](../../controller_qt/README.md)。）
 
 ---
 
@@ -74,7 +74,7 @@
 
 ### 2.3 参考实现的规模（仅供工作量估算）
 
-JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`）：
+旧版参考实现（已移除）的代码规模（仅供工作量估算）：
 
 | 层 | 文件数 | 约行数 | 说明 |
 |:---|:---:|:---:|:---|
@@ -258,7 +258,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 - **环境检测面板**【推荐】：检测并展示以下项的就绪状态（● 已就绪 / ● 未找到）：
   1. OpenGL 渲染器可执行文件
   2. Vulkan 渲染器可执行文件
-  3. Java 运行时（移植到其他语言时替换为对应运行时）
+  3. 控制面板运行时（controller_qt 为原生可执行文件，无需额外运行时检测）
   4. Cubism SDK / 模型资源目录
   5. 可用模型数量
   6. WebSocket 端口可用性
@@ -410,7 +410,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 
 #### 4.8.1 控制面板自采集
 - 采集自身进程的 CPU%、RSS、堆使用。
-- 采集频率 2 秒；通过系统 API（Java 用 OSHI，其他栈选对应库）。
+- 采集频率 2 秒；通过系统 API（controller_qt 使用 Win `GetProcessTimes`/`GetProcessMemoryInfo`、Linux `/proc/self/*`，其他栈选对应库）。
 - **不抛异常原则**：任何采集失败将字段置零，但 `timestamp` 始终可用。
 - 注意 CPU% 需要两次采样差值计算（首次返回 0）。
 
@@ -423,7 +423,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 
 ## 五、数据模型
 
-本节列出控制面板需管理的所有数据结构。字段名采用 **camelCase**（与 Java Records 一致）；持久化时转 `snake_case`。其他语言实现可自由选择命名风格，但持久化的 JSON 键名**建议保持 snake_case 以兼容现有配置文件**。
+本节列出控制面板需管理的所有数据结构。字段名采用 **camelCase**；持久化时转 `snake_case`。其他语言实现可自由选择命名风格，但持久化的 JSON 键名**建议保持 snake_case 以兼容现有配置文件**。
 
 ### 5.1 实例配置（InstanceConfig）
 
@@ -524,7 +524,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 
 ### 5.8 运行时状态（PetState）
 
-> ⚠️ **参考实现说明**：参考实现中定义了 `PetStateManager`，但**实际未接入生产代码**——运行时状态实际通过可观察的 UI 模型（如 JavaFX Properties）在各组件间流转。新实现可选择两种方案之一：
+> ⚠️ **参考实现说明**：参考实现中定义了 `PetStateManager`，但**实际未接入生产代码**——运行时状态实际通过可观察的 UI 模型在各组件间流转。新实现可选择两种方案之一：
 > - **方案 A**：显式的线程安全状态管理器（读写锁保护不可变快照）
 > - **方案 B**：可观察属性直接绑定 UI（参考实现的实际做法）
 
@@ -605,7 +605,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 ```
 收到消息
    │
-   ├─ type == "response" → 按 id 查找 pending request，完成 CompletableFuture
+   ├─ type == "response" → 按 id 查找 pending request 并完成
    │                        （参考实现中此路径未实际使用，响应仅记录日志）
    │
    └─ type == "event"    → 按 action 字符串查找已注册的处理器
@@ -618,7 +618,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 ### 线程安全约束
 
 - 事件到达在 WebSocket 库的 I/O 线程上。
-- 事件处理器若修改 UI 状态，**必须切换到 UI 线程**（JavaFX 用 `Platform.runLater`，其他框架用对应机制）。
+- 事件处理器若修改 UI 状态，**必须切换到 UI 线程**（Qt 用队列信号槽 / `QMetaObject::invokeMethod` 切回 GUI 线程，其他框架用对应机制）。
 - 事件处理器异常必须被隔离，不得传播到消息泵导致后续消息丢失。
 
 ---
@@ -731,7 +731,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 | 用户缩放窗口 | 渲染器 → 面板 | `window_resized` 事件 |
 | 资源监控 | 面板 → 渲染器 → 面板 | `get_stats` 轮询 → `stats_state` 事件回传 |
 
-> **关于 request-response**：参考实现虽定义了 `CompletableFuture<Envelope>` 关联机制（按 id 匹配 pending request），但**当前生产代码未实际调用**——所有命令都是 fire-and-forget，依赖事件流确认状态变迁（如 `load_model` 后等 `model_loaded`，而非等 Response）。新实现可选择更严格的 request-response 语义，但对 16 条标注"需要 Response"的命令应支持 Response 处理。
+> **关于 request-response**：controller_qt 定义了 `PendingRequests` 关联机制（按命令 id 匹配、10 秒超时自动清理），用于 Response 处理；状态变迁主要依赖事件流确认（如 `load_model` 后等 `model_loaded`）。对 16 条标注"需要 Response"的命令应支持 Response 处理。
 
 ---
 
@@ -800,7 +800,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 | **静默降级** | GPU 监控不可用 → 显示"—"；语音包解析失败 → 回退基础映射 |
 | **错误隔离** | 单个事件处理器异常不影响其他事件；单实例崩溃不影响其他实例 |
 | **用户可见** | 渲染器崩溃通过 UI 状态徽章反馈；端口冲突启动时报错 |
-| **日志完备** | 所有错误记录 SLF4J（或等价）日志，不使用 `printStackTrace` |
+| **日志完备** | 所有错误经日志框架记录（controller_qt 为 spdlog 轮转文件 + Qt 消息桥接），异常不留存未处理 |
 
 ---
 
@@ -813,7 +813,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 | 1 | ~~`set_scale` 指令在渲染器侧为 **stub**~~ | 已修复：现为 `set_layout` scale 轴兼容别名（仅改 scale、保留偏移，回执 Response） | 优先使用 `set_layout`（可合并任意布局轴） |
 | 2 | `model_loaded` 事件的 `motions`/`expressions` **始终为空数组** | 无法从事件获取动作/表情列表 | 必须自行解析 `.model3.json` |
 | 3 | ~~`play_motion_ext` 的 `lip_sync_path`/`subtitle_text`/`subtitle_duration` 字段未记录~~ | 字幕字段已随字幕系统移除（文案改经通知流气泡显示）；`lip_sync_path` 保留待 Phase 3c 口型同步 | 新实现可不发送字幕字段 |
-| 4 | `CompletableFuture` request-response 关联机制**已实现但未使用** | 所有命令实际 fire-and-forget | 新实现可选择严格 request-response 或保持当前事件驱动模式 |
+| 4 | request-response 关联机制 | controller_qt 的 `PendingRequests`（按命令 id、10s 超时）提供关联 | 状态变迁主要依赖事件流确认；新实现可选择严格 request-response 或保持当前事件驱动模式 |
 | 5 | `PetStateManager` 定义了但**未接入生产代码** | 运行时状态实际通过 UI 可观察属性流转 | 选择显式状态管理器或 UI 绑定方案，但不要两者都做却都不用 |
 | 6 | 命名不一致：`windowX`/`posX`/`positionX` 三种风格并存 | 代码可读性 | 新实现统一命名风格 |
 | 7 | 配置目录用 XDG 风格（`~/.config/`）而非平台规范（Windows 的 `%APPDATA%`） | Windows 用户可能不习惯 | 可选择遵循平台规范，但需处理与参考实现的迁移 |
@@ -858,38 +858,10 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 
 ---
 
-## 十二、附录：参考实现的文件清单
+## 十二、附录：现有实现
 
-供新实现对照参考（路径相对 `controller/src/main/java/com/desktoppet/`）：
+旧版参考实现（`controller/`）已于 2026 年 9 月移除，其文件清单不再适用。当前唯一实现为 **controller_qt**（Qt 6.10 / C++17 / QML，Phase 5-9 已完成），模块与目录结构见 [controller_qt/README.md](../../controller_qt/README.md)（`src/core`、`src/network`、`src/system`、`src/ui`、`qml/`、`tests/` — 41 个 QTest 二进制）。
 
-| 层 | 文件 | 参考实现职责 |
-|:---|:---|:---|
-| UI | `ui/MainWindowController.java` (2659 行) | 生命周期中枢，管理所有实例、进程、调度器、WS、监控 |
-| UI | `ui/TrayManager.java` (107 行) | AWT 系统托盘 |
-| UI | `ui/SettingsPageController.java` (211 行) | 应用设置页 |
-| UI | `ui/MonitorPageController.java` (203 行) | 资源监视页（8 折线图） |
-| UI | `ui/MonitorDataModel.java` (127 行) | 监控数据环形缓冲（COW，60 点） |
-| Core | `core/ConfigManager.java` (179 行) | 全局遗留配置（config.json） |
-| Core | `core/InstanceConfigManager.java` (244 行) | 实例配置（instances/&lt;uuid&gt;.json） |
-| Core | `core/PanelStateManager.java` (241 行) | 面板配置（panel.json）+ 旧格式迁移 |
-| Core | `core/MountConfigManager.java` (108 行) | 挂载配置（mount.json） |
-| Core | `core/HitAreaCacheManager.java` (100 行) | HitArea 缓存（hit_area_cache.json） |
-| Core | `core/Scheduler.java` (150 行) | 闲时动作调度 |
-| Core | `core/InteractionHandler.java` (103 行) | hit → play_motion 基础映射 |
-| Core | `core/MountedBehaviorEngine.java` (246 行) | 语音包行为引擎（play_motion_ext） |
-| Core | `core/ResourceStatsCollector.java` (113 行) | 自身 JVM 资源采集（OSHI） |
-| Core | `core/ModelScanner.java` (87 行) | 模型目录扫描 |
-| Core | `core/ModelInfoParser.java` (109 行) | .model3.json 解析 |
-| Core | `core/VoicePackScanner.java` (44 行) | 语音包目录扫描 |
-| Core | `core/MetaMkoParser.java` (90 行) | meta.mko (Protobuf) 解析 |
-| Core | `core/PetStateManager.java` (74 行) | ⚠️ 定义但未接入生产 |
-| Core | `core/audio/AudioMapping.java` (7 行) | ⚠️ Phase 3 存根 |
-| Network | `network/Protocol.java` (178 行) | Envelope 序列化 + 命令工厂 |
-| Network | `network/PetWebSocketServer.java` (169 行) | WS 服务端 + 多实例连接 + 令牌认证 |
-| Network | `network/MessageDispatcher.java` (58 行) | 按 id/action 路由 |
-| Util | `util/ProcessManager.java` (231 行) | 渲染器进程生命周期 + 令牌生成 |
-| Util | `util/AutoLaunchManager.java` (206 行) | 开机自启（Win 注册表 + Linux .desktop） |
-| Model | `model/*.java` (24 文件) | 23 Records + 1 JavaFX Bean |
 
 ### 外部相关文档
 
@@ -901,7 +873,7 @@ JavaFX 参考实现的代码规模（`controller/src/main/java/com/desktoppet/`�
 | [协议 - Events](../protocol/events.md) | 全部 13 个事件定义 |
 | [协议 - 握手流程](../protocol/handshake.md) | 连接建立时序图 |
 | [协议 - 错误码](../protocol/error-codes.md) | 错误码体系 |
-| [控制面板设计 (Java)](./README.md) | JavaFX 参考实现细节（本文档的补充） |
+| [controller_qt/README.md](../../controller_qt/README.md) | Qt 6 控制面板完整实现文档（本文档的落地实现） |
 | [启动流程](../system/startup.md) | 详细启动/关闭流程 |
 | [容错与错误处理](../system/fault-tolerance.md) | 崩溃恢复、断连处理 |
 | [配置文件设计](../system/configuration.md) | 配置文件格式详解 |

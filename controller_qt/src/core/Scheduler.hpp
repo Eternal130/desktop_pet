@@ -8,12 +8,11 @@
 
 class QTimer;
 
-// Scheduler (Phase 5 todo 8) — QTimer-based idle motion scheduler. A QObject
-// port of Java's `controller/.../core/Scheduler.java`, driven by a SINGLE
-// QTimer on the Qt main thread (decision D3 — NOT a QThread /
-// ScheduledExecutorService). Every timeout is delivered by the Qt event loop;
-// the scheduler re-arms a single-shot QTimer after each tick, replicating
-// Java's scheduleAtFixedRate cadence (architecture-blueprint.md §8.3).
+// Scheduler (Phase 5 todo 8) — QTimer-based idle motion scheduler, driven by
+// a SINGLE QTimer on the Qt main thread (decision D3 — no QThread, single Qt
+// main-thread event loop). Every timeout is delivered by the Qt event loop;
+// the scheduler re-arms a single-shot QTimer after each tick, replicating a
+// fixed-rate cadence (architecture-blueprint.md §8.3).
 //
 // API:
 //   start(intervalMs, idleMotionGroups, onTrigger[, group])

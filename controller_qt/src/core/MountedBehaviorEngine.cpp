@@ -1,5 +1,4 @@
-// MountedBehaviorEngine (Phase 5 Wave 8 todo 20) — C++ port of Java's
-// `controller/.../core/MountedBehaviorEngine.java` (246 LOC).
+// MountedBehaviorEngine (Phase 5 Wave 8 todo 20).
 //
 // When a voice pack is mounted on an InstanceSession, this engine has PRIORITY
 // over InteractionHandler for hit events: if the voice pack defines a group
@@ -18,10 +17,9 @@
 // here to keep deps minimal — voice-pack audio is short (<30s typically), the
 // granule-position approach is exact for finished encodes (the encoder writes
 // the final granule as the last sample index), and pulling libvorbis into
-// controller_qt would tax every clean build. The heuristic is the same one
-// the Java reference uses (MountedBehaviorEngine.java:195-245), so wire-format
-// parity is guaranteed. If precise seek-table-based duration is ever needed
-// (e.g. for streaming), swap in libvorbis's ov_time_total here.
+// controller_qt would tax every clean build. If precise seek-table-based
+// duration is ever needed (e.g. for streaming), swap in libvorbis's
+// ov_time_total here.
 
 #include "core/MountedBehaviorEngine.hpp"
 

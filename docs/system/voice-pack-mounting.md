@@ -3,7 +3,7 @@
 > **Phase 3 实现**：本功能作为 Phase 3（音频模块）的核心能力，在现有音频架构（参见 [音频播放架构](../renderer/audio.md)）基础上，实现语音包与模型的解耦挂载。
 > 系统设计概述参见 [系统设计](./README.md)，整体架构参见 [架构总览](../README.md)，配置文件参见 [配置文件设计](./configuration.md)。
 >
-> **当前实现状态**：Phase 3a（基础挂载）Java 侧已完成——`VoicePackScanner`、`MetaMkoParser`（Protobuf 解析）、`MountConfigManager`、`MountedBehaviorEngine` 及全部数据模型已实现并通过测试。渲染器侧 `play_motion_ext` 指令 ✅ 已实现（`CommandHandlers.cpp` 已注册）。Phase 3a 双侧齐备，可联调。Phase 3b 渲染器侧 `AudioManager`（miniaudio + libvorbis，OGG）已实现，`play_audio`/`stop_audio`/`set_volume` 命令已接入（错误码 7001/7002/7003），控制器侧音频映射管理/UI 待实现。Phase 3c/3d 待后续开发。
+> **当前实现状态**：Phase 3a（基础挂载）已完成——控制面板侧（controller_qt）：`VoicePackScanner`（扫描）、`MetaMkoParser`（手写 protobuf wire-format 解析，无 libprotobuf 依赖）、`MountedBehaviorEngine`（语音包行为引擎）已实现并通过测试；渲染器侧 `play_motion_ext` 指令 ✅ 已实现（`CommandHandlers.cpp` 已注册）。双侧齐备，可联调。Phase 3b 渲染器侧 `AudioManager`（miniaudio + libvorbis，OGG）已实现，`play_audio`/`stop_audio`/`set_volume` 命令已接入（错误码 7001/7002/7003），控制器侧音频映射管理/UI 待实现。Phase 3c/3d 待后续开发。
 
 ---
 
@@ -210,7 +210,7 @@ Bundle
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                    控制面板 (Java)                                │
+│                    控制面板 (controller_qt)                       │
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │  语音包管理 UI                                              │  │
 │  │  - 语音包列表 / 模型列表                                    │  │
@@ -270,7 +270,7 @@ Bundle
    ↓
 ② C++ Renderer 检测 HitArea → 发送 hit event { area_id: "HitAreaHead" }
    ↓
-③ Java Controller 接收 hit event
+③ 控制器（controller_qt）接收 hit event
    ↓
 ④ MountedBehaviorEngine 查找 HitArea 映射:
    HitAreaHead → Name "tap_head" → 查询挂载的语音包
@@ -312,158 +312,44 @@ Bundle
 
 ---
 
-## 四、Java Controller 侧设计
+## 四、控制器侧设计（controller_qt）
 
-### 4.1 新增类
+### 4.1 相关类（controller_qt/src/）
 
-| 类 | 包 | 职责 |
+| 类 | 位置 | 职责 |
 |:---|:---|:---|
-| `VoicePackScanner` | `core` | 扫描 Resources 目录，识别含 `meta.mko` 的语音包目录 |
-| `MetaMkoParser` | `core` | 解析 `meta.mko` 二进制文件，输出 `VoicePackInfo` |
-| `VoicePackInfo` | `model` | 语音包元数据模型（角色名、分组列表、模块列表） |
-| `VoicePackGroup` | `model` | 动作分组（事件名、优先级、action 列表） |
-| `VoicePackAction` | `model` | 单条动作映射（id、motion、audio、lipSync、文案、fadeIn/Out） |
-| `VoicePackModule` | `model` | 行为模块（key、优先级、文件路径） |
-| `MountConfig` | `model` | 挂载配置（模型名 ↔ 语音包名 + 可选事件名映射覆盖） |
-| `MountConfigManager` | `core` | 挂载关系的持久化读写 |
-| `MountedBehaviorEngine` | `core` | 运行时行为引擎，替代 `InteractionHandler` 的事件分发 |
-| `LipSyncDriver` | `core.audio` | 解析 lipSync txt，定时发送 `set_parameter` 驱动口型 |
+| `VoicePackScanner` | `core/` | 扫描 Resources 下的 VoicePacks 目录，识别含 `meta.mko` 的语音包目录 |
+| `MetaMkoParser` | `core/` | 解析 `meta.mko` 二进制文件（手写 protobuf wire-format reader，无 libprotobuf 依赖），输出语音包元数据（包名/分组/动作） |
+| `MountedBehaviorEngine` | `core/` | 运行时行为引擎，挂载语音包时优先于 `InteractionHandler` 处理事件分发 |
+| `VoicePackController` | `ui/` | QML 桥：语音包发现 + 元数据展示 + 按实例挂载 |
+| `LipSyncDriver` | （Phase 3c 规划） | 解析 lipSync txt，定时发送 `set_parameter` 驱动口型 |
 
-### 4.2 修改类
+### 4.2 与既有组件的关系
 
-| 类 | 修改内容 |
+| 组件 | 修改内容 |
 |:---|:---|
-| `MainWindowController` | 启动时加载挂载配置，初始化 `MountedBehaviorEngine` |
-| `InteractionHandler` | 当存在挂载语音包时，委托给 `MountedBehaviorEngine` 处理 |
+| `InteractionHandler` | 当存在挂载语音包时，由 `MountedBehaviorEngine` 优先处理（priority over InteractionHandler） |
 | `Scheduler` | 扩展 idle motion 来源——优先使用语音包的 idle motions |
-| `ModelScanner` | 新增 `scanAvailableVoicePacks()` 方法 |
+| `InstanceSession` | 每实例独立持有 `MountedBehaviorEngine`，随实例生命周期挂载/卸载 |
 
-### 4.3 VoicePackScanner
+### 4.3 MetaMkoParser 解析实现
 
-```java
-public final class VoicePackScanner {
+`MetaMkoParser` 直接按 protobuf wire format 逐字段读取 `meta.mko`（约 150 行），不引入 libprotobuf/abseil 依赖。`bundles.proto` schema 参考文件原样保留于 `controller_qt/src/protobuf/bundles.proto`（不参与编译），未来如需切换真实 protobuf 实现无需改动公共 API（完整理由见 `MetaMkoParser.cpp` 文件级注释）。
 
-    /** 识别规则：目录中包含 meta.mko 文件 */
-    public static List<String> scanAvailableVoicePacks(Path resourcesDir) {
-        // 遍历 Resources/ 下所有子目录
-        // 过滤包含 meta.mko 的目录
-        // 返回语音包目录名列表
-    }
-}
-```
+解析产出的元数据经 `VoicePackController` 暴露给 QML：包数量、包名、动作分组（groups）与动作（actions），供语音包页展示与挂载矩阵使用。
 
-与现有 `ModelScanner` 的区别：
+### 4.4 挂载配置
 
-| | ModelScanner | VoicePackScanner |
-|:---|:---|:---|
-| 识别标志 | `{name}.model3.json` | `meta.mko` |
-| 扫描结果 | 模型名列表 | 语音包名列表 |
-| 后续操作 | `ModelInfoParser.parse()` | `MetaMkoParser.parse()` |
+挂载关系（模型 ↔ 语音包）随实例配置持久化于 `~/.config/desktop-pet/`（QSaveFile 原子写入）。
 
-### 4.4 VoicePackInfo 数据模型
+> **实现简化**：模型 HitArea Name 与语音包事件名已天然对齐（见 [2.5 事件名与 HitArea Name 对齐](#25-事件名与-hitarea-name-对齐)），暂不需要事件名重映射。后续如遇特殊模型可扩展。
 
-```java
-public record VoicePackInfo(
-    String dirName,                             // 语音包目录名
-    String displayName,                         // 显示名（Meta.name，如 "锦瑟-初级-中文"）
-    String code,                                // 包标识码（Meta.code，如 "jinse-lv1-cn"）
-    Path basePath,                              // 语音包绝对路径
-    Map<String, VoicePackGroup> groups,         // 事件名 → 分组定义（含优先级 + action 列表）
-    List<VoicePackModule> modules               // 行为模块列表
-) {}
-
-public record VoicePackGroup(
-    String code,                // 分组代码 / 事件名（如 "morning"、"tap_head"）
-    String name,                // 分组显示名（如 "早安"、"交互：触摸头部"）
-    int priority,               // 分组优先级（1~5，用于动作中断判断）
-    List<VoicePackAction> actions  // 该分组下的所有 action
-) {}
-
-public record VoicePackAction(
-    int id,                     // 动作 ID（全局唯一）
-    String motionPath,          // 相对路径（如 "motions/m01.motion3.json"），可为空
-    String audioPath,           // 相对路径（如 "audios/1.ogg"），可为空
-    String lipSyncPath,         // 相对路径（如 "lipSyncs/1.txt"），可为 null（optional 字段）
-    String doc,                 // 交互文案，可为空
-    long fadeInMs,              // 动作淡入时间（毫秒，如 1000）
-    long fadeOutMs              // 动作淡出时间（毫秒，如 1000）
-) {}
-
-public record VoicePackModule(
-    String key,                 // 模块标识（如 "idle"、"tap"）
-    int priority,               // 模块优先级
-    String filePath             // 模块文件路径（如 "modules/idle.mkai"）
-) {}
-```
-
-### 4.5 MountConfig 配置
-
-> **实现简化**：当前实现省略了 `eventOverrides` 字段，因为模型 HitArea Name 与语音包事件名已天然对齐（见 [2.5 事件名与 HitArea Name 对齐](#25-事件名与-hitarea-name-对齐)），暂不需要重映射。后续如遇特殊模型可扩展。
-
-```java
-public record MountConfig(
-    String modelName,                        // 模型目录名
-    String voicePackName                     // 语音包目录名，null 表示未挂载
-) {}
-```
-
-### 4.6 MountedBehaviorEngine
-
-核心行为引擎，替代现有的简单 HitAction 映射：
-
-```java
-public class MountedBehaviorEngine {
-
-    private VoicePackInfo voicePack;         // 当前挂载的语音包
-    private MountConfig mountConfig;         // 挂载配置
-    private final Random random = new Random();
-
-    /**
-     * 处理 hit 事件。
-     * 1. 将 HitArea Name 映射到语音包事件名
-     * 2. 从事件组中随机选择一条
-     * 3. 构建并下发 motion + audio + lipSync + text
-     */
-    public void handleHitEvent(String hitAreaName) { ... }
-
-    /**
-     * 获取 idle 动作列表，用于 Scheduler。
-     */
-    public List<String> getIdleMotionPaths() { ... }
-
-    /**
-     * 处理生命周期/系统事件（morning、night、battery 等）。
-     */
-    public void handleSystemEvent(String eventName) { ... }
-}
-```
-
-### 4.7 LipSyncDriver
+### 4.5 LipSyncDriver（Phase 3c 规划）
 
 基于 lipSync txt 文件中的时间轴数据，定时发送参数更新指令：
 
-```java
-public class LipSyncDriver {
-
-    /**
-     * 解析 lipSync 文件内容。
-     * 格式：每行 "时间戳\t音素字符"
-     * 返回按时间排序的 (时间, 参数值) 列表。
-     */
-    public List<LipSyncFrame> parse(Path lipSyncFile) { ... }
-
-    /**
-     * 启动口型驱动。
-     * 在独立线程中按时间轴发送 set_parameter 指令。
-     * 当音频播放结束或被中断时停止。
-     */
-    public void start(List<LipSyncFrame> frames, Consumer<Float> parameterSender) { ... }
-
-    public void stop() { ... }
-}
-
-public record LipSyncFrame(double timestamp, float mouthOpenY) {}
-```
+- 解析 lipSync 文件内容：每行 "时间戳\t音素字符"，返回按时间排序的 (时间, 参数值) 列表；
+- 启动口型驱动：按时间轴发送 `set_parameter` 指令，当音频播放结束或被中断时停止。
 
 **音素到参数值的映射**（初始标定，可后续调优）：
 
@@ -480,7 +366,6 @@ public record LipSyncFrame(double timestamp, float mouthOpenY) {}
 | `H` | 气息音 | 0.1 |
 
 ---
-
 ## 五、C++ Renderer 侧改动
 
 ### 5.1 新增/修改指令
@@ -543,7 +428,7 @@ public record LipSyncFrame(double timestamp, float mouthOpenY) {}
 | `duration_ms` | int | 否 | 持续时间，超时后参数恢复（默认 0 = 永久生效直到下次设置） |
 
 **用途**：
-- Java 端 LipSyncDriver 定时发送 `set_parameter` 驱动口型
+- 控制器端 LipSyncDriver（Phase 3c 规划）定时发送 `set_parameter` 驱动口型
 - 比在 Renderer 端解析 lipSync txt 更灵活（Controller 可根据音频播放状态动态调整）
 
 #### `play_audio` — 播放音频文件（✅ 已实现，AudioManager）
@@ -895,60 +780,21 @@ Bundle
 └── timings[]: Timing（定时事件，语音包中为空）
 ```
 
-### 8.3 解析实现方案
+### 8.3 解析实现方案（controller_qt）
 
-**Java 端解析只需一行**：
+controller_qt 的 `MetaMkoParser`（`src/core/MetaMkoParser.cpp`）**直接按 protobuf wire format 逐字段读取** `meta.mko`（约 150 行），不引入 libprotobuf 依赖：
 
-```java
-// 读取 meta.mko 并反序列化为 Bundle 对象
-Bundle bundle = Bundle.parseFrom(Files.readAllBytes(Path.of("Resources/锦瑟-锦瑟-中文-voice/meta.mko")));
+- 读取顶层 `Bundle` message 的各字段（meta / groups / actions / modules）；
+- 输出语音包元数据：显示名、包标识码、动作分组（事件名 + 优先级 + action 列表）、行为模块列表；
+- 经 `VoicePackController` 暴露给 QML（包数量/包名/分组/动作），供语音包页展示与挂载矩阵使用。
 
-// 访问元数据
-String name = bundle.getMeta().getName();       // "锦瑟-初级-中文jinse-lv1-cn"
-BundleType type = bundle.getMeta().getType();   // AI
+### 8.4 依赖引入（无需）
 
-// 遍历所有动作分组
-for (ActionGroup group : bundle.getGroupsList()) {
-    System.out.println(group.getCode() + " → " + group.getName());
-}
+controller_qt **不引入 protobuf 运行时**：
 
-// 按分组查找动作
-Map<String, List<Action>> actionsByGroup = bundle.getActionsList().stream()
-    .collect(Collectors.groupingBy(Action::getGroup));
+- `bundles.proto` schema 参考文件原样保留于 `controller_qt/src/protobuf/bundles.proto`（不参与编译），供人工对照 wire format 与未来切换真实 protobuf 实现时使用；
+- 完整选型理由（避免 FetchContent 拉入 libprotobuf + abseil）见 `MetaMkoParser.cpp` 文件级注释。
 
-// 获取 tap_head 的所有动作
-List<Action> tapHeadActions = actionsByGroup.get("tap_head");
-for (Action action : tapHeadActions) {
-    System.out.println("motion=" + action.getMotion());
-    System.out.println("audio=" + action.getAudio());
-    System.out.println("lipSync=" + action.getLipSync());  // 可能为空
-    System.out.println("doc=" + action.getDoc());
-}
-```
-
-### 8.4 依赖引入
-
-在 Java 项目中引入 protobuf 运行时（controller/pom.xml）：
-
-```xml
-<dependency>
-    <groupId>com.google.protobuf</groupId>
-    <artifactId>protobuf-java</artifactId>
-    <version>4.29.3</version>
-</dependency>
-```
-
-> **版本说明**：protobuf v4.x 对应 protoc v28+（新版本号体系）。需确保 `protobuf-java` 运行时版本与编译用的 `protoc` 版本兼容。当前开发环境 protoc 为 `libprotoc 32.1`，对应 protobuf-java 4.29.x。
-
-使用 `protoc` 编译 `bundles.proto` 生成 Java 类：
-
-```bash
-protoc --java_out=src/main/java bundles.proto
-```
-
-> **注意**：proto 文件中的 `option java_package = "com.mimikko.app.lib.bundle"` 是 mimikko 原始包名。编译前应修改为本项目的包名（如 `com.desktoppet.bundle`），以保持代码库一致性。
-
-生成的类包含完整的 `Bundle.parseFrom()` / `Meta` / `Action` / `ActionGroup` / `AiModule` 等反序列化支持。
 
 ### 8.5 .mkai 模块文件
 
@@ -988,13 +834,13 @@ message GraphData {
 | 步骤 | 内容 | 依赖 | 状态 |
 |:---|:---|:---|:---:|
 | 1 | `VoicePackScanner` — 扫描识别语音包 | 无 | ✅ 已完成 |
-| 2 | `MountConfig` + `MountConfigManager` — 挂载配置持久化 | 无 | ✅ 已完成 |
+| 2 | 挂载配置持久化（随实例配置，QSaveFile 原子写入） | 无 | ✅ 已完成 |
 | 3 | `play_motion_ext` 指令 — Renderer 支持外部路径 motion | Renderer C++ | ✅ 已实现 |
-| 4 | 引入 protobuf-java 依赖 + `protoc` 编译 `bundles.proto` 生成 Java 类 | 无 | ✅ 已完成 |
+| 4 | `MetaMkoParser` — 手写 wire-format reader 解析 meta.mko（无 libprotobuf） | 无 | ✅ 已完成 |
 | 5 | `MetaMkoParser` + `MountedBehaviorEngine` — hit 事件 → 语音包 motion | 步骤 2, 3, 4 | ✅ 已完成（双侧齐备，可联调） |
-| 6 | UI 扩展 — Settings Tab 语音包选择 ComboBox | 步骤 1, 2 | ✅ 已完成 |
+| 6 | UI 扩展 — 语音包页（VoicePackPage：发现/元数据/按实例挂载矩阵） | 步骤 1, 2 | ✅ 已完成 |
 
-**Phase 3a 当前状态**：Java 侧全部完成，渲染器侧 `play_motion_ext` 已实现（`CommandHandlers.cpp` 已注册），双侧齐备，可联调。用户可在 Settings Tab 选择语音包挂载，`MountedBehaviorEngine` 生成的 `play_motion_ext` 指令可被渲染器直接执行。
+**Phase 3a 当前状态**：控制面板侧（controller_qt）已完成，渲染器侧 `play_motion_ext` 已实现（`CommandHandlers.cpp` 已注册），双侧齐备，可联调。用户可在语音包页（VoicePackPage）查看并挂载语音包，`MountedBehaviorEngine` 生成的 `play_motion_ext` 指令可被渲染器直接执行。
 
 ### Phase 3b — 音频播放
 
@@ -1005,7 +851,7 @@ message GraphData {
 | 9 | `MountedBehaviorEngine` 扩展 — 同步下发 motion + audio | 步骤 5, 8 | ✅ 已实现 |
 | 10 | `audio_mapping.json` + `AudioMappingManager` + UI | 步骤 8 | ⚠️ 控制器侧待实现（`AudioMapping` record 仅定义） |
 
-**步骤 9 说明**：motion+audio 同步通过 `play_motion_ext` 的 `audio_path` 字段实现（`MountedBehaviorEngine.java:76-79`）；audio-only action 通过独立 `play_audio` 命令（`buildAudioOnlyCommand`）下发。
+**步骤 9 说明**：motion+audio 同步通过 `play_motion_ext` 的 `audio_path` 字段实现；audio-only action 通过独立 `play_audio` 命令下发。
 
 **Phase 3b 当前状态**：渲染器侧 `AudioManager` 已实现（miniaudio + libvorbis，OGG 播放），`play_audio`/`stop_audio`/`set_volume` 命令已接入 `CommandHandlers.cpp`。控制器侧 `MountedBehaviorEngine` motion+audio 同步已实现（`play_motion_ext` 携带 `audio_path`），audio-only action 的 `play_audio` 通道已实现（`buildAudioOnlyCommand`）。音量/静音控制已实现（`set_volume` 指令）。`AudioMappingManager`/`audio_mapping.json`（步骤 10）待实现。
 
@@ -1017,7 +863,7 @@ message GraphData {
 |:---|:---|:---|
 | 10 | `set_parameter` 指令 — Renderer 支持参数直接设置 | Renderer C++ |
 | 11 | `LipSyncDriver` — lipSync txt 解析 + 定时驱动 | 步骤 10 |
-| 12 | 文案气泡 UI | JavaFX UI |
+| 12 | 文案气泡 UI | controller_qt 通知流（气泡信息流，已实现） |
 | 13 | `MountedBehaviorEngine` 完整集成 — motion + audio + lipSync + text | 步骤 9, 11, 12 |
 
 **Phase 3c 交付物**：完整的交互体验——动作 + 语音 + 口型同步 + 文案气泡。
@@ -1030,7 +876,7 @@ message GraphData {
 | 15 | 实现 `GraphRuntime` 行为图执行引擎 | 步骤 14 |
 | 16 | 集成条件触发逻辑（天气+时间段组合等） | 步骤 15 |
 
-> **注意**：meta.mko 的 Protobuf schema 已完全确认（见第八章），Phase 3a 即可直接使用 `Bundle.parseFrom()` 解析，无需中间 JSON 格式。
+> **注意**：meta.mko 的 Protobuf schema 已完全确认（见第八章），Phase 3a 由 `MetaMkoParser` 直接按 wire format 解析，无需中间 JSON 格式。
 
 ---
 
@@ -1039,7 +885,7 @@ message GraphData {
 | 风险 | 影响 | 缓解措施 | 状态 |
 |:---|:---|:---|:---:|
 | ~~meta.mko 格式未知~~ | ~~无法自动解析语音包~~ | ✅ 已解决 — Protobuf3 `Bundle` message，schema 完整确认 | ✅ 已解决 |
-| ~~Java 侧解析/挂载~~ | ~~无法使用语音包~~ | ✅ 已解决 — `MetaMkoParser` + `MountedBehaviorEngine` 已实现并通过测试 | ✅ 已解决 |
+| ~~控制面板侧解析/挂载~~ | ~~无法使用语音包~~ | ✅ 已解决 — `MetaMkoParser` + `MountedBehaviorEngine` 已实现并通过测试 | ✅ 已解决 |
 | .mkai 行为图复杂度 | 条件触发逻辑需要图执行引擎 | Phase 3d 实现；基础挂载仅需 `Bundle.actions` 即可工作 | 待实现 |
 | motion 参数兼容度 | 部分模型可能缺少参数导致动作不完整 | SDK 静默忽略缺失参数；可增加兼容度检测 UI | 待验证 |
 | 口型参数映射精度 | 音素→ParamMouthOpenY 映射可能不准确 | 初始映射表 + 可调参数，通过实际效果迭代优化 | 待实现 |

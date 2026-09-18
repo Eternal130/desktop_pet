@@ -6,14 +6,13 @@
 // Backend-aware renderer path resolution (task T14).
 //
 // Maps a graphics backend name to the renderer executable filename, with
-// platform suffix handling and existence checking. Mirrors the Java reference
-// MainWindowController.resolveRendererPath() (docs/controller/README.md §2.3):
+// platform suffix handling and existence checking. Resolution contract:
 //
 //   "vulkan" (case-insensitive) -> desktop-pet-renderer-vulkan
 //   "opengl", empty, or any other value -> desktop-pet-renderer
 //
 // On Windows the platform suffix ".exe" is appended
-// (docs/controller/architecture-blueprint.md §9.4 — Windows renderer exes carry
+// (docs/controller_qt/architecture-blueprint.md §9.4 — Windows renderer exes carry
 // the suffix, Linux renderer binaries have none).
 //
 // Consumed by:

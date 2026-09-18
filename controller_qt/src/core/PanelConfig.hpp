@@ -6,25 +6,23 @@
 
 // PanelConfig (task T19) — the persisted UI state of the control panel itself.
 // Stored as JSON at ~/.config/desktop-pet/panel.json (configuration.md §5),
-// consumed by T21 (PanelStateManager) and T28 (window-state restore). This is
-// the Qt-side analogue of the Java controller/.../model/PanelConfig.java record.
+// consumed by T21 (PanelStateManager) and T28 (window-state restore).
 //
 // Field set & defaults: architecture-blueprint.md §5.2 (the authoritative
 // table). The struct's default member initializers mirror that table exactly.
-// JSON keys are snake_case (matching the Java Gson FieldNamingPolicy +
-// configuration.md §5 examples) so the Qt and JavaFX controllers read/write the
-// SAME panel.json byte-for-byte.
+// JSON keys are snake_case (configuration.md §5 examples) so panel.json stays
+// byte-for-byte compatible with the legacy config format.
 //
 // NOTE on field count: blueprint §5.2 lists 12 fields (panelX, panelY,
 // panelWidth, panelHeight, theme, fontSize, panelOpacity, instanceIds,
 // autoLaunchSystem, startMinimized, closeAction, confirmOnExit). Some task
 // prose says "11"; that is an off-by-one in the narrative — the blueprint
-// table, this struct, and the Java record each define 12 fields, and the test
+// table and this struct each define 12 fields, and the test
 // asserts exactly 12 serialized keys.
 //
 // NOTE on geometry types: blueprint §5.2 lists panelX/Y/Width/Height as
 // "double", but this struct uses int — matching the InstanceConfig precedent
-// (int windowX/Y/Width/Height) and the Java PanelConfig, because window
+// (int windowX/Y/Width/Height), because window
 // geometry is pixel-integer. Using double would let fractional junk survive a
 // round-trip; int narrows cleanly and matches the rest of the window model.
 struct PanelConfig {
@@ -73,8 +71,8 @@ struct PanelConfig {
     }
 };
 
-// Serialize a PanelConfig to a QJsonObject with snake_case keys for JavaFX
-// interop (configuration.md §5). Every field is written; instance_ids becomes a
+// Serialize a PanelConfig to a QJsonObject with snake_case keys
+// (configuration.md §5). Every field is written; instance_ids becomes a
 // JSON array of strings. The result always has exactly 14 keys (one per field).
 QJsonObject panelConfigToJson(const PanelConfig& cfg);
 

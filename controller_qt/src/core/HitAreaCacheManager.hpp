@@ -7,8 +7,7 @@
 
 #include <optional>
 
-// HitAreaCacheManager (Phase 5 todo 10) — C++ port of Java's
-// `controller/.../core/HitAreaCacheManager.java` (100 LOC). A JSON cache at
+// HitAreaCacheManager (Phase 5 todo 10) — a JSON cache at
 // `<configDir>/hit_area_cache.json` mapping modelName → QStringList hitAreas,
 // so the controller can avoid re-parsing the .model3.json on every model switch.
 //

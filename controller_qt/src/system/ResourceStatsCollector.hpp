@@ -5,10 +5,7 @@
 #include <functional>
 
 // ResourceStatsCollector (Wave 8 todo 17) — self-resource collection via
-// platform APIs. Replaces the JavaFX controller's OSHI-based
-// `core/ResourceStatsCollector.java` with direct Win32 / /proc calls (D7).
-// The JVM-heap fields (`heapUsedBytes` / `heapMaxBytes`) are dropped —
-// N/A for a Qt application (no JVM, no MemoryMXBean equivalent).
+// direct platform API calls (Win32 / /proc; decision D7).
 //
 // Platform split:
 //   Windows:
@@ -52,8 +49,7 @@
 //                   /proc/self/stat + /proc/self/status. Tests inject
 //                   non-existent paths to exercise the never-throws path.
 
-// Resource-usage snapshot of THIS controller process. The Qt port of Java's
-// `model/ControllerStats.java` record — drops the JVM-heap fields (N/A).
+// Resource-usage snapshot of THIS controller process.
 //
 // All fields are point-in-time samples captured at `timestampMs`; no
 // historical aggregation is performed at this layer.

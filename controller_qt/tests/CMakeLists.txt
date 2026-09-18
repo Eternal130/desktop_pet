@@ -662,8 +662,8 @@ set_tests_properties(StartupSalvoTest PROPERTIES LABELS "REQUIRES_RENDERER")
 # ConfigDir (T17): cross-platform config directory manager — configDir() /
 # instancesDir() / logsDir() accessors + ensureDirectories(basePath) tree
 # creator. The accessor paths are home-relative and use '/' on every platform
-# (byte-for-byte compatible with the JavaFX controller's
-# `user.home + "/.config/desktop-pet/"`). ensureDirectories accepts an
+# (byte-for-byte compatible with the legacy config format under the user's
+# home). ensureDirectories accepts an
 # injectable base path so the tree-creation behavior is exercised against a
 # QTemporaryDir without touching the user's real ~/.config/desktop-pet.
 #
@@ -710,7 +710,8 @@ endif()
 add_test(NAME ConfigDirTest COMMAND ConfigDirTest)
 
 # InstanceConfig (T18): the 28-field persisted instance config model — snake_case
-# JSON serde for JavaFX interop. instanceConfigToJson / instanceConfigFromJson /
+# JSON serde (byte-for-byte compatible with the legacy config format).
+# instanceConfigToJson / instanceConfigFromJson /
 # defaultInstanceConfig. Missing fields merge from struct defaults; unknown
 # fields are silently ignored (interface.md §1.5); garbage/empty/mistyped JSON
 # returns a default-constructed InstanceConfig without throwing. Consumed by
@@ -759,7 +760,8 @@ endif()
 add_test(NAME InstanceConfigTest COMMAND InstanceConfigTest)
 
 # PanelConfig (T19): the 12-field persisted panel UI-state config model —
-# snake_case JSON serde for JavaFX interop. panelConfigToJson / panelConfigFromJson
+# snake_case JSON serde (byte-for-byte compatible with the legacy config
+# format). panelConfigToJson / panelConfigFromJson
 # / defaultPanelConfig. Missing fields merge from struct defaults; unknown fields
 # are silently ignored (interface.md §1.5); garbage/empty/mistyped JSON returns a
 # default-constructed PanelConfig without throwing. instance_ids is a JSON array
@@ -1409,7 +1411,7 @@ add_test(NAME WsServerMultiTest COMMAND WsServerMultiTest)
 # AutoLaunchManager (Phase 5 Wave 7 todo 14): OS auto-launch toggle — Windows
 # `reg.exe` add/delete/query on HKCU\...\Run value 'DesktopPet' via QProcess,
 # Linux atomic write/delete of ~/.config/autostart/desktop-pet.desktop, macOS
-# no-op log. Port of Java util/AutoLaunchManager.java. Testability via injected
+# no-op log. Testability via injected
 # suppliers (app-path, autostart-dir, reg-executor, platform) — every Windows
 # case captures the (program, args) reg.exe invocation via a fake executor and
 # returns a canned exit code; ZERO real registry mutation. Linux cases use
@@ -1843,8 +1845,8 @@ endif()
 add_test(NAME OggDurationHeuristicTest COMMAND OggDurationHeuristicTest)
 
 # MonitorDataModelTest (Phase 5 Wave 8 todo 18): resource-monitor ring buffer
-# + merge semantics + stale predicate. Six slots lock the Java reference's
-# (MonitorDataModel.java) contract:
+# + merge semantics + stale predicate. Six slots lock the data-model
+# contract:
 #   - testRingBufferCap: 65 controller merges → history.size()==60 (FIFO drop).
 #   - testIsStalePredicate: static isStale() boundary cases (never / just-fresh /
 #     1ms-over / negative threshold).

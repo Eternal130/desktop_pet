@@ -14,14 +14,22 @@
 
 ---
 
-## 二、Java 端（Phase 2）
+## 二、Qt 控制面板（controller_qt，Phase 5-9）
 
 | 层次 | 框架 | 覆盖范围 |
 |:---|:---|:---|
-| 单元测试 | JUnit Jupiter 5.11.4 + Mockito 5.14.2 | 业务逻辑（状态管理、交互处理、配置读写、闲时行为随机选择、模型解析） |
-| UI 测试 | TestFX 4.0.18 + Monocle（无头模式） | JavaFX 组件交互验证（按钮点击、设置面板操作），通过 `-Dglass.platform=Monocle -Dmonocle.platform=Headless` 在 CI/无显示器环境运行 |
-| 集成测试 | JUnit Jupiter 5.11.4 | WebSocket 服务端启动/接受连接/断连检测、消息分发路由（使用随机端口避免冲突） |
-| 协议兼容性测试 | JUnit Jupiter 5.11.4 | 验证 Java 端和 C++ 端的 JSON Envelope 消息互解析正确性（含 response 顶层字段验证） |
+| 单元测试 | QTest（Qt Test） | **41 个 QTest 二进制**，覆盖全部模块：network（Envelope、WsServer、MessageDispatcher、Handshake、PendingRequests、EventRegistry、ThreadMarshal、ProtocolFactory、WsServerMulti）、core（InstanceSession、InstanceManager、Scheduler、InteractionHandler、RestartController、HitAreaCacheManager、ModelInfoParser、ModelScanner、MountedBehaviorEngine、VoicePackScanner、MetaMkoParser、OggDurationHeuristic、MonitorDataModel、NetworkWiring）、system（AutoLaunchManager、TrayManager、ResourceStatsCollector）、config（InstanceConfig、PanelConfig、InstanceConfigManager、PanelStateManager、ConfigDir、Robustness、PathResolve）、infrastructure（Logging、PoCIntegration、ProcessManager、StartupSalvo、ProtocolFixtures）、气泡流（NotificationStreamModel、NotificationStreamController） |
+| 集成测试 | QTest + `REQUIRES_RENDERER` 标签 | 需要真实渲染器二进制的用例带 ctest 标签；渲染器缺失时运行期 `QSKIP`，保证单元层在无头/CI 环境始终可跑 |
+| 协议兼容性测试 | QTest | 验证控制器与渲染器两侧 JSON Envelope 消息互解析正确性（含 response 顶层字段验证） |
+
+```bash
+ctest --test-dir build/controller_qt            # 全部 41 个 QTest 二进制
+ctest --test-dir build/controller_qt -j8        # 并行
+ctest --test-dir build/controller_qt -L REQUIRES_RENDERER   # 仅集成层
+ctest --test-dir build/controller_qt -E 'REQUIRES_RENDERER' # 仅单元层
+```
+
+> **已知偶发失败**（隔离运行均通过）：`SchedulerTest` 并行时序；`WsServerMultiTest::testTwoInstancesRouteCorrectly` 并行负载下偶发 `sendTextMessage returned 0` 竞态。
 
 ---
 

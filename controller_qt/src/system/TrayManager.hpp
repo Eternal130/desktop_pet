@@ -3,8 +3,7 @@
 #include <QObject>
 #include <QSystemTrayIcon>
 
-// TrayManager (Wave 7 todo 13) — QSystemTrayIcon wrapper for the Qt port.
-// Ported from Java `controller/src/.../ui/TrayManager.java` (107 LOC).
+// TrayManager (Wave 7 todo 13) — QSystemTrayIcon wrapper.
 //
 // Blueprint §4.1.6 spec:
 //   - Tray icon (double-click toggles window visibility).

@@ -12,7 +12,8 @@ namespace Monitor {
  * GPU sample. Pure function: no I/O, no allocation of system handles — fully
  * unit-testable by injecting fake values.
  *
- * Wire contract (byte-for-byte with controller model/RendererStats.java):
+ * Wire contract (must stay byte-for-byte identical to the spec under
+ * docs/protocol/):
  *   cpu_percent       — double
  *   rss_bytes         — uint64
  *   gpu_percent       — uint32 or null

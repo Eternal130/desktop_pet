@@ -57,7 +57,7 @@ desktop_pet/
 └── docs/                                 # 项目文档（层次化结构）
     ├── README.md                         # 架构总览 + 文档索引
     ├── renderer/                         # 渲染引擎设计
-    ├── controller/                       # 控制面板设计
+    ├── controller_qt/                    # Qt 控制面板设计与测试文档
     ├── protocol/                         # 通信协议
     ├── interaction/                      # 交互设计
     ├── system/                           # 系统设计
@@ -66,115 +66,70 @@ desktop_pet/
 
 ---
 
-## 二、控制面板目录结构（Phase 2 + Phase 3a 已实现）
+## 二、控制面板目录结构（controller_qt，Phase 5-9 已实现）
 
 ```plain
-controller/                               # Java 控制面板
-├── pom.xml                               # Maven 项目配置
-└── src/
-    ├── main/
-    │   ├── java/
-    │   │   ├── module-info.java           # Java 模块声明（JPMS）
-    │   │   └── com/desktoppet/
-    │   │       ├── App.java               # 应用入口（JavaFX Application，创建 MainWindowController）
-    │   │       ├── Launcher.java          # 非模块化启动入口（绕过 JPMS 限制）
-    │   │       ├── ui/                    # UI 层（JavaFX，Tab 式布局）
-    │   │       │   ├── MainWindowController    # 主窗口 Tab 容器（main-window.fxml）+ 生命周期编排中枢（启动/关闭/崩溃恢复/多实例）
-    │   │       │   ├── DashboardTabController  # Dashboard Tab（状态/模型切换/日志）
-    │   │       │   ├── SettingsTabController   # Settings Tab（行为配置/语音包选择）
-    │   │       │   ├── ActionsTabController    # Actions Tab（动作/表情手动触发）
-    │   │       │   ├── AdvancedTabController   # Advanced Tab（高级设置）
-    │   │       │   ├── SettingsPanelController # 设置面板（独立 Stage，兼容旧入口）
-    │   │       │   └── TrayManager             # 系统托盘集成（java.awt.SystemTray）
-    │   │       ├── core/                  # 业务逻辑层
-    │   │       │   ├── PetStateManager    # 宠物运行时状态管理（线程安全，ReentrantReadWriteLock）
-    │   │       │   ├── InteractionHandler # 交互事件处理（hit→play_motion 指令生成）
-    │   │       │   ├── Scheduler          # 定时闲时动作触发（ScheduledExecutorService）
-    │   │       │   ├── ConfigManager      # 全局配置读写（~/.config/desktop-pet/config.json）
-    │   │       │   ├── InstanceConfigManager   # 实例配置管理（instances/{uuid}.json）
-    │   │       │   ├── PanelStateManager       # 面板配置管理（panel.json，含旧版迁移）
-    │   │       │   ├── ModelInfoParser    # 解析 model3.json（动作组/表情/HitArea）
-    │   │       │   ├── ModelScanner       # 扫描 Resources 目录识别可用模型
-    │   │       │   ├── HitAreaCacheManager     # HitArea 缓存（hit_area_cache.json）
-    │   │       │   ├── VoicePackScanner   # 扫描识别语音包（含 meta.mko 的目录）
-    │   │       │   ├── MetaMkoParser      # 解析 meta.mko（Protobuf → VoicePackInfo）
-    │   │       │   ├── MountConfigManager # 挂载配置持久化（mount.json）
-    │   │       │   ├── MountedBehaviorEngine   # 语音包运行时行为引擎（事件→motion 指令）
-    │   │       │   └── audio/             # Phase 3b 音频架构预留
-    │   │       │       └── AudioMapping   # 音频映射记录
-    │   │       ├── network/               # 网络层
-    │   │       │   ├── PetWebSocketServer # Java-WebSocket 服务端（单连接管理、消息回调）
-    │   │       │   ├── MessageDispatcher  # 按 type+action 路由消息（含 CompletableFuture 回执）
-    │   │       │   └── Protocol           # Envelope 协议封装（Gson，response 字段在顶层）
-    │   │       ├── model/                 # 数据模型（Java 21 Records）
-    │   │       │   ├── Envelope           # WebSocket 消息信封
-    │   │       │   ├── PetState           # 宠物运行时状态快照（不可变）
-    │   │       │   ├── PetConfig          # 用户配置（含 WindowConfig、ModelSettingsConfig 等子记录）
-    │   │       │   ├── WindowConfig       # 窗口配置（positionX/Y、width/height、opacity）
-    │   │       │   ├── BehaviorConfig     # 行为配置（dragMode、idleIntervalSeconds、targetFps）
-    │   │       │   ├── SystemConfig       # 系统配置（autoStart）
-    │   │       │   ├── ModelSettingsConfig # 模型设置配置
-    │   │       │   ├── ModelConfig        # 模型行为映射（HitAction 列表）
-    │   │       │   ├── ModelInfo          # 模型元信息（动作组、表情、HitArea）
-    │   │       │   ├── Motion             # 动作定义
-    │   │       │   ├── HitAction          # 点击区域→动作映射
-    │   │       │   ├── PetInstance        # 宠物实例 UI 模型（JavaFX Properties，支持数据绑定）
-    │   │       │   ├── InstanceConfig     # 实例持久化配置（Record）
-    │   │       │   ├── InstanceState      # 实例状态快照（Record）
-    │   │       │   ├── PanelConfig        # 面板配置（窗口位置/主题/实例ID列表）
-    │   │       │   ├── PanelState         # 面板状态快照
-    │   │       │   ├── MountConfig        # 语音包挂载配置（modelName + voicePackName）
-    │   │       │   ├── VoicePackInfo      # 语音包元数据（dirName/displayName/groups/modules）
-    │   │       │   ├── VoicePackGroup     # 语音包动作分组（code/name/priority/actions）
-    │   │       │   ├── VoicePackAction    # 语音包单条动作（motion/audio/lipSync/doc/fade）
-    │   │       │   └── VoicePackModule    # 语音包行为模块（key/priority/filePath）
-    │   │       └── util/                  # 工具类
-    │   │           ├── ProcessManager     # 渲染器进程启动/监控/停止（ProcessBuilder）
-    │   │           └── AutoLaunchManager  # 开机自启管理（OS 特定：Windows 注册表 / Linux .desktop）
-    │   └── resources/
-    │       ├── fxml/                      # JavaFX FXML 布局文件
-    │       │   ├── main-window.fxml       # 主窗口（Tab 容器）
-    │       │   ├── tab-dashboard.fxml     # Dashboard Tab
-    │       │   ├── tab-settings.fxml      # Settings Tab
-    │       │   ├── tab-actions.fxml       # Actions Tab
-    │       │   ├── tab-advanced.fxml      # Advanced Tab
-    │       │   └── settings-panel.fxml    # 设置面板（独立 Stage）
-    │       └── logback.xml                # Logback 日志配置（控制台 + 文件轮转）
-    └── test/
-        ├── java/com/desktoppet/
-        │   ├── core/                      # 业务逻辑测试
-        │   │   ├── ConfigManagerTest      # 配置管理测试（7 cases）
-        │   │   ├── PetStateManagerTest    # 状态管理测试（7 cases，含并发）
-        │   │   ├── PanelStateManagerTest  # 面板状态管理测试
-        │   │   ├── InteractionHandlerTest # 交互处理测试（5 cases）
-        │   │   ├── SchedulerTest          # 定时任务测试（6 cases）
-        │   │   ├── ModelInfoParserTest    # 模型解析测试（6 cases）
-        │   │   ├── ModelScannerTest       # 模型扫描测试
-        │   │   ├── VoicePackScannerTest   # 语音包扫描测试
-        │   │   ├── MetaMkoParserTest      # meta.mko 解析测试
-        │   │   ├── MountConfigManagerTest # 挂载配置测试
-        │   │   └── MountedBehaviorEngineTest # 行为引擎测试
-        │   ├── network/                   # 网络层测试
-        │   │   ├── ProtocolTest           # 协议序列化测试（12 cases，含 C++ 互操作）
-        │   │   ├── MessageDispatcherTest  # 消息分发测试（6 cases）
-        │   │   └── PetWebSocketServerTest # WebSocket 集成测试（6 cases，真实端口）
-        │   ├── ui/                        # UI 测试（TestFX + Monocle 无头模式）
-        │   │   ├── MainWindowTest         # 主窗口测试（4 cases）
-        │   │   ├── SettingsPanelTest      # 设置面板测试（4 cases）
-        │   │   └── SettingsTabTest        # Settings Tab 测试
-        │   ├── integration/
-        │   │   └── E2ESmokeTest           # 端到端冒烟测试
-        │   └── util/
-        │       └── ProcessManagerTest     # 进程管理测试（5 cases）
-        └── resources/
-            └── logback-test.xml           # 测试专用日志配置（仅控制台，DEBUG 级别）
+controller_qt/                           # Qt 6 控制面板（C++17 / QML）
+├── CMakeLists.txt                       # Qt6 find_package、qt_add_executable、qt_add_qml_module
+├── README.md                            # 完整文档（特性/构建/打包/测试/架构）
+├── src/
+│   ├── main.cpp                         # 入口（QGuiApplication + QQmlApplicationEngine，
+│   │                                    #   上下文属性：instanceManager、trayManager、autoLaunch、
+│   │                                    #   panelConfig、environmentChecker、windowStateSaver）
+│   ├── poc_main.cpp                     # Phase-0 PoC：驱动渲染器完整 WS 往返
+│   ├── network/                         # 网络层
+│   │   ├── Protocol                     # 20 个类型化命令工厂 + Envelope 辅助函数
+│   │   ├── WsServer                     # QWebSocketServer（127.0.0.1:9001），三重门令牌握手，
+│   │   │                                #   按 instanceId 多实例路由，重连时替换连接
+│   │   ├── MessageDispatcher            # 按 type 路由 Envelope（response/event/command）
+│   │   ├── PendingRequests              # 按命令 id 的 10 秒超时回执表
+│   │   ├── EventRegistry                # 14 类事件默认处理（日志）+ 按实例注册
+│   │   └── ThreadMarshal                # WS I/O 线程 → GUI 线程编组
+│   ├── core/                            # 业务逻辑层
+│   │   ├── InstanceSession (+5 个拆分 TU) # 每宠物编排器：拥有 ProcessManager、
+│   │   │                                #   MessageDispatcher、EventRegistry、Scheduler、
+│   │   │                                #   InteractionHandler、RestartController、MonitorDataModel
+│   │   ├── InstanceManager              # QAbstractListModel 侧边栏花名册，按 instanceId 分流
+│   │   ├── Scheduler                    # QTimer 闲时动作节奏
+│   │   ├── InteractionHandler           # hit → play_motion（3 级大小写容错查找）
+│   │   ├── HitAreaCacheManager          # modelName → hitAreas 的 JSON 缓存
+│   │   ├── RestartController            # 崩溃恢复（指数退避，最大 5 次）
+│   │   ├── MountedBehaviorEngine        # 语音包行为引擎（挂载时优先于 InteractionHandler）
+│   │   ├── VoicePackScanner             # 扫描识别语音包（含 meta.mko 的目录）
+│   │   ├── MetaMkoParser                # 解析 meta.mko（手写 protobuf wire-format reader）
+│   │   ├── ModelInfoParser              # 解析 model3.json（动作组/表情/HitArea）
+│   │   ├── ModelScanner                 # 扫描 Resources 目录识别可用模型
+│   │   ├── PanelConfigController        # PanelConfig 4 个行为字段的 QML 桥
+│   │   ├── ProcessManager               # 渲染器子进程生命周期（QProcess）
+│   │   ├── StartupSalvo                 # ready 后的 7 条启动指令序列
+│   │   ├── InstanceConfig(+Manager)     # 实例配置（instances/{uuid}.json，QSaveFile 原子写入）
+│   │   ├── PanelConfig(+StateManager)   # 面板配置（panel.json）
+│   │   ├── ConfigDir / PathResolve      # 配置目录与路径解析（~/.config/desktop-pet/）
+│   │   ├── EnvironmentChecker           # 环境自检（欢迎页摘要）
+│   │   └── WindowStateSaver             # 面板窗口状态保存
+│   ├── system/                          # 系统集成层
+│   │   ├── AutoLaunchManager            # 开机自启（Win reg.exe via QProcess / Linux .desktop）
+│   │   ├── TrayManager                  # QSystemTrayIcon 封装（QML 弹出菜单）
+│   │   └── ResourceStatsCollector       # Win GetProcessTimes/GetProcessMemoryInfo、Linux /proc/self/*
+│   ├── ui/                              # QML 桥接层
+│   │   ├── MonitorDataModel             # 60 采样环形缓冲（COW）+ mergeController/mergeRenderer
+│   │   ├── VoicePackController          # 语音包页 QML 桥（发现 + 元数据 + 挂载矩阵）
+│   │   └── NotificationStreamController # 通知流 QML 桥（气泡推送/消失/testBubble）
+│   ├── logging/                         # Logging.cpp（spdlog 轮转文件 + Qt 消息桥接）
+│   └── protobuf/                        # bundles.proto（schema 参考 — 不编译）
+├── qml/
+│   ├── Main.qml                         # FluWindow + FluAppBar + FluNavigationView 壳，5 页路由
+│   ├── Theme.qml                        # 主题单例
+│   ├── components/                      # StatusPill、SettingRow、SectionCard、Chip
+│   └── pages/                           # WelcomePage、InstanceDetailPage、MonitorPage、
+│                                        #   VoicePackPage、SettingsPage
+└── tests/                               # 41 个 QTest 二进制（每个自带 windeployqt 后构建步骤）
 ```
 
 ---
-
 ## 三、完整目录结构总览（Phase 3b 渲染器侧已完成，控制器侧待实现）
 
-Phase 3a（语音包挂载）Java 侧与渲染器侧（`play_motion_ext`）均已完成。Phase 2.x（Vulkan 后端）已完成。Phase 3b 渲染器侧音频播放（`AudioManager`，miniaudio + libvorbis）已实现，控制器侧（`AudioMappingManager`/UI）待实现。
+Phase 3a（语音包挂载）控制面板侧（controller_qt）与渲染器侧（`play_motion_ext`）均已完成。Phase 2.x（Vulkan 后端）已完成。Phase 3b 渲染器侧音频播放（`AudioManager`，miniaudio + libvorbis）已实现，控制器侧音频映射管理 UI 待实现。
 
 ```plain
 desktop_pet/                              # 项目根目录
@@ -189,7 +144,7 @@ desktop_pet/                              # 项目根目录
 │           ├── AudioSync                 # 动作-音频时间戳对齐（Phase 3c 计划）
 │           └── AudioMappingCache         # 接收并缓存控制面板下发的音频映射（Phase 3b 控制器侧联动，待实现）
 │
-├── controller/                           # Java 控制面板（见第二节，Phase 2 + 3a 已实现，3b 控制器侧待实现）
+├── controller_qt/                        # Qt 6 控制面板（见第二节，Phase 5-9 已实现）
 │
 ├── third_party/                          # 项目级第三方依赖
 │   └── CubismSdkForNative/              # Cubism Native SDK

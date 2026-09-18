@@ -11,14 +11,12 @@
 //   Windows: %USERPROFILE%\.config\desktop-pet\
 //
 // This intentionally does NOT follow the platform convention (%APPDATA% on
-// Windows / QStandardPaths::AppDataLocation), because it MUST stay byte-for-byte
-// compatible with the existing JavaFX controller, which uses
-// `System.getProperty("user.home") + "/.config/desktop-pet/"` (verified at
-// controller/.../core/ConfigManager.java:26, and every other *ConfigManager).
-// Java's `user.home` resolves USERPROFILE on Windows, and QDir::homePath()
-// resolves the SAME USERPROFILE (NOT the HOME env var) — so the two controllers
-// agree on one path on every supported OS. See architecture-blueprint.md §4.5.1
-// for the cross-architecture rationale.
+// Windows / QStandardPaths::AppDataLocation) — the path must stay
+// byte-for-byte compatible with the legacy config format rooted under the
+// user's home directory. QDir::homePath() resolves USERPROFILE on Windows
+// (NOT the HOME env var), which pins the same location on every supported
+// OS. See architecture-blueprint.md §4.5.1 for the cross-architecture
+// rationale.
 //
 // Consumed by:
 //   - T18-T22 config managers (each takes an injectable base path for testing)

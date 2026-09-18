@@ -14,9 +14,8 @@ namespace ConfigDir {
 namespace {
 
 // The shared config root relative to the user's home directory. IDENTICAL on
-// Linux and Windows (architecture-blueprint.md §4.5.1) so the Qt controller
-// stays byte-for-byte compatible with the JavaFX controller's
-// `user.home + "/.config/desktop-pet/"`. Forward slashes are deliberate — Qt
+// Linux and Windows (architecture-blueprint.md §4.5.1) — byte-for-byte
+// compatible with the legacy config format. Forward slashes are deliberate — Qt
 // accepts and normalizes them on both platforms, so configDir() always returns
 // a '/'-separated string.
 constexpr const char* kConfigSubpath = "/.config/desktop-pet/";

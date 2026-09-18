@@ -5,9 +5,7 @@
 
 // RestartController (Phase 5 Wave 7, todo 12) — crash-recovery backoff
 // scheduler. A QObject owning the per-instance restart-attempt count and the
-// exponential-backoff ladder. Port of Java's
-// `controller/.../ui/MainWindowController.java::scheduleRestart` (lines
-// 1522-1542), translated from `ScheduledExecutorService.schedule(...)` to
+// exponential-backoff ladder, implemented with
 // `QTimer::singleShot(ms, this, lambda)` (decision D3 — single Qt main-thread
 // event loop, no extra thread).
 //

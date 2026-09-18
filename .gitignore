@@ -8,14 +8,12 @@ compile_commands.json
 renderer/.cache/
 .gradle/
 
-# Downloaded third-party dependencies (use setup scripts to download)
-third_party/CubismSdkForNative/Samples/OpenGL/thirdParty/glew/
-third_party/CubismSdkForNative/Samples/OpenGL/thirdParty/glfw/
-third_party/CubismSdkForNative/Samples/OpenGL/Demo/proj.linux.cmake/build/
-
-# Cubism Vulkan demo MinGW build output
-third_party/CubismSdkForNative/Samples/Vulkan/Demo/proj.mingw.cmake/build/
-third_party/CubismSdkForNative/Samples/Vulkan/thirdParty/glfw/
+# CubismSdkForNative is a git submodule (Live2D/CubismNativeSamples, pinned to
+# tag 5-r.5-beta.3.1). Core binaries and downloaded glew/glfw live INSIDE the
+# submodule working tree as untracked content (suppressed via
+# .gitmodules `ignore = untracked`) — fetch them with:
+#   git submodule update --init --recursive
+#   scripts/fetch_cubism_core.sh        (or .bat on Windows)
 
 # IDE
 .idea/

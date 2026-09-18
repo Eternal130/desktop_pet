@@ -37,6 +37,21 @@ python build.py all                    # 全部构建
   否则可能出现 `libwinpthread` DLL 冲突。构建脚本会自动从子进程 PATH 中移除 Git 的 MinGW 路径。
 - GLEW 和 GLFW 由构建脚本自动下载，无需手动安装。
 
+## 首次构建前：获取 Cubism SDK 依赖
+
+`third_party/CubismSdkForNative` 是 git submodule（[Live2D/CubismNativeSamples](https://github.com/Live2D/CubismNativeSamples)，固定于 tag `5-r.5-beta.3.1`，含嵌套的 Framework submodule）。submodule 仓库内只包含 Core 的文档，**不包含** Core 预编译二进制（`Core/dll`、`Core/lib`、`Core/include`），首次克隆后需执行以下两步：
+
+```bash
+# 1. 初始化 submodule（含嵌套的 Framework submodule）
+git submodule update --init --recursive
+
+# 2. 下载 Cubism Core 预编译库（官方 zip，幂等；支持 CUBISM_SDK_URL / CUBISM_SDK_VERSION 覆盖）
+scripts/fetch_cubism_core.sh        # Linux / macOS
+scripts\fetch_cubism_core.bat      # Windows
+```
+
+完成后即可正常构建。GLEW / GLFW 仍由 `build.py` 自动下载到 submodule 的 `Samples/OpenGL/thirdParty/`，无需手动操作；`build.py` 在构建渲染引擎前会检查 submodule 与 Core 是否就绪，缺失时给出上述命令提示。
+
 ## 构建产物
 
 ```

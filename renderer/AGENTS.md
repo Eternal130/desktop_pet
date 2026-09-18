@@ -58,7 +58,7 @@ renderer/
 
 | Dep | Version | Source |
 |-----|---------|--------|
-| Cubism SDK (Core+Framework) | 5-r.5-beta.3.1 | `third_party/CubismSdkForNative/` |
+| Cubism SDK (Core+Framework) | 5-r.5-beta.3.1 | Git submodule (`Live2D/CubismNativeSamples` @ 5-r.5-beta.3.1); Core binaries fetched via `scripts/fetch_cubism_core.sh\|.bat` |
 | GLFW | 3.4 | Auto-downloaded by `build.py` |
 | GLEW | 2.2.0 | Auto-downloaded (OpenGL only) |
 | Vulkan SDK | system install | `find_package(Vulkan REQUIRED)` (Vulkan only) |

@@ -36,6 +36,7 @@ THIRD_PARTY_DIR = (
     / "OpenGL"
     / "thirdParty"
 )
+CUBISM_SDK_DIR = PROJECT_ROOT / "third_party" / "CubismSdkForNative"
 
 # ── Constants ──────────────────────────────────────────────────────
 
@@ -148,6 +149,37 @@ def download_and_extract(url, dest_dir, strip_prefix, final_name):
 
 
 # ── Third-party setup ─────────────────────────────────────────────
+
+def check_cubism_sdk():
+    """Verify the Cubism SDK submodule is initialized and Core is fetched.
+
+    third_party/CubismSdkForNative is a git submodule (Live2D/CubismNativeSamples)
+    that ships Core documentation only; the prebuilt Live2DCubismCore binaries
+    (Core/dll, Core/lib, Core/include) are downloaded into the submodule working
+    tree by scripts/fetch_cubism_core.sh|.bat.
+    """
+    if not (CUBISM_SDK_DIR / ".git").exists() and not (
+        CUBISM_SDK_DIR / "Core" / "README.md"
+    ).exists():
+        error(f"Cubism SDK submodule not initialized: {CUBISM_SDK_DIR}")
+        error("Run: git submodule update --init --recursive")
+        return False
+
+    core_header = CUBISM_SDK_DIR / "Core" / "include" / "Live2DCubismCore.h"
+    if IS_WINDOWS:
+        core_runtime = CUBISM_SDK_DIR / "Core" / "dll" / "windows" / "x86_64" / "Live2DCubismCore.dll"
+        fetch_cmd = r"scripts\fetch_cubism_core.bat"
+    else:
+        core_runtime = CUBISM_SDK_DIR / "Core" / "dll" / "linux" / "x86_64" / "libLive2DCubismCore.so"
+        fetch_cmd = "scripts/fetch_cubism_core.sh"
+
+    if not core_header.exists() or not core_runtime.exists():
+        error("Cubism Core binaries not found (expected Core/include and Core/dll).")
+        error(f"Run: {fetch_cmd}")
+        return False
+
+    return True
+
 
 def setup_thirdparty():
     info("Checking third-party dependencies...")
@@ -265,6 +297,9 @@ def _build_renderer_variant(use_vulkan: bool, env, generator):
 
 def build_renderer():
     header("Building: Renderer (C++ / CMake)")
+
+    if not check_cubism_sdk():
+        return False
 
     if not check_tool("cmake"):
         error("cmake not found on PATH. Install CMake and add it to PATH.")

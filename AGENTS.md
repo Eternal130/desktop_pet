@@ -15,7 +15,7 @@ Live2D desktop pet application. Qt 6 control panel (`controller_qt/`, C++17/QML)
 desktop_pet/
 ├── controller_qt/      # Qt 6 control panel (CMake, C++17) — the control panel
 ├── renderer/           # Live2D renderer (CMake, C++17, Cubism SDK 5)
-├── third_party/        # CubismSdkForNative (Core + Framework + Samples)
+├── third_party/        # CubismSdkForNative git submodule (Framework + Samples; Core via fetch script)
 ├── docs/               # Full architecture docs (Chinese, 30+ .md files)
 ├── build.py            # Unified build orchestrator (Python 3.6+)
 ├── BUILD.md            # Build guide
@@ -130,7 +130,7 @@ cmake --build build/renderer_vulkan --config Release -j
 
 ## NOTES
 
-- `third_party/CubismSdkForNative/` is NOT a git submodule — manually placed
+- `third_party/CubismSdkForNative/` is a git submodule of Live2D/CubismNativeSamples pinned to tag `5-r.5-beta.3.1` (nested `Framework` submodule pinned automatically). Core binaries are NOT in the repo — bootstrap: `git submodule update --init --recursive` then `scripts/fetch_cubism_core.sh` (`.bat` on Windows); `build.py` guards both before configuring the renderer
 - `set_scale` command is implemented as a `set_layout` scale-axis compatibility alias (responds; preserves offsets; clamps 0.1–5.0)
 - The subtitle system (libass, renderer-side) has been REMOVED and replaced by the Qt-controller notification bubble stream — see `docs/system/notification-stream.md`. The 5 subtitle commands are unregistered in the renderer (unknown actions return 5003).
 - VulkanBackend.cpp: **Fully implemented** (Instance → Device → Swapchain → Render → Present, 979 lines, Phase 2.1–2.6 complete). Compile-time switch via `-DUSE_VULKAN=ON`; no runtime switching. See `renderer/AGENTS.md`.

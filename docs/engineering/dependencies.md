@@ -9,7 +9,7 @@
 
 | 库 | 版本 | 用途 | 集成方式 | 阶段 |
 |:---|:---|:---|:---|:---:|
-| Cubism Native SDK | 5-r.5-beta.3.1 | Live2D 模型加载与渲染（兼容 Cubism 5 / 5.3） | 预编译库 + 框架源码（third_party/CubismSdkForNative/） | **MVP** |
+| Cubism Native SDK | 5-r.5-beta.3.1 | Live2D 模型加载与渲染（兼容 Cubism 5 / 5.3） | git submodule（Live2D/CubismNativeSamples，tag 5-r.5-beta.3.1）+ 脚本下载 Core 预编译库（scripts/fetch_cubism_core.sh\|.bat） | **MVP** |
 | GLFW | 3.4 | 窗口创建与输入事件处理（`platform/WindowManager.cpp` 被 GL/Vulkan 共享） | SDK 内置源码编译（Samples/OpenGL/thirdParty/glfw/），缺失时自动下载 | **MVP** |
 | GLEW | 2.2.0 | OpenGL 扩展函数加载（仅 OpenGL 后端） | SDK 内置源码编译（Samples/OpenGL/thirdParty/glew/），缺失时自动下载 | **MVP** |
 | Vulkan SDK | 系统（≥ 1.2） | Vulkan 渲染后端（Instance/Device/Swapchain/Render/Present），仅 `-DUSE_VULKAN=ON` 时需要 | 系统安装（`find_package(Vulkan REQUIRED)`） | **Phase 2.x** |
@@ -66,6 +66,8 @@ Cubism SDK 是本项目最核心的第三方依赖，其集成方式有别于常
 | Core 许可 | Live2D Proprietary Software License（闭源） |
 | SDK 手册 | [Cubism SDK Manual](https://docs.live2d.com/cubism-sdk-manual/top/) |
 
+> **获取方式（2026-09 起）**：`third_party/CubismSdkForNative` 为 git submodule（[Live2D/CubismNativeSamples](https://github.com/Live2D/CubismNativeSamples)），固定于 tag `5-r.5-beta.3.1`（嵌套的 Framework submodule 由 `--recursive` 自动固定到匹配 commit）。submodule 仓库内仅包含 Core 的文档，Core 预编译库（`Core/dll`、`Core/lib`、`Core/include`）由 `scripts/fetch_cubism_core.sh`（Windows 为 `scripts\fetch_cubism_core.bat`）从 Live2D 官方 zip（`https://cubism.live2d.com/sdk-native/bin/CubismSdkForNative-<版本>.zip`）下载并解压到 submodule 工作树；脚本幂等（已下载则跳过），支持 `CUBISM_SDK_URL` / `CUBISM_SDK_VERSION` 环境变量覆盖。GLEW / GLFW 仍由 `build.py` 自动下载到 submodule 的 `Samples/OpenGL/thirdParty/`。`build.py` 构建渲染引擎前会检查 submodule 初始化与 Core 就绪状态。
+
 ### 3.2 License 要求（重要）
 
 Cubism SDK 采用**双许可模式**，开发和发布前必须确认：
@@ -83,7 +85,7 @@ Cubism SDK 采用**双许可模式**，开发和发布前必须确认：
 
 ```plain
 third_party/CubismSdkForNative/
-├── Core/                           # 闭源预编译库（C 接口）
+├── Core/                           # 闭源预编译库（C 接口）；二进制由 fetch_cubism_core 脚本下载，不在 git 仓库内
 │   ├── include/
 │   │   └── Live2DCubismCore.h      # 唯一头文件（纯 C API）
 │   ├── lib/                        # 静态库（按平台/架构组织）

@@ -1,6 +1,8 @@
 #pragma once
 
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 struct GLFWwindow;
 
@@ -35,9 +37,11 @@ public:
     // Input helpers (used by event callbacks in LAppDelegate)
     bool IsKeyPressed(int key) const;
 
+#ifdef _WIN32
     // Win32 specific
     static void ApplyDesktopPetWindowStyle(HWND hwnd);
     static LRESULT CALLBACK WindowSubclassProc(HWND, UINT, WPARAM, LPARAM);
+#endif
 
 private:
     GLFWwindow* _window;
@@ -48,5 +52,7 @@ private:
     double _dragStartY;
     double _targetFps;
     bool _windowShown;
+#ifdef _WIN32
     static WNDPROC s_originalWndProc;
+#endif
 };

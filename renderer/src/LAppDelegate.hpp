@@ -9,7 +9,6 @@
 
 #include <string>
 #include <chrono>
-#include <windows.h>
 #include "LAppAllocator_Common.hpp"
 #include "platform/WindowManager.hpp"
 #include "graphics/IGraphicsBackend.hpp"

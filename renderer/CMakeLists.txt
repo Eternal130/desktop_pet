@@ -40,7 +40,11 @@ else()
     set(FRAMEWORK_SHADER_PATH ${FRAMEWORK_PATH}/src/Rendering/OpenGL/Shaders/Standard)
 endif()
 set(STB_PATH ${THIRD_PARTY_PATH}/stb)
-set(GLFW_PATH ${THIRD_PARTY_PATH}/glfw)
+# GLFW is a windowing library shared by both backends. Use the OpenGL
+# sample's thirdParty copy for the Vulkan variant too — this machine's SDK
+# copy ships Samples/Vulkan/thirdParty without glfw, and build.py's
+# setup_thirdparty populates the OpenGL one anyway.
+set(GLFW_PATH ${SDK_ROOT_PATH}/Samples/OpenGL/thirdParty/glfw)
 
 # === Output ===
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../build/bin)
@@ -96,20 +100,45 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# === Cubism Core (DLL for MinGW) ===
-# MinGW cannot link MSVC static .lib files.
-# Use the DLL + its import library from Core/dll/windows/x86_64/.
-# MinGW's linker can handle MSVC import libraries for pure C DLLs.
-add_library(Live2DCubismCore SHARED IMPORTED)
-set_target_properties(Live2DCubismCore PROPERTIES
-  IMPORTED_IMPLIB ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.lib
-  IMPORTED_LOCATION ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll
-  INTERFACE_INCLUDE_DIRECTORIES ${CORE_PATH}/include
-)
+# === Cubism Core (prebuilt shared library) ===
+if(WIN32)
+    # MinGW cannot link MSVC static .lib files.
+    # Use the DLL + its import library from Core/dll/windows/x86_64/.
+    # MinGW's linker can handle MSVC import libraries for pure C DLLs.
+    add_library(Live2DCubismCore SHARED IMPORTED)
+    set_target_properties(Live2DCubismCore PROPERTIES
+      IMPORTED_IMPLIB ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.lib
+      IMPORTED_LOCATION ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll
+      INTERFACE_INCLUDE_DIRECTORIES ${CORE_PATH}/include
+    )
+else()
+    # Linux: link the prebuilt shared object directly.
+    add_library(Live2DCubismCore SHARED IMPORTED)
+    set_target_properties(Live2DCubismCore PROPERTIES
+      IMPORTED_LOCATION ${CORE_PATH}/dll/linux/x86_64/libLive2DCubismCore.so
+      INTERFACE_INCLUDE_DIRECTORIES ${CORE_PATH}/include
+    )
+endif()
+
+# Runtime library copied next to the binary by the POST_BUILD step below.
+if(WIN32)
+    set(CUBISM_CORE_RUNTIME ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll)
+else()
+    set(CUBISM_CORE_RUNTIME ${CORE_PATH}/dll/linux/x86_64/libLive2DCubismCore.so)
+endif()
 
 # === GLEW (OpenGL only) & GLFW ===
 if(NOT USE_VULKAN)
     add_subdirectory(${GLEW_PATH}/build/cmake ${CMAKE_CURRENT_BINARY_DIR}/glew)
+endif()
+# X11 is the supported windowing backend on Linux (Wayland transparent-window
+# is a documented limitation, AGENTS.md R4). GLFW 3.4 auto-enables its Wayland
+# backend whenever wayland-scanner happens to be installed, which both adds a
+# build-time tool dependency and makes the backend matrix non-deterministic.
+# Pin the Linux backend to X11 only.
+if(UNIX AND NOT APPLE)
+    set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(${GLFW_PATH} ${CMAKE_CURRENT_BINARY_DIR}/glfw)
 
@@ -118,6 +147,14 @@ if(USE_VULKAN)
     find_package(Vulkan REQUIRED)
 else()
     find_package(OpenGL REQUIRED)
+endif()
+
+# === X11 (Linux only) ===
+# Direct Xlib access for global cursor queries (eye-follow / drag /
+# click-through hit tests) and EWMH state manipulation (taskbar hiding,
+# stay-on-top reassertion) alongside GLFW's own X11 backend.
+if(UNIX AND NOT APPLE)
+    find_package(X11 REQUIRED)
 endif()
 
 # === Cubism Framework ===
@@ -132,11 +169,20 @@ if(USE_VULKAN)
     target_include_directories(Framework PUBLIC ${Vulkan_INCLUDE_DIRS})
     target_link_libraries(Framework Live2DCubismCore ${Vulkan_LIBRARIES})
 else()
-    target_compile_definitions(Framework PUBLIC CSM_TARGET_WIN_GL)
+    if(WIN32)
+        target_compile_definitions(Framework PUBLIC CSM_TARGET_WIN_GL)
+    else()
+        target_compile_definitions(Framework PUBLIC CSM_TARGET_LINUX_GL)
+        # GLEW's header pulls in <GL/glu.h> on Linux (libglu1-mesa-dev). Nothing
+        # in the Framework or this project calls GLU — skip the dependency.
+        target_compile_definitions(Framework PUBLIC GLEW_NO_GLU)
+    endif()
     target_include_directories(Framework PUBLIC ${GLEW_PATH}/include)
     target_link_libraries(Framework Live2DCubismCore glew_s)
-    # GCC rejects PROC-to-void* implicit conversion in SDK's wglGetProcAddress usage
-    target_compile_options(Framework PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fpermissive>)
+    if(WIN32)
+        # GCC rejects PROC-to-void* implicit conversion in SDK's wglGetProcAddress usage
+        target_compile_options(Framework PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fpermissive>)
+    endif()
 endif()
 
 # === Vulkan Shader Compilation ===
@@ -255,6 +301,10 @@ target_include_directories(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )
 
+if(UNIX AND NOT APPLE)
+    target_include_directories(${APP_NAME} PRIVATE ${X11_INCLUDE_DIR})
+endif()
+
 if(USE_VULKAN)
     target_include_directories(${APP_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
 endif()
@@ -291,6 +341,11 @@ if(WIN32)
     )
 endif()
 
+if(UNIX AND NOT APPLE)
+    # Plain signature to match the existing target_link_libraries calls above.
+    target_link_libraries(${APP_NAME} ${X11_LIBRARIES})
+endif()
+
 # === Post-build: copy resources, shaders, and DLL ===
 if(USE_VULKAN)
     add_custom_command(
@@ -300,7 +355,7 @@ if(USE_VULKAN)
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/SampleShaders/compiledShaders $<TARGET_FILE_DIR:${APP_NAME}>/SampleShaders
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/FrameworkShaders/compiledShaders $<TARGET_FILE_DIR:${APP_NAME}>/FrameworkShaders
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${FONTS_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/fonts
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll $<TARGET_FILE_DIR:${APP_NAME}>
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CUBISM_CORE_RUNTIME} $<TARGET_FILE_DIR:${APP_NAME}>
     )
 else()
     add_custom_command(
@@ -309,7 +364,7 @@ else()
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${RES_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/Resources/Models
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${FRAMEWORK_SHADER_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/FrameworkShaders
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${FONTS_PATH} $<TARGET_FILE_DIR:${APP_NAME}>/fonts
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CORE_PATH}/dll/windows/x86_64/Live2DCubismCore.dll $<TARGET_FILE_DIR:${APP_NAME}>
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CUBISM_CORE_RUNTIME} $<TARGET_FILE_DIR:${APP_NAME}>
     )
 endif()
 

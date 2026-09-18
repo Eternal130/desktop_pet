@@ -7,15 +7,19 @@
 
 #include "LAppDelegate.hpp"
 #include <ixwebsocket/IXNetSystem.h>
+#ifdef _WIN32
 #include <windows.h>
+#endif
 #include <cstdlib>
 #include <cstring>
 #include <string>
 
 int main(int argc, char* argv[])
 {
+#ifdef _WIN32
     UINT preConsoleOutputCP = GetConsoleOutputCP();
     SetConsoleOutputCP(65001);
+#endif
 
     ix::initNetSystem();
 
@@ -87,14 +91,18 @@ int main(int argc, char* argv[])
 
     if (!delegate->Initialize())
     {
+#ifdef _WIN32
         SetConsoleOutputCP(preConsoleOutputCP);
+#endif
         return 1;
     }
 
     delegate->Run();
 
     ix::uninitNetSystem();
+#ifdef _WIN32
     SetConsoleOutputCP(preConsoleOutputCP);
+#endif
 
     return 0;
 }

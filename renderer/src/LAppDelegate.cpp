@@ -30,6 +30,15 @@
 #include "network/Protocol.hpp"
 #include "AudioManager.hpp"
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <X11/Xlib.h>
+#include <unistd.h>
+#include <limits.h>
+#include <cstring>
+#endif
+
 using namespace Csm;
 using namespace std;
 using namespace LAppDefine;
@@ -37,6 +46,43 @@ using namespace LAppDefine;
 namespace {
     LAppDelegate* s_instance = NULL;
 }
+
+#ifndef _WIN32
+namespace {
+    // X11 global cursor helper (main thread only): returns the pointer position in
+    // root-window coordinates — the same coordinate space as glfwGetWindowPos, so the
+    // existing "global - window position = local" math is unchanged. The Display is
+    // opened on first use and reused for the process lifetime.
+    bool GetGlobalCursorPos(int& outX, int& outY)
+    {
+        static Display* s_xDisplay = XOpenDisplay(nullptr);
+        if (s_xDisplay == nullptr)
+        {
+            static bool s_noDisplayLogged = false;
+            if (!s_noDisplayLogged)
+            {
+                LAppPal::PrintLogLn("[LAppDelegate] X11: XOpenDisplay failed, global cursor tracking disabled");
+                s_noDisplayLogged = true;
+            }
+            return false;
+        }
+
+        Window rootRet = 0, childRet = 0;
+        int rootX = 0, rootY = 0, winX = 0, winY = 0;
+        unsigned int maskRet = 0;
+        if (!XQueryPointer(s_xDisplay, DefaultRootWindow(s_xDisplay),
+                           &rootRet, &childRet, &rootX, &rootY,
+                           &winX, &winY, &maskRet))
+        {
+            return false;
+        }
+
+        outX = rootX;
+        outY = rootY;
+        return true;
+    }
+}
+#endif
 
 LAppDelegate* LAppDelegate::GetInstance()
 {
@@ -189,12 +235,18 @@ void LAppDelegate::Run()
         // 時間更新
         LAppPal::UpdateTime();
 
-        // Global cursor eye tracking — use Win32 GetCursorPos to track beyond GLFW window bounds
+        // Global cursor eye tracking — query the global cursor position to track beyond GLFW window bounds
         if (!_isDragging)
         {
+#ifdef _WIN32
             POINT cursorPos;
             if (GetCursorPos(&cursorPos))
             {
+#else
+            struct { int x, y; } cursorPos; // Mimics Win32 POINT so the shared code below stays unchanged
+            if (GetGlobalCursorPos(cursorPos.x, cursorPos.y))
+            {
+#endif
                 int windowX, windowY;
                 _windowManager->GetWindowPosition(windowX, windowY);
 
@@ -239,9 +291,15 @@ void LAppDelegate::Run()
 
         if (!_isDragging && !_captured)
         {
+#ifdef _WIN32
             POINT cursorPos;
             if (GetCursorPos(&cursorPos))
             {
+#else
+            struct { int x, y; } cursorPos; // Mimics Win32 POINT so the shared code below stays unchanged
+            if (GetGlobalCursorPos(cursorPos.x, cursorPos.y))
+            {
+#endif
                 int windowX, windowY;
                 _windowManager->GetWindowPosition(windowX, windowY);
                 int localX = cursorPos.x - windowX;
@@ -476,8 +534,13 @@ void LAppDelegate::OnMouseCallBack(GLFWwindow* window, double x, double y)
 
     if (_isDragging)
     {
+#ifdef _WIN32
         POINT pt;
         GetCursorPos(&pt);
+#else
+        struct { int x, y; } pt; // Mimics Win32 POINT so the shared code below stays unchanged
+        GetGlobalCursorPos(pt.x, pt.y);
+#endif
         _windowManager->SetWindowPosition(pt.x - static_cast<int>(_dragStartX),
                                         pt.y - static_cast<int>(_dragStartY));
         return;
@@ -606,6 +669,7 @@ void LAppDelegate::GetClientSize(int& rWidth, int& rHeight)
 
 void LAppDelegate::SetExecuteAbsolutePath()
 {
+#ifdef _WIN32
     char path[MAX_PATH];
     DWORD len = GetModuleFileNameA(NULL, path, MAX_PATH);
 
@@ -627,6 +691,29 @@ void LAppDelegate::SetExecuteAbsolutePath()
     }
 
     this->_executeAbsolutePath = path;
+#else
+    char path[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", path, sizeof(path) - 1);
+
+    if (len > 0)
+    {
+        path[len] = '\0';
+
+        // Keep everything up to and including the last '/', same as the Windows branch
+        char* lastSep = strrchr(path, '/');
+        if (lastSep != nullptr)
+        {
+            *(lastSep + 1) = '\0';
+        }
+
+        this->_executeAbsolutePath = path;
+    }
+    else
+    {
+        LAppPal::PrintLogLn("[LAppDelegate] readlink(\"/proc/self/exe\") failed, falling back to working-directory-relative path");
+        this->_executeAbsolutePath = "";
+    }
+#endif
 }
 
 bool LAppDelegate::IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const

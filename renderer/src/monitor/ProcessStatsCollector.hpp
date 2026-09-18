@@ -6,7 +6,7 @@ namespace Monitor {
 
 /**
  * Snapshot of this renderer process's host resource usage. Always populated
- * on Windows; Linux stub returns zeros (Tier 1 scope — see plan T3).
+ * on Windows; Linux reads /proc/self/statm (RSS) + /proc/self/stat (CPU% ticks).
  */
 struct ProcessStats {
     double cpuPercent = 0.0;  // [0.0, 100.0 * numCores]; caller may cap

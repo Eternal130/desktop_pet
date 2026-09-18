@@ -1,8 +1,22 @@
 #include "WindowManager.hpp"
 #include <GLFW/glfw3.h>
-#include <windows.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#define GLFW_EXPOSE_NATIVE_X11
+#include <GLFW/glfw3native.h>
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
+#endif
+
+#ifdef _WIN32
 WNDPROC WindowManager::s_originalWndProc = NULL;
+#else
+// X11 counterpart of the Win32-only WindowManager::ApplyDesktopPetWindowStyle —
+// defined at the bottom of this file, next to the Win32 implementation.
+static void ApplyDesktopPetWindowStyleX11(GLFWwindow* glfwWindow);
+#endif
 
 WindowManager::WindowManager()
     : _window(NULL)
@@ -52,6 +66,7 @@ bool WindowManager::Initialize(int width, int height, bool hasStartupPos, int st
         glfwSetWindowPos(_window, startupX, startupY);
     }
 
+#ifdef _WIN32
     HWND hwnd = FindWindow("GLFW30", NULL);
     if (hwnd)
     {
@@ -59,6 +74,10 @@ bool WindowManager::Initialize(int width, int height, bool hasStartupPos, int st
         s_originalWndProc = reinterpret_cast<WNDPROC>(
             SetWindowLongPtr(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(WindowSubclassProc)));
     }
+#else
+    // X11: GLFW owns the native window — glfwGetX11Window() replaces FindWindow().
+    ApplyDesktopPetWindowStyleX11(_window);
+#endif
 
     int w, h;
     glfwGetWindowSize(_window, &w, &h);
@@ -70,6 +89,7 @@ bool WindowManager::Initialize(int width, int height, bool hasStartupPos, int st
 
 void WindowManager::Release()
 {
+#ifdef _WIN32
     if (s_originalWndProc)
     {
         HWND hwnd = FindWindow("GLFW30", NULL);
@@ -79,6 +99,7 @@ void WindowManager::Release()
         }
         s_originalWndProc = NULL;
     }
+#endif
 
     if (_window)
     {
@@ -175,6 +196,7 @@ bool WindowManager::IsKeyPressed(int key) const
     return glfwGetKey(_window, key) == GLFW_PRESS;
 }
 
+#ifdef _WIN32
 void WindowManager::ApplyDesktopPetWindowStyle(HWND hwnd)
 {
     LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
@@ -204,3 +226,49 @@ LRESULT CALLBACK WindowManager::WindowSubclassProc(HWND hwnd, UINT msg, WPARAM w
     }
     return CallWindowProc(s_originalWndProc, hwnd, msg, wParam, lParam);
 }
+#else
+
+// Linux: anti-minimize not implemented; window is taskbar-hidden (SKIP_TASKBAR) so the minimize entry point is unreachable.
+
+// Sends an EWMH _NET_WM_STATE ClientMessage (action=ADD) for one or two states.
+static void SendNetWmStateAdd(Display* display, ::Window window, Atom firstState, Atom secondState = None)
+{
+    XEvent event = {};
+    event.xclient.type = ClientMessage;
+    event.xclient.send_event = True;
+    event.xclient.display = display;
+    event.xclient.window = window;
+    event.xclient.message_type = XInternAtom(display, "_NET_WM_STATE", False);
+    event.xclient.format = 32;
+    event.xclient.data.l[0] = 1; // _NET_WM_STATE_ADD
+    event.xclient.data.l[1] = static_cast<long>(firstState);
+    event.xclient.data.l[2] = static_cast<long>(secondState);
+    XSendEvent(display, DefaultRootWindow(display), False,
+               SubstructureNotifyMask | SubstructureRedirectMask, &event);
+}
+
+// X11 counterpart of WindowManager::ApplyDesktopPetWindowStyle.
+static void ApplyDesktopPetWindowStyleX11(GLFWwindow* glfwWindow)
+{
+    Display* display = glfwGetX11Display();
+    ::Window window = glfwGetX11Window(glfwWindow);
+    if (display == NULL || window == None)
+    {
+        return;
+    }
+
+    // WS_EX_TOOLWINDOW / ~WS_EX_APPWINDOW counterpart: hide from taskbar and pager.
+    SendNetWmStateAdd(display, window,
+                      XInternAtom(display, "_NET_WM_STATE_SKIP_TASKBAR", False),
+                      XInternAtom(display, "_NET_WM_STATE_SKIP_PAGER", False));
+
+    // WS_MINIMIZEBOX / WS_SYSMENU strip has no X11 counterpart; the minimize
+    // entry point is already unreachable once the window is off the taskbar.
+
+    // SetWindowPos(HWND_TOPMOST) counterpart (re-insurance on top of GLFW_FLOATING).
+    SendNetWmStateAdd(display, window,
+                      XInternAtom(display, "_NET_WM_STATE_ABOVE", False));
+
+    XFlush(display);
+}
+#endif

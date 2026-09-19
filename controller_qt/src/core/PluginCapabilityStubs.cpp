@@ -1,6 +1,7 @@
 #include "core/PluginCapabilityStubs.hpp"
 
 #include <QDir>
+#include <QFileInfo>
 
 #include <spdlog/spdlog.h>
 
@@ -43,8 +44,8 @@ pet::PluginError DownloadApiStub::installArchive(pet::JobId job, const pet::Inst
 
 // ── VoicePackApiImpl (read-only real view; install path is P5) ─────────────
 
-VoicePackApiImpl::VoicePackApiImpl(QObject* parent)
-    : QObject(parent)
+VoicePackApiImpl::VoicePackApiImpl(std::function<void()> refresh, QObject* parent)
+    : QObject(parent), m_refresh(std::move(refresh))
 {
 }
 
@@ -55,12 +56,13 @@ QVector<pet::PackInfo> VoicePackApiImpl::listPacks()
     // contract). Missing dir / no packs → empty list, never an error.
     QVector<pet::PackInfo> result;
     const QString baseDir = defaultRendererDir();
-    const QStringList dirs = scanAvailableVoicePacks(baseDir);
-    for (const QString& name : dirs) {
+    // Scanner contract: entries are ABSOLUTE pack directory paths.
+    const QStringList packDirs = scanAvailableVoicePacks(baseDir);
+    for (const QString& dir : packDirs) {
+        const QString name = QFileInfo(dir).fileName();
         pet::PackInfo info;
         info.id = name;
-        info.dirPath = QDir(baseDir).filePath(
-            QStringLiteral("Resources/VoicePacks/") + name);
+        info.dirPath = dir;
         // meta.mko summary when parseable (parser takes the pack DIR);
         // absence degrades to bare names (never-throws, same as the
         // panel's own pack list). No version field in meta.mko — empty.
@@ -78,11 +80,19 @@ QVector<pet::PackInfo> VoicePackApiImpl::listPacks()
 
 void VoicePackApiImpl::refreshScan()
 {
-    // P5 wires this to the VoicePackController refresh the VoicePacks page
-    // uses; for now the next listPacks() call re-scans anyway (pure static
-    // scanner), which is the honest read-only semantics.
-    LOG_DEBUG("[plugin-api] voicePackApi().refreshScan() — re-scan happens on "
-              "next listPacks() until P5 wires the controller refresh");
+    // P5: routes into the host's VoicePackController::rescan (wired via
+    // PluginHost::setVoicePackRefresh in PanelUiBoot) so the panel's pack
+    // list updates right after an install. listPacks() re-scans lazily too.
+    if (m_refresh) {
+        try {
+            m_refresh();
+        } catch (...) {
+            LOG_ERROR("[plugin-api] voicePack refresh callback threw (isolated)");
+        }
+        return;
+    }
+    LOG_DEBUG("[plugin-api] voicePackApi().refreshScan() — no host refresh wired; "
+              "re-scan happens on next listPacks()");
 }
 
 QString VoicePackApiImpl::installPath()

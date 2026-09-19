@@ -1,5 +1,6 @@
 #include "app/PanelApplication.hpp"
 
+#include <QDir>
 #include <QJsonDocument>
 #include <QTimer>
 
@@ -10,8 +11,10 @@
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
 #include "core/PanelStateManager.hpp"
+#include "core/PathResolve.hpp"
 #include "core/PluginHost.hpp"
 #include "core/ProcessManager.hpp"
+#include "core/DownloadService.hpp"
 #include "core/StartupSalvo.hpp"
 #include "logging/Logging.hpp"
 #include "network/Envelope.hpp"
@@ -122,9 +125,20 @@ PanelApplication::PanelApplication(QObject* parent)
     // this tree — registered after the five services → destroyed before
     // them (registration-reverse), so plugin shutdown during app teardown
     // happens while the roster/network/database are still alive.
+    // P5: the download service BEFORE the host (contexts receive it at
+    // initializeAll). Registered between registry/host — destruction
+    // (registration-reverse) tears the host down first, then the service:
+    // plugin shutdown callbacks cannot reach a dead service. Destructor
+    // silently cancels active jobs — the exit path never blocks.
+    m_downloadService = new core::DownloadService(
+        ConfigDir::configDir() + QStringLiteral("downloads"),
+        QDir(core::defaultRendererDir())
+            .filePath(QStringLiteral("Resources/VoicePacks")),
+        this);
     m_pluginHost = new core::PluginHost(m_pluginRegistry, this);
     m_pluginHost->setInstanceManager(m_instanceManager);
     m_pluginHost->setConfigRoot(ConfigDir::configDir());
+    m_pluginHost->setDownloadService(m_downloadService);
 }
 
 DatabaseManager& PanelApplication::databaseManager()
@@ -160,6 +174,11 @@ core::PluginRegistry& PanelApplication::pluginRegistry()
 core::PluginHost* PanelApplication::pluginHost()
 {
     return m_pluginHost;
+}
+
+core::DownloadService* PanelApplication::downloadService()
+{
+    return m_downloadService;
 }
 
 // Moved from main() (P3/M4). Construction + wiring statements are verbatim;

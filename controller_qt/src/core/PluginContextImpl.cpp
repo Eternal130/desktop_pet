@@ -4,6 +4,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "core/DownloadService.hpp"
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
 #include "core/PluginHost.hpp"
@@ -126,20 +127,75 @@ void UiApiImpl::notifyBubble(const QString& text, int durationMs)
     m_notificationStream->push(m_pluginId, QString(), text, durationMs);
 }
 
+// ── DownloadApiAdapter (P5) ─────────────────────────────────────────────────
+
+DownloadApiAdapter::DownloadApiAdapter(QString pluginId, bool networkGranted,
+                                       DownloadService* service, QObject* parent)
+    : QObject(parent),
+      m_pluginId(std::move(pluginId)),
+      m_networkGranted(networkGranted),
+      m_service(service)
+{
+}
+
+pet::JobId DownloadApiAdapter::start(const pet::DownloadRequest& request,
+                                     pet::DownloadListener* listener)
+{
+    if (!m_networkGranted || m_service == nullptr) {
+        LOG_WARN("[plugin-api] downloadApi().start() from '{}' without the "
+                 "'network' capability (§B.4 gate) — ERR_CAPABILITY",
+                 m_pluginId.toStdString());
+        if (listener != nullptr) {
+            try {
+                listener->onError(0, pet::PluginError::Capability,
+                                  QStringLiteral("network capability not granted"));
+            } catch (...) {
+            }
+        }
+        return 0;
+    }
+    return m_service->start(request, listener);
+}
+
+void DownloadApiAdapter::cancel(pet::JobId job)
+{
+    if (!m_networkGranted || m_service == nullptr)
+        return; // no jobs could ever exist for this plugin
+    m_service->cancel(job);
+}
+
+pet::PluginError DownloadApiAdapter::installArchive(pet::JobId job,
+                                                    const pet::InstallSpec& spec)
+{
+    if (!m_networkGranted || m_service == nullptr) {
+        LOG_WARN("[plugin-api] downloadApi().installArchive() from '{}' without "
+                 "the 'network' capability (§B.4 gate) — ERR_CAPABILITY",
+                 m_pluginId.toStdString());
+        return pet::PluginError::Capability;
+    }
+    return m_service->installArchive(job, spec);
+}
+
 // ── PluginContextImpl ───────────────────────────────────────────────────────
 
 PluginContextImpl::PluginContextImpl(const QString& pluginId,
                                      InstanceManager* instanceManager,
                                      PluginPageModel* pageModel,
                                      NotificationStreamController* stream,
-                                     const QString& configRoot, QObject* parent)
+                                     const QString& configRoot,
+                                     DownloadService* downloadService,
+                                     const QStringList& capabilities,
+                                     std::function<void()> voicePackRefresh,
+                                     QObject* parent)
     : QObject(parent),
       m_pluginId(pluginId),
       m_configRoot(configRoot),
       m_instanceApi(instanceManager, this),
       m_uiApi(pluginId, pageModel, stream, this),
-      m_voicePackApi(this),
-      m_downloadApi()
+      m_voicePackApi(std::move(voicePackRefresh), this),
+      m_downloadApi(pluginId,
+                    capabilities.contains(QStringLiteral("network")),
+                    downloadService, this)
 {
 }
 

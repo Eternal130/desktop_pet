@@ -17,6 +17,8 @@
 #include <QString>
 #include <QVector>
 
+#include <functional>
+
 #include "api/IDownloadApi.hpp"
 #include "api/IVoicePackApi.hpp"
 
@@ -37,12 +39,19 @@ class VoicePackApiImpl : public QObject, public pet::IVoicePackApi
 {
     Q_OBJECT
 public:
-    explicit VoicePackApiImpl(QObject* parent = nullptr);
+    // refresh: P5 host seam — invoked by refreshScan() so the panel's pack
+    // list (VoicePackController) re-scans after installs. Empty = log-only
+    // (pre-P5 wiring / tests); listPacks() always re-scans regardless.
+    explicit VoicePackApiImpl(std::function<void()> refresh = {},
+                              QObject* parent = nullptr);
     ~VoicePackApiImpl() override = default;
 
     QVector<pet::PackInfo> listPacks() override;
     void refreshScan() override;
     QString installPath() override;
+
+private:
+    std::function<void()> m_refresh;
 };
 
 } // namespace core

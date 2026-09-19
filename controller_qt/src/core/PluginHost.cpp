@@ -6,6 +6,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "core/DownloadService.hpp"
 #include "core/PluginContextImpl.hpp"
 #include "core/PluginPageModel.hpp"
 #include "logging/Logging.hpp"
@@ -57,6 +58,16 @@ void PluginHost::setConfigRoot(const QString& configRoot)
     m_configRoot = configRoot;
 }
 
+void PluginHost::setDownloadService(DownloadService* service)
+{
+    m_downloadService = service;
+}
+
+void PluginHost::setVoicePackRefresh(std::function<void()> refresh)
+{
+    m_voicePackRefresh = std::move(refresh);
+}
+
 void PluginHost::initializeAll()
 {
     const QList<PluginEntry> entries = m_registry.orderedEntries();
@@ -89,7 +100,9 @@ void PluginHost::initializeAll()
             entry->instance = entry->create();
             auto* ctx = new PluginContextImpl(entry->manifest.id, m_instanceManager,
                                               m_pageModel, m_notificationStream,
-                                              m_configRoot, this);
+                                              m_configRoot, m_downloadService,
+                                              entry->manifest.capabilities,
+                                              m_voicePackRefresh, this);
             m_contexts.append(ctx);
             const pet::PluginError err = entry->instance->initialize(*ctx);
             if (err != pet::PluginError::Ok) {

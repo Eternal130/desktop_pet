@@ -904,3 +904,16 @@ target_link_libraries(DownloadServiceTest PRIVATE pet_panel_core Qt6::Test)
 pet_deploy_qt_test(DownloadServiceTest)
 
 add_test(NAME DownloadServiceTest COMMAND DownloadServiceTest)
+
+# InstallPipelineTest (P5 §B.4 tail): download→install→VoicePackScanner
+# discovery e2e over file:// fixtures, zip-slip rejection (parent/absolute/
+# drive-letter/nested escapes; zero on-disk traces), bad-sha + cancelled jobs
+# refused at install, sentinel + allow-list discipline, reinstall-replaces.
+# Fixtures built in-process via miniz (mz_zip_writer — hostile entry names a
+# real writer would normalize). QTEST_MAIN — QNetworkReply needs the loop.
+qt_add_executable(InstallPipelineTest InstallPipelineTest.cpp)
+target_link_libraries(InstallPipelineTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(InstallPipelineTest)
+
+add_test(NAME InstallPipelineTest COMMAND InstallPipelineTest)

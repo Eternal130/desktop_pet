@@ -31,6 +31,7 @@ class NotificationStreamController;
 
 namespace core {
 
+class DownloadService;
 class PluginContextImpl;
 class PluginPageModel;
 
@@ -55,6 +56,12 @@ public:
 
     // Test seam for the shutdown-budget path (production: 200ms, §B.3).
     void setShutdownBudgetMs(int ms) { m_shutdownBudgetMs = ms; }
+
+    // P5 seams: the host download service handed to plugin contexts
+    // (capability-gated at the context) and the voice-pack refresh hook
+    // (wired to VoicePackController::rescan by PanelUiBoot).
+    void setDownloadService(DownloadService* service);
+    void setVoicePackRefresh(std::function<void()> refresh);
 
     void initializeAll();
     void shutdownAll();
@@ -88,6 +95,8 @@ private:
     PluginPageModel* m_pageModel = nullptr;
     NotificationStreamController* m_notificationStream = nullptr;
     QString m_configRoot;
+    DownloadService* m_downloadService = nullptr; // not owned (service tree)
+    std::function<void()> m_voicePackRefresh;
     std::function<bool(const QString&)> m_enabledProvider;
     int m_shutdownBudgetMs = 200;
 

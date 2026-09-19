@@ -12,8 +12,12 @@
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
+#include <functional>
+
+#include "api/IDownloadApi.hpp"
 #include "api/IInstanceApi.hpp"
 #include "api/IPluginContext.hpp"
 #include "api/IUiApi.hpp"
@@ -26,6 +30,7 @@ class NotificationStreamController;
 
 namespace core {
 
+class DownloadService;
 class PluginHost;
 class PluginPageModel;
 
@@ -47,6 +52,28 @@ private:
 
     InstanceManager* m_instanceManager; // not owned (service tree)
     QVector<pet::IRosterObserver*> m_observers;
+};
+
+// Real download API (P5): forwards to the host DownloadService when the
+// plugin's manifest grants the "network" capability; without the grant
+// every method fails with PluginError::Capability (§B.4 capability gate —
+// the pre-P5 permanent stub is now CONDITIONAL, same loud-failure shape).
+class DownloadApiAdapter final : public QObject, public pet::IDownloadApi
+{
+    Q_OBJECT
+public:
+    DownloadApiAdapter(QString pluginId, bool networkGranted,
+                       DownloadService* service, QObject* parent);
+
+    pet::JobId start(const pet::DownloadRequest& request,
+                     pet::DownloadListener* listener) override;
+    void cancel(pet::JobId job) override;
+    pet::PluginError installArchive(pet::JobId job, const pet::InstallSpec& spec) override;
+
+private:
+    QString m_pluginId;
+    bool m_networkGranted = false;
+    DownloadService* m_service = nullptr; // null in degraded wiring → stub semantics
 };
 
 // UI API: page registration (boot window enforced by PluginPageModel) +
@@ -73,10 +100,16 @@ class PluginContextImpl : public QObject, public pet::IPluginContext
 public:
     // All pointers are host-owned and outlive the context. configRoot is
     // ConfigDir::configDir(); the per-plugin dir is created on demand.
+    // capabilities is the plugin's manifest whitelist (gates downloadApi);
+    // voicePackRefresh is the host's P5 seam into VoicePackController::rescan.
     PluginContextImpl(const QString& pluginId, InstanceManager* instanceManager,
                       PluginPageModel* pageModel,
                       NotificationStreamController* stream,
-                      const QString& configRoot, QObject* parent);
+                      const QString& configRoot,
+                      DownloadService* downloadService,
+                      const QStringList& capabilities,
+                      std::function<void()> voicePackRefresh,
+                      QObject* parent);
 
     // pet::IPluginContext
     pet::IInstanceApi& instanceApi() override { return m_instanceApi; }
@@ -92,7 +125,7 @@ private:
     InstanceApiImpl m_instanceApi;
     UiApiImpl m_uiApi;
     VoicePackApiImpl m_voicePackApi;
-    DownloadApiStub m_downloadApi; // P5: capability-gated real service
+    DownloadApiAdapter m_downloadApi;
 };
 
 } // namespace core

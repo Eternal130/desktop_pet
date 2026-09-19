@@ -18,6 +18,7 @@
 #include "core/EnvironmentChecker.hpp"
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
+#include "core/DownloadService.hpp"
 #include "core/PanelConfigController.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginManager.hpp"
@@ -240,6 +241,18 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
         [this](const QString& pluginId) {
             return m_pluginManager->enabledAtStart(pluginId);
         });
+    // P5 (§B.4 sentinel → refresh chain): a finished pack install re-scans
+    // the pack list (VoicePacks page + plugin voicePackApi observers), and
+    // the plugin-side refreshScan() reaches the same controller.
+    m_app.pluginHost()->setVoicePackRefresh(
+        [this]() { m_voicePackController->rescan(); });
+    QObject::connect(m_app.downloadService(), &core::DownloadService::packInstalled,
+                     m_voicePackController,
+                     [this](const QString& packName) {
+                         LOG_INFO("voice packs re-scanned after install of '{}'",
+                                  packName.toStdString());
+                         m_voicePackController->rescan();
+                     });
     m_engine.rootContext()->setContextProperty("pluginPages",
                                                m_pluginPageModel);
     m_engine.rootContext()->setContextProperty("pluginManager",

@@ -52,6 +52,25 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spdlog)
 
+# miniz (P5 §B.4): zip reading/writing for the plugin install pipeline.
+# Design doc named Qt's private QZipReader, but the private headers are not
+# shipped by the Qt distributions this tree builds against (verified: no
+# qzipreader_p.h on the Linux CI host; qt6-base-private-dev absent). miniz
+# is the drop-in replacement behind the same ZipArchive isolation TU —
+# swapping back to QZipReader later is a one-file change (see
+# src/core/ZipArchive.cpp's replaceability note).
+# miniz 3.0.2 predates CMake's <3.5 compatibility removal; the policy knob
+# is the documented escape hatch (upstream master fixes it; unpin then).
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+FetchContent_Declare(
+    miniz
+    GIT_REPOSITORY https://github.com/richgel999/miniz.git
+    GIT_TAG 3.0.2
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(miniz)
+unset(CMAKE_POLICY_VERSION_MINIMUM)
+
 # ── P2c target layout (docs/refactor/plugin-architecture-and-cmake-migration.md
 # §B.1) ─────────────────────────────────────────────────────────────────────
 # pet_panel_api  INTERFACE — plugin SDK scaffolding (headers land in P4)
@@ -302,6 +321,12 @@ qt_add_library(pet_panel_core STATIC
     # factory is the injectable test seam for offline/error paths).
     src/core/DownloadService.cpp
     src/core/DownloadService.hpp
+    # P5 commit 2: install pipeline (zip-slip-guarded archive → temp dir →
+    # atomic per-file writes → VoicePacks move) + the zip MECHANISM
+    # isolation TU (miniz-backed; see ZipArchive.cpp replaceability note).
+    src/core/DownloadServiceInstall.cpp
+    src/core/ZipArchive.cpp
+    src/core/ZipArchive.hpp
 )
 
 # Expose src/ so consumers (exe shell + 41 tests + future plugins) can write
@@ -340,6 +365,9 @@ target_link_libraries(pet_panel_core PUBLIC
     # spdlog headers and tests compile TUs that use LOG_*/CapturingSink
     # against them.
     spdlog::spdlog
+    # miniz PUBLIC (P5): ZipArchive isolates it in one TU, but the install
+    # tests link pet_panel_core and use mz_zip_writer for fixtures.
+    miniz
 )
 
 # Force the spdlog *active* macros (SPDLOG_DEBUG/INFO/... which LOG_* wrap) to

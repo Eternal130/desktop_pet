@@ -1,17 +1,17 @@
 #pragma once
 
-// Capability stubs (P4, §B.4 stub pattern) — the pre-P5 bodies behind
+// Capability stubs (§B.4 stub pattern) — the no-capability bodies behind
 // IPluginContext::downloadApi() / voicePackApi().
 //
 // DownloadApiStub: EVERY method fails loudly with PluginError::Capability
-// — the honest "not implemented yet / not granted" answer. No silent
-// no-ops: a plugin that tries to download before P5 gets a diagnosable
-// error surfaced through its own DownloadListener.
+// — the honest "capability not granted" answer. No silent no-ops: a
+// plugin that tries to download without the "network" capability gets a
+// diagnosable error surfaced through its own DownloadListener.
 //
 // VoicePackApiImpl: thin real read-only view (scan via VoicePackScanner +
-// PathResolve default renderer dir). refreshScan is host-side P5 wiring
-// for now: logged, and listPacks() reflects the current directory state
-// on the next call.
+// PathResolve default renderer dir). refreshScan() triggers the host
+// rescan seam; listPacks() reflects the current directory state on the
+// next call.
 
 #include <QObject>
 #include <QString>

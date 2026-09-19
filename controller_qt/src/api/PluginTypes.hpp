@@ -72,8 +72,10 @@ struct PackInfo {
 };
 
 // IDownloadApi::start() argument. All fields are host-validated before any
-// byte is fetched: url must be https, expectedSha256 (when non-empty) must
-// be a 64-char lowercase hex string, destName must be a single path segment.
+// byte is fetched: url must be https:// or file:// (local mirrors / offline
+// installs — same convention as the host's own CUBISM_SDK_URL override),
+// expectedSha256 (when non-empty) must be 64 hex chars (case-insensitive,
+// normalized by the host), destName must be a single path segment.
 struct DownloadRequest {
     QString url;
     QString expectedSha256;

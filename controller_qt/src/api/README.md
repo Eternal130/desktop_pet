@@ -12,7 +12,7 @@
 | `IPluginContext.hpp` | 宿主服务面：instanceApi / voicePackApi / uiApi / downloadApi / pluginConfigDir / log |
 | `IInstanceApi.hpp` | 只读实例花名册 + `IRosterObserver` 纯虚订阅（**禁 std::function**） |
 | `IVoicePackApi.hpp` | 语音包发现（listPacks / refreshScan / installPath） |
-| `IDownloadApi.hpp` | 宿主下载咽喉点（start / cancel / installArchive + DownloadListener 纯虚）；P5 实装，P4 期间为 capability stub |
+| `IDownloadApi.hpp` | 宿主下载咽喉点（start / cancel / installArchive + DownloadListener 纯虚回调）；manifest 未授 `network` capability 时为 stub（§B.4） |
 | `IUiApi.hpp` | 页面注册 + 气泡通知；**无 unregisterPage/页面生命周期（刻意 YAGNI，防 P6a 重议）** |
 
 ## ABI 纪律（review 强制；§B.3）
@@ -26,8 +26,16 @@
    `virtual ~I() = default;`（无逻辑、阶段 1 无跨模块符号；阶段 2 前在 P6a 复审
    所有权/删除语义）。
 
-vtable 稳定来自"不改/不重排虚函数声明"——新增方法只追加到尾部，且必须升
-`kApiMinor`。
+vtable 稳定来自"不改/不重排虚函数声明"。冻结后变更规则（双轨）:
+
+- **通用**: 一切变更升版本；新增枚举值（底类型已固定为 `unsigned int`，加值
+  不破坏布局）与全新接口/全新 PluginTypes 类型 = 加法，升 `kApiMinor`；iid
+  后缀跟随 `kApiMajor`（major bump → `org.desktop-pet.PanelPlugin/2.0` 新
+  iid，旧插件被 api_version 门拒绝）。
+- **阶段 1**（同仓同建）: 可向既有接口尾部追加虚方法（升 minor，全量重编消化）。
+- **阶段 2**（二进制插件）: 既有接口 vtable 与 PluginTypes 结构体**冻结**——
+  追加虚方法/加字段 = major 破坏；扩展一律走"新接口（新 iid）经
+  IPluginContext 新 accessor 暴露"或新类型。
 
 ### ABI 门控（§A.2）
 
@@ -77,6 +85,11 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
   exe，CMake 生成工厂表（`static_plugins.cpp`），同一次编译，ABI 风险为零。
 - **阶段 2（开启判据见 §A.3 四条）**: 独立 dll + QPluginLoader + abi 门控。接口
   已按阶段 2 标准设计，届时"换加载器"而非"改接口"。
+- **阶段 2 所有权前提（P6a 评审结论）**: 当前"宿主 create / 宿主 delete"（含
+  defaulted 虚析构豁免）仅对阶段 1 同二进制成立；开启阶段 2 的附加判据（第 5
+  条）= 工厂接口增加 `destroy(IPanelPlugin*)` 并由 PluginHost 切换为插件模块
+  内销毁（跨模块 delete 是 UB）。listener/observer 归插件所有、宿主只调不删
+  的契约两阶段通用。
 
 ## 模板
 

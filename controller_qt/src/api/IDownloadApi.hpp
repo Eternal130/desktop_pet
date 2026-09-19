@@ -7,10 +7,10 @@
 // SEPARATE steps by design: "download finished" ≠ "install now" — the user
 // confirmation sits between them.
 //
-// P4 status: interfaces only. The real DownloadService lands in P5; until
-// then the host hands plugins a capability stub whose methods return
-// PluginError::Capability (see §B.4 stub pattern — loud failure, no silent
-// no-ops).
+// Capability gating (§B.4): when a plugin's manifest does not grant the
+// "network" capability, the host hands it a stub whose methods return
+// PluginError::Capability — loud failure, no silent no-ops. Plugins WITH
+// the grant get the real host DownloadService behind this same interface.
 
 #include "api/PluginTypes.hpp"
 

@@ -112,6 +112,16 @@ pet::PluginError UiApiImpl::registerPage(const pet::PageDescriptor& page)
             return pet::PluginError::InvalidArgument;
         }
     }
+    // P6a (E-2): the IUiApi contract promises InvalidArgument for any
+    // non-qrc:/ qmlUrl — enforce it here so the error code matches the
+    // frozen header text (the page model would reject it too, but with
+    // the less diagnosable Generic).
+    if (!effective.qmlUrl.startsWith(QStringLiteral("qrc:/"))) {
+        LOG_WARN("[plugin-api] registerPage from '{}' with non-qrc qmlUrl "
+                 "'{}' — rejected",
+                 m_pluginId.toStdString(), effective.qmlUrl.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
     return m_pageModel->addPage(m_pluginId, effective)
                ? pet::PluginError::Ok
                : pet::PluginError::Generic;

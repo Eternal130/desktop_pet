@@ -100,20 +100,16 @@ jobs:
       - name: Portable zip (build/bin minus test artifacts)
         run: |
           mkdir -p dist stage
-          (cd build/bin && find . -type f \
-              ! -name 'renderer_tests.exe' \
-              ! -name 'desktop-pet-controller-qt-poc.exe' \
-              ! -name '*.pdb' ! -name '*.lib' \
-              -print0 | while IFS= read -r -d '' f; do
-                  mkdir -p "stage/$(dirname "$f")"
-                  cp "$f" "stage/$f"
-              done)
-          # 7z instead of PowerShell Compress-Archive: the PS invocation from
-          # git-bash resolved its destination against a different working
-          # directory and "succeeded" without ever creating dist/*.zip
-          # (observed 2026-09: upload step found only 1 file in dist/).
-          # NOTE: './*' not '.' — a bare '.' matches nothing and yields a
-          # 22-byte empty archive.
+          # Stage via a tar pipe. NOTE: the original per-file loop ran the
+          # `cp` INSIDE the (cd build/bin && ...) subshell, so it staged into
+          # build/bin/stage/ — the workspace-root stage/ stayed empty and both
+          # Compress-Archive and 7z honestly archived nothing. Keeping both
+          # ends of the pipe at distinct cwds makes the paths unambiguous.
+          (cd build/bin && tar cf - \
+              --exclude=renderer_tests.exe \
+              --exclude=desktop-pet-controller-qt-poc.exe \
+              --exclude='*.pdb' --exclude='*.lib' \
+              .) | (cd stage && tar xf -)
           (cd stage && 7z a "../dist/DesktopPet-$TAG-windows-x64.zip" ./*)
           zip_size=$(wc -c < "dist/DesktopPet-$TAG-windows-x64.zip")
           if [ "$zip_size" -lt 1000000 ]; then

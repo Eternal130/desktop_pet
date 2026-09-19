@@ -21,6 +21,7 @@
 #include "logging/Logging.hpp"
 
 #include "app/ScreenshotRunner.hpp"
+#include "app/PanelApplication.hpp"
 #include "core/ConfigDir.hpp"
 #include "core/DatabaseManager.hpp"
 #include "core/AssetManager.hpp"
@@ -132,86 +133,47 @@ int main(int argc, char *argv[])
     // utility above; WARN-only on failure.
     installDefaultFontWithCjk();
 
-    // ── SQLite config backend ─────────────────────────────────────────────
-    // ONE DatabaseManager owns <configDir>/app.db; every config consumer
-    // (PanelStateManager, InstanceConfigManager, AssetManager) shares it by
-    // reference. A failed open is non-fatal — the managers degrade to
-    // defaults / failed writes (never-throws contract).
-    DatabaseManager databaseManager;
-    if (!databaseManager.open(ConfigDir::configDir() +
-                              QStringLiteral("app.db"))) {
-        LOG_WARN("main: app.db open failed — config persistence degraded");
-    }
+    // ── Application service tree (P3/M2) ─────────────────────────────────
+    // DatabaseManager / PanelStateManager / WsServer / PendingRequests /
+    // InstanceManager and all their wiring now live in app/PanelApplication
+    // — a QObject parent tree (heap + parent) that replaces the stack-reverse
+    // discipline for these five; construction and connect order are the
+    // original main() order. Declared here BEFORE every UI bridge and the
+    // engine, so by stack-reverse the whole tree is destroyed after the QML
+    // context (the cross-subtree invariant — the §B.2 v2 annotation in
+    // PanelApplication.cpp covers what holds inside the tree). Context-
+    // property registration stays in main until M3; the aliases below are
+    // the seam.
+    PanelApplication panelApp;
+    DatabaseManager& databaseManager = panelApp.databaseManager();
+    WsServer* const wsServer = panelApp.wsServer();
+    PendingRequests* const pendingRequests = panelApp.pendingRequests();
+    InstanceManager* const instanceManager = panelApp.instanceManager();
+    const PanelConfig panelCfg = panelApp.panelConfig();
 
-    // Load the persisted panel-level config (T28 window-state restore) so the
-    // QML window can restore its initial position/size + theme on startup.
-    // SQLite backend (panel_config kv); empty db → defaults.
-    PanelStateManager psm;
-    psm.setDatabase(&databaseManager);
-    const PanelConfig panelCfg = psm.load();
-    LOG_INFO("Restored panel config: panelX={} panelY={} {}x{} theme=\"{}\"",
-             panelCfg.panelX, panelCfg.panelY,
-             panelCfg.panelWidth, panelCfg.panelHeight,
-             panelCfg.theme.toStdString());
-
-    // ── Network stack (Phase 5, todo 1) ───────────────────────────────────
-    // Declared BEFORE QQmlApplicationEngine so they outlive it during stack
-    // unwind (reverse-destruction order: engine destroyed first, then these).
-    //
-    // WsServer: the WS server socket (renderer connects here on 127.0.0.1:9001).
-    // PendingRequests: GLOBAL id→result table (M2 resolution — instance-agnostic;
-    // response id matching must work across all instances, so this is the ONLY
-    // network object shared globally; each InstanceSession owns its own
-    // MessageDispatcher + EventRegistry).
-    // StartupSalvo + ProcessManager: Phase-5 single-instance holders wired here
-    // for sender injection; todo 2 (InstanceSession) owns them per-instance.
-    // These globals are now redundant (InstanceSession owns its own), but they
-    // are harmless and NetworkWiringTest asserts the sender wiring, so they
-    // stay until a dedicated cleanup task.
-    WsServer wsServer;
-    PendingRequests pendingRequests;
+    // StartupSalvo + ProcessManager: Phase-5 single-instance holders wired
+    // here for sender injection; todo 2 (InstanceSession) owns them
+    // per-instance. These globals are now redundant (InstanceSession owns
+    // its own), but they are harmless and NetworkWiringTest asserts the
+    // sender wiring, so they stay until a dedicated cleanup task. (M2 note:
+    // they used to be constructed between PendingRequests and the roster;
+    // with the service tree in one ctor they now construct after it — inert
+    // reorder, nothing between the old points observes them and no renderer
+    // connects until the event loop runs.)
     StartupSalvo startupSalvo;
     ProcessManager processManager;
 
     // Wire sender-injection seams → WsServer::sendText(instanceId, ...). These
     // legacy globals always targeted instance_id 0 (Phase 0-4 single-instance
     // assumption); InstanceSession owns its own per-instance senders below.
-    startupSalvo.setCommandSender([&wsServer](const QString& json) {
-        wsServer.sendText(0, json);
+    startupSalvo.setCommandSender([wsServer](const QString& json) {
+        wsServer->sendText(0, json);
     });
-    processManager.setShutdownSender([&wsServer]() {
+    processManager.setShutdownSender([wsServer]() {
         const QByteArray json =
             serialize(Protocol::buildShutdown()).toJson(QJsonDocument::Compact);
-        wsServer.sendText(0, QString::fromUtf8(json));
+        wsServer->sendText(0, QString::fromUtf8(json));
     });
-
-    // ── Instance roster (Phase 5, todo 7) ────────────────────────────────
-    // InstanceManager owns every InstanceSession, loads existing instances
-    // from panel.json instanceIds order on construction (m4 fix), and persists
-    // roster mutations via the injected savePanel callback (m5 fix — wired to
-    // PanelStateManager::save so create/delete reach panel.json immediately).
-    //
-    // Stack-ordering: declared AFTER psm (captures &psm) and AFTER wsServer/
-    // pendingRequests (captured by reference), but BEFORE the engine so it
-    // outlives the QML context. parent=nullptr — InstanceManager owns its
-    // InstanceSessions explicitly via qDeleteAll (InstanceManager.hpp), so a
-    // Qt parent on the manager itself would risk double-delete during stack
-    // unwind. The Session objects inside use parent=nullptr too (same reason).
-    InstanceManager instanceManager(
-        ConfigDir::configDir(), wsServer, pendingRequests,
-        [&psm](const PanelConfig& cfg) { psm.save(cfg); },
-        nullptr);
-    instanceManager.setDatabase(&databaseManager);
-
-    // WsServer::messageReceived(int instanceId, env) → InstanceManager::route.
-    // Phase 5 todo 11: per-instanceId demux — the WsServer carries the parsed
-    // ?instance_id=N on the signal so route() forwards to the right session
-    // directly (no Phase-5 single-instance row-0 hack). InstanceManager::route
-    // does a linear scan by instanceId() (sidebar-sized N, O(N) is fine).
-    QObject::connect(&wsServer, &WsServer::messageReceived, &instanceManager,
-                     [&instanceManager](int instanceId, const Envelope& env) {
-                         instanceManager.route(instanceId, env);
-                     });
 
     // ── TrayManager (Wave 7 todo 13) ─────────────────────────────────────
     // QSystemTrayIcon wrapper. QtGui-only (QSystemTrayIcon lives in QtGui, so
@@ -241,7 +203,7 @@ int main(int argc, char *argv[])
     // DatabaseManager; exposed as the "assetManager" context property for
     // AssetPage / SettingsPage / InstanceDetailPage.
     AssetManager assetManager(databaseManager, ConfigDir::configDir());
-    instanceManager.setAssetRefDetacher(
+    instanceManager->setAssetRefDetacher(
         [&assetManager](const QString& uuid) {
             assetManager.detachInstanceIconRefs(uuid);
         });
@@ -257,7 +219,7 @@ int main(int argc, char *argv[])
     // voice-pack behavior dialogue is the ONLY bubble text source (design
     // revision: no dialogue-pack system).
     NotificationStreamController notificationStream;
-    instanceManager.setDialogueSink(
+    instanceManager->setDialogueSink(
         [&notificationStream](const QString& instanceId, const QString& name,
                               const QString& avatar, const QString& text,
                               int durationMs) {
@@ -305,8 +267,8 @@ int main(int argc, char *argv[])
     // PendingRequests is shared (M2); StartupSalvo + ProcessManager stay
     // internal to C++ (no QML binding needed yet — todo 2 may expose them via
     // InstanceSession).
-    engine.rootContext()->setContextProperty("wsServer", &wsServer);
-    engine.rootContext()->setContextProperty("pendingRequests", &pendingRequests);
+    engine.rootContext()->setContextProperty("wsServer", wsServer);
+    engine.rootContext()->setContextProperty("pendingRequests", pendingRequests);
 
     // Instance roster context property (Phase 5, todo 7). Sidebar.qml binds
     // `model: instanceManager` directly to the QAbstractListModel; the Add /
@@ -314,7 +276,7 @@ int main(int argc, char *argv[])
     // deleteInstance. Exposed AFTER the engine so the same stack-ordering
     // discipline as envChecker / windowStateSaver applies (engine destroyed
     // first, then the model during stack unwind — the model outlives QML).
-    engine.rootContext()->setContextProperty("instanceManager", &instanceManager);
+    engine.rootContext()->setContextProperty("instanceManager", instanceManager);
 
     // TrayManager context property (Wave 7 todo 13). Main.qml's Connections
     // block catches requestContextMenu / visibilityToggled / showSettings /
@@ -344,7 +306,7 @@ int main(int argc, char *argv[])
     // + MetaMkoParser; todo 21 mount wiring reaches the per-instance
     // MountedBehaviorEngine via the InstanceManager.
     VoicePackController voicePackController;
-    voicePackController.setInstanceManager(&instanceManager);
+    voicePackController.setInstanceManager(instanceManager);
     engine.rootContext()->setContextProperty("voicePacks", &voicePackController);
 
     // AssetManager context property (资源管理 page + Settings logo section +
@@ -378,7 +340,7 @@ int main(int argc, char *argv[])
     // readiness, not a conflict (EnvironmentChecker override — see .hpp).
     // A genuine listen failure (another process owns 9001) leaves the
     // override false so the probe still reports the conflict.
-    envChecker.setOwnServerListening(wsServer.listen(kWsPort));
+    envChecker.setOwnServerListening(wsServer->listen(kWsPort));
     if (!envChecker.portBindable()) {
         LOG_WARN("WsServer failed to listen on port {} — panel will open "
                   "without network (todo 11 adds error handling)", kWsPort);
@@ -420,9 +382,9 @@ int main(int argc, char *argv[])
     // flag is set once the QML UI is up — the renderer windows appear
     // alongside the panel. Queued via QTimer::singleShot(0) so the first
     // frame paints before the (blocking, process-spawning) start() calls run.
-    QTimer::singleShot(0, [&instanceManager]() {
-        for (int i = 0; i < instanceManager.rowCount(); ++i) {
-            InstanceSession* s = instanceManager.instanceAt(i);
+    QTimer::singleShot(0, [instanceManager]() {
+        for (int i = 0; i < instanceManager->rowCount(); ++i) {
+            InstanceSession* s = instanceManager->instanceAt(i);
             if (s != nullptr && s->autoStartEnabled()) {
                 LOG_INFO("autoStart: launching instance \"{}\"",
                          s->label().toStdString());

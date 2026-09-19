@@ -64,6 +64,18 @@ Window {
         }[name] ?? welcomePageComp
     }
 
+    // Dev/QA seam (ScreenshotRunner): scroll SettingsPage's anchor column
+    // to a section ("plugins" etc.) before/while it becomes current. The
+    // pending value is consumed at page creation via settingsPageComp's
+    // initialAnchor binding; calling while settings is already current
+    // scrolls immediately. Normal runs never touch it (default "").
+    property string settingsInitialAnchor: ""
+    function devSetSettingsAnchor(section) {
+        root.settingsInitialAnchor = section
+        if (root.currentPage === "settings" && pageLoader.item)
+            pageLoader.item._scrollTo(section)
+    }
+
     function toggleVisibility() {
         if (root.visible) root.hide()
         else { root.show(); root.raise(); root.requestActivate() }
@@ -551,7 +563,7 @@ Window {
             onRequestSwitchPage: (name) => root.switchPage(name)
         }
     }
-    Component { id: settingsPageComp;       SettingsPage {} }
+    Component { id: settingsPageComp;       SettingsPage { initialAnchor: root.settingsInitialAnchor } }
 
     // ── Dialogs ─────────────────────────────────────────────────────────
     AppDialog {

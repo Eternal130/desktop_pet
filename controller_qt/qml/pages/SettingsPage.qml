@@ -22,6 +22,12 @@ Rectangle {
     }
     property string activeSection: "behavior"
 
+    // Dev/QA seam (set by Main.qml on behalf of ScreenshotRunner): scroll
+    // to a section on creation so below-the-fold cards (e.g. the
+    // plugin-management card) can be captured. Empty for normal runs.
+    property string initialAnchor: ""
+    Component.onCompleted: if (initialAnchor !== "") _scrollTo(initialAnchor)
+
     Row {
         anchors.fill: parent
         anchors.leftMargin: Theme.spacePage

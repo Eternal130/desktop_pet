@@ -28,7 +28,8 @@ void runScreenshotQa(QApplication& app, QQmlApplicationEngine& engine,
 {
     // ── Screenshot mode (visual QA, 方案3) ─────────────────────────────────
     // Usage: controller --screenshot [--out DIR] [--pages welcome,monitor,settings]
-    // [--delay MS]. Waits for the window to render, then for each requested
+    // [--delay MS] [--settings-anchor SECTION]. Waits for the window to render,
+    // then for each requested
     // page: calls root.switchPage(name) via QMetaObject::invokeMethod, waits
     // --delay ms (default 800) for bindings/animations to settle, grabs the
     // window via QQuickWindow::grabWindow() and saves
@@ -41,6 +42,7 @@ void runScreenshotQa(QApplication& app, QQmlApplicationEngine& engine,
     QStringList pages = {QStringLiteral("welcome"), QStringLiteral("monitor"),
                          QStringLiteral("settings")};
     int delayMs = 800;
+    QString settingsAnchor;   // dev/QA: scroll target for the settings page
     for (int i = 1; i < argc; ++i) {
         const QString arg = QString::fromUtf8(argv[i]);
         if (arg == QStringLiteral("--screenshot")) screenshotMode = true;
@@ -54,6 +56,8 @@ void runScreenshotQa(QApplication& app, QQmlApplicationEngine& engine,
                                                        Qt::SkipEmptyParts);
         else if (arg == QStringLiteral("--delay") && i + 1 < argc)
             delayMs = QString::fromUtf8(argv[++i]).toInt();
+        else if (arg == QStringLiteral("--settings-anchor") && i + 1 < argc)
+            settingsAnchor = QString::fromUtf8(argv[++i]);
     }
     // Bubble visual-QA mode: push a bubble, grab the FULL SCREEN (the
     // BubbleStreamWindow is a separate native window — the main window's
@@ -117,6 +121,7 @@ void runScreenshotQa(QApplication& app, QQmlApplicationEngine& engine,
         runner->setProperty("idx", 0);
         runner->setProperty("awaitingGrab", false);
         runner->setProperty("failed", false);
+        runner->setProperty("settingsAnchor", settingsAnchor);
 
         auto* ticker = new QTimer(runner);
         ticker->setInterval(delayMs);
@@ -156,6 +161,16 @@ void runScreenshotQa(QApplication& app, QQmlApplicationEngine& engine,
                     QApplication::quit();
                 }
             } else if (idx < pages.size()) {
+                // Dev/QA seam: anchor-scroll the settings page right before
+                // it loads (Main.qml devSetSettingsAnchor) so below-the-fold
+                // cards (plugin management) can be captured.
+                const QString anchor =
+                    runner->property("settingsAnchor").toString();
+                if (pages.at(idx) == QStringLiteral("settings")
+                        && !anchor.isEmpty()) {
+                    QMetaObject::invokeMethod(window, "devSetSettingsAnchor",
+                                              Q_ARG(QVariant, anchor));
+                }
                 QMetaObject::invokeMethod(window, "switchPage",
                                           Q_ARG(QVariant, pages.at(idx)));
                 runner->setProperty("awaitingGrab", true);

@@ -343,6 +343,21 @@ qml/components/BubbleCard.qml
 # table (no --modules flag needed).
 pet_deploy_qt_app(desktop-pet-controller-qt)
 
+# CJK font deployment (tofu guard, pairs with installDefaultFontWithCjk() in
+# src/main.cpp): the font SINGLE SOURCE OF TRUTH lives in
+# renderer/resources/fonts (OFL-licensed). The controller deploys its own copy
+# next to its exe — deliberately NOT relying on the renderer's POST_BUILD, so
+# build/bin/fonts is populated regardless of which component builds first (no
+# cross-component build-order coupling). Runs on every platform: a missing
+# system CJK font is not Windows-specific.
+add_custom_command(TARGET desktop-pet-controller-qt POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:desktop-pet-controller-qt>/fonts"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/../renderer/resources/fonts/NotoSansCJKsc-Regular.otf"
+        "$<TARGET_FILE_DIR:desktop-pet-controller-qt>/fonts/NotoSansCJKsc-Regular.otf"
+    COMMENT "Deploying Noto Sans CJK SC next to the controller exe")
+
 # ── Phase 0 PoC (task T6) ───────────────────────────────────────────────────
 # A SEPARATE console executable with its own main(). It drives the real C++
 # renderer through the full WS round-trip (ready → load_model → model_loaded →

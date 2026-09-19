@@ -3,6 +3,11 @@ build/
 renderer/build/
 compile_commands.json
 
+# Per-machine CMake preset overrides (C.2: QT_MINGW_ROOT env is the primary
+# override; CMakeUserPresets.json inherits-based override is the fallback)
+controller_qt/CMakeUserPresets.json
+renderer/CMakeUserPresets.json
+
 # Caches
 .cache/
 renderer/.cache/

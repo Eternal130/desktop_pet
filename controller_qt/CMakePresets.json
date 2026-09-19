@@ -1,0 +1,182 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "qt-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../build/controller_qt"
+    },
+    {
+      "name": "win-qt-release",
+      "displayName": "Windows / Qt MinGW 13.1.0 / Release",
+      "inherits": "qt-base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "toolchainFile": "${sourceDir}/cmake/qt-mingw-qt.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "win-qt-debug",
+      "displayName": "Windows / Qt MinGW 13.1.0 / Debug",
+      "inherits": "qt-base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "toolchainFile": "${sourceDir}/cmake/qt-mingw-qt.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-qt-release",
+      "displayName": "Linux / Qt / Release",
+      "inherits": "qt-base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-qt-debug",
+      "displayName": "Linux / Qt / Debug",
+      "inherits": "qt-base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "win-qt-release",
+      "configurePreset": "win-qt-release"
+    },
+    {
+      "name": "win-qt-debug",
+      "configurePreset": "win-qt-debug"
+    },
+    {
+      "name": "linux-qt-release",
+      "configurePreset": "linux-qt-release"
+    },
+    {
+      "name": "linux-qt-debug",
+      "configurePreset": "linux-qt-debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "win-qt-release",
+      "configurePreset": "win-qt-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "win-qt-debug",
+      "configurePreset": "win-qt-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "linux-qt-release",
+      "configurePreset": "linux-qt-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "linux-qt-debug",
+      "configurePreset": "linux-qt-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "win-release",
+      "displayName": "Windows Qt controller: configure + build + test (Release)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "win-qt-release"
+        },
+        {
+          "type": "build",
+          "name": "win-qt-release"
+        },
+        {
+          "type": "test",
+          "name": "win-qt-release"
+        }
+      ]
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux Qt controller: configure + build + test (Release)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "linux-qt-release"
+        },
+        {
+          "type": "build",
+          "name": "linux-qt-release"
+        },
+        {
+          "type": "test",
+          "name": "linux-qt-release"
+        }
+      ]
+    },
+    {
+      "name": "test-only",
+      "displayName": "Tests only (linux-qt-release); configure step is required by workflow syntax and is a no-op when already configured",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "linux-qt-release"
+        },
+        {
+          "type": "test",
+          "name": "linux-qt-release"
+        }
+      ]
+    }
+  ]
+}

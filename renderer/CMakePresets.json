@@ -1,0 +1,156 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "renderer-base",
+      "hidden": true,
+      "description": "Shared defaults: Ninja generator, Release build type, and the CMake 4 policy floor (CMAKE_POLICY_VERSION_MINIMUM=3.5) that build.py passed on the command line for the old bundled subprojects.",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
+      }
+    },
+    {
+      "name": "win-gl-release",
+      "inherits": "renderer-base",
+      "displayName": "Windows / MinGW / OpenGL (Release)",
+      "description": "System MinGW pinned via cmake/toolchain-mingw-renderer.cmake (absolute paths replace build.py's PATH filtering). Generator overridden to MinGW Makefiles to match build.py L309 and the toolchain's mingw32-make pin.",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/../build/renderer_mingw",
+      "toolchainFile": "${sourceDir}/cmake/toolchain-mingw-renderer.cmake",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "win-vk-release",
+      "inherits": "win-gl-release",
+      "displayName": "Windows / MinGW / Vulkan (Release)",
+      "description": "win-gl-release configuration plus USE_VULKAN=ON.",
+      "binaryDir": "${sourceDir}/../build/renderer_vulkan_mingw",
+      "cacheVariables": {
+        "USE_VULKAN": "ON"
+      }
+    },
+    {
+      "name": "linux-gl-release",
+      "inherits": "renderer-base",
+      "displayName": "Linux / OpenGL (Release)",
+      "description": "System compiler and Ninja, no toolchain file.",
+      "binaryDir": "${sourceDir}/../build/renderer_build",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "linux-vk-release",
+      "inherits": "linux-gl-release",
+      "displayName": "Linux / Vulkan (Release)",
+      "description": "linux-gl-release configuration plus USE_VULKAN=ON.",
+      "binaryDir": "${sourceDir}/../build/renderer_vulkan_build",
+      "cacheVariables": {
+        "USE_VULKAN": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "win-gl-release",
+      "configurePreset": "win-gl-release",
+      "jobs": 8
+    },
+    {
+      "name": "win-vk-release",
+      "configurePreset": "win-vk-release",
+      "jobs": 8
+    },
+    {
+      "name": "linux-gl-release",
+      "configurePreset": "linux-gl-release"
+    },
+    {
+      "name": "linux-vk-release",
+      "configurePreset": "linux-vk-release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "win-gl-release",
+      "configurePreset": "win-gl-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "win-vk-release",
+      "configurePreset": "win-vk-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "linux-gl-release",
+      "configurePreset": "linux-gl-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "linux-vk-release",
+      "configurePreset": "linux-vk-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "win-gl-release",
+      "description": "Full chain (configure, build, test) - replaces 'python build.py renderer' on Windows.",
+      "steps": [
+        { "type": "configure", "name": "win-gl-release" },
+        { "type": "build", "name": "win-gl-release" },
+        { "type": "test", "name": "win-gl-release" }
+      ]
+    },
+    {
+      "name": "linux-gl-release",
+      "description": "Full chain (configure, build, test) - replaces 'python build.py renderer' on Linux.",
+      "steps": [
+        { "type": "configure", "name": "linux-gl-release" },
+        { "type": "build", "name": "linux-gl-release" },
+        { "type": "test", "name": "linux-gl-release" }
+      ]
+    },
+    {
+      "name": "test-only",
+      "description": "Run ctest without rebuilding. CMake requires every workflow to begin with a configure step; on an already-configured tree that step is a fast no-op. On Windows use 'ctest --preset win-gl-release' instead.",
+      "steps": [
+        { "type": "configure", "name": "linux-gl-release" },
+        { "type": "test", "name": "linux-gl-release" }
+      ]
+    }
+  ]
+}

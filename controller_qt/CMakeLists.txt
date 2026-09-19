@@ -378,6 +378,7 @@ qt_add_executable(desktop-pet-controller-qt
     src/app/ScreenshotRunner.cpp
     src/app/PanelApplication.cpp
     src/app/PanelUiBoot.cpp
+    src/app/AppFontGuard.cpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES

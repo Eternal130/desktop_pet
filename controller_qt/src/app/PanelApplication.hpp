@@ -9,6 +9,8 @@ class PanelStateManager;
 class WsServer;
 class PendingRequests;
 class InstanceManager;
+class StartupSalvo;
+class ProcessManager;
 
 // PanelApplication — the application service tree carved out of main()
 // (P3/M2, docs/refactor §B.2): DatabaseManager, PanelStateManager, WsServer,
@@ -46,6 +48,18 @@ public:
     // context properties.
     const PanelConfig& panelConfig() const { return m_panelConfig; }
 
+    // Legacy Phase-5 instance-0 holders (StartupSalvo + ProcessManager) and
+    // their sender-injection wiring, moved from main() (M4). Call exactly
+    // once, right after construction — same position the old main() stack
+    // block sat in relative to the five services.
+    void wireLegacyInstanceZeroSenders();
+
+    // Auto-start salvo (per-instance config.autoStart), moved from main()
+    // (M4). Registers a singleShot(0) — call after engine.loadFromModule so
+    // the first frame paints before the (blocking, process-spawning) start()
+    // calls run, exactly like the old inline block.
+    void launchAutoStartInstances();
+
 private:
     // Registration order = old main() declaration order; destruction runs
     // this list in reverse (see class comment for the assumption caveat).
@@ -54,5 +68,8 @@ private:
     WsServer* m_wsServer;
     PendingRequests* m_pendingRequests;
     InstanceManager* m_instanceManager;
+    // Registered last (wireLegacyInstanceZeroSenders) → destroyed first.
+    StartupSalvo* m_startupSalvo = nullptr;
+    ProcessManager* m_processManager = nullptr;
     PanelConfig m_panelConfig;
 };

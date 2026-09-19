@@ -1,14 +1,21 @@
 #include "app/PanelApplication.hpp"
 
+#include <QJsonDocument>
+#include <QTimer>
+
 #include <spdlog/spdlog.h>
 
 #include "core/ConfigDir.hpp"
 #include "core/DatabaseManager.hpp"
 #include "core/InstanceManager.hpp"
+#include "core/InstanceSession.hpp"
 #include "core/PanelStateManager.hpp"
+#include "core/ProcessManager.hpp"
+#include "core/StartupSalvo.hpp"
 #include "logging/Logging.hpp"
 #include "network/Envelope.hpp"
 #include "network/PendingRequests.hpp"
+#include "network/Protocol.hpp"
 #include "network/WsServer.hpp"
 
 // Moved from main() (P3/M2). Construction and connect order below are the
@@ -131,4 +138,56 @@ PendingRequests* PanelApplication::pendingRequests()
 InstanceManager* PanelApplication::instanceManager()
 {
     return m_instanceManager;
+}
+
+// Moved from main() (P3/M4). Construction + wiring statements are verbatim;
+// only the storage changed (main stack objects → heap children of this
+// PanelApplication). Registered AFTER the five services → destroyed FIRST
+// among this tree's children (registration-reverse, §B.2 v2 annotation in
+// the ctor), matching the old stack order where salvo/PM died before every
+// service.
+void PanelApplication::wireLegacyInstanceZeroSenders()
+{
+    // StartupSalvo + ProcessManager: Phase-5 single-instance holders wired
+    // here for sender injection; todo 2 (InstanceSession) owns them
+    // per-instance. These globals are now redundant (InstanceSession owns
+    // its own), but they are harmless and NetworkWiringTest asserts the
+    // sender wiring, so they stay until a dedicated cleanup task. (M2 note:
+    // they used to be constructed between PendingRequests and the roster;
+    // with the service tree in one ctor they now construct after it — inert
+    // reorder, nothing between the old points observes them and no renderer
+    // connects until the event loop runs.)
+    m_startupSalvo = new StartupSalvo(this);
+    m_processManager = new ProcessManager(this);
+
+    // Wire sender-injection seams → WsServer::sendText(instanceId, ...). These
+    // legacy globals always targeted instance_id 0 (Phase 0-4 single-instance
+    // assumption); InstanceSession owns its own per-instance senders below.
+    m_startupSalvo->setCommandSender([this](const QString& json) {
+        m_wsServer->sendText(0, json);
+    });
+    m_processManager->setShutdownSender([this]() {
+        const QByteArray json =
+            serialize(Protocol::buildShutdown()).toJson(QJsonDocument::Compact);
+        m_wsServer->sendText(0, QString::fromUtf8(json));
+    });
+}
+
+// Moved from main() (P3/M4) verbatim.
+void PanelApplication::launchAutoStartInstances()
+{
+    // Auto-start (per-instance config.autoStart): launch every instance whose
+    // flag is set once the QML UI is up — the renderer windows appear
+    // alongside the panel. Queued via QTimer::singleShot(0) so the first
+    // frame paints before the (blocking, process-spawning) start() calls run.
+    QTimer::singleShot(0, [this]() {
+        for (int i = 0; i < m_instanceManager->rowCount(); ++i) {
+            InstanceSession* s = m_instanceManager->instanceAt(i);
+            if (s != nullptr && s->autoStartEnabled()) {
+                LOG_INFO("autoStart: launching instance \"{}\"",
+                         s->label().toStdString());
+                s->start();
+            }
+        }
+    });
 }

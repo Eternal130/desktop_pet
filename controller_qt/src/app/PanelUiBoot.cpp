@@ -8,6 +8,8 @@
 #include <QUrl>
 #include <QtQml/QtQml>
 
+#include <chrono>
+
 #include <spdlog/spdlog.h>
 
 #include "app/PanelApplication.hpp"
@@ -272,4 +274,16 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     // captured before QGuiApplication in main() and passed in; only the
     // registration moved.)
     m_engine.rootContext()->setContextProperty("coldStartT0Ms", coldStartT0Ms);
+
+    // T24: log the C++ side pre-load cost (everything between main() entry
+    // and the QML load call). The QML side logs the residual (loadFromModule
+    // cost + first-frame). Their sum is the wall-clock cold-start number.
+    // (M4: moved from main — this is the last statement before main calls
+    // loadFromModule, so the measured span is unchanged.)
+    {
+        const auto nowSinceEpoch = std::chrono::system_clock::now().time_since_epoch();
+        const qint64 nowMs = static_cast<qint64>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(nowSinceEpoch).count());
+        LOG_INFO("COLD_START_PRE_LOAD_MS={} t0={}", nowMs - coldStartT0Ms, coldStartT0Ms);
+    }
 }

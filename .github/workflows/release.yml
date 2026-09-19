@@ -112,7 +112,15 @@ jobs:
           # git-bash resolved its destination against a different working
           # directory and "succeeded" without ever creating dist/*.zip
           # (observed 2026-09: upload step found only 1 file in dist/).
-          (cd stage && 7z a "../dist/DesktopPet-$TAG-windows-x64.zip" .)
+          # NOTE: './*' not '.' — a bare '.' matches nothing and yields a
+          # 22-byte empty archive.
+          (cd stage && 7z a "../dist/DesktopPet-$TAG-windows-x64.zip" ./*)
+          zip_size=$(wc -c < "dist/DesktopPet-$TAG-windows-x64.zip")
+          if [ "$zip_size" -lt 1000000 ]; then
+            echo "portable zip is only ${zip_size} bytes — staging failed?" >&2
+            ls -laR stage | head -20 >&2
+            exit 1
+          fi
           ls -la dist/
 
       - name: Inno Setup installer

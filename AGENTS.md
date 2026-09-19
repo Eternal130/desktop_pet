@@ -62,7 +62,7 @@ desktop_pet/
 | `AutoLaunchManager` | C++ | `controller_qt/src/system/AutoLaunchManager.hpp` | Win `reg.exe` via QProcess / Linux `.desktop` (injectable suppliers for testing) |
 | `ResourceStatsCollector` | C++ | `controller_qt/src/system/ResourceStatsCollector.hpp` | Win `GetProcessTimes`+`GetProcessMemoryInfo` / Linux `/proc/self/*`; never-throws contract |
 | `MonitorDataModel` | C++ | `controller_qt/src/ui/MonitorDataModel.hpp` | Copy-on-write ring buffer (cap=60) + mergeController/mergeRenderer for QtCharts |
-| `VoicePackScanner` | C++ | `controller_qt/src/core/VoicePackScanner.hpp` | Discovers voice packs containing `meta.mko` (takes renderer BASE dir, appends `Resources/VoicePacks` internally) |
+| `VoicePackScanner` | C++ | `controller_qt/src/core/VoicePackScanner.hpp` | Discovers voice packs containing `meta.mko` (takes renderer BASE dir, appends `Resources/VoicePacks` internally). **Returns ABSOLUTE paths (not bare dir names)** — P4's listPacks assumed bare names and was caught by the P5 e2e gate |
 | `VoicePackController` | C++ | `controller_qt/src/ui/VoicePackController.hpp` | QML bridge (`voicePacks` ctx prop): pack discovery + metadata for VoicePackPage |
 | `MetaMkoParser` | C++ | `controller_qt/src/core/MetaMkoParser.hpp` | Hand-rolled protobuf wire-format reader for `.mko` (no libprotobuf dep) |
 | `NotificationStreamController` | C++ | `controller_qt/src/ui/NotificationStreamController.hpp` | QML bridge (`notificationStream` ctx prop): bubble push/dismiss + testBubble; voice-pack dialogue sink is the only text source (no pack system); owns NotificationStreamModel |

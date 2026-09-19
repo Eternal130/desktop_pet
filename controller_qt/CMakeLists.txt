@@ -64,14 +64,27 @@ FetchContent_MakeAvailable(spdlog)
 # + relative resource paths line up with the rest of the app.
 set(_bin_output_dir "${PROJECT_SOURCE_DIR}/../build/bin")
 
-# ── pet_panel_api (INTERFACE placeholder) ───────────────────────────────────
-# Pure header-only scaffolding for the P4 plugin SDK (IPanelPlugin /
-# IPluginContext / value types under src/api/). Created empty NOW so targets
-# can link pet_panel_api unconditionally and P4's introduction is purely
-# additive (no CMake churn in consuming targets later).
+# ── pet_panel_api (INTERFACE) ───────────────────────────────────────────────
+# Plugin SDK headers (P4, §B.3). INTERFACE on purpose: zero link products,
+# never two copies of an interface implementation, shared by the static
+# (stage 1) and dynamic (stage 2) plugin models. pet_panel_core implements
+# the context/apis against these headers; plugins (plugins/*/) program
+# against them exclusively.
 add_library(pet_panel_api INTERFACE)
-# Qt value types (QString / QJsonObject / ...) are the ABI-safe currency of
-# the future SDK headers (§B.3) — expose Qt6::Core's include path from day one.
+target_sources(pet_panel_api INTERFACE
+    src/api/PluginTypes.hpp
+    src/api/IPanelPlugin.hpp
+    src/api/IPluginContext.hpp
+    src/api/IInstanceApi.hpp
+    src/api/IVoicePackApi.hpp
+    src/api/IDownloadApi.hpp
+    src/api/IUiApi.hpp
+)
+# ABI discipline (§B.3, src/api/README.md): pure-virtual declarations, Qt
+# value types + POD only. Qt value types need Qt6::Core's include path —
+# INTERFACE so consumers inherit it. Interface headers live in src/ so the
+# include form is "api/IPanelPlugin.hpp", matching the core/app tree.
+target_include_directories(pet_panel_api INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(pet_panel_api INTERFACE Qt6::Core)
 
 # ── pet_panel_core (STATIC) ─────────────────────────────────────────────────

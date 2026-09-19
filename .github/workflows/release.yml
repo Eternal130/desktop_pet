@@ -56,6 +56,8 @@ jobs:
           echo "QT_NINJA=$(cygpath -m "$QT_NINJA")" >> "$GITHUB_ENV"
           # Fail fast with a readable error if the pinned ninja cannot run.
           "$QT_NINJA" --version
+          # PATH fallback for CMake try_compile sub-builds (see ci.yml note).
+          echo "$(dirname "$(cygpath -m "$QT_NINJA")")" >> "$GITHUB_PATH"
 
       # Inno Setup (iscc) for the installer; Vulkan SDK for win-vk-release.
       # The choco vulkansdk package lands in C:\VulkanSDK\<ver> but does not

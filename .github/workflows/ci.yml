@@ -102,6 +102,10 @@ jobs:
           # (mixed-slash paths previously reached CMake and failed opaquely
           # in the compiler ABI probe).
           "$QT_NINJA" --version
+          # PATH fallback: CMake's ABI-detection try_compile sub-build does
+          # not always inherit the toolchain-pinned CMAKE_MAKE_PROGRAM; with
+          # Qt's Ninja on PATH its fallback search finds a working tool.
+          echo "$(dirname "$(cygpath -m "$QT_NINJA")")" >> "$GITHUB_PATH"
 
       - name: Bootstrap (Cubism Core + GLEW 2.2.0 + GLFW 3.4, idempotent)
         run: cmake -P scripts/Bootstrap.cmake

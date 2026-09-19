@@ -67,6 +67,14 @@ endif()
 string(REPLACE "\\" "/" QT_PREFIX_PATH_RESOLVED "${QT_PREFIX_PATH_RESOLVED}")
 set(CMAKE_PREFIX_PATH "${QT_PREFIX_PATH_RESOLVED}")
 
+# Force the env-derived toolchain variables into try_compile sub-builds
+# (compiler ABI detection): without this, the sub-CMake may neither re-run
+# this toolchain nor receive CMAKE_MAKE_PROGRAM, and — with no ninja on
+# PATH — fails with an empty build-tool command. Registered here so local
+# builds benefit even when the runner-style PATH fallback is absent.
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
+     QT_MINGW_ROOT QT_NINJA_EXE QT_PREFIX_PATH_RESOLVED)
+
 # --- Configure-time hard validation: MinGW ABI lock ----------------------------
 # The official Qt 6.10.0 mingw_64 binaries are only binary-compatible with the
 # MinGW 13.1.0 runtime they were built against (Qt's bundled mingw1310_64).

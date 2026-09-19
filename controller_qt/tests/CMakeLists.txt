@@ -848,3 +848,47 @@ target_link_libraries(NotificationStreamControllerTest PRIVATE pet_panel_core Qt
 pet_deploy_qt_test(NotificationStreamControllerTest)
 
 add_test(NAME NotificationStreamControllerTest COMMAND NotificationStreamControllerTest)
+
+# ── Plugin framework tests (P4) ─────────────────────────────────────────────
+# All four link pet_panel_core (P2c relink pattern); the framework's TUs are
+# exercised through the library, no explicit source lists.
+
+# PluginRegistryTest: runtime manifest schema authority (§B.6) — parsing,
+# api_version gating, abi gating rules (§A.2; unit-locked now for stage 2),
+# and the Discovered→…→(Stopped|Failed) state machine.
+qt_add_executable(PluginRegistryTest PluginRegistryTest.cpp)
+target_link_libraries(PluginRegistryTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(PluginRegistryTest)
+
+add_test(NAME PluginRegistryTest COMMAND PluginRegistryTest)
+
+# PluginHostTest (§A.1/§B.3): initialize exception isolation (throwing /
+# error-returning plugins never poison the next), manifest order, reverse
+# shutdown, budget exhaustion, disabled-skip-before-create. QTEST_MAIN —
+# QThread::msleep needs a QCoreApplication (slow-shutdown budget case).
+qt_add_executable(PluginHostTest PluginHostTest.cpp)
+target_link_libraries(PluginHostTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(PluginHostTest)
+
+add_test(NAME PluginHostTest COMMAND PluginHostTest)
+
+# PluginManagerTest (§B.6): QML bridge roles + kv-persisted enable bits via
+# a QTemporaryDir DatabaseManager; disable = config bit + restart semantics.
+# QTEST_MAIN — DatabaseManager's QSqlDatabase wants an app instance.
+qt_add_executable(PluginManagerTest PluginManagerTest.cpp)
+target_link_libraries(PluginManagerTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(PluginManagerTest)
+
+add_test(NAME PluginManagerTest COMMAND PluginManagerTest)
+
+# PluginPageModelTest (§B.5/§B.6): nav rows — qrc-only qmlUrl, (order,title)
+# sort, duplicate rejection, boot-window closure, per-row bridge.
+qt_add_executable(PluginPageModelTest PluginPageModelTest.cpp)
+target_link_libraries(PluginPageModelTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(PluginPageModelTest)
+
+add_test(NAME PluginPageModelTest COMMAND PluginPageModelTest)

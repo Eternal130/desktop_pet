@@ -277,6 +277,26 @@ qt_add_library(pet_panel_core STATIC
     src/ui/NotificationStreamModel.hpp
     src/ui/NotificationStreamController.cpp
     src/ui/NotificationStreamController.hpp
+    # Plugin framework (P4, §B.3/§B.5/§B.6): registry (manifest validation
+    # + state machine), host (initialize/shutdown with §A.1 exception
+    # isolation + ≤200ms budget), manager (QML bridge model + kv-persisted
+    # enable bits), page model (nav rows), per-plugin bridge + context impl,
+    # and the P5 capability stubs. The .hpp files are listed so AUTOMOC
+    # processes their Q_OBJECT metadata.
+    src/core/PluginRegistry.cpp
+    src/core/PluginRegistry.hpp
+    src/core/PluginHost.cpp
+    src/core/PluginHost.hpp
+    src/core/PluginManager.cpp
+    src/core/PluginManager.hpp
+    src/core/PluginPageModel.cpp
+    src/core/PluginPageModel.hpp
+    src/core/PluginBridge.cpp
+    src/core/PluginBridge.hpp
+    src/core/PluginContextImpl.cpp
+    src/core/PluginContextImpl.hpp
+    src/core/PluginCapabilityStubs.cpp
+    src/core/PluginCapabilityStubs.hpp
 )
 
 # Expose src/ so consumers (exe shell + 41 tests + future plugins) can write
@@ -381,6 +401,104 @@ qml/BubbleStreamWindow.qml
 qml/components/BubbleCard.qml
 )
 
+# ── Static plugin pipeline (P4, §B.6 two-phase loading) ────────────────────
+# Stage 1: compile-time plugins. plugins/<name>/plugin.json is the unit of
+# discovery; this section (1) validates manifests at CONFIGURE time —
+# field existence + api_version shape only, string(REGEX)-level; the full
+# schema authority is the runtime PluginRegistry — corrupt manifest =
+# FATAL_ERROR (fail fast at the earliest possible point, §B.6 v2);
+# (2) builds each plugin via its own CMakeLists (defines
+# pet_plugin_<safe> and exports its qrc:/ page URL into the parent scope);
+# (3) generates static_plugins.cpp — the id→create() factory table + the
+# §A.2 abi block (compiler/qt/build_type) generated from THIS build's
+# toolchain, never hand-written. Compile-time plugins are abi-EXEMPT at
+# runtime (§A.2) — the embedded abi documents the build, ready for stage 2.
+set(_plugin_targets "")
+set(_plugin_rows "")
+file(GLOB _plugin_manifests "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*/plugin.json")
+foreach(_manifest ${_plugin_manifests})
+    get_filename_component(_plugdir "${_manifest}" DIRECTORY)
+    get_filename_component(_dirname "${_plugdir}" NAME)
+    string(REGEX REPLACE "[^A-Za-z0-9]" "_" _safe "${_dirname}")
+    file(READ "${_manifest}" _raw)
+    # (1) configure-time gate: required fields exist, api_version numeric.
+    foreach(_field id version api_version capabilities)
+        string(REGEX MATCH "\"${_field}\"[ \t]*:" _hit "${_raw}")
+        if(_hit STREQUAL "")
+            message(FATAL_ERROR
+                "Plugin manifest ${_manifest} is missing required field "
+                "'${_field}'. Configure-time check covers field existence; "
+                "full schema validation runs in PluginRegistry at runtime.")
+        endif()
+    endforeach()
+    string(REGEX MATCH "\"api_version\"[ \t]*:[ \t]*\"[0-9]+\\.[0-9]+\"" _av "${_raw}")
+    if(_av STREQUAL "")
+        message(FATAL_ERROR "Plugin manifest ${_manifest}: 'api_version' must "
+            "be a \"<major>.<minor>\" string of non-negative integers.")
+    endif()
+    # Plugin id (reverse domain) — extracted for the factory table row.
+    string(REGEX MATCH "\"id\"[ \t]*:[ \t]*\"[^\"]+\"" _id_line "${_raw}")
+    string(REGEX REPLACE "\"id\"[ \t]*:[ \t]*\"" "" _id "${_id_line}")
+    string(REGEX REPLACE "\"" "" _id "${_id}")
+    if(_id STREQUAL "")
+        message(FATAL_ERROR "Plugin manifest ${_manifest}: cannot extract 'id'.")
+    endif()
+    # (2) build the plugin; its CMakeLists sets in PARENT_SCOPE:
+    #   <SAFE>_QML_URL / <SAFE>_ICON_URL (qrc:/ URLs from its qml module)
+    add_subdirectory("${_plugdir}" "${CMAKE_CURRENT_BINARY_DIR}/plugins/${_dirname}")
+    list(APPEND _plugin_targets pet_plugin_${_safe})
+    # (3) factory row. The §A.2 abi block: generated from this build only.
+    if(MINGW)
+        set(_abi_qt_build "mingw_64")
+    elseif(MSVC)
+        set(_abi_qt_build "msvc_64")
+    else()
+        set(_abi_qt_build "linux_gcc_64")
+    endif()
+    set(_abi_json "{\"compiler\":\"${CMAKE_CXX_COMPILER_ID}\",\"compiler_version\":\"${CMAKE_CXX_COMPILER_VERSION}\",\"qt_version\":\"${Qt6_VERSION}\",\"qt_build\":\"${_abi_qt_build}\",\"build_type\":\"${CMAKE_BUILD_TYPE}\"}")
+    list(APPEND _plugin_rows
+"    registry.addStaticPlugin(
+        QStringLiteral(R\"json(${_raw})json\"),
+        pet_plugin_create_${_safe},
+        QStringLiteral(R\"abi(${_abi_json})abi\"),
+        QStringLiteral(\"${${_safe}_QML_URL}\"));
+")
+endforeach()
+# Re-run configure when manifests change (CMake only tracks CMakeLists).
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_plugin_manifests}")
+
+# Generated factory TU — linked into the EXE (core cannot host it: plugins
+# link pet_panel_api/core, so plugin symbols must be referenced from the
+# exe side; see core/StaticPluginBootstrap.hpp).
+set(_static_plugins_file "${CMAKE_CURRENT_BINARY_DIR}/generated/static_plugins.cpp")
+file(WRITE "${_static_plugins_file}"
+"// GENERATED by controller_qt/CMakeLists.txt (P4 static plugin pipeline)
+// — DO NOT EDIT. One row per plugins/*/plugin.json; id → create() factory.
+#include \"api/IPanelPlugin.hpp\"
+#include \"core/PluginRegistry.hpp\"
+#include <QString>
+
+")
+foreach(_row_target ${_plugin_targets})
+    string(REGEX REPLACE "pet_plugin_" "" _row_safe "${_row_target}")
+    file(APPEND "${_static_plugins_file}"
+"namespace {
+pet::IPanelPlugin* pet_plugin_create_${_row_safe}();
+}
+")
+endforeach()
+file(APPEND "${_static_plugins_file}"
+"
+void pet_register_static_plugins(core::PluginRegistry& registry)
+{
+")
+foreach(_row ${_plugin_rows})
+    file(APPEND "${_static_plugins_file}" "${_row}")
+endforeach()
+file(APPEND "${_static_plugins_file}"
+"}
+")
+
 # ── exe shell ───────────────────────────────────────────────────────────────
 # Composition root (P3). M1: the visual-QA modes (--screenshot/--bubble) are
 # carved out of main.cpp into src/app/ScreenshotRunner — app-layer code,
@@ -392,6 +510,10 @@ qt_add_executable(desktop-pet-controller-qt
     src/app/PanelApplication.cpp
     src/app/PanelUiBoot.cpp
     src/app/AppFontGuard.cpp
+    # P4: CMake-generated static plugin factory table (see the pipeline
+    # section above; defines pet_register_static_plugins — exe-side because
+    # core cannot reference plugin symbols without a link cycle).
+    "${_static_plugins_file}"
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES
@@ -408,6 +530,9 @@ target_link_libraries(desktop-pet-controller-qt PRIVATE
     # implicitly. Symptom if missing (verified): runtime "No module named
     # \"DesktopPet\" found" with zero compile-time errors.
     pet_panel_coreplugin
+    # P4: plugin STATIC libraries (pet_plugin_<dir>); empty list when the
+    # tree has no plugins.
+    ${_plugin_targets}
 )
 
 # windeployqt for the main exe on Windows (P1b): replicates the exact

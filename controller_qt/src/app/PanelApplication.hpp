@@ -3,6 +3,7 @@
 #include <QObject>
 
 #include "core/PanelConfig.hpp"
+#include "core/PluginRegistry.hpp"
 
 class DatabaseManager;
 class PanelStateManager;
@@ -11,6 +12,10 @@ class PendingRequests;
 class InstanceManager;
 class StartupSalvo;
 class ProcessManager;
+
+namespace core {
+class PluginHost;
+}
 
 // PanelApplication — the application service tree carved out of main()
 // (P3/M2, docs/refactor §B.2): DatabaseManager, PanelStateManager, WsServer,
@@ -43,6 +48,15 @@ public:
     PendingRequests* pendingRequests();
     InstanceManager* instanceManager();
 
+    // Plugin framework (P4, §B.6): the registry (entry store + state
+    // machine) is created FIRST in the ctor; the host (initialize/shutdown
+    // driver) LAST, so it can observe every earlier service. main()
+    // registers static-plugin factories into the registry between
+    // construction and PanelUiBoot; the host's initializeAll() runs after
+    // the UI boot mounted the page model/manager (see main.cpp).
+    core::PluginRegistry& pluginRegistry();
+    core::PluginHost* pluginHost();
+
     // Snapshot loaded once at construction (the old `const PanelConfig
     // panelCfg = psm.load();` local in main), consumed for the initial*
     // context properties.
@@ -72,4 +86,12 @@ private:
     StartupSalvo* m_startupSalvo = nullptr;
     ProcessManager* m_processManager = nullptr;
     PanelConfig m_panelConfig;
+
+    // Plugin framework (P4): registry (pure logic class, held by value,
+    // created before every consumer) + host (QObject child, created after
+    // every service — it dereferences instanceManager at boot). The host
+    // is registered LAST in the ctor → destroyed FIRST among this tree's
+    // plugin objects — plugin teardown precedes roster/network teardown.
+    core::PluginRegistry m_pluginRegistry;
+    core::PluginHost* m_pluginHost = nullptr;
 };

@@ -17,6 +17,8 @@
 //     but an escaping exception marks the plugin Failed)
 //   - no method may be called after shutdown returned
 
+#include <QtPlugin>
+
 #include "api/PluginTypes.hpp"
 
 namespace pet {

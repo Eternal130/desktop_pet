@@ -10,6 +10,7 @@
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
 #include "core/PanelStateManager.hpp"
+#include "core/PluginHost.hpp"
 #include "core/ProcessManager.hpp"
 #include "core/StartupSalvo.hpp"
 #include "logging/Logging.hpp"
@@ -113,6 +114,17 @@ PanelApplication::PanelApplication(QObject* parent)
                      [this](int instanceId, const Envelope& env) {
                          m_instanceManager->route(instanceId, env);
                      });
+
+    // ── Plugin framework (P4, §B.6) ─────────────────────────────────────
+    // Registry first (pure store, no deps), host last (observes the roster
+    // above; its page model / stream / config root are mounted later by
+    // PanelUiBoot, before main() calls initializeAll()). Both parented to
+    // this tree — registered after the five services → destroyed before
+    // them (registration-reverse), so plugin shutdown during app teardown
+    // happens while the roster/network/database are still alive.
+    m_pluginHost = new core::PluginHost(m_pluginRegistry, this);
+    m_pluginHost->setInstanceManager(m_instanceManager);
+    m_pluginHost->setConfigRoot(ConfigDir::configDir());
 }
 
 DatabaseManager& PanelApplication::databaseManager()
@@ -138,6 +150,16 @@ PendingRequests* PanelApplication::pendingRequests()
 InstanceManager* PanelApplication::instanceManager()
 {
     return m_instanceManager;
+}
+
+core::PluginRegistry& PanelApplication::pluginRegistry()
+{
+    return m_pluginRegistry;
+}
+
+core::PluginHost* PanelApplication::pluginHost()
+{
+    return m_pluginHost;
 }
 
 // Moved from main() (P3/M4). Construction + wiring statements are verbatim;

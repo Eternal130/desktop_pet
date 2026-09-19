@@ -14,6 +14,8 @@
 #include "app/PanelUiBoot.hpp"
 #include "app/ScreenshotRunner.hpp"
 #include "core/ConfigDir.hpp"
+#include "core/PluginHost.hpp"
+#include "core/StaticPluginBootstrap.hpp"
 #include "logging/Logging.hpp"
 
 int main(int argc, char* argv[])
@@ -71,6 +73,11 @@ int main(int argc, char* argv[])
     PanelApplication panelApp;
     panelApp.wireLegacyInstanceZeroSenders();
 
+    // P4 (§B.6 two-phase loading): push the CMake-generated factory table
+    // (static_plugins.cpp, exe-linked) into the registry — after the
+    // service tree exists, before the UI boot mounts the page model.
+    pet_register_static_plugins(panelApp.pluginRegistry());
+
     QQmlApplicationEngine engine;
 
     // All 17 context properties + UI-bridge wiring (names & order verbatim,
@@ -88,6 +95,13 @@ int main(int argc, char* argv[])
     // (blocking, process-spawning) start() calls run (PanelApplication).
     panelApp.launchAutoStartInstances();
 
+    // P4 (§B.3 lifecycle): plugin initialize() AFTER the UI boot mounted
+    // the page model / manager (PluginHost::initializeAll registers pages
+    // reactively; failures are isolated per §A.1 and surface in the
+    // Settings plugin section). Synchronous so --screenshot runs capture
+    // settled plugin pages.
+    panelApp.pluginHost()->initializeAll();
+
     // ── Visual-QA modes (--screenshot / --bubble) ─────────────────────────
     // Extracted to app/ScreenshotRunner (M1). Returns only when no QA flag
     // was passed; an active QA mode ends the process via std::exit inside
@@ -101,6 +115,11 @@ int main(int argc, char* argv[])
     }
 
     const int exitCode = app.exec();
+    // P4 (§B.3): reverse-order plugin shutdown on the normal exit path —
+    // before Logging::shutdown() so the shutdown log lines land in the
+    // sink; the host is in the PanelApplication tree (still alive here).
+    // QA modes that std::exit skip this deliberately (documented).
+    panelApp.pluginHost()->shutdownAll();
     Logging::shutdown();
     return exitCode;
 }

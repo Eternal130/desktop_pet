@@ -19,6 +19,9 @@
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
 #include "core/PanelConfigController.hpp"
+#include "core/PluginHost.hpp"
+#include "core/PluginManager.hpp"
+#include "core/PluginPageModel.hpp"
 #include "core/WindowStateSaver.hpp"
 #include "logging/Logging.hpp"
 #include "network/PendingRequests.hpp"
@@ -217,6 +220,30 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     m_voicePackController->setInstanceManager(m_app.instanceManager());
     m_engine.rootContext()->setContextProperty("voicePacks",
                                                m_voicePackController);
+
+    // ── Plugin bridges (P4) — context properties #18/#19 ────────────────
+    // Mounted AFTER the original 17 so their slots are append-only. The
+    // page model must exist before PluginHost::initializeAll() (main calls
+    // it after this boot) — plugins' registerPage() calls land in it; the
+    // manager supplies the boot-time enabled provider (kv-backed). Both
+    // are heap children of this PanelUiBoot (mount-point note above): they
+    // die during engine destruction, AFTER the QML context — same
+    // lifetime discipline as every other bridge. The plugin INSTANCES
+    // themselves live in the PanelApplication service tree (destroyed
+    // later, §B.2 v2 cross-subtree ordering).
+    m_pluginPageModel = new core::PluginPageModel(this);
+    m_pluginManager = new core::PluginManager(m_app.pluginRegistry(),
+                                              &m_app.databaseManager(), this);
+    m_app.pluginHost()->setPageModel(m_pluginPageModel);
+    m_app.pluginHost()->setNotificationStream(m_notificationStream);
+    m_app.pluginHost()->setEnabledProvider(
+        [this](const QString& pluginId) {
+            return m_pluginManager->enabledAtStart(pluginId);
+        });
+    m_engine.rootContext()->setContextProperty("pluginPages",
+                                               m_pluginPageModel);
+    m_engine.rootContext()->setContextProperty("pluginManager",
+                                               m_pluginManager);
 
     // AssetManager context property (资源管理 page + Settings logo section +
     // InstanceDetailPage icon picker). Logo applies to THREE surfaces:

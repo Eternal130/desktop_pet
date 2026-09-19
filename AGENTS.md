@@ -13,7 +13,7 @@ Live2D desktop pet application. Qt 6 control panel (`controller_qt/`, C++17/QML)
 
 ```
 desktop_pet/
-├── controller_qt/      # Qt 6 control panel (CMake, C++17) — CMakePresets.json + cmake/qt-mingw-qt.cmake
+├── controller_qt/      # Qt 6 control panel (CMake, C++17) — pet_panel_core(STATIC)+pet_panel_api(INTERFACE) libs, exe=main.cpp only; CMakePresets.json + cmake/qt-mingw-qt.cmake
 ├── renderer/           # Live2D renderer (CMake, C++17, Cubism SDK 5) — CMakePresets.json (win presets reuse controller_qt's qt-mingw-qt.cmake, P1c unified toolchain)
 ├── third_party/        # CubismSdkForNative git submodule (Framework + Samples; Core via scripts/Bootstrap.cmake)
 ├── docs/               # Full architecture docs (Chinese, 30+ .md files)
@@ -100,6 +100,7 @@ desktop_pet/
 - **Cubism FinishedMotionCallback**: Raw C function pointer — capturing lambdas won't work, use static function + `SetFinishedMotionCustomData(void*)`
 - **Qt QTP0001 policy**: QML modules use `:/qt/qml/<URI>/` layout (NEW policy) — incremental builds masked the bug during T1-T27
 - **Qt LSP false positives**: LSP server lacks Qt include paths; the controller_qt preset build compiles clean — trust CMake, not LSP diagnostics on Qt files
+- **Static-lib QML module (P2c)**: the DesktopPet QML module's backing target lives in pet_panel_core (STATIC) — any executable loading that QML must ALSO link `pet_panel_coreplugin`, else runtime-only `No module named "DesktopPet"` with zero compile symptoms
 - **FluFrame no implicit size**: FluFrame is Rectangle-based — in GridLayout, rows collapse to 0 without `Layout.preferredHeight`/`implicitHeight` (verified via screenshot QA)
 - **Row children + anchors.right**: silently misplaced — use anchored Item for title+trailing-button headers
 - **ColumnLayout has no topPadding**: assigning it kills QML page compilation (only Column supports padding)

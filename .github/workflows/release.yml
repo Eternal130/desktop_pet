@@ -108,8 +108,12 @@ jobs:
                   mkdir -p "stage/$(dirname "$f")"
                   cp "$f" "stage/$f"
               done)
-          powershell -Command "Compress-Archive -Path 'stage/*' \
-              -DestinationPath 'dist/DesktopPet-$TAG-windows-x64.zip' -Force"
+          # 7z instead of PowerShell Compress-Archive: the PS invocation from
+          # git-bash resolved its destination against a different working
+          # directory and "succeeded" without ever creating dist/*.zip
+          # (observed 2026-09: upload step found only 1 file in dist/).
+          (cd stage && 7z a "../dist/DesktopPet-$TAG-windows-x64.zip" .)
+          ls -la dist/
 
       - name: Inno Setup installer
         run: |

@@ -23,9 +23,11 @@
 // timer is stopped before the QCOMPARE/QVERIFY messages (avoids a trigger
 // firing mid-assertion).
 //
-// Timing philosophy: intervalMs=50 + qWait(200) yields ~3-4 triggers (50, 100,
-// 150, 200ms boundaries). Assertions use `>= 3` (never exact counts) so the
-// tests are robust to event-loop scheduling jitter without being tautological.
+// Timing philosophy: intervalMs=50 + qWait(600) yields ~12 triggers. The
+// generous windows (3x the old 200ms) keep the `>= 3` assertions meaningful
+// on loaded CI runners — windows-latest GitHub runners regularly fail to
+// pump 3 timers inside 200ms under load (observed 2026-09; the same slots
+// pass reliably on Linux). Assertions stay `>= 3` (never exact counts).
 
 #include <QMap>
 #include <QObject>
@@ -72,13 +74,13 @@ void SchedulerTest::testCadence()
         ++count;
     });
 
-    QTest::qWait(200);
+    QTest::qWait(600);
     sched.shutdown();  // stop before assertions to avoid mid-check triggers
 
     QVERIFY2(sched.isRunning() == false, "shutdown() must clear isRunning");
     QVERIFY2(count >= 3,
              qPrintable(QStringLiteral("expected >=3 triggers at 50ms cadence "
-                                       "in 200ms, got %1").arg(count)));
+                                       "in 600ms, got %1").arg(count)));
     QVERIFY2(indexInRange, "an out-of-range index was emitted");
     QCOMPARE(lastGroup, QStringLiteral("Idle"));
 }
@@ -128,7 +130,7 @@ void SchedulerTest::testResume()
 
     sched.resume();
     QVERIFY(!sched.isPaused());
-    QTest::qWait(200);
+    QTest::qWait(600);
     QVERIFY2(count >= 3,
              qPrintable(QStringLiteral("expected >=3 triggers after resume, "
                                        "got %1").arg(count)));
@@ -193,7 +195,7 @@ void SchedulerTest::testUpdateInterval()
 
     sched.updateInterval(50);
     QCOMPARE(sched.intervalMs(), 50);
-    QTest::qWait(200);
+    QTest::qWait(600);
     QVERIFY2(count >= 3,
              qPrintable(QStringLiteral("expected >=3 triggers after "
                                        "updateInterval(50), got %1").arg(count)));

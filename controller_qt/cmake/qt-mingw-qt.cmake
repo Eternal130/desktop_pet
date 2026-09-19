@@ -28,6 +28,12 @@ else()
     message(STATUS "qt-mingw-qt: QT_MINGW_ROOT not set, using default: ${QT_MINGW_ROOT}")
 endif()
 
+# Normalize to forward slashes — env-provided values on Windows runners can
+# mix separators (e.g. "D:\a\...\Tools/mingw1310_64"); CMake wants canonical
+# forward-slash paths (the Ninja generator in particular chokes opaquely on
+# mixed forms inside its build-tool invocations).
+string(REPLACE "\\" "/" QT_MINGW_ROOT "${QT_MINGW_ROOT}")
+
 set(CMAKE_C_COMPILER   "${QT_MINGW_ROOT}/bin/gcc.exe")
 set(CMAKE_CXX_COMPILER "${QT_MINGW_ROOT}/bin/g++.exe")
 
@@ -38,6 +44,8 @@ if(DEFINED ENV{QT_NINJA} AND NOT "$ENV{QT_NINJA}" STREQUAL "")
 else()
     set(QT_NINJA_EXE "C:/Qt/Tools/Ninja/ninja.exe")
 endif()
+
+string(REPLACE "\\" "/" QT_NINJA_EXE "${QT_NINJA_EXE}")
 
 if(NOT EXISTS "${QT_NINJA_EXE}")
     message(FATAL_ERROR
@@ -56,6 +64,7 @@ if(DEFINED ENV{QT_PREFIX_PATH} AND NOT "$ENV{QT_PREFIX_PATH}" STREQUAL "")
 else()
     set(QT_PREFIX_PATH_RESOLVED "C:/Qt/6.10.0/mingw_64")
 endif()
+string(REPLACE "\\" "/" QT_PREFIX_PATH_RESOLVED "${QT_PREFIX_PATH_RESOLVED}")
 set(CMAKE_PREFIX_PATH "${QT_PREFIX_PATH_RESOLVED}")
 
 # --- Configure-time hard validation: MinGW ABI lock ----------------------------

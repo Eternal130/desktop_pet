@@ -66,14 +66,14 @@ jobs:
           modules: 'qtcharts qtwebsockets'
           tools: 'tools_ninja tools_mingw1310,qt.tools.win64_mingw1310'
 
-      - name: Install Qt 6.10 (linux / gcc_64)
+      - name: Install Qt 6.10 (linux / linux_gcc_64)
         if: runner.os == 'Linux'
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.10.0'
           host: 'linux'
           target: 'desktop'
-          arch: 'gcc_64'
+          arch: 'linux_gcc_64'
           modules: 'qtcharts qtwebsockets'
           # install-deps defaults to true on Linux (pulls the xcb stack the
           # offscreen/controller test runtimes need).
@@ -92,11 +92,16 @@ jobs:
       - name: Qt toolchain env (windows)
         if: runner.os == 'Windows'
         run: |
-          echo "QT_PREFIX_PATH=$QT_ROOT_DIR" >> "$GITHUB_ENV"
-          echo "QT_MINGW_ROOT=$(find "$IQTA_TOOLS" -maxdepth 1 -type d -iname 'mingw1310*' | head -n1)" >> "$GITHUB_ENV"
-          echo "QT_NINJA=$(find "$IQTA_TOOLS" -maxdepth 2 -type f -iname 'ninja.exe' | head -n1)" >> "$GITHUB_ENV"
+          echo "QT_PREFIX_PATH=$(cygpath -m "$QT_ROOT_DIR")" >> "$GITHUB_ENV"
+          echo "QT_MINGW_ROOT=$(cygpath -m "$(find "$IQTA_TOOLS" -maxdepth 1 -type d -iname 'mingw1310*' | head -n1)")" >> "$GITHUB_ENV"
+          QT_NINJA="$(find "$IQTA_TOOLS" -maxdepth 2 -type f -iname 'ninja.exe' | head -n1)"
+          echo "QT_NINJA=$(cygpath -m "$QT_NINJA")" >> "$GITHUB_ENV"
           echo "--- Qt install layout ---"
           ls "$IQTA_TOOLS"
+          # Fail fast with a readable error if the pinned ninja cannot run
+          # (mixed-slash paths previously reached CMake and failed opaquely
+          # in the compiler ABI probe).
+          "$QT_NINJA" --version
 
       - name: Bootstrap (Cubism Core + GLEW 2.2.0 + GLFW 3.4, idempotent)
         run: cmake -P scripts/Bootstrap.cmake

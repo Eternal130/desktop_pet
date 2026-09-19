@@ -216,7 +216,17 @@ Window {
                 }
                 if (root.currentInstance && root.currentPage === "instance")
                     return root.currentInstance.label + " — " + root.title
-                return (pageNames[root.currentPage] ?? root.title) +
+                // Plugin pages are not in pageNames — ask the model for the
+                // registered title instead of falling straight through to
+                // root.title (which produced "Title — Title" duplication);
+                // a missing/empty title still falls back to root.title.
+                let pageName = pageNames[root.currentPage] ?? ""
+                if (pageName === ""
+                        && typeof pluginPages !== "undefined"
+                        && pluginPages.isPluginPage(root.currentPage)) {
+                    pageName = pluginPages.titleFor(root.currentPage)
+                }
+                return (pageName !== "" ? pageName : root.title) +
                        " — " + root.title
             }
             color: Theme.text2Color

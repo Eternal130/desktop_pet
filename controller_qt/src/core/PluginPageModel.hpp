@@ -64,6 +64,11 @@ public:
     Q_INVOKABLE QString qmlUrlFor(const QString& pageKey) const;
     Q_INVOKABLE bool isPluginPage(const QString& pageKey) const;
 
+    // Registered title for a pageKey, or an empty string when the key is not
+    // a plugin page (QML falls back to the window title on empty — the
+    // "Title — Title" duplication fix).
+    Q_INVOKABLE QString titleFor(const QString& pageKey) const;
+
 signals:
     void countChanged();
 

@@ -30,6 +30,7 @@ private slots:
     void testRejectsDuplicatePlugin();
     void testFinalizeClosesRegistrationWindow();
     void testQmlUrlForAndIsPluginPage();
+    void testTitleFor();
     void testBridgePerRow();
     void testEmptyTitleFallsBackToPluginId();
 };
@@ -102,6 +103,19 @@ void PluginPageModelTest::testQmlUrlForAndIsPluginPage()
     QVERIFY(model.isPluginPage(QStringLiteral("org.test.a")));
     QVERIFY(!model.isPluginPage(QStringLiteral("welcome")));
     QVERIFY(!model.isPluginPage(QStringLiteral("no.such.plugin")));
+}
+
+void PluginPageModelTest::testTitleFor()
+{
+    PluginPageModel model;
+    QVERIFY(model.addPage("org.test.a", page("插件示例", "qrc:/a.qml", 100)));
+    QCOMPARE(model.titleFor(QStringLiteral("org.test.a")),
+             QStringLiteral("插件示例"));
+    // Unknown keys → empty string; the QML title bar falls back to the
+    // window title on empty (the "Title — Title" duplication fix).
+    QCOMPARE(model.titleFor(QStringLiteral("welcome")), QString());
+    QCOMPARE(model.titleFor(QStringLiteral("no.such.plugin")), QString());
+    QCOMPARE(model.titleFor(QString()), QString());
 }
 
 void PluginPageModelTest::testBridgePerRow()

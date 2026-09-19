@@ -117,4 +117,13 @@ bool PluginPageModel::isPluginPage(const QString& pageKey) const
     return !qmlUrlFor(pageKey).isEmpty();
 }
 
+QString PluginPageModel::titleFor(const QString& pageKey) const
+{
+    for (const PluginPageRow& row : m_rows) {
+        if (row.pluginId == pageKey)
+            return row.title;
+    }
+    return {};
+}
+
 } // namespace core

@@ -1,0 +1,12 @@
+{
+    "id": "org.desktop-pet.sample",
+    "version": "0.1.0",
+    "api_version": "1.0",
+    "capabilities": [],
+    "entry.qml": "SamplePage.qml",
+    "title": "示例插件",
+    "icon": "🧩",
+    "order": 100,
+    "vendor": "desktop-pet",
+    "min_host_version": "2.0"
+}

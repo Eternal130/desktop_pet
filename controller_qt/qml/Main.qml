@@ -45,6 +45,15 @@ Window {
         root.currentPage = name
         if (name === "instance" && root.currentInstance === null)
             root.currentInstance = instanceManager.instanceAt(0)
+        // P4 (§B.5): plugin pages load through the plugin Repeater below
+        // (per-page Loader in a delegate context); the builtin loader is
+        // switched OFF for them. No engine->load — pages stay inside this
+        // window's routing.
+        if (typeof pluginPages !== "undefined"
+                && pluginPages.isPluginPage(name)) {
+            pageLoader.sourceComponent = undefined
+            return
+        }
         pageLoader.sourceComponent = {
             "welcome":   welcomePageComp,
             "instance":  instanceDetailPageComp,
@@ -370,6 +379,26 @@ Window {
                     match: navPane.searchFilter
                 }
 
+                // P4 (§B.6): dynamic plugin pages — appended after every
+                // built-in item, sorted by the manifest order the host
+                // registered them in (PluginPageModel keeps (order,title)
+                // sort). NavItem's own properties consume the roles here;
+                // the PAGE itself loads through the plugin Repeater below.
+                NavGroupLabel {
+                    text: qsTr("插件")
+                    visible: pluginPages.count > 0
+                }
+                Repeater {
+                    model: pluginPages
+                    NavItem {
+                        required property string pageKey
+                        required property string title
+                        itemKey: pageKey
+                        icon: "🧩"; label: title
+                        match: navPane.searchFilter
+                    }
+                }
+
                 Item { width: 1; height: 12 }
 
                 // design mock: the nav swaps to per-instance items only on
@@ -471,6 +500,35 @@ Window {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         sourceComponent: welcomePageComp
+    }
+
+    // ── Plugin pages (P4, §B.5) ─────────────────────────────────────────
+    // Each plugin page is a Loader inside this Repeater's delegate: the
+    // loaded file's creation-context chain therefore carries the delegate
+    // context, which exposes `model` — including the per-plugin `bridge`
+    // role (PluginBridge: pluginId/title/apiVersion/notify/log). That is
+    // the stage-1 exposure pattern the SDK template's SamplePage uses.
+    //
+    // KNOWN DEBT (§B.5, documented): the ideal per-page child QQmlContext
+    // would expose ONLY "plugin" — today the context chain still sees the
+    // root context properties (first-party trust; stage-2 will tighten).
+    // The delegates deliberately use NO required properties: required
+    // properties would suppress the `model` context exposure the loaded
+    // page depends on.
+    Repeater {
+        model: pluginPages
+        delegate: Loader {
+            id: pluginPageHost
+            anchors.left: navPane.right
+            anchors.top: titleBar.bottom
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            active: root.currentPage === pluginPageHost.pageKey
+            visible: active
+            property string pageKey: model.pageKey
+            property string qmlUrl: model.qmlUrl
+            source: active ? pluginPageHost.qmlUrl : ""
+        }
     }
 
     Component { id: welcomePageComp;        WelcomePage {} }

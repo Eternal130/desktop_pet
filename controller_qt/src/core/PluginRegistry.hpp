@@ -103,9 +103,13 @@ public:
     // management UI surfaces it (never silently dropped). On success the
     // entry lands as Registered (Validated is passed through internally —
     // static plugins validate at registration time, no discovery phase).
+    // abiJson: the build-generated §A.2 block (provenance only — static
+    // plugins are abi-EXEMPT). qmlUrl: the build-injected qrc:/ page URL
+    // (§B.6) the host fills into IUiApi::registerPage descriptors that
+    // leave qmlUrl empty.
     void addStaticPlugin(const QString& manifestJson, CreateFn create,
                          const QString& abiJson = QString(),
-                         const QString& error = QString());
+                         const QString& qmlUrl = QString());
 
     // State-machine transition. Returns false (and leaves the state
     // unchanged) on an illegal transition; legal Failed transitions always

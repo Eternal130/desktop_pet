@@ -242,7 +242,7 @@ bool PluginRegistry::transition(const QString& id, PluginStatus to,
 }
 
 void PluginRegistry::addStaticPlugin(const QString& manifestJson, CreateFn create,
-                                     const QString& abiJson, const QString& error)
+                                     const QString& abiJson, const QString& qmlUrl)
 {
     PluginEntry e;
     e.create = create;
@@ -267,13 +267,17 @@ void PluginRegistry::addStaticPlugin(const QString& manifestJson, CreateFn creat
                 e.manifest.id = QStringLiteral("<invalid-manifest>");
         }
         e.status = PluginStatus::Failed;
-        e.errorMessage = parseError + (error.isEmpty() ? QString() : QStringLiteral(" | ") + error);
+        e.errorMessage = parseError;
         LOG_ERROR("PluginRegistry: manifest rejected for '{}': {}",
                   e.manifest.id.toStdString(), parseError.toStdString());
         m_entries.append(e);
         return;
     }
     e.manifest = *manifest;
+    // Build-injected page URL (§B.6): overrides whatever the manifest's
+    // entry.qml file name implies — qrc layout knowledge lives in CMake.
+    if (!qmlUrl.isEmpty())
+        e.manifest.qmlUrl = qmlUrl;
 
     QString versionError;
     if (!validateApiVersion(e.manifest.apiMajor, e.manifest.apiMinor, &versionError)) {

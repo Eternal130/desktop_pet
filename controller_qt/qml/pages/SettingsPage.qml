@@ -13,7 +13,8 @@ Rectangle {
 
     function _scrollTo(section) {
         const map = { "behavior": behaviorCard, "startup": startupCard,
-                      "appearance": appearanceCard, "about": aboutCard }
+                      "appearance": appearanceCard, "plugins": pluginsCard,
+                      "about": aboutCard }
         const item = map[section]
         if (item && flick.contentHeight > flick.height)
             flick.contentY = item.mapToItem(contentCol, 0, 0).y - 16
@@ -43,6 +44,7 @@ Rectangle {
             AnchorNavItem { text: qsTr("🔀 行为"); section: "behavior" }
             AnchorNavItem { text: qsTr("🚀 启动"); section: "startup" }
             AnchorNavItem { text: qsTr("🎨 外观"); section: "appearance" }
+            AnchorNavItem { text: qsTr("🧩 插件"); section: "plugins" }
             AnchorNavItem { text: qsTr("ℹ 关于"); section: "about" }
         }
 
@@ -385,6 +387,120 @@ Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
                             checked: assetManager.logoSyncTray
                             onToggled: assetManager.logoSyncTray = checked
+                        }
+                    }
+                }
+
+                // ── 插件管理 (P4, §B.6) ─────────────────────────────────
+                // Functional-first card: per-plugin row with status pill,
+                // error text, enable toggle. Enable/disable = config bit +
+                // restart-to-apply (hot unload forbidden, §A.4) — the hint
+                // line + restartPending badge say so explicitly.
+                Card {
+                    id: pluginsCard
+                    width: parent.width
+                    title: qsTr("插件管理")
+                    hint: qsTr("启用/禁用为配置位，重启面板后生效（不支持热卸载）")
+
+                    // empty state (fresh tree, zero plugins)
+                    Text {
+                        visible: pluginManager.count === 0
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: qsTr("暂无插件。拷贝 plugins/sdk-template/ 开始编写第一个插件。")
+                        color: root._mutedColor
+                        font.pixelSize: 12
+                    }
+
+                    Repeater {
+                        model: pluginManager
+
+                        delegate: Rectangle {
+                            id: pluginRow
+                            required property string pluginId
+                            required property string title
+                            required property string version
+                            required property string status
+                            required property string errorMessage
+                            required property bool enabled
+                            width: parent.width
+                            height: col.implicitHeight + 20
+                            radius: Theme.radiusMd
+                            color: Theme.surfaceColor
+                            border.width: 1
+                            border.color: Theme.borderColor
+
+                            Column {
+                                id: col
+                                x: 14; y: 10
+                                width: parent.width - 28
+                                spacing: 6
+
+                                Row {
+                                    spacing: 10
+                                    Text {
+                                        text: pluginRow.title
+                                        color: Theme.textColor
+                                        font.pixelSize: 13
+                                        font.weight: Font.DemiBold
+                                    }
+                                    Text {
+                                        text: "v" + pluginRow.version
+                                        color: root._mutedColor
+                                        font.pixelSize: 11
+                                    }
+                                    StatusPill {
+                                        status: pluginRow.status === "started"
+                                                ? "running"
+                                                : (pluginRow.status === "failed"
+                                                   ? "error" : "pending")
+                                        label: pluginRow.status
+                                    }
+                                    // restart-pending badge: the persisted
+                                    // bit disagrees with the runtime state
+                                    Rectangle {
+                                        visible: pluginManager.restartPending(
+                                            pluginRow.pluginId)
+                                        width: pendingText.implicitWidth + 14
+                                        height: 18; radius: 9
+                                        color: Theme.accentAlpha(0.14)
+                                        Text {
+                                            id: pendingText
+                                            anchors.centerIn: parent
+                                            text: qsTr("重启后生效")
+                                            color: Theme.accentColor
+                                            font.pixelSize: 10
+                                        }
+                                    }
+                                }
+                                Text {
+                                    text: pluginRow.pluginId
+                                    color: root._mutedColor
+                                    font.pixelSize: 11
+                                }
+                                Text {
+                                    visible: pluginRow.errorMessage.length > 0
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: qsTr("错误") + ": "
+                                          + pluginRow.errorMessage
+                                    color: Theme.errorColor
+                                    font.pixelSize: 11
+                                }
+                                Row {
+                                    spacing: 10
+                                    Text {
+                                        text: qsTr("启用")
+                                        color: Theme.text2Color
+                                        font.pixelSize: 12
+                                    }
+                                    ToggleSwitch {
+                                        checked: pluginRow.enabled
+                                        onToggled: pluginManager.setEnabled(
+                                            pluginRow.pluginId, checked)
+                                    }
+                                }
+                            }
                         }
                     }
                 }

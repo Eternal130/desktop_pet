@@ -1,0 +1,16 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "sdk-qt-mingw",
+      "displayName": "Plugin SDK template / Qt MinGW 13.1.0 (stage-2 standalone)",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-sdk",
+      "toolchainFile": "${sourceDir}/../../controller_qt/cmake/qt-mingw-qt.cmake",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    }
+  ],
+  "buildPresets": [ { "name": "sdk-qt-mingw", "configurePreset": "sdk-qt-mingw" } ]
+}

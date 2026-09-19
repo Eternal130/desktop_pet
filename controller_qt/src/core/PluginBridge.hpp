@@ -11,6 +11,8 @@
 #include <QObject>
 #include <QString>
 
+#include "api/PluginTypes.hpp"
+
 namespace core {
 
 class PluginHost;
@@ -20,12 +22,18 @@ class PluginBridge : public QObject
     Q_OBJECT
     Q_PROPERTY(QString pluginId READ pluginId CONSTANT)
     Q_PROPERTY(QString title READ title CONSTANT)
+    Q_PROPERTY(QString apiVersion READ apiVersion CONSTANT)
 
 public:
     PluginBridge(const QString& pluginId, const QString& title, QObject* parent);
 
     QString pluginId() const { return m_pluginId; }
     QString title() const { return m_title; }
+    // Host SDK version ("1.0") — pages display it to set expectations.
+    QString apiVersion() const
+    {
+        return QStringLiteral("%1.%2").arg(pet::kApiMajor).arg(pet::kApiMinor);
+    }
 
     // Fire-and-forget bubble into the panel notification stream.
     Q_INVOKABLE void notify(const QString& text, int durationMs = 0);

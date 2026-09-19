@@ -39,7 +39,7 @@ std::optional<QString> resolveRendererPath(const QString& rendererDir,
                                            const QString& graphicsBackend = "opengl");
 
 // Convenience: the conventional renderer directory "<app dir>/../build/bin"
-// (where build.py places the controller_qt exe and the renderer exes
+// (where the CMake build places the controller_qt exe and the renderer exes
 // side-by-side). Uses QCoreApplication::applicationDirPath(); requires a
 // QCoreApplication instance to exist (the controller's main.cpp creates one).
 //

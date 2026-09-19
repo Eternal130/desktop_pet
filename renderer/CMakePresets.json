@@ -9,7 +9,7 @@
     {
       "name": "renderer-base",
       "hidden": true,
-      "description": "Shared defaults: Ninja generator, Release build type, and the CMake 4 policy floor (CMAKE_POLICY_VERSION_MINIMUM=3.5) that build.py passed on the command line for the old bundled subprojects.",
+      "description": "Shared defaults: Ninja generator, Release build type, and the CMake 4 policy floor (CMAKE_POLICY_VERSION_MINIMUM=3.5) required by the old bundled subprojects.",
       "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
@@ -20,7 +20,7 @@
       "name": "win-gl-release",
       "inherits": "renderer-base",
       "displayName": "Windows / MinGW / OpenGL (Release)",
-      "description": "System MinGW pinned via cmake/toolchain-mingw-renderer.cmake (absolute paths replace build.py's PATH filtering). Generator overridden to MinGW Makefiles to match build.py L309 and the toolchain's mingw32-make pin.",
+      "description": "System MinGW pinned via cmake/toolchain-mingw-renderer.cmake (absolute paths, PATH order irrelevant). Generator is MinGW Makefiles, matching the toolchain's mingw32-make pin.",
       "generator": "MinGW Makefiles",
       "binaryDir": "${sourceDir}/../build/renderer_mingw",
       "toolchainFile": "${sourceDir}/cmake/toolchain-mingw-renderer.cmake",
@@ -128,7 +128,7 @@
   "workflowPresets": [
     {
       "name": "win-gl-release",
-      "description": "Full chain (configure, build, test) - replaces 'python build.py renderer' on Windows.",
+      "description": "Full chain (configure, build, test) for the Windows OpenGL renderer.",
       "steps": [
         { "type": "configure", "name": "win-gl-release" },
         { "type": "build", "name": "win-gl-release" },
@@ -137,7 +137,7 @@
     },
     {
       "name": "linux-gl-release",
-      "description": "Full chain (configure, build, test) - replaces 'python build.py renderer' on Linux.",
+      "description": "Full chain (configure, build, test) for the Linux OpenGL renderer.",
       "steps": [
         { "type": "configure", "name": "linux-gl-release" },
         { "type": "build", "name": "linux-gl-release" },

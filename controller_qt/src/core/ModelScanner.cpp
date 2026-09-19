@@ -16,7 +16,7 @@ namespace {
 
 // The conventional subdirectory layout under a renderer's bundled Resources/
 // tree. Matches the Java reference ModelScanner.RESOURCES_DIR + MODELS_SUBDIR
-// and the layout build.py ships under build/bin/Resources/Models/.
+// and the layout shipped under build/bin/Resources/Models/.
 constexpr const char* kResourcesDir = "Resources";
 constexpr const char* kModelsSubdir = "Models";
 

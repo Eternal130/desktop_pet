@@ -38,7 +38,7 @@ void EnvironmentChecker::runChecks()
 QString EnvironmentChecker::resolveRendererDir()
 {
     // applicationDirPath() is the directory of the running controller exe.
-    // build.py + CMake place the controller and the renderer exes side-by-side
+    // the CMake build places the controller and the renderer exes side-by-side
     // in build/bin/, so the renderer dir == applicationDirPath(). This matches
     // poc_main.cpp:277 (the proven T6 round-trip). See the header comment for
     // why core::defaultRendererDir() is deliberately NOT used here.

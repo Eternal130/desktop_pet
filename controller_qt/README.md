@@ -17,9 +17,9 @@ JSON-over-WebSocket protocol (controller = WS server, renderer = WS client).
 > **FluentUI-specific build notes:**
 > - First configure fetches FluentUI (network required); later builds reuse the
 >   FetchContent cache.
-> - `build.py qt` additionally copies `Qt5Compat/GraphicalEffects` (FluAcrylic
->   dep) and `Qt6ShaderTools.dll` next to the exe — windeployqt cannot detect
->   these QML-internal imports.
+> - The FluentUI QML deploy additionally needs `Qt5Compat/GraphicalEffects`
+>   (FluAcrylic dep) and `Qt6ShaderTools.dll` next to the exe — windeployqt
+>   cannot detect these QML-internal imports.
 > - Known limitation: with the static FluentUI plugin, the `--screenshot`
 >   test-only path exits via `std::exit` to bypass a teardown heap corruption;
 >   the production close path is unaffected (verified EXIT=0).
@@ -47,9 +47,8 @@ JSON-over-WebSocket protocol (controller = WS server, renderer = WS client).
 ## Build
 
 ```bash
-# from project root
-python build.py qt            # Qt controller only
-python build.py all           # Qt controller + renderer
+# from controller_qt/
+cmake --workflow --preset linux-release    # Windows: win-release
 ```
 
 Output: `build/bin/desktop-pet-controller-qt.exe` (Windows) /
@@ -65,9 +64,10 @@ Output: `build/bin/desktop-pet-controller-qt.exe` (Windows) /
 | **CMake** | 3.22+ | On PATH |
 | GCC / Clang (Linux) | C++17 capable | System toolchain |
 
-The `qt` target in `build.py`:
+The controller build (CMake presets):
 1. Configures CMake into `build/controller_qt` with `CMAKE_PREFIX_PATH` pointing
-   at the Qt install.
+   at the Qt install (via `cmake/qt-mingw-qt.cmake` on Windows, environment
+   `QT_PREFIX_PATH` etc. override).
 2. Builds with Qt's bundled toolchain (Windows) or the system toolchain (Linux).
 3. (Windows) Runs `windeployqt --qmldir controller_qt/qml` to copy Qt DLLs /
    plugins / QML imports next to the exe so it runs standalone from `build/bin/`.
@@ -85,7 +85,7 @@ Run the binary directly:
 ## Packaging (Windows)
 
 `windeployqt` auto-deploys the Qt runtime next to the exe in `build/bin/`.
-After `python build.py qt`, the bin directory contains everything the Qt
+After the controller build, the bin directory contains everything the Qt
 controller needs to run standalone — **no Qt installation required on the target
 machine.**
 
@@ -168,13 +168,17 @@ Why this matters:
   controller gets linked against the wrong `libstdc++` and either fails to link
   or crashes at startup with a runtime-DLL mismatch.
 
-`build.py`'s `qt` target (`_get_qt_env()`) guarantees isolation by:
+Isolation is guaranteed by `cmake/qt-mingw-qt.cmake` (referenced by the
+Windows configure presets), which pins absolute paths instead of relying on
+PATH order:
 
-1. **Prepending** `C:\Qt\Tools\mingw1310_64\bin` to `PATH` (Qt's MinGW wins).
-2. **Filtering out** any `\Git\mingw64\bin` from `PATH` (Git's MinGW is removed
-   entirely — mirrors the renderer's `_get_renderer_env()`).
-3. Prepending Qt's Ninja (`C:\Qt\Tools\ninja`) so the build uses a single,
-   unambiguous generator.
+1. **Pins** gcc/g++ to `C:\Qt\Tools\mingw1310_64\bin` (env `QT_MINGW_ROOT`
+   override) — the only MinGW ABI-compatible with the official Qt 6.10
+   mingw_64 binaries.
+2. **Rejects** any other compiler at configure time (`CMAKE_CXX_COMPILER`
+   must contain `mingw1310_64`; Git's bundled MinGW can never leak in).
+3. **Pins** Qt's Ninja (`C:\Qt\Tools\ninja\ninja.exe`, env `QT_NINJA` override)
+   so the build uses a single, unambiguous generator.
 
 > This is the Qt-side analogue of the project-wide pitfall documented in the
 > root `AGENTS.md` ("MinGW PATH": Git's bundled MinGW conflicts with the

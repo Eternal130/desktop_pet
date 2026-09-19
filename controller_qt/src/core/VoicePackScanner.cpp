@@ -16,7 +16,7 @@ namespace {
 
 // The conventional subdirectory + index-file names under a renderer's bundled
 // Resources/ tree. Matches the Java reference VoicePackScanner constants
-// (VOICE_PACK_INDEX = "meta.mko") and the layout build.py ships under
+// (VOICE_PACK_INDEX = "meta.mko") and the layout shipped under
 // build/bin/Resources/VoicePacks/.
 constexpr const char* kResourcesDir = "Resources";
 constexpr const char* kVoicePacksSubdir = "VoicePacks";

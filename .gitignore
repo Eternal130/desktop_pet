@@ -18,7 +18,7 @@ renderer/.cache/
 # submodule working tree as untracked content (suppressed via
 # .gitmodules `ignore = untracked`) — fetch them with:
 #   git submodule update --init --recursive
-#   scripts/fetch_cubism_core.sh        (or .bat on Windows)
+#   cmake -P scripts/Bootstrap.cmake
 
 # IDE
 .idea/

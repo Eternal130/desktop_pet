@@ -96,7 +96,7 @@ private:
 
     // The directory the renderer exes + Resources/ live in. Uses
     // QCoreApplication::applicationDirPath() (same dir as the controller exe —
-    // build.py places them side-by-side in build/bin). This deliberately does
+    // the build places them side-by-side in build/bin). This deliberately does
     // NOT use core::defaultRendererDir(): that helper appends "/../build/bin"
     // which resolves to build/build/bin (nonexistent) for the side-by-side
     // dev layout. poc_main.cpp:277 established applicationDirPath() as the

@@ -65,7 +65,7 @@ std::optional<QString> resolveRendererPath(const QString& rendererDir,
 QString defaultRendererDir()
 {
     // Two layouts must resolve:
-    //   1. Deployed: build.py places the controller_qt exe and the renderer
+    //   1. Deployed: the build places the controller_qt exe and the renderer
     //      exes side-by-side in build/bin/ — rendererDir == applicationDirPath
     //      (matches EnvironmentChecker::resolveRendererDir).
     //   2. Build tree: the exe still sits in the CMake build dir

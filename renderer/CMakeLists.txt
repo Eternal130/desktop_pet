@@ -5,6 +5,18 @@ cmake_policy(SET CMP0079 NEW)
 
 project(desktop-pet-renderer)
 
+# === Bootstrap guard ==========================================================
+# CMake never mutates git state (docs/refactor §C.4): the Cubism submodule and
+# its separately-distributed Core binaries must be bootstrapped explicitly.
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/CubismSdkForNative/Core/include/Live2DCubismCore.h")
+    message(FATAL_ERROR
+        "Cubism Core header not found:\n"
+        "  ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/CubismSdkForNative/Core/include/Live2DCubismCore.h\n"
+        "Bootstrap the renderer dependencies first (from the repository root):\n"
+        "  1. git submodule update --init --recursive\n"
+        "  2. cmake -P scripts/Bootstrap.cmake")
+endif()
+
 # Compatibility: CMake 4.x requires minimum policy version 3.5.
 # Dependencies (GLEW 2.8.12, GLFW 3.4, IXWebSocket, libogg, libvorbis)
 # declare older cmake_minimum_required versions. Setting this variable
@@ -42,8 +54,8 @@ endif()
 set(STB_PATH ${THIRD_PARTY_PATH}/stb)
 # GLFW is a windowing library shared by both backends. Use the OpenGL
 # sample's thirdParty copy for the Vulkan variant too — this machine's SDK
-# copy ships Samples/Vulkan/thirdParty without glfw, and build.py's
-# setup_thirdparty populates the OpenGL one anyway.
+# copy ships Samples/Vulkan/thirdParty without glfw, and scripts/Bootstrap.cmake
+# populates the OpenGL one anyway.
 set(GLFW_PATH ${SDK_ROOT_PATH}/Samples/OpenGL/thirdParty/glfw)
 
 # === Output ===

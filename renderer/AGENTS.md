@@ -59,8 +59,8 @@ renderer/
 | Dep | Version | Source |
 |-----|---------|--------|
 | Cubism SDK (Core+Framework) | 5-r.5-beta.3.1 | Git submodule (`Live2D/CubismNativeSamples` @ 5-r.5-beta.3.1); Core binaries fetched via `scripts/fetch_cubism_core.sh\|.bat` |
-| GLFW | 3.4 | Auto-downloaded by `build.py` |
-| GLEW | 2.2.0 | Auto-downloaded (OpenGL only) |
+| GLFW | 3.4 | Auto-downloaded by `scripts/Bootstrap.cmake` |
+| GLEW | 2.2.0 | Auto-downloaded by `scripts/Bootstrap.cmake` (OpenGL only) |
 | Vulkan SDK | system install | `find_package(Vulkan REQUIRED)` (Vulkan only) |
 | IXWebSocket | v11.4.5 | CMake FetchContent |
 | nlohmann/json | 3.12.0 | Vendored header |
@@ -106,23 +106,21 @@ desktop-pet-renderer --port 9001 --instance-id 0 --token <hex> --model Hiyori --
 ## BUILD
 
 ```bash
-# Via build.py (recommended)
-python build.py renderer
+# Bootstrap (fresh clone; idempotent)
+git submodule update --init --recursive
+cmake -P scripts/Bootstrap.cmake
 
-# Direct CMake (Windows)
-cmake -S renderer -B build/renderer_mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-cmake --build build/renderer_mingw --config Release -j
-
-# Vulkan backend
-cmake -S renderer -B build/renderer_vulkan -G "MinGW Makefiles" -DUSE_VULKAN=ON -DCMAKE_BUILD_TYPE=Release
+# Presets (from renderer/; see CMakePresets.json)
+cmake --workflow --preset linux-gl-release   # Windows: win-gl-release
+cmake --workflow --preset linux-vk-release   # Vulkan variant (Windows: win-vk-release)
 
 # Tests
-cd build/renderer_mingw && ctest
+ctest --preset linux-gl-release              # Windows: win-gl-release
 ```
 
 ## PITFALLS
 
-- **MinGW PATH**: Git's bundled MinGW conflicts — `build.py` auto-filters; manual CMake must do the same
+- **MinGW PATH**: Git's bundled MinGW is rejected at configure time by `cmake/toolchain-mingw-renderer.cmake` (absolute paths pinned via `RENDERER_MINGW_ROOT`)
 - **CMake target_sources**: Adding new `.cpp` files requires `cmake -S ... -B ...` reconfigure
 - **`-fpermissive`**: Enabled for Cubism Framework target (GCC rejects SDK's `wglGetProcAddress` PROC→void*)
 - **`set_scale` stub**: Command registered but only logs, no actual scale change

@@ -13,12 +13,12 @@ Live2D desktop pet application. Qt 6 control panel (`controller_qt/`, C++17/QML)
 
 ```
 desktop_pet/
-├── controller_qt/      # Qt 6 control panel (CMake, C++17) — the control panel
-├── renderer/           # Live2D renderer (CMake, C++17, Cubism SDK 5)
-├── third_party/        # CubismSdkForNative git submodule (Framework + Samples; Core via fetch script)
+├── controller_qt/      # Qt 6 control panel (CMake, C++17) — CMakePresets.json + cmake/qt-mingw-qt.cmake
+├── renderer/           # Live2D renderer (CMake, C++17, Cubism SDK 5) — CMakePresets.json + cmake/toolchain-mingw-renderer.cmake
+├── third_party/        # CubismSdkForNative git submodule (Framework + Samples; Core via scripts/Bootstrap.cmake)
 ├── docs/               # Full architecture docs (Chinese, 30+ .md files)
-├── build.py            # Unified build orchestrator (Python 3.6+)
-├── BUILD.md            # Build guide
+├── scripts/            # Bootstrap.cmake (deps fetch) + build.sh/build.bat (thin forwarders) + setup-dev-env.ps1 (optional)
+├── BUILD.md            # Build guide (CMake presets)
 └── build/bin/          # Output: renderer + controller-qt executables + DLLs + resources
 ```
 
@@ -95,12 +95,11 @@ desktop_pet/
 - **NO uncaught exceptions across the QML boundary** — never-throws contract on system collectors (Blueprint §9.5 "永不崩溃")
 
 ### Known Pitfalls
-- **MinGW PATH**: Git's bundled MinGW conflicts with project MinGW — `build.py` filters it; manual CMake must do the same
-- **MinGW PATH (Qt controller)**: `controller_qt/` uses Qt-bundled MinGW 13.1.0 (`C:\Qt\Tools\mingw1310_64`), separate from the renderer's MinGW — `build.py qt` filters PATH; manual CMake must prepend Qt's MinGW
+- **双 MinGW (dual MinGW)**: renderer uses system MinGW (`RENDERER_MINGW_ROOT`, default `C:/mingw64`), controller uses Qt-bundled mingw1310_64 (`QT_MINGW_ROOT`) — both pinned by toolchain files with configure-time hard validation (Git-MinGW paths rejected outright); PATH order no longer matters
 - **CMake target_sources**: Adding `.cpp` requires `cmake -S ... -B ...` reconfigure before `cmake --build`
 - **Cubism FinishedMotionCallback**: Raw C function pointer — capturing lambdas won't work, use static function + `SetFinishedMotionCustomData(void*)`
 - **Qt QTP0001 policy**: QML modules use `:/qt/qml/<URI>/` layout (NEW policy) — incremental builds masked the bug during T1-T27
-- **Qt LSP false positives**: LSP server lacks Qt include paths; `python build.py qt` compiles clean — trust CMake, not LSP diagnostics on Qt files
+- **Qt LSP false positives**: LSP server lacks Qt include paths; the controller_qt preset build compiles clean — trust CMake, not LSP diagnostics on Qt files
 - **FluFrame no implicit size**: FluFrame is Rectangle-based — in GridLayout, rows collapse to 0 without `Layout.preferredHeight`/`implicitHeight` (verified via screenshot QA)
 - **Row children + anchors.right**: silently misplaced — use anchored Item for title+trailing-button headers
 - **ColumnLayout has no topPadding**: assigning it kills QML page compilation (only Column supports padding)
@@ -108,34 +107,31 @@ desktop_pet/
 ## COMMANDS
 
 ```bash
-# Build everything
-python build.py                # Interactive
-python build.py all            # Both components
+# Bootstrap (fresh clone / after submodule changes)
+git submodule update --init --recursive
+cmake -P scripts/Bootstrap.cmake     # Cubism Core + GLEW + GLFW (idempotent)
 
-# Build individually
-python build.py renderer       # C++ renderer (CMake + MinGW/Make)
-python build.py qt             # Qt controller (CMake + Qt 6 + Ninja)
+# Build everything (thin forwarders over the per-component workflows)
+scripts/build.sh                     # Linux
+scripts\build.bat                    # Windows
 
-# Direct CMake (Windows)
-cmake -S renderer -B build/renderer_mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-cmake --build build/renderer_mingw --config Release -j
+# Build individually (CMake presets; see BUILD.md for the full table)
+cd controller_qt && cmake --workflow --preset linux-release    # Windows: win-release
+cd renderer && cmake --workflow --preset linux-gl-release      # Windows: win-gl-release; Vulkan: *-vk-release
 
 # Tests
-cd renderer/build && ctest                              # C++ renderer tests (Google Test)
-ctest --test-dir build/controller_qt                    # Qt controller tests (41 QTest binaries)
-
-# Vulkan backend
-cmake --build build/renderer_vulkan --config Release -j
+cd controller_qt && ctest --preset linux-qt-release            # Qt controller tests (41 QTest binaries)
+cd renderer && ctest --preset linux-gl-release                 # C++ renderer tests (Google Test)
 ```
 
 ## NOTES
 
-- `third_party/CubismSdkForNative/` is a git submodule of Live2D/CubismNativeSamples pinned to tag `5-r.5-beta.3.1` (nested `Framework` submodule pinned automatically). Core binaries are NOT in the repo — bootstrap: `git submodule update --init --recursive` then `scripts/fetch_cubism_core.sh` (`.bat` on Windows); `build.py` guards both before configuring the renderer
+- `third_party/CubismSdkForNative/` is a git submodule of Live2D/CubismNativeSamples pinned to tag `5-r.5-beta.3.1` (nested `Framework` submodule pinned automatically). Core binaries are NOT in the repo — bootstrap: `git submodule update --init --recursive` then `cmake -P scripts/Bootstrap.cmake`; the renderer configure aborts with these hints if Core is missing
 - `set_scale` command is implemented as a `set_layout` scale-axis compatibility alias (responds; preserves offsets; clamps 0.1–5.0)
 - The subtitle system (libass, renderer-side) has been REMOVED and replaced by the Qt-controller notification bubble stream — see `docs/system/notification-stream.md`. The 5 subtitle commands are unregistered in the renderer (unknown actions return 5003).
 - VulkanBackend.cpp: **Fully implemented** (Instance → Device → Swapchain → Render → Present, 979 lines, Phase 2.1–2.6 complete). Compile-time switch via `-DUSE_VULKAN=ON`; no runtime switching. See `renderer/AGENTS.md`.
 - AudioManager.cpp/hpp: Implemented (miniaudio + libvorbis, OGG playback). `play_audio`/`stop_audio`/`set_volume` commands wired (error codes 7001/7002/7003).
-- Dual platform: Ubuntu/X11 (original MVP) + Windows/MinGW (current). `build.py` builds both OpenGL and Vulkan variants.
+- Dual platform: Ubuntu/X11 (original MVP) + Windows/MinGW (current). CMake presets build both OpenGL and Vulkan variants.
 - Build artifacts: `build/bin/desktop-pet-renderer.exe`, `build/bin/desktop-pet-controller-qt(.exe)`
 - Renderer CLI args: `--port`, `--instance-id`, `--model`, `--token`, `--x`, `--y`, `--width`, `--height`
 - **controller_qt Phase 5-9: COMPLETE** — Qt 6.10 / C++17 / QML control panel. Multi-instance pet management with full protocol coverage (20 commands + 14 events), sidebar roster (`QAbstractListModel`), per-instance config persistence, idle motion scheduler, hit→motion handler, crash-recovery with exponential backoff (max 5 attempts), system tray (QSystemTrayIcon), OS auto-launch (Win registry / Linux `.desktop`), resource monitor (QtCharts sparklines: CPU% + RSS), voice pack discovery + mounting (hand-rolled protobuf reader, no libprotobuf dep), notification bubble stream (voice-pack dialogue only, screen top-right stack — replaced the renderer subtitle system, see `docs/system/notification-stream.md`), layout sync. **41 QTest binaries**, all green. Atomic config writes via QSaveFile. Blueprint §9.5 "永不崩溃" compliance audited (T25). See `controller_qt/README.md` for details. Known limitations (documented, NOT bugs): R4 (Wayland transparent window), R5 (GNOME tray AppIndicator), R6 (Wayland global hotkeys).

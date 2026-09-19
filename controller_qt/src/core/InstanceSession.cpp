@@ -220,7 +220,7 @@ void InstanceSession::start()
     // Resolve the renderer executable. config.rendererPath (when non-empty) is
     // the renderer DIRECTORY — lets tests inject the real build/bin path. When
     // empty, fall back to the conventional defaultRendererDir() (app-dir +
-    // "/../build/bin", where build.py places the exes side-by-side).
+    // "/../build/bin", where the build places the exes side-by-side).
     const QString rendererDir = m_config.rendererPath.isEmpty()
         ? core::defaultRendererDir()
         : m_config.rendererPath;

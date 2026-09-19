@@ -3,9 +3,10 @@
 #
 # Design intent: docs/refactor/plugin-architecture-and-cmake-migration.md
 # section C.2 - pin absolute compiler and make-program paths so that PATH
-# order can no longer influence the build result. This replaces build.py's
-# PATH filtering (it removed Git's bundled MinGW to avoid libwinpthread DLL
-# conflicts) with a root-cause fix, and upgrades the "Git's MinGW is poison"
+# order can no longer influence the build result. This is the root-cause fix
+# that replaces the former PATH-filtering approach (the legacy build script
+# removed Git's bundled MinGW from PATH to avoid libwinpthread DLL conflicts),
+# and upgrades the "Git's MinGW is poison"
 # pitfall from a documentation note to a configure-time hard gate.
 #
 # Per-machine override: set the RENDERER_MINGW_ROOT environment variable to
@@ -39,7 +40,7 @@ foreach(_compiler
         message(FATAL_ERROR
             "Renderer toolchain points into Git's bundled MinGW: ${_compiler}\n"
             "Git's MinGW is a known poison: its libwinpthread DLL conflicts\n"
-            "with the project MinGW (build.py used to filter it out of PATH).\n"
+            "with the project MinGW (the legacy build script used to filter\n"
             "Set the RENDERER_MINGW_ROOT environment variable to a standalone\n"
             "MinGW-w64 installation (for example C:/mingw64) and configure\n"
             "again.")

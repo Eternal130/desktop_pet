@@ -5,7 +5,8 @@
 # (win-qt-release / win-qt-debug). Pins absolute compiler/make/Qt-prefix paths
 # so PATH order can no longer decide which toolchain links the panel — the
 # root-cause fix for the AGENTS.md "MinGW PATH (Qt controller)" pitfall that
-# build.py previously mitigated by PATH filtering.
+# was previously mitigated by PATH filtering in the retired Python build
+# orchestrator.
 #
 # Environment overrides (each checked before its hardcoded default):
 #   QT_MINGW_ROOT    MinGW root       (default: C:/Qt/Tools/mingw1310_64)

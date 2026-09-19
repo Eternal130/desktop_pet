@@ -137,6 +137,10 @@ jobs:
         with:
           name: windows-artifacts
           path: dist/*
+          # Transitive handoff to the release job only — the durable copies
+          # live on the Release page. 1-day retention keeps the private-repo
+          # artifact storage quota (500MB) from filling with ~300MB/run.
+          retention-days: 1
 
   build-linux:
     runs-on: ubuntu-latest
@@ -202,6 +206,7 @@ jobs:
         with:
           name: linux-artifacts
           path: dist/*
+          retention-days: 1
 
   release:
     needs: [build-windows, build-linux]

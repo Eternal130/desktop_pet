@@ -116,8 +116,12 @@ jobs:
           if ! command -v iscc >/dev/null 2>&1; then
             export PATH="$PATH:/c/Program Files (x86)/Inno Setup 6"
           fi
-          iscc /DVERSION="${TAG#v}" \
-               /DBUILD_BIN="$(pwd)/build/bin" \
+          # MSYS_NO_PATHCONV: git-bash rewrites /DVERSION=... into a Windows
+          # path, making iscc see two script filenames ("You may not specify
+          # more than one script filename"). BUILD_BIN must also be a
+          # Windows-style path — $(pwd) yields POSIX, which iscc cannot use.
+          MSYS_NO_PATHCONV=1 iscc /DVERSION="${TAG#v}" \
+               /DBUILD_BIN="$(cygpath -m "$(pwd)/build/bin")" \
                packaging/windows/installer.iss
           mv packaging/windows/DesktopPet-Setup-*.exe dist/
 

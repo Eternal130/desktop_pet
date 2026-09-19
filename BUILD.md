@@ -25,13 +25,13 @@ cd renderer     && cmake --workflow --preset linux-gl-release # Windows 用 win-
 |:---|:---|
 | CMake ≥ 3.25 | Linux: `sudo apt install cmake`（发行版版本过旧时用 [Kitware 官方 apt 源](https://apt.kitware.com/)）；Windows: 官方安装器或 Qt Maintenance Tool |
 | git submodule | `third_party/CubismSdkForNative`（固定于 tag `5-r.5-beta.3.1`，Core 二进制不在 repo 内，由 Bootstrap.cmake 下载） |
-| Ninja | Linux 必装（`sudo apt install ninja-build`，两组件 Linux preset 均为 Ninja generator）。Windows 不必装：controller 用 Qt 自带 Ninja（toolchain 钉死），renderer 为 MinGW Makefiles generator |
+| Ninja | Linux 必装（`sudo apt install ninja-build`，两组件 Linux preset 均为 Ninja generator）。Windows 无需单独安装：两组件 win preset 均用 Qt 自带 Ninja（toolchain 钉死） |
 
 ### Renderer（C++ 渲染引擎）
 
 | 工具 | Windows | Linux |
 |:---|:---|:---|
-| 编译器 | 系统 MinGW-w64（默认 `C:/mingw64`，`RENDERER_MINGW_ROOT` 覆盖；**不可**用 Git 自带 MinGW——configure 期硬校验直接拒绝） | `sudo apt install build-essential` |
+| 编译器 | **Qt 自带 MinGW 13.1.0**（与 controller 同一工具链，P1c 归一；`QT_MINGW_ROOT` 覆盖。configure 期硬校验：编译器不含 `mingw1310_64` 即 `FATAL_ERROR`——Git 自带 MinGW 等异种工具链被直接拒绝） | `sudo apt install build-essential` |
 | OpenGL 开发库 | 系统自带 | `sudo apt install libgl-dev` |
 | X11 开发库 | — | `sudo apt install libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev` |
 | Vulkan（可选变体） | Vulkan SDK | `sudo apt install libvulkan-dev` |
@@ -46,18 +46,20 @@ GLEW 2.2.0 与 GLFW 3.4 由 `scripts/Bootstrap.cmake` 自动下载到 submodule 
 | 编译器 | **Qt 自带 MinGW 13.1.0**（`C:/Qt/Tools/mingw1310_64`，`QT_MINGW_ROOT` 覆盖；toolchain 硬校验必须含 `mingw1310_64`——官方 Qt 6.10 mingw_64 二进制仅与其 ABI 兼容） | g++（随 Qt Linux 安装） |
 | Ninja | Qt 自带（`C:/Qt/Tools/Ninja`，`QT_NINJA` 覆盖；Qt Maintenance Tool → Additional Libraries → Ninja 安装） | 同通用 Ninja |
 
-## 双 MinGW 现状与覆盖机制
+## 统一工具链（单 MinGW）与覆盖机制
 
-Windows 上两套 MinGW **有意并存**（P1c 评估合并，见 `docs/refactor/plugin-architecture-and-cmake-migration.md` §C.5）：
+Windows 上两组件自 **P1c 起共用 Qt 自带 MinGW 13.1.0**（原 renderer 独立的系统 MinGW 工具链已退役，`RENDERER_MINGW_ROOT` 一并退役；见 `docs/refactor/plugin-architecture-and-cmake-migration.md` §C.5）：
 
 | 组件 | 工具链 | toolchain file | 环境变量覆盖（默认值） |
 |:---|:---|:---|:---|
-| renderer | 系统 MinGW-w64 | `renderer/cmake/toolchain-mingw-renderer.cmake` | `RENDERER_MINGW_ROOT`（`C:/mingw64`） |
-| controller | Qt 自带 mingw1310_64 | `controller_qt/cmake/qt-mingw-qt.cmake` | `QT_MINGW_ROOT`（`C:/Qt/Tools/mingw1310_64`）、`QT_NINJA`（`C:/Qt/Tools/Ninja/ninja.exe`）、`QT_PREFIX_PATH`（`C:/Qt/6.10.0/mingw_64`） |
+| renderer | Qt mingw1310_64 | `controller_qt/cmake/qt-mingw-qt.cmake`（**跨组件单一事实源**，win preset 以相对路径引用） | 同下行 |
+| controller | Qt mingw1310_64 | `controller_qt/cmake/qt-mingw-qt.cmake` | `QT_MINGW_ROOT`（`C:/Qt/Tools/mingw1310_64`）、`QT_NINJA`（`C:/Qt/Tools/Ninja/ninja.exe`）、`QT_PREFIX_PATH`（`C:/Qt/6.10.0/mingw_64`） |
 
-- toolchain file 以**绝对路径**钉死 gcc/g++/make/ninja，PATH 顺序不再影响结果（取代旧 build.py 的 PATH 过滤，属根因修复）。
-- configure 期**硬校验**：renderer 侧编译器路径含 `Git` 即 `FATAL_ERROR`；controller 侧编译器不含 `mingw1310_64` 即 `FATAL_ERROR`。
+- toolchain file 以**绝对路径**钉死 gcc/g++/Qt 自带 ninja，PATH 顺序不再影响结果。
+- configure 期**硬校验**：编译器不含 `mingw1310_64` 即 `FATAL_ERROR`（Git 自带 MinGW 等异种工具链在 configure 期被拒绝，而非链接期 DLL 冲突）。
+- 两组件 win preset 的 generator 均为 **Ninja**——renderer 自 P1c 起从 MinGW Makefiles 切换（P1c 本身改变编译器，P1a 的字节等价验收不再适用，§C.5 明示；Qt 发行版自带 ninja.exe，toolchain 存在性校验兜底）。
 - 个人机器差异首选环境变量；备选 `CMakeUserPresets.json`（已 gitignore，用 `inherits` 覆盖 preset 字段）。
+- ⚠ **已知风险（待 CI / Windows 实测验证）**：GLEW 2.2.0 / GLFW 3.4 预编译包与 GCC 13.1 的链接（依赖面纯 C ABI，预期无碍，§C.5 风险点；P1d CI 落地后由双平台矩阵覆盖）。
 
 ## Bootstrap 语义（`cmake -P scripts/Bootstrap.cmake`）
 
@@ -82,7 +84,7 @@ Renderer preset 明细：
 
 | preset | 平台/后端 | binaryDir | 说明 |
 |:---|:---|:---|:---|
-| `win-gl-release` | Win / OpenGL | `build/renderer_mingw` | generator = **MinGW Makefiles**（toolchain 钉 `mingw32-make.exe`，无需装 Ninja） |
+| `win-gl-release` | Win / OpenGL | `build/renderer_mingw` | generator = **Ninja**（Qt 自带 ninja，toolchain 钉死）；Qt mingw1310_64（P1c 统一工具链） |
 | `win-vk-release` | Win / Vulkan | `build/renderer_vulkan_mingw` | 同上 + `USE_VULKAN=ON` |
 | `linux-gl-release` | Linux / OpenGL | `build/renderer_build` | generator = Ninja，系统编译器，无 toolchain |
 | `linux-vk-release` | Linux / Vulkan | `build/renderer_vulkan_build` | 同上 + `USE_VULKAN=ON` |

@@ -19,11 +19,10 @@
     {
       "name": "win-gl-release",
       "inherits": "renderer-base",
-      "displayName": "Windows / MinGW / OpenGL (Release)",
-      "description": "System MinGW pinned via cmake/toolchain-mingw-renderer.cmake (absolute paths, PATH order irrelevant). Generator is MinGW Makefiles, matching the toolchain's mingw32-make pin.",
-      "generator": "MinGW Makefiles",
+      "displayName": "Windows / Qt MinGW / OpenGL (Release)",
+      "description": "Unified toolchain (P1c): both renderer and controller compile with Qt's bundled mingw1310_64. Single source of truth = controller_qt/cmake/qt-mingw-qt.cmake (cross-component relative reference), which pins gcc/g++/Qt's ninja via absolute paths and hard-rejects any non-mingw1310_64 compiler at configure time. Generator Ninja (inherited) matches the toolchain's ninja pin; the old MinGW Makefiles override was dropped along with the retired system-MinGW toolchain.",
       "binaryDir": "${sourceDir}/../build/renderer_mingw",
-      "toolchainFile": "${sourceDir}/cmake/toolchain-mingw-renderer.cmake",
+      "toolchainFile": "${sourceDir}/../controller_qt/cmake/qt-mingw-qt.cmake",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -33,7 +32,7 @@
     {
       "name": "win-vk-release",
       "inherits": "win-gl-release",
-      "displayName": "Windows / MinGW / Vulkan (Release)",
+      "displayName": "Windows / Qt MinGW / Vulkan (Release)",
       "description": "win-gl-release configuration plus USE_VULKAN=ON.",
       "binaryDir": "${sourceDir}/../build/renderer_vulkan_mingw",
       "cacheVariables": {

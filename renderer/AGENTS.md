@@ -120,7 +120,7 @@ ctest --preset linux-gl-release              # Windows: win-gl-release
 
 ## PITFALLS
 
-- **MinGW PATH**: Git's bundled MinGW is rejected at configure time by `cmake/toolchain-mingw-renderer.cmake` (absolute paths pinned via `RENDERER_MINGW_ROOT`)
+- **MinGW PATH**: Git's bundled MinGW is rejected at configure time by the shared `controller_qt/cmake/qt-mingw-qt.cmake` toolchain (P1c: unified Qt mingw1310_64 for both components)
 - **CMake target_sources**: Adding new `.cpp` files requires `cmake -S ... -B ...` reconfigure
 - **`-fpermissive`**: Enabled for Cubism Framework target (GCC rejects SDK's `wglGetProcAddress` PROC→void*)
 - **`set_scale` stub**: Command registered but only logs, no actual scale change

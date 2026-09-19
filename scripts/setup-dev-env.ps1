@@ -2,9 +2,9 @@
 # NOTE (P1b): This script is now OPTIONAL dev-environment convenience only.
 # The official build entry points are the per-component CMakePresets.json
 # (cmake --workflow --preset ...) plus scripts/build.bat — see BUILD.md.
-# The toolchains themselves are pinned by the toolchain files
-# (controller_qt/cmake/qt-mingw-qt.cmake, renderer/cmake/toolchain-mingw-renderer.cmake,
-# env overrides QT_MINGW_ROOT / QT_NINJA / QT_PREFIX_PATH / RENDERER_MINGW_ROOT),
+# The toolchains themselves are pinned by the shared toolchain file
+# (controller_qt/cmake/qt-mingw-qt.cmake, used by BOTH components since P1c;
+# env overrides QT_MINGW_ROOT / QT_NINJA / QT_PREFIX_PATH),
 # so sourcing this script is no longer required for building.
 # ============================================================================
 # setup-dev-env.ps1 - Qt 6 + Slint Dev Environment Activation (session only)

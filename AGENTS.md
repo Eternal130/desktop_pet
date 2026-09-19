@@ -14,7 +14,7 @@ Live2D desktop pet application. Qt 6 control panel (`controller_qt/`, C++17/QML)
 ```
 desktop_pet/
 ├── controller_qt/      # Qt 6 control panel (CMake, C++17) — CMakePresets.json + cmake/qt-mingw-qt.cmake
-├── renderer/           # Live2D renderer (CMake, C++17, Cubism SDK 5) — CMakePresets.json + cmake/toolchain-mingw-renderer.cmake
+├── renderer/           # Live2D renderer (CMake, C++17, Cubism SDK 5) — CMakePresets.json (win presets reuse controller_qt's qt-mingw-qt.cmake, P1c unified toolchain)
 ├── third_party/        # CubismSdkForNative git submodule (Framework + Samples; Core via scripts/Bootstrap.cmake)
 ├── docs/               # Full architecture docs (Chinese, 30+ .md files)
 ├── scripts/            # Bootstrap.cmake (deps fetch) + build.sh/build.bat (thin forwarders) + setup-dev-env.ps1 (optional)
@@ -95,7 +95,7 @@ desktop_pet/
 - **NO uncaught exceptions across the QML boundary** — never-throws contract on system collectors (Blueprint §9.5 "永不崩溃")
 
 ### Known Pitfalls
-- **双 MinGW (dual MinGW)**: renderer uses system MinGW (`RENDERER_MINGW_ROOT`, default `C:/mingw64`), controller uses Qt-bundled mingw1310_64 (`QT_MINGW_ROOT`) — both pinned by toolchain files with configure-time hard validation (Git-MinGW paths rejected outright); PATH order no longer matters
+- **单 MinGW (unified, P1c)**: renderer and controller both compile with Qt-bundled mingw1310_64 via `controller_qt/cmake/qt-mingw-qt.cmake` (`QT_MINGW_ROOT`/`QT_NINJA`/`QT_PREFIX_PATH` overrides) — configure-time hard validation rejects any non-mingw1310_64 compiler (incl. Git's MinGW); PATH order no longer matters
 - **CMake target_sources**: Adding `.cpp` requires `cmake -S ... -B ...` reconfigure before `cmake --build`
 - **Cubism FinishedMotionCallback**: Raw C function pointer — capturing lambdas won't work, use static function + `SetFinishedMotionCustomData(void*)`
 - **Qt QTP0001 policy**: QML modules use `:/qt/qml/<URI>/` layout (NEW policy) — incremental builds masked the bug during T1-T27

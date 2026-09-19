@@ -40,6 +40,7 @@ enum class PluginError : unsigned int {
     Capability = 3,    // capability not granted by the plugin manifest
     NotFound = 4,
     Busy = 5,
+    Cancelled = 6,     // P5: the operation was cancelled by the caller
 };
 
 // Log levels for IPluginContext::log(). Values are stable contract data.

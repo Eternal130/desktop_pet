@@ -892,3 +892,15 @@ target_link_libraries(PluginPageModelTest PRIVATE pet_panel_core Qt6::Test)
 pet_deploy_qt_test(PluginPageModelTest)
 
 add_test(NAME PluginPageModelTest COMMAND PluginPageModelTest)
+
+# DownloadServiceTest (P5 §B.4 + §D v2 mock seam): file:// happy path +
+# sha256 accept/reject, cancel mid-flight (FakeReply seam), injected
+# connection-refused, malformed requests, concurrent jobs, throwing-listener
+# isolation, missing-file graceful failure. QTEST_MAIN — QNetworkReply's
+# event-loop-driven signals need a QCoreApplication.
+qt_add_executable(DownloadServiceTest DownloadServiceTest.cpp)
+target_link_libraries(DownloadServiceTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(DownloadServiceTest)
+
+add_test(NAME DownloadServiceTest COMMAND DownloadServiceTest)

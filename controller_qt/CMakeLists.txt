@@ -297,6 +297,11 @@ qt_add_library(pet_panel_core STATIC
     src/core/PluginContextImpl.hpp
     src/core/PluginCapabilityStubs.cpp
     src/core/PluginCapabilityStubs.hpp
+    # P5 §B.4 host download pipeline: the process-wide download chokepoint
+    # (one QNetworkAccessManager inside the production reply factory; the
+    # factory is the injectable test seam for offline/error paths).
+    src/core/DownloadService.cpp
+    src/core/DownloadService.hpp
 )
 
 # Expose src/ so consumers (exe shell + 41 tests + future plugins) can write

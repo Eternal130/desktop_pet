@@ -52,11 +52,33 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spdlog)
 
-# Executable. Output lands in <root>/build/bin next to the renderer so the
-# WebSocket/port + relative resource paths line up with the rest of the app.
+# ── P2c target layout (docs/refactor/plugin-architecture-and-cmake-migration.md
+# §B.1) ─────────────────────────────────────────────────────────────────────
+# pet_panel_api  INTERFACE — plugin SDK scaffolding (headers land in P4)
+# pet_panel_core STATIC   — ALL production code except main.cpp + the QML
+#                          module backing target (deliberate §B.1 decision:
+#                          core accepts Qt6::Quick; ui/ lives in core anyway)
+# exe shell      desktop-pet-controller-qt — main.cpp only (composition-root
+#                          slimming is P3's job, content untouched here)
+# Output lands in <root>/build/bin next to the renderer so the WebSocket/port
+# + relative resource paths line up with the rest of the app.
 set(_bin_output_dir "${PROJECT_SOURCE_DIR}/../build/bin")
-qt_add_executable(desktop-pet-controller-qt
-    src/main.cpp
+
+# ── pet_panel_api (INTERFACE placeholder) ───────────────────────────────────
+# Pure header-only scaffolding for the P4 plugin SDK (IPanelPlugin /
+# IPluginContext / value types under src/api/). Created empty NOW so targets
+# can link pet_panel_api unconditionally and P4's introduction is purely
+# additive (no CMake churn in consuming targets later).
+add_library(pet_panel_api INTERFACE)
+# Qt value types (QString / QJsonObject / ...) are the ABI-safe currency of
+# the future SDK headers (§B.3) — expose Qt6::Core's include path from day one.
+target_link_libraries(pet_panel_api INTERFACE Qt6::Core)
+
+# ── pet_panel_core (STATIC) ─────────────────────────────────────────────────
+# Every production TU except main.cpp. Linkage/compile-def/include-dir
+# requirements are PUBLIC so the 41 tests (tests/CMakeLists.txt) and the exe
+# shell consume them by linking this one library instead of re-listing sources.
+qt_add_library(pet_panel_core STATIC
     src/network/Envelope.cpp
     src/network/Protocol.cpp
     src/network/WsServer.cpp
@@ -244,18 +266,17 @@ qt_add_executable(desktop-pet-controller-qt
     src/ui/NotificationStreamController.hpp
 )
 
-set_target_properties(desktop-pet-controller-qt PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${_bin_output_dir}"
-    WIN32_EXECUTABLE ON
-)
-
-# Expose src/ so T4+ sources can write `#include "network/Envelope.hpp"` etc.
-target_include_directories(desktop-pet-controller-qt PRIVATE src)
+# Expose src/ so consumers (exe shell + 41 tests + future plugins) can write
+# `#include "network/Envelope.hpp"` etc. PUBLIC: this used to be per-target
+# target_include_directories in the exe and every test.
+target_include_directories(pet_panel_core PUBLIC src)
 
 # QGuiApplication (QtGui) and QQmlApplicationEngine (QtQml/QtQuick) are not
-# auto-linked by qt_add_executable, so link them explicitly. Core/Network are
-# transitive deps of Qml/Quick but listed for clarity.
-target_link_libraries(desktop-pet-controller-qt PRIVATE
+# auto-linked, so link them explicitly. Core/Network are transitive deps of
+# Qml/Quick but listed for clarity. PUBLIC so tests linking pet_panel_core
+# resolve the same modules their production includes need (previously each
+# test re-listed the subset it recompiled).
+target_link_libraries(pet_panel_core PUBLIC
     Qt6::Core
     Qt6::Gui
     # T13 finding: QSystemTrayIcon is PHYSICALLY in QtWidgets on Qt 6.10
@@ -277,36 +298,48 @@ target_link_libraries(desktop-pet-controller-qt PRIVATE
     Qt6::Charts
     # SQLite config backend (app.db) + asset metadata store.
     Qt6::Sql
+    # spdlog PUBLIC: production headers (logging/Logging.hpp etc.) include
+    # spdlog headers and tests compile TUs that use LOG_*/CapturingSink
+    # against them.
     spdlog::spdlog
 )
 
 # Force the spdlog *active* macros (SPDLOG_DEBUG/INFO/... which LOG_* wrap) to
 # emit at debug level by default so LOG_DEBUG is live in dev builds. Release
 # builds can override by appending -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO.
-target_compile_definitions(desktop-pet-controller-qt PRIVATE
+# PUBLIC: the 41 tests previously set the same definition per-target.
+target_compile_definitions(pet_panel_core PUBLIC
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
 # Windows-only system-library link for ResourceStatsCollector (todo 17):
 # GetProcessMemoryInfo lives in Psapi.lib. MinGW ships libpsapi.a so the
 # plain `psapi` link name resolves. No-op on Linux (/proc needs no link).
 if(WIN32)
-    target_link_libraries(desktop-pet-controller-qt PRIVATE psapi)
+    target_link_libraries(pet_panel_core PRIVATE psapi)
 endif()
 
-# QML module. Main.qml is auto-registered as type "Main" under URI DesktopPet,
+# QML module — backing target is pet_panel_core (§B.1 decision, 2026-09-19:
+# core accepts the Qt6::Quick dependency; ui/ already lives in core so the
+# registration point moved by renaming the host target, not by relocating
+# code). Main.qml is auto-registered as type "Main" under URI DesktopPet,
 # loadable via QQmlApplicationEngine::loadFromModule("DesktopPet", "Main").
-# T24: pages/ holds the 4 StackView placeholder pages. qt_add_qml_module
-# flattens subdirectory paths — each file's basename becomes its registered
-# type name, so WelcomePage.qml is usable as `WelcomePage {}` after
-# `import DesktopPet`.
+# T24: pages/ holds the StackView pages. qt_add_qml_module flattens
+# subdirectory paths — each file's basename becomes its registered type name,
+# so WelcomePage.qml is usable as `WelcomePage {}` after `import DesktopPet`.
 #
 # Theme.qml is `pragma Singleton` — on clean builds with Qt 6.10 + QTP0001 NEW,
 # the auto-generated qmldir does NOT pick up `pragma Singleton` and registers
 # Theme as a plain component (its instance properties — bgColor, setTheme, … —
 # are then undefined at runtime). The explicit QT_QML_SINGLETON_TYPE property
 # forces the `singleton` keyword in qmldir so Theme works as a singleton.
+#
+# NOTE (P2c risk, §D P2): attaching the module to a STATIC library changes
+# how the generated module plugin reaches the exe — qt_import_qml_plugins on
+# the exe links it transitively via pet_panel_core. Runtime verification gate:
+# --screenshot full-page run with zero "unknown type"/"is not installed" in
+# the logs (compile-time checks cannot catch this class of regression).
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
-qt_add_qml_module(desktop-pet-controller-qt
+qt_add_qml_module(pet_panel_core
     URI DesktopPet
     VERSION 1.0
         QML_FILES
@@ -333,6 +366,30 @@ qml/pages/VoicePackPage.qml
 qml/pages/AssetPage.qml
 qml/BubbleStreamWindow.qml
 qml/components/BubbleCard.qml
+)
+
+# ── exe shell ───────────────────────────────────────────────────────────────
+# main.cpp only — the composition-root slimming (P3) will carve PanelApplication
+# / ScreenshotRunner out of it; until then it links the library and keeps its
+# current content byte-for-byte.
+qt_add_executable(desktop-pet-controller-qt
+    src/main.cpp
+)
+
+set_target_properties(desktop-pet-controller-qt PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${_bin_output_dir}"
+    WIN32_EXECUTABLE ON
+)
+
+target_link_libraries(desktop-pet-controller-qt PRIVATE
+    pet_panel_core
+    # P2c: the QML module's backing target is pet_panel_core, so the
+    # generated static module plugin (pet_panel_coreplugin + its _init object
+    # library, which force-runs Q_INIT_RESOURCE for :/qt/qml/DesktopPet) must
+    # be linked explicitly — with an executable backing target this happened
+    # implicitly. Symptom if missing (verified): runtime "No module named
+    # \"DesktopPet\" found" with zero compile-time errors.
+    pet_panel_coreplugin
 )
 
 # windeployqt for the main exe on Windows (P1b): replicates the exact

@@ -106,7 +106,7 @@ build/bin/
 └── Resources/                        # 模型资源（自动复制）
 ```
 
-（`.exe` 后缀仅 Windows；产物清单含 `desktop-pet-controller-qt-poc(.exe)`，P2 将退役。）
+（`.exe` 后缀仅 Windows；`desktop-pet-controller-qt-poc` 已于 P2 退役删除。）
 
 ## 开发工具（不在构建路径）
 

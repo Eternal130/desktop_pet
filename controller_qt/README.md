@@ -305,7 +305,7 @@ controller_qt/
 ├── README.md                   # this file
 ├── src/
 │   ├── main.cpp                # QGuiApplication + QQmlApplicationEngine entry
-│   ├── poc_main.cpp            # Phase-0 PoC: drives renderer through full WS round-trip
+│   ├── main.cpp                # entry: god-wiring (P3 组合根拆解目标) + CJK tofu guard
 │   ├── network/                # Envelope, Protocol (25 commands), WsServer, MessageDispatcher,
 │   │                           #   PendingRequests, EventRegistry, ThreadMarshal
 │   ├── core/                   # InstanceSession (+ 4 split TUs), InstanceManager, Scheduler,

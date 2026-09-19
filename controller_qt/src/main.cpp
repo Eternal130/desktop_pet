@@ -4,6 +4,8 @@
 // AppFontGuard (M4, CJK tofu guard). main() is sequencing only.
 #include <QApplication>
 #include <QQmlApplicationEngine>
+#include <QCoreApplication>
+#include <QTimer>
 
 #include <chrono>
 
@@ -24,6 +26,18 @@ int main(int argc, char* argv[])
     // visuals. Must be set before QGuiApplication construction.
     // Ref: https://doc.qt.io/qt-6/qtquickcontrols2-styles.html
     qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+
+    // Hidden exit-QA hook (B.2 v2), deliberately absent from any help text:
+    // --self-quit <ms> runs the FULL normal startup (engine load, window
+    // creation, exec()) and then quits via QCoreApplication::quit() after
+    // <ms> — exercising the real teardown destructor chain, NOT the QA
+    // modes' std::exit path. Exit code 0 is the M4 gate.
+    int selfQuitMs = -1;
+    for (int i = 1; i < argc; ++i) {
+        const QString arg = QString::fromUtf8(argv[i]);
+        if (arg == QStringLiteral("--self-quit") && i + 1 < argc)
+            selfQuitMs = QString::fromUtf8(argv[++i]).toInt();
+    }
 
     // ── T24 cold-start timing anchor ─────────────────────────────────────
     // Captured BEFORE QGuiApplication construction so Qt framework init cost
@@ -79,6 +93,12 @@ int main(int argc, char* argv[])
     // was passed; an active QA mode ends the process via std::exit inside
     // (teardown-history notes live in ScreenshotRunner.cpp).
     runScreenshotQa(app, engine, *uiBoot->notificationStream(), argc, argv);
+
+    // Schedule the exit-QA quit AFTER the QA-mode call: screenshot/bubble
+    // modes terminate the process themselves and take precedence.
+    if (selfQuitMs >= 0) {
+        QTimer::singleShot(selfQuitMs, &app, &QCoreApplication::quit);
+    }
 
     const int exitCode = app.exec();
     Logging::shutdown();

@@ -8,6 +8,14 @@
 # the test finds the JSON files regardless of where the binary is launched from
 # (avoids QFINDTESTDATA deployment complexity — see learnings.md T3 notes).
 
+# ── windeployqt unification (P1b, §C.3) ─────────────────────────────────────
+# Every test exe below deploys its Qt runtime via one call to
+# pet_deploy_qt_test(<target>) (cmake/DeployQtTest.cmake) instead of the
+# 41 copy-pasted if(WIN32) blocks that used to inline the same
+# find_program + POST_BUILD logic (152 windeployqt occurrences). The
+# function is a no-op on non-Windows hosts.
+include(${CMAKE_SOURCE_DIR}/cmake/DeployQtTest.cmake)
+
 # The test exe links Qt6::Test (registered as a REQUIRED component in the parent
 # CMakeLists.txt) plus Qt6::Core. QtGui is not needed: ProtocolFixturesTest is a
 # pure JSON-parsing test with no GUI, so QTEST_APPLESS_MAIN is used.
@@ -19,30 +27,7 @@ target_link_libraries(ProtocolFixturesTest PRIVATE Qt6::Core Qt6::Test)
 target_compile_definitions(ProtocolFixturesTest PRIVATE
     PROTOCOL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/protocol")
 
-# On Windows the test exe needs the Qt DLLs (Qt6Core.dll, Qt6Test.dll) next to
-# it to run standalone under ctest — _get_qt_env() does not put Qt's bin on
-# PATH. windeployqt mirrors what build.py does for the main app exe.
-if(WIN32)
-    # Qt6_DIR = <qt>/lib/cmake/Qt6 → <qt>/bin holds windeployqt.exe
-    get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-    find_program(QT_WINDEPLOYQT_EXE
-        NAMES windeployqt
-        HINTS "${_qt_bin_dir}"
-        NO_DEFAULT_PATH)
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET ProtocolFixturesTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:ProtocolFixturesTest>"
-            COMMENT "Running windeployqt for ProtocolFixturesTest")
-    else()
-        message(WARNING "windeployqt not found under ${_qt_bin_dir}; "
-                        "ProtocolFixturesTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(ProtocolFixturesTest)
 
 add_test(NAME ProtocolFixturesTest COMMAND ProtocolFixturesTest)
 
@@ -57,32 +42,7 @@ target_include_directories(EnvelopeTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(EnvelopeTest PRIVATE
     PROTOCOL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/protocol")
 
-# windeployqt for the test exe on Windows (same need as ProtocolFixturesTest:
-# ctest launches the exe with Qt's bin NOT on PATH, so the DLLs must sit next
-# to it). QT_WINDEPLOYQT_EXE is found and cached by the ProtocolFixturesTest
-# block above, which configure-time-runs first; fall back to a fresh lookup
-# if that ordering ever changes.
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET EnvelopeTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:EnvelopeTest>"
-            COMMENT "Running windeployqt for EnvelopeTest")
-    else()
-        message(WARNING "windeployqt not found; EnvelopeTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(EnvelopeTest)
 
 add_test(NAME EnvelopeTest COMMAND EnvelopeTest)
 
@@ -100,31 +60,7 @@ target_include_directories(LoggingTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(LoggingTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH). QT_WINDEPLOYQT_EXE is found+cached
-# by the ProtocolFixturesTest block above; fall back to a fresh lookup if the
-# ordering ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET LoggingTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:LoggingTest>"
-            COMMENT "Running windeployqt for LoggingTest")
-    else()
-        message(WARNING "windeployqt not found; LoggingTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(LoggingTest)
 
 add_test(NAME LoggingTest COMMAND LoggingTest)
 
@@ -143,31 +79,7 @@ target_include_directories(WsServerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(WsServerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so the WebSockets/Network DLLs must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the ProtocolFixturesTest
-# block above; fall back to a fresh lookup if the ordering ever changes.
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET WsServerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:WsServerTest>"
-            COMMENT "Running windeployqt for WsServerTest")
-    else()
-        message(WARNING "windeployqt not found; WsServerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(WsServerTest)
 
 add_test(NAME WsServerTest COMMAND WsServerTest)
 
@@ -182,31 +94,7 @@ target_link_libraries(PoCIntegrationTest PRIVATE Qt6::Core Qt6::Test)
 target_compile_definitions(PoCIntegrationTest PRIVATE
     BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
 
-# windeployqt for the test exe on Windows (ctest launches with Qt's bin NOT on
-# PATH, so Qt6Core.dll/Qt6Test.dll must sit next to it). QT_WINDEPLOYQT_EXE is
-# found+cached by the ProtocolFixturesTest block above; fall back to a fresh
-# lookup if ordering ever changes.
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET PoCIntegrationTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:PoCIntegrationTest>"
-            COMMENT "Running windeployqt for PoCIntegrationTest")
-    else()
-        message(WARNING "windeployqt not found; PoCIntegrationTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(PoCIntegrationTest)
 
 add_test(NAME PoCIntegrationTest COMMAND PoCIntegrationTest)
 # REQUIRES_RENDERER label lets ctest filter this out of headless/CI runs where
@@ -230,31 +118,7 @@ target_include_directories(MessageDispatcherTest PRIVATE ${CMAKE_SOURCE_DIR}/src
 target_compile_definitions(MessageDispatcherTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must sit
-# next to it). QT_WINDEPLOYQT_EXE is found+cached by the ProtocolFixturesTest
-# block above; fall back to a fresh lookup if ordering ever changes.
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET MessageDispatcherTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:MessageDispatcherTest>"
-            COMMENT "Running windeployqt for MessageDispatcherTest")
-    else()
-        message(WARNING "windeployqt not found; MessageDispatcherTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(MessageDispatcherTest)
 
 add_test(NAME MessageDispatcherTest COMMAND MessageDispatcherTest)
 
@@ -275,32 +139,7 @@ target_compile_definitions(ProtocolFactoryTest PRIVATE
     PROTOCOL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/protocol"
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET ProtocolFactoryTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:ProtocolFactoryTest>"
-            COMMENT "Running windeployqt for ProtocolFactoryTest")
-    else()
-        message(WARNING "windeployqt not found; ProtocolFactoryTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(ProtocolFactoryTest)
 
 add_test(NAME ProtocolFactoryTest COMMAND ProtocolFactoryTest)
 
@@ -320,31 +159,7 @@ target_include_directories(HandshakeTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(HandshakeTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (ctest launches with Qt's bin NOT on
-# PATH, so the WebSockets/Network DLLs must sit next to it). QT_WINDEPLOYQT_EXE
-# is found+cached by the ProtocolFixturesTest block above; fall back to a fresh
-# lookup if ordering ever changes.
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET HandshakeTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:HandshakeTest>"
-            COMMENT "Running windeployqt for HandshakeTest")
-    else()
-        message(WARNING "windeployqt not found; HandshakeTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(HandshakeTest)
 
 add_test(NAME HandshakeTest COMMAND HandshakeTest)
 
@@ -365,32 +180,7 @@ target_include_directories(PendingRequestsTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(PendingRequestsTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET PendingRequestsTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:PendingRequestsTest>"
-            COMMENT "Running windeployqt for PendingRequestsTest")
-    else()
-        message(WARNING "windeployqt not found; PendingRequestsTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(PendingRequestsTest)
 
 add_test(NAME PendingRequestsTest COMMAND PendingRequestsTest)
 
@@ -411,32 +201,7 @@ target_include_directories(EventRegistryTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(EventRegistryTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET EventRegistryTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:EventRegistryTest>"
-            COMMENT "Running windeployqt for EventRegistryTest")
-    else()
-        message(WARNING "windeployqt not found; EventRegistryTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(EventRegistryTest)
 
 add_test(NAME EventRegistryTest COMMAND EventRegistryTest)
 
@@ -460,32 +225,7 @@ target_include_directories(ThreadMarshalTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(ThreadMarshalTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so the WebSockets/Network DLLs must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET ThreadMarshalTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:ThreadMarshalTest>"
-            COMMENT "Running windeployqt for ThreadMarshalTest")
-    else()
-        message(WARNING "windeployqt not found; ThreadMarshalTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(ThreadMarshalTest)
 
 add_test(NAME ThreadMarshalTest COMMAND ThreadMarshalTest)
 
@@ -509,32 +249,7 @@ target_include_directories(PathResolveTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(PathResolveTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET PathResolveTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:PathResolveTest>"
-            COMMENT "Running windeployqt for PathResolveTest")
-    else()
-        message(WARNING "windeployqt not found; PathResolveTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(PathResolveTest)
 
 add_test(NAME PathResolveTest COMMAND PathResolveTest)
 
@@ -564,32 +279,7 @@ target_compile_definitions(ProcessManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
     BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so the Core/Network/WebSockets/Test
-# DLLs must sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET ProcessManagerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:ProcessManagerTest>"
-            COMMENT "Running windeployqt for ProcessManagerTest")
-    else()
-        message(WARNING "windeployqt not found; ProcessManagerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(ProcessManagerTest)
 
 add_test(NAME ProcessManagerTest COMMAND ProcessManagerTest)
 # REQUIRES_RENDERER label lets ctest filter this out of headless/CI runs where
@@ -626,32 +316,7 @@ target_compile_definitions(StartupSalvoTest PRIVATE
     PROTOCOL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/protocol"
     BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so the Core/Network/WebSockets/Test
-# DLLs must sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET StartupSalvoTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:StartupSalvoTest>"
-            COMMENT "Running windeployqt for StartupSalvoTest")
-    else()
-        message(WARNING "windeployqt not found; StartupSalvoTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(StartupSalvoTest)
 
 add_test(NAME StartupSalvoTest COMMAND StartupSalvoTest)
 # REQUIRES_RENDERER label lets ctest filter this out of headless/CI runs where
@@ -680,32 +345,7 @@ target_include_directories(ConfigDirTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(ConfigDirTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET ConfigDirTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:ConfigDirTest>"
-            COMMENT "Running windeployqt for ConfigDirTest")
-    else()
-        message(WARNING "windeployqt not found; ConfigDirTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(ConfigDirTest)
 
 add_test(NAME ConfigDirTest COMMAND ConfigDirTest)
 
@@ -730,32 +370,7 @@ target_include_directories(InstanceConfigTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(InstanceConfigTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET InstanceConfigTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:InstanceConfigTest>"
-            COMMENT "Running windeployqt for InstanceConfigTest")
-    else()
-        message(WARNING "windeployqt not found; InstanceConfigTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(InstanceConfigTest)
 
 add_test(NAME InstanceConfigTest COMMAND InstanceConfigTest)
 
@@ -780,32 +395,7 @@ target_include_directories(PanelConfigTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(PanelConfigTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must sit
-# next to it). QT_WINDEPLOYQT_EXE is found+cached by the ProtocolFixturesTest
-# block above; fall back to a fresh lookup if ordering ever changes. spdlog is
-# statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET PanelConfigTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:PanelConfigTest>"
-            COMMENT "Running windeployqt for PanelConfigTest")
-    else()
-        message(WARNING "windeployqt not found; PanelConfigTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(PanelConfigTest)
 
 add_test(NAME PanelConfigTest COMMAND PanelConfigTest)
 
@@ -832,32 +422,7 @@ target_include_directories(InstanceConfigManagerTest PRIVATE ${CMAKE_SOURCE_DIR}
 target_compile_definitions(InstanceConfigManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET InstanceConfigManagerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:InstanceConfigManagerTest>"
-            COMMENT "Running windeployqt for InstanceConfigManagerTest")
-    else()
-        message(WARNING "windeployqt not found; InstanceConfigManagerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(InstanceConfigManagerTest)
 
 add_test(NAME InstanceConfigManagerTest COMMAND InstanceConfigManagerTest)
 
@@ -884,32 +449,7 @@ target_include_directories(PanelStateManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src
 target_compile_definitions(PanelStateManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET PanelStateManagerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:PanelStateManagerTest>"
-            COMMENT "Running windeployqt for PanelStateManagerTest")
-    else()
-        message(WARNING "windeployqt not found; PanelStateManagerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(PanelStateManagerTest)
 
 add_test(NAME PanelStateManagerTest COMMAND PanelStateManagerTest)
 
@@ -941,32 +481,7 @@ target_include_directories(RobustnessTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(RobustnessTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET RobustnessTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:RobustnessTest>"
-            COMMENT "Running windeployqt for RobustnessTest")
-    else()
-        message(WARNING "windeployqt not found; RobustnessTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(RobustnessTest)
 
 add_test(NAME RobustnessTest COMMAND RobustnessTest)
 
@@ -990,27 +505,7 @@ target_include_directories(NetworkWiringTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(NetworkWiringTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET NetworkWiringTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:NetworkWiringTest>"
-            COMMENT "Running windeployqt for NetworkWiringTest")
-    else()
-        message(WARNING "windeployqt not found; NetworkWiringTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(NetworkWiringTest)
 
 add_test(NAME NetworkWiringTest COMMAND NetworkWiringTest)
 
@@ -1060,27 +555,7 @@ target_compile_definitions(InstanceSessionTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
     BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET InstanceSessionTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:InstanceSessionTest>"
-            COMMENT "Running windeployqt for InstanceSessionTest")
-    else()
-        message(WARNING "windeployqt not found; InstanceSessionTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(InstanceSessionTest)
 
 add_test(NAME InstanceSessionTest COMMAND InstanceSessionTest)
 set_tests_properties(InstanceSessionTest PROPERTIES LABELS "REQUIRES_RENDERER")
@@ -1112,27 +587,7 @@ target_compile_definitions(ModelInfoParserTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
     CUBISM_RESOURCES_DIR="${CMAKE_SOURCE_DIR}/../third_party/CubismSdkForNative/Samples/Resources")
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET ModelInfoParserTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:ModelInfoParserTest>"
-            COMMENT "Running windeployqt for ModelInfoParserTest")
-    else()
-        message(WARNING "windeployqt not found; ModelInfoParserTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(ModelInfoParserTest)
 
 add_test(NAME ModelInfoParserTest COMMAND ModelInfoParserTest)
 
@@ -1158,27 +613,7 @@ target_include_directories(ModelScannerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(ModelScannerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET ModelScannerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:ModelScannerTest>"
-            COMMENT "Running windeployqt for ModelScannerTest")
-    else()
-        message(WARNING "windeployqt not found; ModelScannerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(ModelScannerTest)
 
 add_test(NAME ModelScannerTest COMMAND ModelScannerTest)
 
@@ -1236,27 +671,7 @@ target_include_directories(InstanceManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(InstanceManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET InstanceManagerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:InstanceManagerTest>"
-            COMMENT "Running windeployqt for InstanceManagerTest")
-    else()
-        message(WARNING "windeployqt not found; InstanceManagerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(InstanceManagerTest)
 
 add_test(NAME InstanceManagerTest COMMAND InstanceManagerTest)
 
@@ -1283,32 +698,7 @@ target_include_directories(SchedulerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(SchedulerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET SchedulerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-            --no-translations
-            --no-system-d3d-compiler
-            --no-opengl-sw
-            --no-quick-import
-            "$<TARGET_FILE:SchedulerTest>"
-            COMMENT "Running windeployqt for SchedulerTest")
-    else()
-        message(WARNING "windeployqt not found; SchedulerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(SchedulerTest)
 
 add_test(NAME SchedulerTest COMMAND SchedulerTest)
 
@@ -1334,32 +724,7 @@ target_include_directories(InteractionHandlerTest PRIVATE ${CMAKE_SOURCE_DIR}/sr
 target_compile_definitions(InteractionHandlerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET InteractionHandlerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-            --no-translations
-            --no-system-d3d-compiler
-            --no-opengl-sw
-            --no-quick-import
-            "$<TARGET_FILE:InteractionHandlerTest>"
-            COMMENT "Running windeployqt for InteractionHandlerTest")
-    else()
-        message(WARNING "windeployqt not found; InteractionHandlerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(InteractionHandlerTest)
 
 add_test(NAME InteractionHandlerTest COMMAND InteractionHandlerTest)
 
@@ -1384,27 +749,7 @@ target_include_directories(WsServerMultiTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(WsServerMultiTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET WsServerMultiTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:WsServerMultiTest>"
-            COMMENT "Running windeployqt for WsServerMultiTest")
-    else()
-        message(WARNING "windeployqt not found; WsServerMultiTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(WsServerMultiTest)
 
 add_test(NAME WsServerMultiTest COMMAND WsServerMultiTest)
 
@@ -1431,32 +776,7 @@ target_include_directories(AutoLaunchManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src
 target_compile_definitions(AutoLaunchManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET AutoLaunchManagerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:AutoLaunchManagerTest>"
-            COMMENT "Running windeployqt for AutoLaunchManagerTest")
-    else()
-        message(WARNING "windeployqt not found; AutoLaunchManagerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(AutoLaunchManagerTest)
 
 add_test(NAME AutoLaunchManagerTest COMMAND AutoLaunchManagerTest)
 
@@ -1485,32 +805,7 @@ target_include_directories(RestartControllerTest PRIVATE ${CMAKE_SOURCE_DIR}/src
 target_compile_definitions(RestartControllerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET RestartControllerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:RestartControllerTest>"
-            COMMENT "Running windeployqt for RestartControllerTest")
-    else()
-        message(WARNING "windeployqt not found; RestartControllerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(RestartControllerTest)
 
 add_test(NAME RestartControllerTest COMMAND RestartControllerTest)
 
@@ -1549,32 +844,7 @@ target_include_directories(TrayManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(TrayManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (Qt6Core.dll / Qt6Gui.dll /
-# Qt6Test.dll must sit next to the exe — ctest runs with Qt's bin NOT on
-# PATH). QT_WINDEPLOYQT_EXE is found+cached by the ProtocolFixturesTest
-# block above; fall back to a fresh lookup if ordering ever changes.
-# spdlog is statically linked (no extra DLL needed).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET TrayManagerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:TrayManagerTest>"
-            COMMENT "Running windeployqt for TrayManagerTest")
-    else()
-        message(WARNING "windeployqt not found; TrayManagerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(TrayManagerTest)
 
 add_test(NAME TrayManagerTest COMMAND TrayManagerTest)
 
@@ -1610,33 +880,7 @@ if(WIN32)
     target_link_libraries(ResourceStatsCollectorTest PRIVATE psapi)
 endif()
 
-# windeployqt for the test exe on Windows (same need as the other test exes:
-# ctest launches with Qt's bin NOT on PATH, so Qt6Core.dll/Qt6Test.dll must
-# sit next to it). QT_WINDEPLOYQT_EXE is found+cached by the
-# ProtocolFixturesTest block above; fall back to a fresh lookup if ordering
-# ever changes. spdlog is statically linked (no extra DLL needed). psapi is
-# a system lib (already in the MinGW toolchain).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET ResourceStatsCollectorTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:ResourceStatsCollectorTest>"
-            COMMENT "Running windeployqt for ResourceStatsCollectorTest")
-    else()
-        message(WARNING "windeployqt not found; ResourceStatsCollectorTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(ResourceStatsCollectorTest)
 
 add_test(NAME ResourceStatsCollectorTest COMMAND ResourceStatsCollectorTest)
 
@@ -1663,27 +907,7 @@ target_include_directories(VoicePackScannerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(VoicePackScannerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET VoicePackScannerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:VoicePackScannerTest>"
-            COMMENT "Running windeployqt for VoicePackScannerTest")
-    else()
-        message(WARNING "windeployqt not found; VoicePackScannerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(VoicePackScannerTest)
 
 add_test(NAME VoicePackScannerTest COMMAND VoicePackScannerTest)
 
@@ -1712,27 +936,7 @@ target_include_directories(MetaMkoParserTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(MetaMkoParserTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET MetaMkoParserTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:MetaMkoParserTest>"
-            COMMENT "Running windeployqt for MetaMkoParserTest")
-    else()
-        message(WARNING "windeployqt not found; MetaMkoParserTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(MetaMkoParserTest)
 
 add_test(NAME MetaMkoParserTest COMMAND MetaMkoParserTest)
 
@@ -1773,27 +977,7 @@ target_include_directories(MountedBehaviorEngineTest PRIVATE ${CMAKE_SOURCE_DIR}
 target_compile_definitions(MountedBehaviorEngineTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET MountedBehaviorEngineTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:MountedBehaviorEngineTest>"
-            COMMENT "Running windeployqt for MountedBehaviorEngineTest")
-    else()
-        message(WARNING "windeployqt not found; MountedBehaviorEngineTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(MountedBehaviorEngineTest)
 
 add_test(NAME MountedBehaviorEngineTest COMMAND MountedBehaviorEngineTest)
 
@@ -1820,27 +1004,7 @@ target_include_directories(OggDurationHeuristicTest PRIVATE ${CMAKE_SOURCE_DIR}/
 target_compile_definitions(OggDurationHeuristicTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET OggDurationHeuristicTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:OggDurationHeuristicTest>"
-            COMMENT "Running windeployqt for OggDurationHeuristicTest")
-    else()
-        message(WARNING "windeployqt not found; OggDurationHeuristicTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(OggDurationHeuristicTest)
 
 add_test(NAME OggDurationHeuristicTest COMMAND OggDurationHeuristicTest)
 
@@ -1875,31 +1039,7 @@ target_include_directories(MonitorDataModelTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(MonitorDataModelTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-# windeployqt for the test exe on Windows (ctest launches with Qt's bin NOT on
-# PATH, so Qt6Core.dll/Qt6Test.dll must sit next to it). QT_WINDEPLOYQT_EXE is
-# found+cached by the ProtocolFixturesTest block above; fall back to a fresh
-# lookup if ordering ever changes. spdlog is statically linked (no extra DLL).
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET MonitorDataModelTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:MonitorDataModelTest>"
-            COMMENT "Running windeployqt for MonitorDataModelTest")
-    else()
-        message(WARNING "windeployqt not found; MonitorDataModelTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(MonitorDataModelTest)
 
 add_test(NAME MonitorDataModelTest COMMAND MonitorDataModelTest)
 
@@ -1917,27 +1057,7 @@ target_include_directories(DatabaseManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(DatabaseManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET DatabaseManagerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:DatabaseManagerTest>"
-            COMMENT "Running windeployqt for DatabaseManagerTest")
-    else()
-        message(WARNING "windeployqt not found; DatabaseManagerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(DatabaseManagerTest)
 
 add_test(NAME DatabaseManagerTest COMMAND DatabaseManagerTest)
 
@@ -1957,27 +1077,7 @@ target_include_directories(AssetManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(AssetManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET AssetManagerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:AssetManagerTest>"
-            COMMENT "Running windeployqt for AssetManagerTest")
-    else()
-        message(WARNING "windeployqt not found; AssetManagerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(AssetManagerTest)
 
 add_test(NAME AssetManagerTest COMMAND AssetManagerTest)
 
@@ -1995,27 +1095,7 @@ target_include_directories(NotificationStreamModelTest PRIVATE ${CMAKE_SOURCE_DI
 target_compile_definitions(NotificationStreamModelTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET NotificationStreamModelTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:NotificationStreamModelTest>"
-            COMMENT "Running windeployqt for NotificationStreamModelTest")
-    else()
-        message(WARNING "windeployqt not found; NotificationStreamModelTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(NotificationStreamModelTest)
 
 add_test(NAME NotificationStreamModelTest COMMAND NotificationStreamModelTest)
 
@@ -2028,26 +1108,6 @@ target_include_directories(NotificationStreamControllerTest PRIVATE ${CMAKE_SOUR
 target_compile_definitions(NotificationStreamControllerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
-if(WIN32)
-    if(NOT QT_WINDEPLOYQT_EXE)
-        get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
-        find_program(QT_WINDEPLOYQT_EXE
-            NAMES windeployqt
-            HINTS "${_qt_bin_dir}"
-            NO_DEFAULT_PATH)
-    endif()
-    if(QT_WINDEPLOYQT_EXE)
-        add_custom_command(TARGET NotificationStreamControllerTest POST_BUILD
-            COMMAND "${QT_WINDEPLOYQT_EXE}"
-                    --no-translations
-                    --no-system-d3d-compiler
-                    --no-opengl-sw
-                    --no-quick-import
-                    "$<TARGET_FILE:NotificationStreamControllerTest>"
-            COMMENT "Running windeployqt for NotificationStreamControllerTest")
-    else()
-        message(WARNING "windeployqt not found; NotificationStreamControllerTest may fail to run under ctest on Windows.")
-    endif()
-endif()
+pet_deploy_qt_test(NotificationStreamControllerTest)
 
 add_test(NAME NotificationStreamControllerTest COMMAND NotificationStreamControllerTest)

@@ -6,8 +6,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Qt 6.8 LTS minimum — accepts newer (e.g. 6.10.0). The Qt install location is
-# supplied at configure time via -DCMAKE_PREFIX_PATH by build.py; do NOT hardcode
-# the Qt path here.
+# supplied at configure time (CMAKE_PREFIX_PATH via the presets toolchain); do
+# NOT hardcode the Qt path here.
 find_package(Qt6 6.8 COMPONENTS
     Core
     Gui
@@ -34,6 +34,11 @@ qt_standard_project_setup()
 # reconfigured. This is the fix the T1 learnings flagged as "safe (matches
 # loadFromModule)". QTP0004 stays default/OLD so qmldir stays auto-generated.
 qt_policy(SET QTP0001 NEW)
+
+# Unified windeployqt POST_BUILD helpers (P1b, §C.3): pet_deploy_qt_test()
+# for the test exes (called from tests/CMakeLists.txt) and pet_deploy_qt_app()
+# for the main exe below. No-op on non-Windows hosts.
+include(cmake/DeployQtTest.cmake)
 
 # spdlog (header option: bundled fmt). Fetched at configure time, so the first
 # configure requires network access; subsequent configures reuse build/_deps/.
@@ -268,7 +273,7 @@ target_link_libraries(desktop-pet-controller-qt PRIVATE
     # Wave 8 todo 18: QtCharts QML module (ChartView, LineSeries, ValueAxis)
     # consumed by MonitorPage.qml's 6 live resource-monitor sparklines.
     # windeployqt auto-detects Qt6Charts.dll via the exe's import table — no
-    # --modules charts flag needed in build.py's windeployqt invocation.
+    # --modules charts flag needed in the windeployqt invocation.
     Qt6::Charts
     # SQLite config backend (app.db) + asset metadata store.
     Qt6::Sql
@@ -330,6 +335,14 @@ qml/BubbleStreamWindow.qml
 qml/components/BubbleCard.qml
 )
 
+# windeployqt for the main exe on Windows (P1b): replicates the exact
+# post-build deployment invocation of the retired Python build orchestrator
+# (see pre-P1b git history) — full
+# deployment with --qmldir over the QML sources so the panel ships standalone
+# from build/bin/. windeployqt auto-detects Qt6Charts.dll via the exe's import
+# table (no --modules flag needed).
+pet_deploy_qt_app(desktop-pet-controller-qt)
+
 # ── Phase 0 PoC (task T6) ───────────────────────────────────────────────────
 # A SEPARATE console executable with its own main(). It drives the real C++
 # renderer through the full WS round-trip (ready → load_model → model_loaded →
@@ -355,8 +368,8 @@ set_target_properties(desktop-pet-controller-qt-poc PROPERTIES
     WIN32_EXECUTABLE OFF  # console app — stdout must reach the terminal
 )
 
-# windeployqt for the PoC binary (Qt6Core.dll etc. next to the exe). build.py's
-# build_qt() runs windeployqt only on the main app; the PoC gets its own deploy
+# windeployqt for the PoC binary (Qt6Core.dll etc. next to the exe). The main
+# app exe is deployed separately; the PoC gets its own deploy
 # step here so it runs standalone from build/bin/.
 if(WIN32)
     get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)

@@ -444,6 +444,17 @@ int main(int argc, char *argv[])
             std::exit(bubbleExit == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
         }
         if (screenshotMode && !engine.rootObjects().isEmpty()) {
+            // P1b fix (docs/refactor/baselines/p1a-verification §3): the out
+            // directory used to never be created — SCREENSHOT_SAVED was
+            // printed even though nothing hit the disk. Create it up front
+            // and hard-fail when that is not possible.
+            if (!QDir().mkpath(outDir)) {
+                fprintf(stderr, "SCREENSHOT_OUTDIR_FAILED=%s\n",
+                        outDir.toStdString().c_str());
+                fflush(stderr);
+                Logging::shutdown();
+                std::exit(EXIT_FAILURE);
+            }
             // Two-phase state machine on one repeating QTimer: odd ticks switch
             // the page, even ticks grab it. All state lives as properties on
             // the heap `runner` (parented to app) so teardown after exec()
@@ -456,6 +467,7 @@ int main(int argc, char *argv[])
             runner->setProperty("pages", pages);
             runner->setProperty("idx", 0);
             runner->setProperty("awaitingGrab", false);
+            runner->setProperty("failed", false);
 
             auto* ticker = new QTimer(runner);
             ticker->setInterval(delayMs);
@@ -475,9 +487,18 @@ int main(int argc, char *argv[])
                         const QImage img = window->grabWindow();
                         const QString path = QDir(dir).filePath(
                             pages.at(idx) + QStringLiteral(".png"));
-                        img.save(path);
-                        printf("SCREENSHOT_SAVED=%s\n",
-                               path.toStdString().c_str());
+                        // P1b fix: verify the save actually landed (full disk,
+                        // permissions, unwritable path) — a silent failure
+                        // must surface as SCREENSHOT_FAILED and a non-zero
+                        // exit, not a bogus SCREENSHOT_SAVED.
+                        if (img.save(path)) {
+                            printf("SCREENSHOT_SAVED=%s\n",
+                                   path.toStdString().c_str());
+                        } else {
+                            runner->setProperty("failed", true);
+                            printf("SCREENSHOT_FAILED=%s\n",
+                                   path.toStdString().c_str());
+                        }
                         fflush(stdout);
                     }
                     runner->setProperty("idx", idx + 1);
@@ -498,8 +519,10 @@ int main(int argc, char *argv[])
             // after an in-exec quit still corrupts the heap (0xC0000374,
             // reproducible WITHOUT FluentUI — so not a plugin artifact).
             // Screenshots are already on disk; the production close path
-            // (normal window close) is unaffected.
-            std::exit(shotExit);
+            // (normal window close) is unaffected. P1b: any failed save
+            // flips the exit code so CI/QA scripts notice missing PNGs.
+            std::exit(runner->property("failed").toBool() ? EXIT_FAILURE
+                                                          : shotExit);
         }
     }
 

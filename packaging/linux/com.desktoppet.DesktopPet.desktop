@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Desktop Pet
+Comment=Live2D desktop pet control panel
+Exec=desktop-pet-controller-qt
+Categories=Utility;
+Terminal=false
+# Icon 字段省略 — 仓库暂无图标素材（已知缺口，见 BUILD.md 发布一节）。
+# AppImage 打包时由 packaging/linux/package.sh 附加占位 Icon= 与 16x16 PNG。

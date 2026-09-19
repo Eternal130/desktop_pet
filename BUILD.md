@@ -112,3 +112,9 @@ build/bin/
 
 - `controller_qt/tests/ui_automation/run_ui_tests.py` — **Windows-only** 开发侧 UI 回归工具（仓库唯一许可的 Python，不参与构建；命令与产物引用需带 `.exe` 后缀）。
 - `scripts/setup-dev-env.ps1` — **可选**装机辅助（会话级 PATH / `CMAKE_PREFIX_PATH` 激活），构建已不依赖它。
+
+## 发布（tag 驱动）
+
+推送 `v*` tag → `.github/workflows/release.yml` 双平台构建（controller + renderer GL/VK + 测试）并发布 GitHub Release，产物：**Windows** `DesktopPet-Setup-<tag去v>.exe`（Inno Setup 安装器）+ 便携 zip；**Linux** `DesktopPet-<tag>-x86_64.AppImage` + 便携 tar.gz；版本号全部取自 tag（CMake project 无 VERSION，不做深度注入）。本机可单独复现 Linux 打包：`bash packaging/linux/package.sh . <tag> <out-dir>`。
+
+**图标素材缺口**（已知，待用户补素材）：仓库暂无图标——安装器无 `SetupIconFile`、快捷方式用系统默认图标、`.desktop` 省略 `Icon`、AppImage 用 16×16 占位 PNG（`packaging/linux/package.sh` 内标注"待替换"）。补素材后：installer.iss 加 `SetupIconFile`、.desktop 加 `Icon=`、package.sh 改为拷贝真实 png。

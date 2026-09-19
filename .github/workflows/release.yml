@@ -1,0 +1,199 @@
+# Release pipeline (tag-driven): on pushing a v* tag, build both platforms
+# and publish a GitHub Release with multi-platform installers.
+#
+# Artifacts per release:
+#   Windows: DesktopPet-Setup-<tag-no-v>.exe (Inno Setup) + portable zip
+#   Linux:   DesktopPet-<tag>-x86_64.AppImage + portable tar.gz
+#
+# Coexists with ci.yml by design: ci handles push/PR, this handles tags.
+# The Qt-install / env-resolution / bootstrap step blocks intentionally
+# duplicate ci.yml verbatim — each workflow stays independently readable;
+# a workflow_call refactor is deliberately deferred.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Checkout (submodules recursive - CubismNativeSamples + Framework)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Toolchain versions
+        run: cmake --version
+
+      # Same Qt install as ci.yml (windows / mingw_64 + tools_ninja +
+      # tools_mingw1310): both components pin controller_qt's qt-mingw-qt.cmake.
+      - name: Install Qt 6.10 (windows / mingw_64 + ninja + mingw1310_64)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_mingw'
+          modules: 'qtcharts qtwebsockets'
+          tools: 'tools_ninja tools_mingw1310,qt.tools.win64_mingw1310'
+
+      - name: Qt toolchain env (windows)
+        run: |
+          echo "QT_PREFIX_PATH=$QT_ROOT_DIR" >> "$GITHUB_ENV"
+          echo "QT_MINGW_ROOT=$(find "$IQTA_TOOLS" -maxdepth 1 -type d -iname 'mingw1310*' | head -n1)" >> "$GITHUB_ENV"
+          echo "QT_NINJA=$(find "$IQTA_TOOLS" -maxdepth 2 -type f -iname 'ninja.exe' | head -n1)" >> "$GITHUB_ENV"
+
+      # Inno Setup (iscc) for the installer; Vulkan SDK for win-vk-release.
+      # The choco vulkansdk package lands in C:\VulkanSDK\<ver> but does not
+      # update the current shell — export VULKAN_SDK for find_package(Vulkan).
+      - name: Install Inno Setup + Vulkan SDK
+        run: |
+          choco install -y innosetup vulkansdk
+          VULKAN_SDK_DIR=$(ls -d /c/VulkanSDK/*/ | head -n1)
+          echo "VULKAN_SDK=$(cygpath -m "$VULKAN_SDK_DIR")" >> "$GITHUB_ENV"
+
+      - name: Bootstrap (Cubism Core + GLEW 2.2.0 + GLFW 3.4, idempotent)
+        run: cmake -P scripts/Bootstrap.cmake
+
+      - name: Controller (configure + build + tests)
+        run: |
+          cd controller_qt
+          cmake --workflow --preset win-release
+
+      - name: Renderer OpenGL (configure + build + tests)
+        run: |
+          cd renderer
+          cmake --workflow --preset win-gl-release
+
+      # No win-vk-release *workflow* preset exists and release packaging must
+      # not edit CMakePresets.json — run the equivalent configure+build+test
+      # triplet against the existing vk configure/build/test presets.
+      - name: Renderer Vulkan (configure + build + tests)
+        run: |
+          cd renderer
+          cmake --preset win-vk-release
+          cmake --build --preset win-vk-release
+          ctest --preset win-vk-release
+
+      - name: Portable zip (build/bin minus test artifacts)
+        run: |
+          mkdir -p dist stage
+          (cd build/bin && find . -type f \
+              ! -name 'renderer_tests.exe' \
+              ! -name 'desktop-pet-controller-qt-poc.exe' \
+              ! -name '*.pdb' ! -name '*.lib' \
+              -print0 | while IFS= read -r -d '' f; do
+                  mkdir -p "stage/$(dirname "$f")"
+                  cp "$f" "stage/$f"
+              done)
+          powershell -Command "Compress-Archive -Path 'stage/*' \
+              -DestinationPath 'dist/DesktopPet-$TAG-windows-x64.zip' -Force"
+
+      - name: Inno Setup installer
+        run: |
+          if ! command -v iscc >/dev/null 2>&1; then
+            export PATH="$PATH:/c/Program Files (x86)/Inno Setup 6"
+          fi
+          iscc /DVERSION="${TAG#v}" \
+               /DBUILD_BIN="$(pwd)/build/bin" \
+               packaging/windows/installer.iss
+          mv packaging/windows/DesktopPet-Setup-*.exe dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: dist/*
+
+  build-linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Checkout (submodules recursive - CubismNativeSamples + Framework)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Toolchain versions
+        run: cmake --version
+
+      - name: Install Qt 6.10 (linux / gcc_64)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.0'
+          host: 'linux'
+          target: 'desktop'
+          arch: 'gcc_64'
+          modules: 'qtcharts qtwebsockets'
+
+      # Same apt set as ci.yml plus libvulkan-dev (the vk variant is part of
+      # the release product). offscreen for the controller's GUI-app tests.
+      - name: System dependencies + headless env
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgl-dev \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            libvulkan-dev
+          echo "QT_QPA_PLATFORM=offscreen" >> "$GITHUB_ENV"
+
+      - name: Bootstrap (Cubism Core + GLEW 2.2.0 + GLFW 3.4, idempotent)
+        run: cmake -P scripts/Bootstrap.cmake
+
+      - name: Controller (configure + build + tests)
+        run: |
+          cd controller_qt
+          cmake --workflow --preset linux-release
+
+      - name: Renderer OpenGL (configure + build + tests)
+        run: |
+          cd renderer
+          cmake --workflow --preset linux-gl-release
+
+      # Equivalent of the (nonexistent) vk workflow preset — see the Windows
+      # twin step for why the triplet form is used.
+      - name: Renderer Vulkan (configure + build + tests)
+        run: |
+          cd renderer
+          cmake --preset linux-vk-release
+          cmake --build --preset linux-vk-release
+          ctest --preset linux-vk-release
+
+      - name: Package (tar.gz + AppImage)
+        run: bash packaging/linux/package.sh . "$TAG" dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: dist/*
+
+  release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gather artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-artifacts'
+          path: dist
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          draft: false

@@ -34,3 +34,7 @@ Thumbs.db
 .sisyphus/
 .opencode/
 .omo/
+# Vestigial local checkouts — builds use FetchContent (googletest, ixwebsocket
+# v11.4.5); the orphan gitlinks broke fresh-clone submodule update on CI
+renderer/third_party/googletest/
+renderer/third_party/ixwebsocket/

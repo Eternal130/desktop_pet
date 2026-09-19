@@ -41,7 +41,10 @@ OutputDir=.
 OutputBaseFilename=DesktopPet-Setup-{#VERSION}
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; Vendored: choco's Inno Setup package does not ship ChineseSimplified.isl
+; (it lives in the official repo's Files/Languages/, promoted from the
+; unofficial set). Relative path = resolved next to this .iss file.
+Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]

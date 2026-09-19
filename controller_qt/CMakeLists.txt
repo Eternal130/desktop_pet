@@ -369,11 +369,13 @@ qml/components/BubbleCard.qml
 )
 
 # ── exe shell ───────────────────────────────────────────────────────────────
-# main.cpp only — the composition-root slimming (P3) will carve PanelApplication
-# / ScreenshotRunner out of it; until then it links the library and keeps its
-# current content byte-for-byte.
+# Composition root (P3). M1: the visual-QA modes (--screenshot/--bubble) are
+# carved out of main.cpp into src/app/ScreenshotRunner — app-layer code,
+# deliberately NOT in pet_panel_core (it drives the QApplication event loop
+# and std::exit()s; not library material). M2-M4 continue the carve-out.
 qt_add_executable(desktop-pet-controller-qt
     src/main.cpp
+    src/app/ScreenshotRunner.cpp
 )
 
 set_target_properties(desktop-pet-controller-qt PROPERTIES

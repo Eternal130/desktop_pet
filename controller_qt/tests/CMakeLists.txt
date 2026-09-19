@@ -14,7 +14,7 @@
 # 41 copy-pasted if(WIN32) blocks that used to inline the same
 # find_program + POST_BUILD logic (152 windeployqt occurrences). The
 # function is a no-op on non-Windows hosts.
-include(${CMAKE_SOURCE_DIR}/cmake/DeployQtTest.cmake)
+include(${PROJECT_SOURCE_DIR}/cmake/DeployQtTest.cmake)
 
 # The test exe links Qt6::Test (registered as a REQUIRED component in the parent
 # CMakeLists.txt) plus Qt6::Core. QtGui is not needed: ProtocolFixturesTest is a
@@ -36,9 +36,9 @@ add_test(NAME ProtocolFixturesTest COMMAND ProtocolFixturesTest)
 # recompiles the .cpp it exercises). PROTOCOL_FIXTURES_DIR is reused so the
 # test finds the T3 JSON fixtures from any working directory, including ctest.
 qt_add_executable(EnvelopeTest EnvelopeTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(EnvelopeTest PRIVATE Qt6::Core Qt6::Test)
-target_include_directories(EnvelopeTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(EnvelopeTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(EnvelopeTest PRIVATE
     PROTOCOL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/protocol")
 
@@ -53,9 +53,9 @@ add_test(NAME EnvelopeTest COMMAND EnvelopeTest)
 # Uses QTEST_MAIN (QCoreApplication) because qInfo() needs an app to route
 # through the installed message handler.
 qt_add_executable(LoggingTest LoggingTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/logging/Logging.cpp)
+    ${PROJECT_SOURCE_DIR}/src/logging/Logging.cpp)
 target_link_libraries(LoggingTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(LoggingTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(LoggingTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 # Match the main app: LOG_DEBUG (SPDLOG_DEBUG) must be live in the test too.
 target_compile_definitions(LoggingTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
@@ -71,11 +71,11 @@ add_test(NAME LoggingTest COMMAND LoggingTest)
 # Qt6::Network (transitive). Uses QTEST_MAIN (QCoreApplication) — WebSocket I/O
 # needs the event loop that QSignalSpy::wait pumps; QTEST_APPLESS_MAIN cannot.
 qt_add_executable(WsServerTest WsServerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/network/WsServer.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(WsServerTest PRIVATE
     Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
-target_include_directories(WsServerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(WsServerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(WsServerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -92,7 +92,7 @@ add_test(NAME WsServerTest COMMAND WsServerTest)
 qt_add_executable(PoCIntegrationTest PoCIntegrationTest.cpp)
 target_link_libraries(PoCIntegrationTest PRIVATE Qt6::Core Qt6::Test)
 target_compile_definitions(PoCIntegrationTest PRIVATE
-    BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
+    BIN_OUTPUT_DIR="${PROJECT_SOURCE_DIR}/../build/bin")
 
 pet_deploy_qt_test(PoCIntegrationTest)
 
@@ -111,10 +111,10 @@ set_tests_properties(PoCIntegrationTest PROPERTIES LABELS "REQUIRES_RENDERER")
 # spdlog (LOG_* macros). QTEST_APPLESS_MAIN — no event loop needed; dispatch()
 # is called synchronously as a plain method.
 qt_add_executable(MessageDispatcherTest MessageDispatcherTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/MessageDispatcher.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/network/MessageDispatcher.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(MessageDispatcherTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(MessageDispatcherTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(MessageDispatcherTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(MessageDispatcherTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -131,10 +131,10 @@ add_test(NAME MessageDispatcherTest COMMAND MessageDispatcherTest)
 # available if Protocol.cpp ever grows instrumentation). QTEST_APPLESS_MAIN —
 # no event loop needed; the builders are pure functions.
 qt_add_executable(ProtocolFactoryTest ProtocolFactoryTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/network/Protocol.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(ProtocolFactoryTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(ProtocolFactoryTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(ProtocolFactoryTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(ProtocolFactoryTest PRIVATE
     PROTOCOL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/protocol"
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
@@ -151,11 +151,11 @@ add_test(NAME ProtocolFactoryTest COMMAND ProtocolFactoryTest)
 # Links Qt6::WebSockets + Qt6::Network (server + in-test client) + spdlog (LOG_*).
 # QTEST_MAIN — needs the event loop that QSignalSpy::wait pumps.
 qt_add_executable(HandshakeTest HandshakeTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/network/WsServer.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(HandshakeTest PRIVATE
     Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
-target_include_directories(HandshakeTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(HandshakeTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(HandshakeTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -173,10 +173,10 @@ add_test(NAME HandshakeTest COMMAND HandshakeTest)
 # QTEST_MAIN (NOT APPLESS) — QTimer requires the QCoreApplication event loop
 # that QSignalSpy::wait pumps for the timeout test.
 qt_add_executable(PendingRequestsTest PendingRequestsTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/PendingRequests.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/network/PendingRequests.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(PendingRequestsTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(PendingRequestsTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(PendingRequestsTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(PendingRequestsTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -193,11 +193,11 @@ add_test(NAME PendingRequestsTest COMMAND PendingRequestsTest)
 # assertion). QTEST_APPLESS_MAIN — no event loop needed; dispatch() is called
 # synchronously as a plain method through the registry's dispatcher dependency.
 qt_add_executable(EventRegistryTest EventRegistryTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/EventRegistry.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/MessageDispatcher.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/network/EventRegistry.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/MessageDispatcher.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(EventRegistryTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(EventRegistryTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(EventRegistryTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(EventRegistryTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -216,12 +216,12 @@ add_test(NAME EventRegistryTest COMMAND EventRegistryTest)
 # QCoreApplication event loop delivers; QSignalSpy::wait / QTest::qWaitFor pump
 # that loop. This is the Wave 2 capstone test (T12, 11th test).
 qt_add_executable(ThreadMarshalTest ThreadMarshalTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/MessageDispatcher.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/network/WsServer.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/MessageDispatcher.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(ThreadMarshalTest PRIVATE
     Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
-target_include_directories(ThreadMarshalTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(ThreadMarshalTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(ThreadMarshalTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -243,9 +243,9 @@ add_test(NAME ThreadMarshalTest COMMAND ThreadMarshalTest)
 # event loop needed; defaultRendererDir() (which needs QCoreApplication) is
 # not exercised because its result depends on the test binary's location.
 qt_add_executable(PathResolveTest PathResolveTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PathResolve.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/PathResolve.cpp)
 target_link_libraries(PathResolveTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(PathResolveTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(PathResolveTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(PathResolveTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -267,17 +267,17 @@ add_test(NAME PathResolveTest COMMAND PathResolveTest)
 # Qt6::Test + spdlog (LOG_* macros in ProcessManager/PathResolve/WsServer).
 # QTEST_MAIN (NOT APPLESS) — QProcess + QSignalSpy::wait need the event loop.
 qt_add_executable(ProcessManagerTest ProcessManagerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ProcessManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PathResolve.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/ProcessManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/PathResolve.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/WsServer.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Protocol.cpp)
 target_link_libraries(ProcessManagerTest PRIVATE
     Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
-target_include_directories(ProcessManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(ProcessManagerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(ProcessManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
-    BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
+    BIN_OUTPUT_DIR="${PROJECT_SOURCE_DIR}/../build/bin")
 
 pet_deploy_qt_test(ProcessManagerTest)
 
@@ -302,19 +302,19 @@ set_tests_properties(ProcessManagerTest PROPERTIES LABELS "REQUIRES_RENDERER")
 # WsServer / ProcessManager / PathResolve). QTEST_MAIN (NOT APPLESS) — the
 # integration tier uses QSignalSpy::wait / QTest::qWait to pump the event loop.
 qt_add_executable(StartupSalvoTest StartupSalvoTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/StartupSalvo.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ProcessManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PathResolve.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/StartupSalvo.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ProcessManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/PathResolve.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Protocol.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/WsServer.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(StartupSalvoTest PRIVATE
     Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
-target_include_directories(StartupSalvoTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(StartupSalvoTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(StartupSalvoTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
     PROTOCOL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/protocol"
-    BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
+    BIN_OUTPUT_DIR="${PROJECT_SOURCE_DIR}/../build/bin")
 
 pet_deploy_qt_test(StartupSalvoTest)
 
@@ -339,9 +339,9 @@ set_tests_properties(StartupSalvoTest PROPERTIES LABELS "REQUIRES_RENDERER")
 # Logging::init() has not been called). QTEST_APPLESS_MAIN — QTemporaryDir +
 # QDir::exists() + QString::contains() are synchronous, no event loop needed.
 qt_add_executable(ConfigDirTest ConfigDirTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/ConfigDir.cpp)
 target_link_libraries(ConfigDirTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(ConfigDirTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(ConfigDirTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(ConfigDirTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -364,9 +364,9 @@ add_test(NAME ConfigDirTest COMMAND ConfigDirTest)
 # SPDLOG_* macros; spdlog is statically linked, no extra DLL). QTEST_APPLESS_MAIN
 # — QJsonObject manipulation is synchronous, no event loop needed.
 qt_add_executable(InstanceConfigTest InstanceConfigTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfig.cpp)
 target_link_libraries(InstanceConfigTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(InstanceConfigTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(InstanceConfigTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(InstanceConfigTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -389,9 +389,9 @@ add_test(NAME InstanceConfigTest COMMAND InstanceConfigTest)
 # statically linked, no extra DLL). QTEST_APPLESS_MAIN — QJsonObject/QJsonArray
 # manipulation is synchronous, no event loop needed.
 qt_add_executable(PanelConfigTest PanelConfigTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PanelConfig.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/PanelConfig.cpp)
 target_link_libraries(PanelConfigTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(PanelConfigTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(PanelConfigTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(PanelConfigTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -412,13 +412,13 @@ add_test(NAME PanelConfigTest COMMAND PanelConfigTest)
 # is statically linked, no extra DLL). QTEST_APPLESS_MAIN — QSaveFile /
 # QFile / QDir::entryList are synchronous, no event loop needed.
 qt_add_executable(InstanceConfigManagerTest InstanceConfigManagerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/DatabaseManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfig.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ConfigDir.cpp)
 target_link_libraries(InstanceConfigManagerTest PRIVATE
     Qt6::Core Qt6::Sql Qt6::Test spdlog::spdlog)
-target_include_directories(InstanceConfigManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(InstanceConfigManagerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(InstanceConfigManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -437,15 +437,15 @@ add_test(NAME InstanceConfigManagerTest COMMAND InstanceConfigManagerTest)
 # SPDLOG_* macros; spdlog is statically linked, no extra DLL). QTEST_APPLESS_MAIN
 # — QSaveFile / QFile / QDir are synchronous, no event loop needed.
 qt_add_executable(PanelStateManagerTest PanelStateManagerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PanelStateManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PanelConfig.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/PanelStateManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/DatabaseManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/PanelConfig.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfig.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ConfigDir.cpp)
 target_link_libraries(PanelStateManagerTest PRIVATE
     Qt6::Core Qt6::Sql Qt6::Test spdlog::spdlog)
-target_include_directories(PanelStateManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(PanelStateManagerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(PanelStateManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -469,15 +469,15 @@ add_test(NAME PanelStateManagerTest COMMAND PanelStateManagerTest)
 # SPDLOG_* macros; spdlog is statically linked, no extra DLL). QTEST_APPLESS_MAIN
 # — QFile / QDir / QJsonObject are synchronous, no event loop needed.
 qt_add_executable(RobustnessTest RobustnessTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PanelStateManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PanelConfig.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/PanelStateManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/DatabaseManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/PanelConfig.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfig.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ConfigDir.cpp)
 target_link_libraries(RobustnessTest PRIVATE
     Qt6::Core Qt6::Sql Qt6::Test spdlog::spdlog)
-target_include_directories(RobustnessTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(RobustnessTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(RobustnessTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -496,12 +496,12 @@ add_test(NAME RobustnessTest COMMAND RobustnessTest)
 # Qt6::Network (server + in-test QWebSocket client) + spdlog (LOG_* in WsServer).
 # QTEST_MAIN — WebSocket I/O needs the event loop that QSignalSpy::wait pumps.
 qt_add_executable(NetworkWiringTest NetworkWiringTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/PendingRequests.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/network/WsServer.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/PendingRequests.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(NetworkWiringTest PRIVATE
     Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
-target_include_directories(NetworkWiringTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(NetworkWiringTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(NetworkWiringTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -520,40 +520,40 @@ add_test(NAME NetworkWiringTest COMMAND NetworkWiringTest)
 # + integration tier) + Qt6::Test + spdlog. QTEST_MAIN — QSignalSpy::wait /
 # QTest::qWait pump the event loop that QProcess + WS I/O require.
 qt_add_executable(InstanceSessionTest InstanceSessionTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceSession.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionSetters.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionCommands.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionHandlers.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionMonitor.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ProcessManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PathResolve.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/HitAreaCacheManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/RestartController.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/StartupSalvo.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ModelInfoParser.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ModelScanner.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/Scheduler.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InteractionHandler.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/MetaMkoParser.cpp
-    ${CMAKE_SOURCE_DIR}/src/system/ResourceStatsCollector.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/MonitorDataModel.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/PendingRequests.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/MessageDispatcher.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/EventRegistry.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceSession.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceSessionSetters.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceSessionCommands.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceSessionHandlers.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceSessionMonitor.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ProcessManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/PathResolve.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ConfigDir.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfig.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/DatabaseManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/HitAreaCacheManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/RestartController.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/StartupSalvo.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ModelInfoParser.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ModelScanner.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/Scheduler.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InteractionHandler.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/MetaMkoParser.cpp
+    ${PROJECT_SOURCE_DIR}/src/system/ResourceStatsCollector.cpp
+    ${PROJECT_SOURCE_DIR}/src/ui/MonitorDataModel.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Protocol.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/WsServer.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/PendingRequests.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/MessageDispatcher.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/EventRegistry.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(InstanceSessionTest PRIVATE
     Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Sql Qt6::Test spdlog::spdlog)
-target_include_directories(InstanceSessionTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(InstanceSessionTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(InstanceSessionTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
-    BIN_OUTPUT_DIR="${CMAKE_SOURCE_DIR}/../build/bin")
+    BIN_OUTPUT_DIR="${PROJECT_SOURCE_DIR}/../build/bin")
 
 pet_deploy_qt_test(InstanceSessionTest)
 
@@ -580,12 +580,12 @@ set_tests_properties(InstanceSessionTest PROPERTIES LABELS "REQUIRES_RENDERER")
 # BIN_OUTPUT_DIR). The fixture's REAL content (verified at port time):
 # Motions.Idle=9, Motions.TapBody=1, no Expressions field, HitAreas=[Body].
 qt_add_executable(ModelInfoParserTest ModelInfoParserTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ModelInfoParser.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/ModelInfoParser.cpp)
 target_link_libraries(ModelInfoParserTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(ModelInfoParserTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(ModelInfoParserTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(ModelInfoParserTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
-    CUBISM_RESOURCES_DIR="${CMAKE_SOURCE_DIR}/../third_party/CubismSdkForNative/Samples/Resources")
+    CUBISM_RESOURCES_DIR="${PROJECT_SOURCE_DIR}/../third_party/CubismSdkForNative/Samples/Resources")
 
 pet_deploy_qt_test(ModelInfoParserTest)
 
@@ -607,9 +607,9 @@ add_test(NAME ModelInfoParserTest COMMAND ModelInfoParserTest)
 # segment), so it cannot be used directly — see the test file's header
 # comment for the full rationale.
 qt_add_executable(ModelScannerTest ModelScannerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ModelScanner.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/ModelScanner.cpp)
 target_link_libraries(ModelScannerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(ModelScannerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(ModelScannerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(ModelScannerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -634,40 +634,40 @@ add_test(NAME ModelScannerTest COMMAND ModelScannerTest)
 # over PendingRequests::resolved is safest with a real application. No renderer
 # is launched (createInstance never calls start()), so NO REQUIRES_RENDERER label.
 qt_add_executable(InstanceManagerTest InstanceManagerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceSession.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionSetters.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionCommands.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionHandlers.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceSessionMonitor.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ProcessManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PathResolve.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/HitAreaCacheManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/RestartController.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PanelConfig.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/PanelStateManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/StartupSalvo.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ModelInfoParser.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ModelScanner.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/Scheduler.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InteractionHandler.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/MetaMkoParser.cpp
-    ${CMAKE_SOURCE_DIR}/src/system/ResourceStatsCollector.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/MonitorDataModel.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/PendingRequests.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/MessageDispatcher.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/EventRegistry.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceSession.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceSessionSetters.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceSessionCommands.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceSessionHandlers.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceSessionMonitor.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ProcessManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/PathResolve.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ConfigDir.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfig.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfigManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/DatabaseManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/HitAreaCacheManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/RestartController.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/PanelConfig.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/PanelStateManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/StartupSalvo.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ModelInfoParser.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ModelScanner.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/Scheduler.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InteractionHandler.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/MetaMkoParser.cpp
+    ${PROJECT_SOURCE_DIR}/src/system/ResourceStatsCollector.cpp
+    ${PROJECT_SOURCE_DIR}/src/ui/MonitorDataModel.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Protocol.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/WsServer.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/PendingRequests.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/MessageDispatcher.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/EventRegistry.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(InstanceManagerTest PRIVATE
     Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Sql Qt6::Test spdlog::spdlog)
-target_include_directories(InstanceManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(InstanceManagerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(InstanceManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -692,9 +692,9 @@ add_test(NAME InstanceManagerTest COMMAND InstanceManagerTest)
 # per slot) so no cross-slot leakage; each slot calls shutdown() before
 # assertions to stop the timer.
 qt_add_executable(SchedulerTest SchedulerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/Scheduler.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/Scheduler.cpp)
 target_link_libraries(SchedulerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(SchedulerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(SchedulerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(SchedulerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -716,11 +716,11 @@ add_test(NAME SchedulerTest COMMAND SchedulerTest)
 # DLL). QTEST_APPLESS_MAIN — pure logic (QJsonObject manipulation + the
 # handler's case-folding lookup), no event loop needed.
 qt_add_executable(InteractionHandlerTest InteractionHandlerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InteractionHandler.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/InteractionHandler.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Protocol.cpp)
 target_link_libraries(InteractionHandlerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(InteractionHandlerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(InteractionHandlerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(InteractionHandlerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -741,11 +741,11 @@ add_test(NAME InteractionHandlerTest COMMAND InteractionHandlerTest)
 # QTEST_MAIN (NOT APPLESS) — WsServer + QWebSocket need the QCoreApplication
 # event loop that QSignalSpy::wait pumps.
 qt_add_executable(WsServerMultiTest WsServerMultiTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/WsServer.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/network/WsServer.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(WsServerMultiTest PRIVATE
     Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Test spdlog::spdlog)
-target_include_directories(WsServerMultiTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(WsServerMultiTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(WsServerMultiTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -770,9 +770,9 @@ add_test(NAME WsServerMultiTest COMMAND WsServerMultiTest)
 # QDir / QString are all synchronous; the production default regExecutor IS
 # real QProcess, but tests inject fakes that never spawn anything.
 qt_add_executable(AutoLaunchManagerTest AutoLaunchManagerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/system/AutoLaunchManager.cpp)
+    ${PROJECT_SOURCE_DIR}/src/system/AutoLaunchManager.cpp)
 target_link_libraries(AutoLaunchManagerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(AutoLaunchManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(AutoLaunchManagerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(AutoLaunchManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -799,9 +799,9 @@ add_test(NAME AutoLaunchManagerTest COMMAND AutoLaunchManagerTest)
 # event loop that QSignalSpy::wait pumps; QTEST_APPLESS_MAIN would silently
 # skip every retry assertion.
 qt_add_executable(RestartControllerTest RestartControllerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/RestartController.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/RestartController.cpp)
 target_link_libraries(RestartControllerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(RestartControllerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(RestartControllerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(RestartControllerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -837,10 +837,10 @@ add_test(NAME RestartControllerTest COMMAND RestartControllerTest)
 # Qt6::Widgets linked for the same reason as the main exe (T13 finding):
 # QSystemTrayIcon's header lives in QtWidgets on Qt 6.10 despite the docs.
 qt_add_executable(TrayManagerTest TrayManagerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/system/TrayManager.cpp)
+    ${PROJECT_SOURCE_DIR}/src/system/TrayManager.cpp)
 target_link_libraries(TrayManagerTest PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test spdlog::spdlog)
-target_include_directories(TrayManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(TrayManagerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(TrayManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -870,10 +870,10 @@ add_test(NAME TrayManagerTest COMMAND TrayManagerTest)
 # QTEST_MAIN (NOT APPLESS) — QTest::qWait (used to separate the two CPU%
 # samples by a real wall-clock gap) requires the QCoreApplication event loop.
 qt_add_executable(ResourceStatsCollectorTest ResourceStatsCollectorTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/system/ResourceStatsCollector.cpp)
+    ${PROJECT_SOURCE_DIR}/src/system/ResourceStatsCollector.cpp)
 target_link_libraries(ResourceStatsCollectorTest PRIVATE
     Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(ResourceStatsCollectorTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(ResourceStatsCollectorTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(ResourceStatsCollectorTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 if(WIN32)
@@ -901,9 +901,9 @@ add_test(NAME ResourceStatsCollectorTest COMMAND ResourceStatsCollectorTest)
 # ship under Resources/VoicePacks in the current build, so synthesized
 # fixtures are the only option — same strategy as ModelScannerTest.
 qt_add_executable(VoicePackScannerTest VoicePackScannerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/VoicePackScanner.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/VoicePackScanner.cpp)
 target_link_libraries(VoicePackScannerTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(VoicePackScannerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(VoicePackScannerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(VoicePackScannerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -930,9 +930,9 @@ add_test(NAME VoicePackScannerTest COMMAND VoicePackScannerTest)
 # logging/Logging.hpp which references the SPDLOG_* macros; spdlog is
 # statically linked). QTEST_APPLESS_MAIN — QFile/QByteArray are synchronous.
 qt_add_executable(MetaMkoParserTest MetaMkoParserTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/MetaMkoParser.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/MetaMkoParser.cpp)
 target_link_libraries(MetaMkoParserTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(MetaMkoParserTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(MetaMkoParserTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(MetaMkoParserTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -968,12 +968,12 @@ add_test(NAME MetaMkoParserTest COMMAND MetaMkoParserTest)
 # spdlog (LOG_* macros). QTEST_APPLESS_MAIN — QFile/QByteArray/QDir are
 # synchronous, no event loop needed.
 qt_add_executable(MountedBehaviorEngineTest MountedBehaviorEngineTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Protocol.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(MountedBehaviorEngineTest PRIVATE
     Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(MountedBehaviorEngineTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(MountedBehaviorEngineTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(MountedBehaviorEngineTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -995,12 +995,12 @@ add_test(NAME MountedBehaviorEngineTest COMMAND MountedBehaviorEngineTest)
 # (those are only pulled in by the engine's instance methods). Links Qt6::Core
 # + Qt6::Test + spdlog. QTEST_APPLESS_MAIN — QFile/QByteArray are synchronous.
 qt_add_executable(OggDurationHeuristicTest OggDurationHeuristicTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Protocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/Envelope.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/MountedBehaviorEngine.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Protocol.cpp
+    ${PROJECT_SOURCE_DIR}/src/network/Envelope.cpp)
 target_link_libraries(OggDurationHeuristicTest PRIVATE
     Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(OggDurationHeuristicTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(OggDurationHeuristicTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(OggDurationHeuristicTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -1033,9 +1033,9 @@ add_test(NAME OggDurationHeuristicTest COMMAND OggDurationHeuristicTest)
 # definition (header-only), it does not call collect(), so no psapi link.
 # QTEST_APPLESS_MAIN — QDateTime + QJsonObject are synchronous, no event loop.
 qt_add_executable(MonitorDataModelTest MonitorDataModelTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/MonitorDataModel.cpp)
+    ${PROJECT_SOURCE_DIR}/src/ui/MonitorDataModel.cpp)
 target_link_libraries(MonitorDataModelTest PRIVATE Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(MonitorDataModelTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(MonitorDataModelTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(MonitorDataModelTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -1049,11 +1049,11 @@ add_test(NAME MonitorDataModelTest COMMAND MonitorDataModelTest)
 # + InstanceConfig.cpp (serde). Links Qt6::Sql + Qt6::Test + spdlog.
 # QTEST_APPLESS_MAIN - QSqlDatabase is synchronous.
 qt_add_executable(DatabaseManagerTest DatabaseManagerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/DatabaseManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfig.cpp)
 target_link_libraries(DatabaseManagerTest PRIVATE
     Qt6::Core Qt6::Sql Qt6::Test spdlog::spdlog)
-target_include_directories(DatabaseManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(DatabaseManagerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(DatabaseManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -1067,13 +1067,13 @@ add_test(NAME DatabaseManagerTest COMMAND DatabaseManagerTest)
 # DatabaseManager.cpp. Links Qt6::Sql + Qt6::Gui (QImage) + Qt6::Test + spdlog.
 # QTEST_APPLESS_MAIN - QImage + QFile + QSqlDatabase are synchronous.
 qt_add_executable(AssetManagerTest AssetManagerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/AssetManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/DatabaseManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/InstanceConfig.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/ConfigDir.cpp)
+    ${PROJECT_SOURCE_DIR}/src/core/AssetManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/DatabaseManager.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/InstanceConfig.cpp
+    ${PROJECT_SOURCE_DIR}/src/core/ConfigDir.cpp)
 target_link_libraries(AssetManagerTest PRIVATE
     Qt6::Core Qt6::Gui Qt6::Sql Qt6::Test spdlog::spdlog)
-target_include_directories(AssetManagerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(AssetManagerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(AssetManagerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -1088,10 +1088,10 @@ add_test(NAME AssetManagerTest COMMAND AssetManagerTest)
 # above (no shared lib yet; ctest runs with Qt's bin NOT on PATH).
 
 qt_add_executable(NotificationStreamModelTest NotificationStreamModelTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/NotificationStreamModel.cpp)
+    ${PROJECT_SOURCE_DIR}/src/ui/NotificationStreamModel.cpp)
 target_link_libraries(NotificationStreamModelTest PRIVATE
     Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(NotificationStreamModelTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(NotificationStreamModelTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(NotificationStreamModelTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
@@ -1100,11 +1100,11 @@ pet_deploy_qt_test(NotificationStreamModelTest)
 add_test(NAME NotificationStreamModelTest COMMAND NotificationStreamModelTest)
 
 qt_add_executable(NotificationStreamControllerTest NotificationStreamControllerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/NotificationStreamController.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/NotificationStreamModel.cpp)
+    ${PROJECT_SOURCE_DIR}/src/ui/NotificationStreamController.cpp
+    ${PROJECT_SOURCE_DIR}/src/ui/NotificationStreamModel.cpp)
 target_link_libraries(NotificationStreamControllerTest PRIVATE
     Qt6::Core Qt6::Test spdlog::spdlog)
-target_include_directories(NotificationStreamControllerTest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(NotificationStreamControllerTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(NotificationStreamControllerTest PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 

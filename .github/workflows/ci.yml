@@ -1,0 +1,112 @@
+# Minimal CI (P1d): dual-platform matrix — Bootstrap + both CMake workflows
+# (configure → build → ctest is baked into the workflow presets themselves).
+#
+# Design notes:
+# - Windows: Qt 6.10.0 win64_mingw + Qt's own tools (tools_ninja +
+#   tools_mingw1310 = MinGW 13.1.0). Since P1c BOTH components pin
+#   controller_qt/cmake/qt-mingw-qt.cmake, so a single set of
+#   QT_MINGW_ROOT / QT_NINJA / QT_PREFIX_PATH env vars covers both.
+# - install-qt-action exports QT_ROOT_DIR (the Qt install) and IQTA_TOOLS
+#   (the Tools/ dir) for later steps; the env step below resolves the exact
+#   tool paths via find (robust against archive-name casing).
+# - Qt addons beyond the essential set: qtcharts + qtwebsockets
+#   (QuickControls2 is part of qtdeclarative = essential in Qt 6).
+# - Linux: QT_QPA_PLATFORM=offscreen because TrayManagerTest constructs a
+#   real QGuiApplication and CI runners have no X display. On Windows the
+#   runner's interactive desktop session works with the default qwindows.
+# - No artifacts, no cache (first version). ctest runs inside the workflow
+#   presets — no separate test step.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout (submodules recursive - CubismNativeSamples + Framework)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Toolchain versions (workflow presets need CMake >= 3.25)
+        run: |
+          cmake --version
+          ninja --version || echo "no system ninja (Windows builds use Qt's own via QT_NINJA)"
+
+      # Windows Qt install: mingw_64 kit + the two Qt tools the
+      # qt-mingw-qt.cmake toolchain pins (Ninja and MinGW 13.1.0).
+      # tools syntax: space-separated; "category,variant" pins one variant
+      # (variant name from Qt's Updates.xml: qt.tools.win64_mingw1310).
+      - name: Install Qt 6.10 (windows / mingw_64 + ninja + mingw1310_64)
+        if: runner.os == 'Windows'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_mingw'
+          modules: 'qtcharts qtwebsockets'
+          tools: 'tools_ninja tools_mingw1310,qt.tools.win64_mingw1310'
+
+      - name: Install Qt 6.10 (linux / gcc_64)
+        if: runner.os == 'Linux'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.0'
+          host: 'linux'
+          target: 'desktop'
+          arch: 'gcc_64'
+          modules: 'qtcharts qtwebsockets'
+          # install-deps defaults to true on Linux (pulls the xcb stack the
+          # offscreen/controller test runtimes need).
+
+      - name: Renderer system dependencies + headless env (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgl-dev \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+          # TrayManagerTest builds a QGuiApplication; no X on runners.
+          echo "QT_QPA_PLATFORM=offscreen" >> "$GITHUB_ENV"
+
+      # Resolve the toolchain env for qt-mingw-qt.cmake from the action's
+      # exports. QT_ROOT_DIR = .../Qt/6.10.0/mingw_64; IQTA_TOOLS = .../Qt/Tools.
+      - name: Qt toolchain env (windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "QT_PREFIX_PATH=$QT_ROOT_DIR" >> "$GITHUB_ENV"
+          echo "QT_MINGW_ROOT=$(find "$IQTA_TOOLS" -maxdepth 1 -type d -iname 'mingw1310*' | head -n1)" >> "$GITHUB_ENV"
+          echo "QT_NINJA=$(find "$IQTA_TOOLS" -maxdepth 2 -type f -iname 'ninja.exe' | head -n1)" >> "$GITHUB_ENV"
+          echo "--- Qt install layout ---"
+          ls "$IQTA_TOOLS"
+
+      - name: Bootstrap (Cubism Core + GLEW 2.2.0 + GLFW 3.4, idempotent)
+        run: cmake -P scripts/Bootstrap.cmake
+
+      - name: Controller (configure + build + 41 QTest binaries)
+        run: |
+          cd controller_qt
+          cmake --workflow --preset "${{ runner.os == 'Windows' && 'win-release' || 'linux-release' }}"
+
+      - name: Renderer (configure + build + GoogleTest suite)
+        run: |
+          cd renderer
+          cmake --workflow --preset "${{ runner.os == 'Windows' && 'win-gl-release' || 'linux-gl-release' }}"

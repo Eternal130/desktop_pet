@@ -55,7 +55,14 @@ if(NOT EXISTS "${QT_NINJA_EXE}")
         "(Additional Libraries > Ninja) or point the QT_NINJA environment "
         "variable at your ninja executable.")
 endif()
-set(CMAKE_MAKE_PROGRAM "${QT_NINJA_EXE}")
+# CACHE + FORCE is load-bearing: CMAKE_MAKE_PROGRAM crosses the try_compile
+# boundary (compiler ABI detection sub-build) ONLY via the parent's CACHE —
+# a normal variable set here never reaches it, the sub-build then uses an
+# explicit EMPTY build tool (which also suppresses find_program fallback, so
+# a PATH-based ninja never gets discovered). vcpkg/Qt toolchains all pin it
+# this way.
+set(CMAKE_MAKE_PROGRAM "${QT_NINJA_EXE}" CACHE FILEPATH
+    "Ninja build tool (pinned by qt-mingw-qt toolchain)" FORCE)
 
 # --- Qt prefix path (env QT_PREFIX_PATH overrides the default) -----------------
 if(DEFINED ENV{QT_PREFIX_PATH} AND NOT "$ENV{QT_PREFIX_PATH}" STREQUAL "")
@@ -65,7 +72,11 @@ else()
     set(QT_PREFIX_PATH_RESOLVED "C:/Qt/6.10.0/mingw_64")
 endif()
 string(REPLACE "\\" "/" QT_PREFIX_PATH_RESOLVED "${QT_PREFIX_PATH_RESOLVED}")
-set(CMAKE_PREFIX_PATH "${QT_PREFIX_PATH_RESOLVED}")
+# CACHE + FORCE for the same try_compile propagation reason as
+# CMAKE_MAKE_PROGRAM above (future check_cxx_source_compiles probes that
+# include Qt headers would otherwise run without the prefix in sub-builds).
+set(CMAKE_PREFIX_PATH "${QT_PREFIX_PATH_RESOLVED}" CACHE PATH
+    "Qt install prefix (pinned by qt-mingw-qt toolchain)" FORCE)
 
 # Force the env-derived toolchain variables into try_compile sub-builds
 # (compiler ABI detection): without this, the sub-CMake may neither re-run

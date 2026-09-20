@@ -171,15 +171,19 @@ void ConfigDirTest::testPathFormat()
 
 void ConfigDirTest::testDirsMatchStandardLocations()
 {
-    // The storage-layout contract: every accessor is exactly its
-    // QStandardPaths location + '/', with native separators normalized
-    // (QStandardPaths may leak '\\' on Windows — see withTrailingSlash).
-    // App name "desktop-pet" with an empty org name keeps each location a
-    // flat <root>/desktop-pet (an org name would insert an extra path
-    // segment and break this equality).
+    // The storage-layout contract: configDir() is the CONFIG location per
+    // platform (Windows: AppDataLocation = Roaming %APPDATA% — Qt maps
+    // AppConfigLocation to the Local root there, see ConfigDir.cpp; Linux:
+    // AppConfigLocation = ~/.config) and dataDir() the LOCAL location,
+    // each + '/' with native separators normalized. App name "desktop-pet"
+    // with an empty org name keeps each location a flat <root>/desktop-pet.
+#ifdef Q_OS_WIN
+    const auto configLocation = QStandardPaths::AppDataLocation;
+#else
+    const auto configLocation = QStandardPaths::AppConfigLocation;
+#endif
     QCOMPARE(ConfigDir::configDir(),
-             QString(QStandardPaths::writableLocation(
-                         QStandardPaths::AppConfigLocation))
+             QString(QStandardPaths::writableLocation(configLocation))
                      .replace(QLatin1Char('\\'), QLatin1Char('/'))
                  + QLatin1Char('/'));
     // dataDir must be the LOCAL (non-roaming) location — %LOCALAPPDATA% on

@@ -35,12 +35,25 @@ QString withTrailingSlash(const QString& path)
 
 QString configDir()
 {
-    // AppConfigLocation with app name "desktop-pet" + empty org name:
-    //   Linux   ~/.config/desktop-pet      (byte-identical to the old
-    //                                      homePath()+"/.config/desktop-pet")
-    //   Windows %APPDATA%\desktop-pet      (Roaming)
+    // App name "desktop-pet" + empty org name: flat <root>/desktop-pet.
+    //   Linux   AppConfigLocation -> ~/.config/desktop-pet  (byte-identical
+    //                                  to the legacy homePath()+"/.config/
+    //                                  desktop-pet")
+    //   Windows AppDataLocation  -> %APPDATA%\desktop-pet    (Roaming)
+    // Platform split is REQUIRED: Qt's Windows implementation maps
+    // AppConfigLocation onto the SAME Local root as AppLocalDataLocation
+    // (verified on the CI runner: writableLocation(AppConfigLocation) ==
+    // writableLocation(AppLocalDataLocation)), which would put config into
+    // Local instead of the designed Roaming location. AppDataLocation is
+    // the genuine %APPDATA% (Roaming) location on Windows and is unused
+    // for data (that is AppLocalDataLocation, %LOCALAPPDATA%).
+#ifdef Q_OS_WIN
+    return withTrailingSlash(
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation));
+#else
     return withTrailingSlash(
         QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation));
+#endif
 }
 
 QString dataDir()

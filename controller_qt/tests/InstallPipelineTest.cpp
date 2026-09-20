@@ -116,7 +116,9 @@ QString writeFile(const QString& dir, const QString& name, const QByteArray& con
     QDir().mkpath(dir);
     const QString path = QDir(dir).filePath(name);
     QFile f(path);
-    f.open(QIODevice::WriteOnly);
+    if (!f.open(QIODevice::WriteOnly)) {
+        qFatal("writeFile: cannot open %s", qPrintable(path));
+    }
     f.write(content);
     return path;
 }

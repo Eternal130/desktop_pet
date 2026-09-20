@@ -72,7 +72,12 @@ QString AssetManager::importImage(const QUrl& fileUrl)
     // original container (JPG/WEBP/ICO).
     const QByteArray png = [&]() {
         QBuffer buffer;
-        buffer.open(QIODevice::WriteOnly);
+        if (!buffer.open(QIODevice::WriteOnly)) {
+            // A fresh in-memory QBuffer cannot realistically fail; the empty
+            // result flows into the png.isEmpty() guard below (LOG_WARN +
+            // "encode_failed"), matching the never-throw contract.
+            return QByteArray{};
+        }
         image.save(&buffer, "PNG");
         return buffer.data();
     }();

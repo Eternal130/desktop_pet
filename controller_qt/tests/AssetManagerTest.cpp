@@ -82,7 +82,7 @@ void AssetManagerTest::testImportOkDuplicateInvalid()
     const QString junk = c.base.path() + QStringLiteral("/junk.png");
     {
         QFile f(junk);
-        f.open(QIODevice::WriteOnly);
+        QVERIFY(f.open(QIODevice::WriteOnly));
         f.write("this is not an image");
     }
     QCOMPARE(c.am->importImage(QUrl::fromLocalFile(junk)),

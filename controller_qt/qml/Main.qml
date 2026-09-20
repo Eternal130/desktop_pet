@@ -59,6 +59,7 @@ Window {
             "instance":  instanceDetailPageComp,
             "monitor":   monitorPageComp,
             "voicepack": voicePackPageComp,
+            "models":    modelLibraryPageComp,
             "assets":    assetPageComp,
             "settings":  settingsPageComp
         }[name] ?? welcomePageComp
@@ -223,6 +224,7 @@ Window {
                     "welcome":   qsTr("主页"),
                     "monitor":   qsTr("资源监控"),
                     "voicepack": qsTr("语音包"),
+                    "models":    qsTr("模型库"),
                     "assets":    qsTr("资源管理"),
                     "settings":  qsTr("设置")
                 }
@@ -394,6 +396,13 @@ Window {
                     match: navPane.searchFilter
                 }
                 NavItem {
+                    itemKey: "models"
+                    icon: "🎭"; label: qsTr("模型库")
+                    badgeText: modelLibrary.modelCount > 0
+                               ? modelLibrary.modelCount : ""
+                    match: navPane.searchFilter
+                }
+                NavItem {
                     itemKey: "assets"
                     icon: "🗂"; label: qsTr("资源管理")
                     badgeText: assetManager.assetCount() > 0
@@ -557,6 +566,12 @@ Window {
     Component { id: instanceDetailPageComp; InstanceDetailPage { instance: root.currentInstance } }
     Component { id: monitorPageComp;        MonitorPage { instance: root.currentInstance } }
     Component { id: voicePackPageComp;      VoicePackPage {} }
+    Component {
+        id: modelLibraryPageComp
+        ModelLibraryPage {
+            onRequestSwitchPage: (name) => root.switchPage(name)
+        }
+    }
     Component {
         id: assetPageComp
         AssetPage {

@@ -270,3 +270,27 @@ void InstanceSession::handleLayoutStateEvent(const Envelope& env)
               m_instanceId,
               m_config.layoutOffsetX, m_config.layoutOffsetY, m_config.layoutScale);
 }
+
+void InstanceSession::handleModelLoadFailedEvent(const Envelope& env)
+{
+    // interface.md §B model_load_failed payload: { error_code, error_message }.
+    // The renderer rejected a load_model (missing model dir, corrupt
+    // .model3.json, ...). 模型库 B 档: surface the failure to QML — bump the
+    // revision counter (drives Q_INVOKABLE binding re-evaluation) + record
+    // the message + emit modelLoadFailed. modelLoaded is cleared: the
+    // renderer tears the previous model down before attempting the load, so
+    // the UI must not keep showing the old model as live. A missing/empty
+    // error_message degrades to a generic string (never empty — the UI binds
+    // non-empty text). Never throws, never touches the disk.
+    const QString message = env.payload.value(
+        QStringLiteral("error_message")).toString();
+    m_lastModelLoadError = message.isEmpty()
+        ? QStringLiteral("model load failed (no error_message)")
+        : message;
+    ++m_modelLoadFailureRevision;
+    setModelLoaded(false);
+    LOG_WARN("InstanceSession[{}]: model_load_failed rev={} error=\"{}\"",
+             m_instanceId, m_modelLoadFailureRevision,
+             m_lastModelLoadError.toStdString());
+    emit modelLoadFailed(m_lastModelLoadError);
+}

@@ -30,6 +30,7 @@
 #include "system/AutoLaunchManager.hpp"
 #include "system/TrayManager.hpp"
 #include "ui/NotificationStreamController.hpp"
+#include "ui/ModelController.hpp"
 #include "ui/VoicePackController.hpp"
 
 // Moved from main() (P3/M3). All 17 context property names and their
@@ -221,6 +222,18 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     m_voicePackController->setInstanceManager(m_app.instanceManager());
     m_engine.rootContext()->setContextProperty("voicePacks",
                                                m_voicePackController);
+
+    // ModelController context property (模型库 page backend). Discovery over
+    // ModelScanner + ModelInfoParser; the rendererDir injection mirrors the
+    // SAME source VoicePackController derives internally
+    // (QCoreApplication::applicationDirPath — the build places the controller
+    // and renderer exes side-by-side in build/bin, so the renderer's
+    // Resources/Models tree hangs off the app dir).
+    // Lifetime (M3): heap child of PanelUiBoot — see mount-point note.
+    m_modelController = new ModelController(this);
+    m_modelController->setRendererDir(QCoreApplication::applicationDirPath());
+    m_engine.rootContext()->setContextProperty("modelLibrary",
+                                               m_modelController);
 
     // ── Plugin bridges (P4) — context properties #18/#19 ────────────────
     // Mounted AFTER the original 17 so their slots are append-only. The

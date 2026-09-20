@@ -26,7 +26,7 @@ desktop_pet/
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Add controller UI page | `controller_qt/qml/pages/` | QML pages: Welcome (dashboard), InstanceDetail (two-column workbench), Monitor (3×2 charts), VoicePack, Settings (anchor nav) |
+| Add controller UI page | `controller_qt/qml/pages/` | QML pages: Welcome (dashboard), InstanceDetail (two-column workbench), Monitor (3×2 charts), VoicePack, ModelLibrary (model library, 58/42 dual-column), Settings (anchor nav) |
 | Add controller shared QML component | `controller_qt/qml/components/` | StatusPill, SettingRow, SectionCard, Chip; register new files in qt_add_qml_module QML_FILES |
 | Add controller business logic | `controller_qt/src/core/` | InstanceSession (+ split TUs), InstanceManager, Scheduler, InteractionHandler, config |
 | Add WebSocket protocol message | Both `controller_qt/src/network/Protocol.hpp` and `renderer/src/network/Protocol.hpp` | Must match Envelope format |
@@ -64,9 +64,10 @@ desktop_pet/
 | `MonitorDataModel` | C++ | `controller_qt/src/ui/MonitorDataModel.hpp` | Copy-on-write ring buffer (cap=60) + mergeController/mergeRenderer for QtCharts |
 | `VoicePackScanner` | C++ | `controller_qt/src/core/VoicePackScanner.hpp` | Discovers voice packs containing `meta.mko` (takes renderer BASE dir, appends `Resources/VoicePacks` internally). **Returns ABSOLUTE paths (not bare dir names)** — P4's listPacks assumed bare names and was caught by the P5 e2e gate |
 | `VoicePackController` | C++ | `controller_qt/src/ui/VoicePackController.hpp` | QML bridge (`voicePacks` ctx prop): pack discovery + metadata for VoicePackPage |
+| `ModelController` | C++ | `controller_qt/src/ui/ModelController.hpp` | QML bridge (`modelLibrary` ctx prop): model scan (wraps `ModelScanner`) + cached metadata via `ModelInfoParser` (motion groups/expressions/hit areas) + openModelDir; revision-counter refresh pattern like VoicePackController |
 | `MetaMkoParser` | C++ | `controller_qt/src/core/MetaMkoParser.hpp` | Hand-rolled protobuf wire-format reader for `.mko` (no libprotobuf dep) |
 | `NotificationStreamController` | C++ | `controller_qt/src/ui/NotificationStreamController.hpp` | QML bridge (`notificationStream` ctx prop): bubble push/dismiss + testBubble; voice-pack dialogue sink is the only text source (no pack system); owns NotificationStreamModel |
-| `PanelConfigController` | C++ | `controller_qt/src/core/PanelConfigController.hpp` | QML bridge for 4 PanelConfig behavior fields |
+| `PanelConfigController` | C++ | `controller_qt/src/core/PanelConfigController.hpp` | QML bridge for 5 PanelConfig fields (4 behavior fields + `defaultModelName`) |
 | `HitAreaCacheManager` | C++ | `controller_qt/src/core/HitAreaCacheManager.hpp` | JSON cache of modelName → hitAreas |
 
 ## CONVENTIONS (Non-Standard)
@@ -121,7 +122,7 @@ cd controller_qt && cmake --workflow --preset linux-release    # Windows: win-re
 cd renderer && cmake --workflow --preset linux-gl-release      # Windows: win-gl-release; Vulkan: *-vk-release
 
 # Tests
-cd controller_qt && ctest --preset linux-qt-release            # Qt controller tests (41 QTest binaries)
+cd controller_qt && ctest --preset linux-qt-release            # Qt controller tests (48 QTest binaries)
 cd renderer && ctest --preset linux-gl-release                 # C++ renderer tests (Google Test)
 ```
 
@@ -135,5 +136,5 @@ cd renderer && ctest --preset linux-gl-release                 # C++ renderer te
 - Dual platform: Ubuntu/X11 (original MVP) + Windows/MinGW (current). CMake presets build both OpenGL and Vulkan variants.
 - Build artifacts: `build/bin/desktop-pet-renderer.exe`, `build/bin/desktop-pet-controller-qt(.exe)`
 - Renderer CLI args: `--port`, `--instance-id`, `--model`, `--token`, `--x`, `--y`, `--width`, `--height`
-- **controller_qt Phase 5-9: COMPLETE** — Qt 6.10 / C++17 / QML control panel. Multi-instance pet management with full protocol coverage (20 commands + 14 events), sidebar roster (`QAbstractListModel`), per-instance config persistence, idle motion scheduler, hit→motion handler, crash-recovery with exponential backoff (max 5 attempts), system tray (QSystemTrayIcon), OS auto-launch (Win registry / Linux `.desktop`), resource monitor (QtCharts sparklines: CPU% + RSS), voice pack discovery + mounting (hand-rolled protobuf reader, no libprotobuf dep), notification bubble stream (voice-pack dialogue only, screen top-right stack — replaced the renderer subtitle system, see `docs/system/notification-stream.md`), layout sync. **41 QTest binaries**, all green. Atomic config writes via QSaveFile. Blueprint §9.5 "永不崩溃" compliance audited (T25). See `controller_qt/README.md` for details. Known limitations (documented, NOT bugs): R4 (Wayland transparent window), R5 (GNOME tray AppIndicator), R6 (Wayland global hotkeys).
+- **controller_qt Phase 5-9: COMPLETE** — Qt 6.10 / C++17 / QML control panel. Multi-instance pet management with full protocol coverage (20 commands + 14 events), sidebar roster (`QAbstractListModel`), per-instance config persistence, idle motion scheduler, hit→motion handler, crash-recovery with exponential backoff (max 5 attempts), system tray (QSystemTrayIcon), OS auto-launch (Win registry / Linux `.desktop`), resource monitor (QtCharts sparklines: CPU% + RSS), voice pack discovery + mounting (hand-rolled protobuf reader, no libprotobuf dep), notification bubble stream (voice-pack dialogue only, screen top-right stack — replaced the renderer subtitle system, see `docs/system/notification-stream.md`), model library page (ModelController scan/metadata, per-instance model switch via AppComboBox with model_load_failed rollback, default model for new instances in panel config `default_model_name`), layout sync. **48 QTest binaries**, all green. Atomic config writes via QSaveFile. Blueprint §9.5 "永不崩溃" compliance audited (T25). See `controller_qt/README.md` for details. Known limitations (documented, NOT bugs): R4 (Wayland transparent window), R5 (GNOME tray AppIndicator), R6 (Wayland global hotkeys).
 - Behavioral blueprint for the panel lives at `docs/controller_qt/architecture-blueprint.md` (framework-agnostic).

@@ -98,8 +98,14 @@ public:
     // via defaultInstanceConfig), set its label, persist it, append a row,
     // rebuild instanceIds, call savePanel. Returns the new UUID, or an empty
     // string if the persist failed (no row is added on failure).
+    //
+    // modelName (模型库 B 档): when non-empty, overrides the InstanceConfig
+    // default ("Hiyori") — the model-library page passes the user's choice
+    // from the create dialog. Empty keeps the default (callers that predate
+    // the parameter keep compiling + behaving identically).
     Q_INVOKABLE QString createInstance(const QString& label,
-                                       const QString& avatar = QStringLiteral("🐱"));
+                                       const QString& avatar = QStringLiteral("🐱"),
+                                       const QString& modelName = QString());
 
     // Delete-protection pattern (blueprint §4.2): requestDelete emits
     // deleteConfirmed(uuid); the UI (todo 7 Sidebar) wires that to a confirm

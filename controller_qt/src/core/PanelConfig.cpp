@@ -89,6 +89,7 @@ QJsonObject panelConfigToJson(const PanelConfig& cfg)
     obj.insert(QStringLiteral("confirm_on_exit"), cfg.confirmOnExit);
     obj.insert(QStringLiteral("notifications_enabled"), cfg.notificationsEnabled);
     obj.insert(QStringLiteral("notification_duration_ms"), cfg.notificationDurationMs);
+    obj.insert(QStringLiteral("default_model_name"), cfg.defaultModelName);
     return obj;
 }
 
@@ -114,6 +115,7 @@ PanelConfig panelConfigFromJson(const QJsonObject& json)
     cfg.confirmOnExit = readBool(json, QLatin1String("confirm_on_exit"), cfg.confirmOnExit);
     cfg.notificationsEnabled = readBool(json, QLatin1String("notifications_enabled"), cfg.notificationsEnabled);
     cfg.notificationDurationMs = readInt(json, QLatin1String("notification_duration_ms"), cfg.notificationDurationMs);
+    cfg.defaultModelName = readString(json, QLatin1String("default_model_name"), cfg.defaultModelName);
 
     return cfg;
 }

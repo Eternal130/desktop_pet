@@ -365,6 +365,15 @@ void InstanceSession::start()
             handleStatsStateEvent(env);
         });
 
+    // 模型库 B 档: model_load_failed (interface.md §B — renderer rejected the
+    // load_model: missing model dir / corrupt .model3.json). Replaces the
+    // log-only default so the failure reaches QML via modelLoadFailed +
+    // the failure-revision properties.
+    m_dispatcher.registerEventHandler(
+        QStringLiteral("model_load_failed"), [this](const Envelope& env) {
+            handleModelLoadFailedEvent(env);
+        });
+
     // Launch the renderer. The renderer connects back to 127.0.0.1:kWsPort with
     // ?instance_id=<id>&token=<token>; WsServer's 3-gate handshake validates it.
     m_processManager.startRenderer(
@@ -419,11 +428,31 @@ void InstanceSession::restart()
 
 void InstanceSession::loadModel(const QString& modelName)
 {
-    LOG_INFO("InstanceSession::loadModel instanceId={} model=\"{}\"",
-             m_instanceId, modelName.toStdString());
+    LOG_INFO("InstanceSession::loadModel instanceId={} model=\"{}\" connected={}",
+             m_instanceId, modelName.toStdString(), m_connected);
     m_config.modelName = modelName;
+    // Persist ALWAYS (offline + online): start() launches the renderer with
+    // --model m_config.modelName, so without the persist an offline switch
+    // would silently revert on the next launch. QSaveFile-backed atomic
+    // write via InstanceConfigManager (same discipline as drag_end /
+    // layout_changed persistence).
+    if (!m_configManager.save(m_config)) {
+        LOG_ERROR("InstanceSession[{}]: failed to persist modelName=\"{}\"",
+                  m_instanceId, modelName.toStdString());
+    }
     emit modelNameChanged();
     setModelLoaded(false);
+    // Offline switch (renderer not started / not connected — the model-library
+    // B-档 decision): config-only, NO load_model command. Sending into a dead
+    // socket would vanish (WsServer::sendText WARN no-op) while still emitting
+    // a misleading commandSent; the next start() picks the new model up via
+    // the --model CLI arg + startup salvo instead.
+    if (!m_connected) {
+        LOG_INFO("InstanceSession[{}]: renderer not connected — model switch "
+                 "persisted to config only (applies on next start)",
+                 m_instanceId);
+        return;
+    }
     sendCommand(Protocol::buildLoadModel(modelName));
 }
 

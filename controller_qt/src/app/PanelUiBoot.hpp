@@ -65,6 +65,7 @@ private:
     class EnvironmentChecker* m_envChecker;
     class WindowStateSaver* m_windowStateSaver;
     class VoicePackController* m_voicePackController;
+    class ModelController* m_modelController;
     // P4 plugin bridges (constructed after the original bridges, before
     // the engine loads — see the .cpp for the mounting contract).
     core::PluginManager* m_pluginManager = nullptr;

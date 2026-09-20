@@ -86,13 +86,19 @@ QHash<int, QByteArray> InstanceManager::roleNames() const
 
 // ── Roster operations ────────────────────────────────────────────────────────
 
-QString InstanceManager::createInstance(const QString& label, const QString& avatar)
+QString InstanceManager::createInstance(const QString& label,
+                                        const QString& avatar,
+                                        const QString& modelName)
 {
     // defaultInstanceConfig mints a fresh UUID as the persistence primary key.
     InstanceConfig cfg = defaultInstanceConfig();
     cfg.label = label;
     if (!avatar.isEmpty())
         cfg.avatar = avatar;
+    // Model-library selection: non-empty overrides the InstanceConfig default.
+    // Empty → the default stays ("Hiyori" — matches the pre-parameter behavior).
+    if (!modelName.isEmpty())
+        cfg.modelName = modelName;
 
     if (!m_configManager.save(cfg)) {
         LOG_ERROR("InstanceManager::createInstance: failed to persist \"{}\"; aborting row insert",

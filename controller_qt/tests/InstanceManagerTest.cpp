@@ -75,6 +75,7 @@ private slots:
     void initTestCase();
 
     void testCreateAndPersist();
+    void testCreateWithModelName();
     void testDelete();
     void testCorruptInstanceDegrades();
     void testRoute();
@@ -140,6 +141,50 @@ void InstanceManagerTest::testCreateAndPersist()
     // Out-of-range instanceAt → nullptr (never derefs a bad index).
     QVERIFY(mgr.instanceAt(-1) == nullptr);
     QVERIFY(mgr.instanceAt(99) == nullptr);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 1b. 模型库 B 档: createInstance with an explicit modelName
+// ────────────────────────────────────────────────────────────────────────────
+
+void InstanceManagerTest::testCreateWithModelName()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+
+    WsServer server;
+    PendingRequests pending;
+
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& cfg) {
+                            PanelStateManager(base.path()).save(cfg);
+                        });
+
+    // Third parameter carries the model-library selection into the config.
+    const QString uuid = mgr.createInstance(QStringLiteral("Mao Pet"),
+                                            QStringLiteral("🐱"),
+                                            QStringLiteral("Mao"));
+    QVERIFY2(!uuid.isEmpty(), "createInstance returned an empty uuid");
+
+    QCOMPARE(mgr.rowCount(), 1);
+    QCOMPARE(mgr.instanceAt(0)->modelName(), QStringLiteral("Mao"));
+    QCOMPARE(mgr.instanceAt(0)->config().modelName, QStringLiteral("Mao"));
+
+    // Persisted with the chosen model — a fresh load reads it back.
+    {
+        DatabaseManager db;
+        QVERIFY(db.open(base.path() + QStringLiteral("/app.db")));
+        const auto row = db.loadInstance(uuid);
+        QVERIFY2(row.has_value(), "instance row not created");
+        QCOMPARE(row->modelName, QStringLiteral("Mao"));
+    }
+
+    // The 2-arg form (pre-parameter call sites) keeps the default model —
+    // the default-argument compatibility guarantee.
+    const QString defaultUuid = mgr.createInstance(QStringLiteral("Default Pet"));
+    QVERIFY2(!defaultUuid.isEmpty(), "2-arg createInstance returned an empty uuid");
+    QCOMPARE(mgr.instanceAt(1)->config().modelName,
+             defaultInstanceConfig().modelName);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

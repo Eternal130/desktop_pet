@@ -15,7 +15,10 @@
 //      no throw.
 //   6. toJson emits exactly 12 keys (one per field).
 //
-// QTEST_APPLESS_MAIN: pure JSON struct manipulation, no event loop needed.
+// QTEST_MAIN (NOT APPLESS): the serde slots are pure JSON manipulation, but
+// testDefaultModelNameControllerRoundTrip drives PanelConfigController →
+// PanelStateManager → QSqlDatabase, which requires a QCoreApplication (same
+// as PanelStateManagerTest / DatabaseManagerTest).
 //
 // NOTE on field count: the task narrative says "11 fields" in places, but the
 // task's own struct definition, blueprint §5.2, and the Java PanelConfig record
@@ -23,20 +26,26 @@
 // real, ground-truth count.
 
 #include "core/PanelConfig.hpp"
+#include "core/PanelConfigController.hpp"
 
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QObject>
+#include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
+
+#include "core/PanelConfig.hpp"
 
 namespace {
 
 // Number of fields / serialized keys. Every ground-truth source (blueprint
 // §5.2, the Java record, this struct's own definition) agrees on 12 core
 // fields; the notification-bubble stream adds 2 (notifications_enabled,
-// notification_duration_ms) → 14.
-constexpr int kFieldCount = 14;
+// notification_duration_ms) and the model library adds 1 (default_model_name)
+// → 15.
+constexpr int kFieldCount = 15;
 
 // Build a config where EVERY field carries a distinctive, non-default value.
 // Used by the round-trip test so a single missed field surfaces immediately.
@@ -59,6 +68,7 @@ PanelConfig makeFullyPopulated()
     c.confirmOnExit = true;
     c.notificationsEnabled = false;
     c.notificationDurationMs = 35000;
+    c.defaultModelName = QStringLiteral("Haru");
     return c;
 }
 
@@ -75,6 +85,7 @@ private slots:
     void testSnakeCaseMapping();
     void testGarbageJsonReturnsDefaults();
     void testKeyCount();
+    void testDefaultModelNameControllerRoundTrip();
 };
 
 void PanelConfigTest::testRoundTripAllFields()
@@ -121,6 +132,7 @@ void PanelConfigTest::testEmptyObjectReturnsDefaults()
     QCOMPARE(cfg.confirmOnExit, false);
     QCOMPARE(cfg.notificationsEnabled, true);
     QCOMPARE(cfg.notificationDurationMs, 20000);
+    QCOMPARE(cfg.defaultModelName, QStringLiteral("Hiyori"));
 }
 
 void PanelConfigTest::testInstanceIdsArrayToStringList()
@@ -236,6 +248,11 @@ void PanelConfigTest::testGarbageJsonReturnsDefaults()
     QCOMPARE(fromWrong.confirmOnExit, false);
     QCOMPARE(fromWrong.notificationsEnabled, true);
     QCOMPARE(fromWrong.notificationDurationMs, 20000);
+    // default_model_name as a non-string (number) → default "Hiyori".
+    QJsonObject wrongModel;
+    wrongModel.insert(QStringLiteral("default_model_name"), 12345);
+    QCOMPARE(panelConfigFromJson(wrongModel).defaultModelName,
+             QStringLiteral("Hiyori"));
 
     // Given: instance_ids as a non-array (number). Must fall back to empty.
     QJsonObject idsWrong;
@@ -252,9 +269,55 @@ void PanelConfigTest::testKeyCount()
     const QJsonObject json = panelConfigToJson(cfg);
     // Then: exactly one JSON key per field. blueprint §5.2, the Java record,
     // and the struct definition each define 12 core fields, plus the 2
-    // notification-stream fields added by the bubble-stream phase → 14 keys.
+    // notification-stream fields added by the bubble-stream phase and the 1
+    // model-library field (default_model_name) → 15 keys.
     QCOMPARE(json.size(), kFieldCount);
 }
 
-QTEST_APPLESS_MAIN(PanelConfigTest)
+// 模型库 B 档: the PanelConfigController bridge's defaultModelName property
+// must read the persisted value at construction, write through the atomic
+// load-modify-save (PanelStateManager) on set, and survive a controller
+// re-construction — the read/write/persist round-trip contract the
+// model-library settings UI binds to.
+void PanelConfigTest::testDefaultModelNameControllerRoundTrip()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    // Fresh dir → controller seeds the PanelConfig default.
+    PanelConfigController fresh(dir.path());
+    QCOMPARE(fresh.defaultModelName(), QStringLiteral("Hiyori"));
+
+    // Write through the property setter → NOTIFY fires, cache updates.
+    QSignalSpy changedSpy(&fresh, &PanelConfigController::defaultModelNameChanged);
+    QVERIFY(changedSpy.isValid());
+    fresh.setDefaultModelName(QStringLiteral("Mao"));
+    QCOMPARE(fresh.defaultModelName(), QStringLiteral("Mao"));
+    QCOMPARE(changedSpy.count(), 1);
+
+    // Same-value write is a no-op (no spurious NOTIFY).
+    fresh.setDefaultModelName(QStringLiteral("Mao"));
+    QCOMPARE(changedSpy.count(), 1);
+
+    // Empty write is rejected (the create-instance flow treats empty as
+    // "use the default" — an empty persisted value would be ambiguous).
+    fresh.setDefaultModelName(QString());
+    QCOMPARE(fresh.defaultModelName(), QStringLiteral("Mao"));
+    QCOMPARE(changedSpy.count(), 1);
+
+    // Persisted: a second controller over the same dir reads the written
+    // value (proves the load-modify-save hit disk, not just the cache).
+    PanelConfigController reloaded(dir.path());
+    QCOMPARE(reloaded.defaultModelName(), QStringLiteral("Mao"));
+
+    // And the OTHER PanelConfig fields survived the write (the setter's
+    // load-modify-save must not clobber them).
+    PanelConfigController writer(dir.path());
+    writer.setStartMinimized(true);
+    PanelConfigController survivor(dir.path());
+    QCOMPARE(survivor.defaultModelName(), QStringLiteral("Mao"));
+    QCOMPARE(survivor.startMinimized(), true);
+}
+
+QTEST_MAIN(PanelConfigTest)
 #include "PanelConfigTest.moc"

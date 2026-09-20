@@ -477,6 +477,22 @@ pet_deploy_qt_test(ModelScannerTest)
 
 add_test(NAME ModelScannerTest COMMAND ModelScannerTest)
 
+# ModelControllerTest (模型库 B 档): QML bridge over ModelScanner +
+# ModelInfoParser — index-addressed roster with pre-parsed metadata cached at
+# rescan() time. Six slots: populated counts/details vs a real-shaped
+# .model3.json fixture, revision bump + modelsChanged on rescan, modelsDir
+# convention, corrupt .model3.json → zero details without dropping the entry,
+# empty rendererDir → every accessor safe/empty, out-of-range index +
+# unknown-name safety. Same QTemporaryDir fixture strategy as
+# ModelScannerTest. Links pet_panel_core (bridge + scanners live there).
+# QTEST_APPLESS_MAIN — QDir/QFile + synchronous signals, no event loop.
+qt_add_executable(ModelControllerTest ModelControllerTest.cpp)
+target_link_libraries(ModelControllerTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(ModelControllerTest)
+
+add_test(NAME ModelControllerTest COMMAND ModelControllerTest)
+
 # InstanceManagerTest (Phase 5, todo 3): the sidebar QAbstractListModel. Four
 # slots — create+persist (instanceIds in creation order through a panel.json
 # round-trip), delete (file gone + panel.json updated + safe no-op on unknown

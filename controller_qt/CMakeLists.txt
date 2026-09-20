@@ -276,6 +276,14 @@ qt_add_library(pet_panel_core STATIC
     src/ui/MonitorDataModel.hpp
     src/ui/VoicePackController.cpp
     src/ui/VoicePackController.hpp
+    # Model library page backend (模型库 B 档): QML bridge over the existing
+    # ModelScanner + ModelInfoParser core utilities — index-addressed model
+    # roster with pre-parsed motion-group/expression/hit-area metadata cached
+    # at rescan() time. Registered as the 'modelLibrary' context property by
+    # PanelUiBoot (same pattern as voicePacks). The .hpp is listed so AUTOMOC
+    # processes its Q_OBJECT metadata.
+    src/ui/ModelController.cpp
+    src/ui/ModelController.hpp
     src/core/InstanceSessionMonitor.cpp
     # SQLite config backend: DatabaseManager owns <configDir>/app.db (schema:
     # panel_config kv, instance_configs, assets, asset_refs). PanelStateManager
@@ -430,6 +438,7 @@ qml/pages/SettingsPage.qml
 qml/pages/MonitorPage.qml
 qml/pages/VoicePackPage.qml
 qml/pages/AssetPage.qml
+qml/pages/ModelLibraryPage.qml
 qml/BubbleStreamWindow.qml
 qml/components/BubbleCard.qml
 )

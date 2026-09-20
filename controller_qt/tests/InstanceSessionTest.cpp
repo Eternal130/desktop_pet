@@ -31,6 +31,8 @@
 #include <QTest>
 #include <QElapsedTimer>
 #include <QJsonObject>
+#include <QDir>
+#include <QFile>
 
 #include <optional>
 
@@ -53,6 +55,10 @@ private slots:
     void testSettersPersistAndEmit();
     void testBogusPathFailsGracefully();
     void testStopIsClean();
+    // 模型库 B 档 (model library): offline model switch + load-failure
+    // observability — both headless.
+    void testOfflineLoadModelPersistsConfigOnly();
+    void testModelLoadFailedIsObservable();
 
     // ── Integration tier [REQUIRES_RENDERER] ───────────────────────────────
     void testRealRendererLifecycle();
@@ -218,6 +224,114 @@ void InstanceSessionTest::testStopIsClean()
     QVERIFY(!session.modelLoaded());
     QCOMPARE(failedSpy.count(), 0); // no crash signal from a clean stop
 
+    server.close();
+}
+
+// 模型库 B 档 — offline model switch: loadModel on a NOT-connected session
+// must (a) update modelName + emit modelNameChanged, (b) PERSIST the choice
+// (the next start() launches the renderer with --model from the config), and
+// (c) send NO load_model command (the renderer is not there to receive it —
+// decision: 未启动实例换模 = 只写配置不发命令).
+void InstanceSessionTest::testOfflineLoadModelPersistsConfigOnly()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    WsServer server;
+    PendingRequests pending;
+    InstanceConfig cfg = defaultInstanceConfig();
+    QVERIFY(!cfg.modelName.isEmpty()); // precondition: a default exists to switch FROM
+
+    // configBasePath = temp dir so the persist lands in the test's own db.
+    InstanceSession session(cfg, server, pending, dir.path());
+
+    QSignalSpy nameSpy(&session, &InstanceSession::modelNameChanged);
+    QSignalSpy commandSpy(&session, &InstanceSession::commandSent);
+    QVERIFY(nameSpy.isValid());
+    QVERIFY(commandSpy.isValid());
+
+    QVERIFY(!session.connected()); // precondition: offline
+    session.loadModel(QStringLiteral("Haru"));
+
+    QCOMPARE(session.modelName(), QStringLiteral("Haru"));
+    QCOMPARE(session.config().modelName, QStringLiteral("Haru"));
+    QCOMPARE(nameSpy.count(), 1);
+    // Config-only: NO command went out (offline switch sends nothing).
+    QCOMPARE(commandSpy.count(), 0);
+    QVERIFY(!session.modelLoaded());
+
+    // The choice hit disk — a fresh manager over the same dir reads it back.
+    InstanceConfigManager persisted(dir.path());
+    const auto reloaded = persisted.load(cfg.id);
+    QVERIFY2(reloaded.has_value(), "config row missing after offline loadModel");
+    QCOMPARE(reloaded->modelName, QStringLiteral("Haru"));
+}
+
+// 模型库 B 档 — model_load_failed observability: the renderer's failure event
+// must bump modelLoadFailureRevision + record lastModelLoadError + emit
+// modelLoadFailed so QML can surface WHY a switch failed. Headless: a fake
+// renderer EXE file satisfies path resolution so start() registers the event
+// handlers (the launch itself fails asynchronously — harmless, we never pump
+// the loop), then the synthetic event is dispatched via onMessage.
+void InstanceSessionTest::testModelLoadFailedIsObservable()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    // Fake renderer executable (existence is all resolveRendererPath checks).
+#ifdef Q_OS_WIN
+    const QString exeName = QStringLiteral("desktop-pet-renderer.exe");
+#else
+    const QString exeName = QStringLiteral("desktop-pet-renderer");
+#endif
+    QFile fakeExe(QDir(dir.path()).absoluteFilePath(exeName));
+    QVERIFY2(fakeExe.open(QIODevice::WriteOnly),
+             "precondition: failed to create fake renderer exe");
+    fakeExe.close();
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.rendererPath = dir.path(); // resolveRendererPath finds the fake exe here
+    cfg.graphicsBackend = QStringLiteral("opengl");
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    QCOMPARE(session.modelLoadFailureRevision(), 0);
+    QVERIFY(session.lastModelLoadError().isEmpty());
+
+    // Registers the event handlers (returns before any async launch error).
+    session.start();
+
+    QSignalSpy failedSpy(&session, &InstanceSession::modelLoadFailed);
+    QVERIFY(failedSpy.isValid());
+
+    // Synthetic model_load_failed event (interface.md §B payload shape).
+    Envelope env;
+    env.type = QStringLiteral("event");
+    env.action = QStringLiteral("model_load_failed");
+    env.payload.insert(QStringLiteral("error_code"), 1001);
+    env.payload.insert(QStringLiteral("error_message"),
+                       QStringLiteral("Model path not found: Nope"));
+    session.onMessage(env);
+
+    QCOMPARE(session.modelLoadFailureRevision(), 1);
+    QCOMPARE(session.lastModelLoadError(),
+             QStringLiteral("Model path not found: Nope"));
+    QCOMPARE(failedSpy.count(), 1);
+    QCOMPARE(failedSpy.at(0).at(0).toString(),
+             QStringLiteral("Model path not found: Nope"));
+    QVERIFY(!session.modelLoaded());
+
+    // A second failure bumps the revision again (QML re-evaluation driver).
+    session.onMessage(env);
+    QCOMPARE(session.modelLoadFailureRevision(), 2);
+    QCOMPARE(failedSpy.count(), 2);
+
+    // Clean teardown — stops the (never-started) fake process, suppresses
+    // the async FailedToStart crash path.
+    session.stop();
     server.close();
 }
 

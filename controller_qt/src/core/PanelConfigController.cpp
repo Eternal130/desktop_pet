@@ -31,10 +31,12 @@ void PanelConfigController::loadFromDisk()
     m_confirmOnExit = cfg.confirmOnExit;
     m_startMinimized = cfg.startMinimized;
     m_autoLaunchSystem = cfg.autoLaunchSystem;
+    m_defaultModelName = cfg.defaultModelName;
     LOG_DEBUG("PanelConfigController loaded: closeAction=\"{}\" confirmOnExit={} "
-              "startMinimized={} autoLaunchSystem={}",
+              "startMinimized={} autoLaunchSystem={} defaultModelName=\"{}\"",
               m_closeAction.toStdString(), m_confirmOnExit,
-              m_startMinimized, m_autoLaunchSystem);
+              m_startMinimized, m_autoLaunchSystem,
+              m_defaultModelName.toStdString());
 }
 
 bool PanelConfigController::updateField(std::function<void(PanelConfig&)> mutator)
@@ -121,4 +123,27 @@ void PanelConfigController::setAutoLaunchSystem(bool enabled)
     }
     emit autoLaunchSystemChanged();
     LOG_INFO("PanelConfig: autoLaunchSystem -> {}", enabled);
+}
+
+void PanelConfigController::setDefaultModelName(const QString& name)
+{
+    // Free-form string (see the Q_PROPERTY note) — no enum-style guard here;
+    // an empty name is rejected (falls back to keeping the current value)
+    // because the createInstance flow treats empty as "use the default".
+    if (m_defaultModelName == name) return;
+    if (name.isEmpty()) {
+        LOG_WARN("PanelConfigController::setDefaultModelName: rejecting empty name");
+        return;
+    }
+    const QString old = m_defaultModelName;
+    m_defaultModelName = name;
+    if (!updateField([name](PanelConfig& cfg) { cfg.defaultModelName = name; })) {
+        // Roll back the cache on persistence failure so QML reads the value
+        // that's actually on disk (the old one) — same as setCloseAction.
+        m_defaultModelName = old;
+        return;
+    }
+    emit defaultModelNameChanged();
+    LOG_INFO("PanelConfig: defaultModelName \"{}\" -> \"{}\"",
+             old.toStdString(), name.toStdString());
 }

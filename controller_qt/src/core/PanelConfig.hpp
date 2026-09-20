@@ -50,6 +50,12 @@ struct PanelConfig {
     bool notificationsEnabled = true;          // bubble stream master switch
     int notificationDurationMs = 20000;        // per-bubble auto-dismiss delay
 
+    // ── model library (模型库) ───────────────────────────────────────────────
+    // The model new instances get by default (createInstance with an empty
+    // modelName falls back to this). Must be a directory name under the
+    // renderer's Resources/Models/ — "Hiyori" is the always-bundled sample.
+    QString defaultModelName = QStringLiteral("Hiyori");
+
     // Member-wise equality — used by round-trip identity tests (QJsonObject,
     // QString, and QStringList all compare by content, so ordering of
     // instanceIds matters but JSON key ordering does not).
@@ -67,13 +73,14 @@ struct PanelConfig {
             && closeAction == other.closeAction
             && confirmOnExit == other.confirmOnExit
             && notificationsEnabled == other.notificationsEnabled
-            && notificationDurationMs == other.notificationDurationMs;
+            && notificationDurationMs == other.notificationDurationMs
+            && defaultModelName == other.defaultModelName;
     }
 };
 
 // Serialize a PanelConfig to a QJsonObject with snake_case keys
 // (configuration.md §5). Every field is written; instance_ids becomes a
-// JSON array of strings. The result always has exactly 14 keys (one per field).
+// JSON array of strings. The result always has exactly 15 keys (one per field).
 QJsonObject panelConfigToJson(const PanelConfig& cfg);
 
 // Deserialize a QJsonObject into a PanelConfig. Missing fields are merged from

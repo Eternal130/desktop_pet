@@ -2,9 +2,19 @@ import QtQuick
 import QtQuick.Controls
 import DesktopPet
 
-// CreateInstanceDialog — name + emoji avatar picker in a scrim dialog.
-// Caller opens via open(); onAccepted carries (name, avatar). Empty name is
-// rejected (button disabled) — creation always has a user-visible label.
+// CreateInstanceDialog — name + emoji avatar picker + model combo in a
+// scrim dialog. Caller opens via open().
+//
+// Creation happens HERE, not in the callers' onAccepted handlers: the
+// chosen model must reach instanceManager.createInstance's third
+// parameter (empty string = legacy default-model behavior), and the two
+// handler sites (InstanceDetailPage / WelcomePage) are outside this
+// lane's write boundary. After a successful create this dialog replicates
+// what those handlers did — select the new row, and switch to the
+// instance page when the dialog was opened from the welcome page.
+// The legacy accepted(name, avatar) signal stays DECLARED (unemitted) so
+// the existing onAccepted bindings keep binding cleanly; do not emit it,
+// that would double-create.
 Rectangle {
     id: root
 
@@ -18,9 +28,24 @@ Rectangle {
     property string _selectedAvatar: "🐱"
     property alias nameText: _nameInput.text
 
+    function _modelNames() {
+        const out = []
+        for (let i = 0; i < modelLibrary.modelCount; ++i)
+            out.push(modelLibrary.modelDirName(i))
+        return out
+    }
+
     function open() {
         _nameInput.text = qsTr("宠物 %1").arg(instanceManager.rowCount() + 1)
         _selectedAvatar = "🐱"
+        // Model combo: fresh options each open, preselected to the global
+        // default (panelConfig.defaultModelName), falling back to the
+        // first known model — never a stale pick from a previous open.
+        const names = root._modelNames()
+        _modelCombo.model = names
+        const def = names.indexOf(panelConfig.defaultModelName)
+        _modelCombo.currentIndex = def >= 0 ? def
+                                            : (names.length > 0 ? 0 : -1)
         root.visible = true
         _nameInput.forceActiveFocus()
         _nameInput.selectAll()
@@ -118,6 +143,27 @@ Rectangle {
                 }
             }
 
+            Text {
+                text: qsTr("模型")
+                color: Theme.text2Color
+                font.pixelSize: 12
+            }
+            AppComboBox {
+                id: _modelCombo
+                width: parent.width
+                model: []
+                // -1 shows the placeholder until open() preselects the
+                // global default; picking here overrides it per-instance.
+                currentIndex: -1
+            }
+            Text {
+                text: _modelCombo.currentIndex >= 0
+                      ? qsTr("该模型将作为此实例的初始模型")
+                      : qsTr("未选择模型时使用渲染器默认模型")
+                color: Theme.text3Color
+                font.pixelSize: 11
+            }
+
             Row {
                 spacing: 10
                 layoutDirection: Qt.RightToLeft
@@ -127,8 +173,25 @@ Rectangle {
                     text: qsTr("创建")
                     enabled: _nameInput.text.trim().length > 0
                     onClicked: {
-                        root.accepted(_nameInput.text.trim(), root._selectedAvatar)
+                        // Pass the chosen model as the third parameter
+                        // (empty string = legacy default-model behavior);
+                        // see the header comment for why creation happens
+                        // here instead of the callers' onAccepted.
+                        const model = _modelCombo.currentIndex >= 0
+                                      ? _modelCombo.currentText : ""
+                        const uuid = instanceManager.createInstance(
+                            _nameInput.text.trim(),
+                            root._selectedAvatar,
+                            model)
                         root.close()
+                        if (uuid !== "") {
+                            const row = instanceManager.rowCount() - 1
+                            Window.window.selectInstance(
+                                row,
+                                instanceManager.instanceAt(row).instanceId)
+                            if (Window.window.currentPage === "welcome")
+                                Window.window.switchPage("instance")
+                        }
                     }
                 }
                 AppButton {

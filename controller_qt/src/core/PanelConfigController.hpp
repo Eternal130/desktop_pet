@@ -37,6 +37,11 @@ class PanelConfigController : public QObject
     Q_PROPERTY(bool     confirmOnExit  READ confirmOnExit  WRITE setConfirmOnExit  NOTIFY confirmOnExitChanged)
     Q_PROPERTY(bool     startMinimized READ startMinimized WRITE setStartMinimized NOTIFY startMinimizedChanged)
     Q_PROPERTY(bool     autoLaunchSystem READ autoLaunchSystem WRITE setAutoLaunchSystem NOTIFY autoLaunchSystemChanged)
+    // Model-library setting: the model new instances get by default.
+    // Free-form string (a dir name under Resources/Models/) — validity is
+    // the model-library UI's concern (it offers the scanned list); an
+    // unknown name simply fails at renderer launch with model_load_failed.
+    Q_PROPERTY(QString defaultModelName READ defaultModelName WRITE setDefaultModelName NOTIFY defaultModelNameChanged)
 
 public:
     // configDir: the panel.json root (ConfigDir::configDir() in production, or
@@ -55,6 +60,7 @@ public:
     bool    confirmOnExit() const   { return m_confirmOnExit; }
     bool    startMinimized() const  { return m_startMinimized; }
     bool    autoLaunchSystem() const { return m_autoLaunchSystem; }
+    QString defaultModelName() const { return m_defaultModelName; }
 
     // ── WRITE accessors (mutate cache + persist atomically + emit NOTIFY) ─
     // Each does load-modify-save: read the current panel.json, overwrite the
@@ -65,12 +71,14 @@ public:
     void setConfirmOnExit(bool enabled);
     void setStartMinimized(bool enabled);
     void setAutoLaunchSystem(bool enabled);
+    void setDefaultModelName(const QString& name);
 
 signals:
     void closeActionChanged();
     void confirmOnExitChanged();
     void startMinimizedChanged();
     void autoLaunchSystemChanged();
+    void defaultModelNameChanged();
 
 private:
     // Load panel.json once at construction → seed the 4 cached fields. Used
@@ -90,4 +98,5 @@ private:
     bool    m_confirmOnExit = false;
     bool    m_startMinimized = false;
     bool    m_autoLaunchSystem = false;
+    QString m_defaultModelName;
 };

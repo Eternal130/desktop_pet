@@ -102,6 +102,12 @@ class InstanceSession : public QObject {
     Q_PROPERTY(double   volume     READ volume      WRITE setVolume  NOTIFY volumeChanged)
     Q_PROPERTY(bool     muted      READ muted       WRITE setMuted   NOTIFY mutedChanged)
     Q_PROPERTY(int      instanceId READ instanceId  CONSTANT)
+    // Model-switch failure observability (模型库 B 档): the renderer's
+    // model_load_failed event bumps the revision so QML bindings that call
+    // Q_INVOKABLE accessors re-evaluate, and lastModelLoadError carries the
+    // renderer's error_message (empty string before any failure).
+    Q_PROPERTY(int      modelLoadFailureRevision READ modelLoadFailureRevision NOTIFY modelLoadFailed)
+    Q_PROPERTY(QString  lastModelLoadError       READ lastModelLoadError       NOTIFY modelLoadFailed)
 
 public:
     // Construct a session bound to a shared WsServer (token registry + send
@@ -134,6 +140,8 @@ public:
     double  volume() const;
     bool    muted() const;
     int     instanceId() const;
+    int     modelLoadFailureRevision() const { return m_modelLoadFailureRevision; }
+    QString lastModelLoadError() const { return m_lastModelLoadError; }
 
     // The full config snapshot (28 fields). Mutable setters below persist the
     // change into m_config so the next read reflects it.
@@ -277,6 +285,12 @@ signals:
     void volumeChanged();
     void mutedChanged();
 
+    // model_load_failed (interface.md §B): the renderer rejected a load_model
+    // (missing model dir, corrupt .model3.json, ...). Carries the error
+    // message; also drives the modelLoadFailureRevision + lastModelLoadError
+    // Q_PROPERTY NOTIFYs.
+    void modelLoadFailed(const QString& error);
+
     // Emitted when start() fails (renderer missing / launch error) OR when the
     // renderer exits unexpectedly (crash, !manuallyStopping). QML shows the
     // reason; stop()-initiated exits never emit this (m_manuallyStopping=true).
@@ -380,6 +394,15 @@ private:
     // emit layoutUpdated so the UI refreshes. Missing/non-numeric → no-op.
     void handleLayoutStateEvent(const Envelope& env);
 
+    // model_load_failed (interface.md §B) → the renderer could not load the
+    // requested model (payload: error_code, error_message). Records the
+    // message + bumps the failure revision + emits modelLoadFailed so the
+    // model-library / detail UI can surface WHY the switch failed. Also
+    // clears modelLoaded (the previous model was already torn down
+    // renderer-side when it attempts a load). Missing payload fields →
+    // generic message. Never throws.
+    void handleModelLoadFailedEvent(const Envelope& env);
+
     // ── Phase-5 Wave 8 todo 18 (monitor poller + stats_state merge) ──────────
     // Bodies live in InstanceSessionMonitor.cpp (extracted to keep
     // InstanceSession.cpp under the 250 pure-LOC ceiling, same split as
@@ -466,6 +489,10 @@ private:
     bool    m_connected = false;
     bool    m_modelLoaded = false;
     std::optional<core::ModelInfo> m_modelInfo;
+
+    // ── Model-load failure observability (模型库 B 档) ───────────────────────
+    int     m_modelLoadFailureRevision = 0;
+    QString m_lastModelLoadError;
 
     // ── Phase-5+ counters / flags (slots for later todos) ───────────────────
     int  m_idleMotionCount = 0;   // todo 8 (Scheduler) increments

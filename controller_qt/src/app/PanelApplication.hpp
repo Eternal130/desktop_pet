@@ -60,9 +60,9 @@ public:
 
     // P5 (§B.4): the process-wide download chokepoint — constructed in the
     // service tree BEFORE the plugin host (which hands it to plugin
-    // contexts, capability-gated). Staging <configDir>/downloads/, install
-    // root from PathResolve's default renderer dir. Its destructor silently
-    // cancels active jobs — the exit path never blocks.
+    // contexts, capability-gated). Staging <dataDir>/downloads/, install
+    // root <dataDir>/VoicePacks/ (per-user, never the install tree). Its
+    // destructor silently cancels active jobs — the exit path never blocks.
     core::DownloadService* downloadService();
 
     // Snapshot loaded once at construction (the old `const PanelConfig

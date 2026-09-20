@@ -32,14 +32,14 @@ desktop_pet/
 | Add WebSocket protocol message | Both `controller_qt/src/network/Protocol.hpp` and `renderer/src/network/Protocol.hpp` | Must match Envelope format |
 | Add renderer command handler | `renderer/src/network/CommandHandlers.cpp` | Register in `RegisterHandlers()` |
 | Add renderer event | `renderer/src/network/EventEmitter.cpp` | Controller handles in `controller_qt/src/core/InstanceSession` (Handlers TU) after `WsServer` routing |
-| Change config format | `docs/system/configuration.md` + `controller_qt/src/core/InstanceConfigManager.cpp` | Config at `~/.config/desktop-pet/` |
+| Change config format | `docs/system/configuration.md` + `controller_qt/src/core/InstanceConfigManager.cpp` | Config dir via `ConfigDir`/QStandardPaths: Linux `~/.config/desktop-pet/` (unchanged), Windows `%APPDATA%\desktop-pet\`; data (packs/downloads) `%LOCALAPPDATA%\desktop-pet\` |
 | Add graphics feature | `renderer/src/graphics/` | Implement `IGraphicsBackend` for both OpenGL + Vulkan |
 | Protocol spec | `docs/protocol/` | commands.md, events.md, handshake.md |
 | Architecture overview | `docs/README.md` | Definitive project doc |
 | AI learnings/pitfalls | `.sisyphus/notepads/` | Phase-specific dev notes |
 | Add controller monitor feature | `controller_qt/src/ui/MonitorDataModel.cpp` | 60-sample ring buffer for QtCharts sparklines |
 | Add controller system integration | `controller_qt/src/system/` | TrayManager, AutoLaunchManager, ResourceStatsCollector |
-| Change controller instance config | `controller_qt/src/core/InstanceConfigManager.cpp` | Persists to `~/.config/desktop-pet/instances/{uuid}.json` (atomic write via QSaveFile) |
+| Change controller instance config | `controller_qt/src/core/InstanceConfigManager.cpp` | Persists to `<configDir>/instances/{uuid}.json` (Linux `~/.config/desktop-pet/`, Windows `%APPDATA%\desktop-pet\`) (atomic write via QSaveFile) |
 | Add controller protocol command | `controller_qt/src/network/Protocol.hpp` | 20 typed command factories + envelope helpers |
 
 ## CODE MAP — Key Classes

@@ -24,7 +24,9 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 
 > **Phase 2 实现**：引入控制面板后，支持 JSON 配置文件读写和用户界面修改。音频播放由渲染器侧 `AudioManager` 实现（✅ miniaudio + libvorbis，OGG 播放），控制器侧音频映射管理（`audio_mapping.json`、`AudioMappingManager`/UI）待实现。
 
-存储路径：`~/.config/desktop-pet/config.json`
+存储路径：`<配置目录>/config.json`
+
+> **配置目录**（跨平台，由 `ConfigDir` 基于 `QStandardPaths` 解析）：Linux `~/.config/desktop-pet/`；Windows `%APPDATA%\desktop-pet\`（Roaming）。下文各配置文件均位于该目录下。
 
 ```json
 {
@@ -100,7 +102,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 
 > **Phase 2 实现**：引入多实例管理后，面板级配置独立于全局配置和实例配置。
 
-存储路径：`~/.config/desktop-pet/panel.json`
+存储路径：`<配置目录>/panel.json`（配置目录见上方说明）
 
 ```json
 {
@@ -139,7 +141,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 
 > **Phase 2 实现**：每个宠物实例拥有独立配置文件，由 `InstanceConfigManager` 管理。
 
-存储路径：`~/.config/desktop-pet/instances/{uuid}.json`
+存储路径：`<配置目录>/instances/{uuid}.json`（配置目录见 §二 说明）
 
 ```json
 {
@@ -197,7 +199,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 
 > **Phase 3a 实现**：语音包挂载关系由控制面板（controller_qt）管理并持久化。
 
-存储路径：`~/.config/desktop-pet/mount.json`
+存储路径：`<配置目录>/mount.json`（配置目录见 §二 说明）
 
 ```json
 {
@@ -223,7 +225,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 
 > **Phase 2 实现**：缓存每个模型的 HitArea 列表，避免重复解析 model3.json。
 
-存储路径：`~/.config/desktop-pet/hit_area_cache.json`
+存储路径：`<配置目录>/hit_area_cache.json`（配置目录见 §二 说明）
 
 ```json
 {
@@ -247,7 +249,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 >
 > **当前状态**：⚠️ 控制器侧待实现（`AudioMapping` record 仅定义，`AudioMappingManager`/UI 未实现）。渲染器侧 `play_audio` 命令已可用——由 `AudioManager`（miniaudio + libvorbis）提供 OGG 播放能力，错误码 7001/7002/7003 已定义。
 
-存储路径：`~/.config/desktop-pet/audio_mapping.json`
+存储路径：`<配置目录>/audio_mapping.json`（配置目录见 §二 说明）
 
 音频映射定义模型动作与音频文件的对应关系，支持跨模型复用：
 
@@ -282,8 +284,19 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 
 ## 九、配置文件总览
 
+### 存储位置（2026-09 存储布局修订：Windows 按用户安装）
+
+| 平台 | 配置（Roaming） | 数据（Local） |
+|:---|:---|:---|
+| Linux | `~/.config/desktop-pet/`（**不变**，字节级一致） | `~/.local/share/desktop-pet/` |
+| Windows | `%APPDATA%\desktop-pet\` | `%LOCALAPPDATA%\desktop-pet\` |
+
+- 配置目录 = `QStandardPaths::AppConfigLocation`（应用名 `desktop-pet`、组织名为空，路径保持扁平无多余层级）。
+- 数据目录 = `QStandardPaths::AppLocalDataLocation`，存放下载暂存（`downloads/`）与用户安装的语音包（`VoicePacks/`）。语音包发现为双来源：内置 `<安装目录>\Resources\VoicePacks\` + 用户目录，同名时**用户包优先**。
+- 安装器本身亦为按用户安装（`%LOCALAPPDATA%\DesktopPet`，无需 UAC 提权），与上述布局配套。
+
 ```
-~/.config/desktop-pet/
+<配置目录>/
 ├── config.json                  ← 全局配置（窗口位置、当前模型、行为参数）    [Phase 2 ✅]
 ├── panel.json                   ← 面板配置（窗口位置/主题/实例 ID 列表）     [Phase 2 ✅]
 ├── mount.json                   ← 语音包挂载配置（模型↔语音包关系）          [Phase 3a ✅]
@@ -293,3 +306,12 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
     ├── {uuid-1}.json            ← 实例 1 的独立配置
     └── {uuid-2}.json            ← 实例 2 的独立配置
 ```
+
+### 旧版数据迁移（仅 Windows）
+
+Windows 首次启动时，`ConfigDir::migrateLegacyIfNeeded()` 自动检测旧版布局
+`%USERPROFILE%\.config\desktop-pet\`：
+
+- 新配置目录已存在且非空（本机已用过新版）或旧目录不存在（全新安装）→ 不做任何事。
+- 否则将旧目录整棵**复制**到 `%APPDATA%\desktop-pet\`（保持相对路径；单个文件失败仅告警并继续），随后把旧目录改名为 `~/.config/desktop-pet-migrated-backup` 留作备份。
+- 迁移只在 Windows 执行；Linux 路径未变，无需迁移。

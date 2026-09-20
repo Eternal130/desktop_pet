@@ -1,6 +1,5 @@
 #include "app/PanelApplication.hpp"
 
-#include <QDir>
 #include <QJsonDocument>
 #include <QTimer>
 
@@ -31,6 +30,17 @@
 PanelApplication::PanelApplication(QObject* parent)
     : QObject(parent)
 {
+    // Storage-layout revision: one-time legacy-config migration before the
+    // first config read below (DatabaseManager opens <configDir>/app.db,
+    // which would make a fresh target dir look "already populated").
+    // main() already ran it before the ensureDirectories() scaffold; this
+    // second call is an idempotent no-op (Windows: legacy dir no longer
+    // exists after the first run; other platforms: compile-time false) that
+    // guards any embedding constructing this tree without main()'s
+    // sequencing. ensureDirectories() stays a single call in main() — it
+    // must precede Logging::init, which needs logs/.
+    ConfigDir::migrateLegacyIfNeeded();
+
     // ── SQLite config backend ─────────────────────────────────────────────
     // ONE DatabaseManager owns <configDir>/app.db; every config consumer
     // (PanelStateManager, InstanceConfigManager, AssetManager) shares it by
@@ -130,11 +140,11 @@ PanelApplication::PanelApplication(QObject* parent)
     // (registration-reverse) tears the host down first, then the service:
     // plugin shutdown callbacks cannot reach a dead service. Destructor
     // silently cancels active jobs — the exit path never blocks.
+    // Storage-layout revision: staging + installs live under the per-user
+    // DATA dir (<dataDir>/downloads/ → <dataDir>/VoicePacks/), never inside
+    // the (possibly read-only) install tree; DownloadService creates both.
     m_downloadService = new core::DownloadService(
-        ConfigDir::configDir() + QStringLiteral("downloads"),
-        QDir(core::defaultRendererDir())
-            .filePath(QStringLiteral("Resources/VoicePacks")),
-        this);
+        ConfigDir::downloadsDir(), ConfigDir::userVoicePacksDir(), this);
     m_pluginHost = new core::PluginHost(m_pluginRegistry, this);
     m_pluginHost->setInstanceManager(m_instanceManager);
     m_pluginHost->setConfigRoot(ConfigDir::configDir());

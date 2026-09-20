@@ -6,6 +6,17 @@
 ; VERSION defaults to 0.0.0 (manual/local compiles); the CI flow always
 ; passes the git tag.
 ;
+; PER-USER INSTALL (storage-layout revision 2026-09): installs to
+; {localappdata}\DesktopPet with PrivilegesRequired=lowest — NO UAC
+; elevation prompt, uninstall key under HKCU, {autoprograms}/{autodesktop}
+; resolve to the current user's Start Menu / Desktop. This matches the
+; Chrome / VS Code per-user convention and keeps the install tree
+; user-writable (voice-pack/model downloads never need elevation).
+; Config lives in %APPDATA%\desktop-pet (Roaming), data in
+; %LOCALAPPDATA%\desktop-pet (Local) — see controller_qt ConfigDir.
+; NOTE: a pre-2.0.0 Program Files install is NOT auto-detected (AppId is
+; deliberately unchanged for product identity; ~zero users — acceptable).
+;
 ; Deliberately NO SetupIconFile and no custom shortcut icons — the repo has
 ; no icon assets yet (known gap, tracked in BUILD.md's 发布 section); the
 ; system default icon is used until real art lands.
@@ -29,8 +40,13 @@ AppVersion={#VERSION}
 Uninstallable=yes
 UninstallDisplayName=Desktop Pet
 UninstallDisplayIcon={app}\desktop-pet-controller-qt.exe
-DefaultDirName={autopf}\DesktopPet
+; Per-user install (see header): user-writable LocalAppData dir, no UAC.
+DefaultDirName={localappdata}\DesktopPet
 DefaultGroupName=Desktop Pet
+; No elevation prompt — per-user only (Chrome / VS Code convention); the
+; uninstall key lands under HKCU and {autoprograms}/{autodesktop} resolve
+; to the current user's locations automatically.
+PrivilegesRequired=lowest
 ; Qt 6.10 floor
 MinVersion=10.0
 ArchitecturesInstallIn64BitMode=x64compatible

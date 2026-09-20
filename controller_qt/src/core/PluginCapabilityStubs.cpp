@@ -5,6 +5,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "core/ConfigDir.hpp"
 #include "core/MetaMkoParser.hpp"
 #include "core/PathResolve.hpp"
 #include "core/VoicePackScanner.hpp"
@@ -51,13 +52,16 @@ VoicePackApiImpl::VoicePackApiImpl(std::function<void()> refresh, QObject* paren
 
 QVector<pet::PackInfo> VoicePackApiImpl::listPacks()
 {
-    // Same discovery the VoicePacks page uses: scanner takes the renderer
-    // BASE dir and appends Resources/VoicePacks internally (scanner .hpp
-    // contract). Missing dir / no packs → empty list, never an error.
+    // Same dual-source discovery the VoicePacks page uses: scanner takes the
+    // renderer BASE dir (appends Resources/VoicePacks internally) plus the
+    // per-user packs dir (storage-layout revision — downloads install there
+    // and win name collisions; scanner .hpp contract). Missing dirs / no
+    // packs → empty list, never an error.
     QVector<pet::PackInfo> result;
     const QString baseDir = defaultRendererDir();
     // Scanner contract: entries are ABSOLUTE pack directory paths.
-    const QStringList packDirs = scanAvailableVoicePacks(baseDir);
+    const QStringList packDirs =
+        scanAvailableVoicePacks(baseDir, ConfigDir::userVoicePacksDir());
     for (const QString& dir : packDirs) {
         const QString name = QFileInfo(dir).fileName();
         pet::PackInfo info;
@@ -97,8 +101,10 @@ void VoicePackApiImpl::refreshScan()
 
 QString VoicePackApiImpl::installPath()
 {
-    return QDir(defaultRendererDir())
-        .filePath(QStringLiteral("Resources/VoicePacks"));
+    // Storage-layout revision: installs land in the per-user packs dir
+    // (DownloadService installRoot — PanelApplication wiring), never inside
+    // the (possibly read-only) install tree.
+    return ConfigDir::userVoicePacksDir();
 }
 
 } // namespace core

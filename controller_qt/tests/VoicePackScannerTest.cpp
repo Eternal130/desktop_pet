@@ -1,7 +1,7 @@
 // VoicePackScannerTest — Phase 5 Wave 8 todo 19 TDD for the voice-pack
-// directory scanner.
+// directory scanner (+ storage-layout revision: dual-source overload).
 //
-// Six behaviors locked (mirrors ModelScannerTest + the Java reference
+// Behaviors locked (mirrors ModelScannerTest + the Java reference
 // VoicePackScannerTest):
 //   1. A fake <tmp>/Resources/VoicePacks/<Pack>/meta.mko qualifies and is
 //      reported by name.
@@ -10,6 +10,11 @@
 //   4. A hidden subdir (starting with '.') is skipped even if it has meta.mko.
 //   5. A nonexistent rendererDir → empty list (no throw, no crash).
 //   6. Empty rendererDir → empty list.
+//   7. Dual-source overload: built-in + user packs merge (user dir IS the
+//      VoicePacks dir itself, not a Resources parent).
+//   8. Dual-source name collision → the USER pack wins.
+//   9. A missing user packs dir → built-in only (graceful fallback).
+//  10. Single-arg overload == dual overload with an empty userPacksDir.
 //
 // Uses QTemporaryDir to create the EXACT shipped layout
 // (<tmp>/Resources/VoicePacks/<Pack>/meta.mko). No real voice pack fixtures
@@ -44,11 +49,23 @@ bool touchFile(const QString& dir, const QString& name)
 }
 
 // Create <root>/Resources/VoicePacks/<packName>/meta.mko — the exact layout
-// scanAvailableVoicePacks expects. Returns true on success.
+// scanAvailableVoicePacks expects in its BUILT-IN source. Returns true on
+// success.
 bool createVoicePackDir(const QString& root, const QString& packName)
 {
     const QString packDir = QDir(root).absoluteFilePath(
         QStringLiteral("Resources/VoicePacks/") + packName);
+    if (!QDir().mkpath(packDir))
+        return false;
+    return touchFile(packDir, QStringLiteral("meta.mko"));
+}
+
+// Create <packsDir>/<packName>/meta.mko for the USER source. userPacksDir is
+// the VoicePacks directory ITSELF (e.g. ConfigDir::userVoicePacksDir()), so
+// the fixture has NO Resources/VoicePacks prefix.
+bool createUserVoicePack(const QString& packsDir, const QString& packName)
+{
+    const QString packDir = QDir(packsDir).absoluteFilePath(packName);
     if (!QDir().mkpath(packDir))
         return false;
     return touchFile(packDir, QStringLiteral("meta.mko"));
@@ -67,6 +84,10 @@ private slots:
     void testScanSkipsHiddenDir();
     void testScanNonexistentDirReturnsEmpty();
     void testScanEmptyRendererDirReturnsEmpty();
+    void testDualDirScanMergesBothSources();
+    void testDualDirUserWinsCollision();
+    void testDualDirMissingUserDirFallsBackToBuiltin();
+    void testSingleArgOverloadMatchesDualWithEmptyUserDir();
 };
 
 void VoicePackScannerTest::testScanFindsSinglePack()
@@ -170,6 +191,111 @@ void VoicePackScannerTest::testScanEmptyRendererDirReturnsEmpty()
     const QStringList result = core::scanAvailableVoicePacks(QString());
     QVERIFY2(result.isEmpty(),
              "Empty rendererDir must yield an empty list");
+}
+
+void VoicePackScannerTest::testDualDirScanMergesBothSources()
+{
+    // Given: one BUILT-IN pack (under <renderer>/Resources/VoicePacks/) and
+    // a separate USER packs dir holding a different pack. The user dir IS
+    // the VoicePacks dir itself — no Resources prefix (the shape
+    // ConfigDir::userVoicePacksDir() hands over).
+    QTemporaryDir rendererDir;
+    QTemporaryDir userPacksDir;
+    QVERIFY2(rendererDir.isValid() && userPacksDir.isValid(),
+             "temporary directory creation failed");
+    QVERIFY2(createVoicePackDir(rendererDir.path(),
+                                QStringLiteral("BuiltinPack")),
+             "precondition: failed to create BuiltinPack fixture");
+    QVERIFY2(createUserVoicePack(userPacksDir.path(),
+                                 QStringLiteral("UserPack")),
+             "precondition: failed to create UserPack fixture");
+
+    // When: the dual-source overload scans both.
+    const QStringList result = core::scanAvailableVoicePacks(
+        rendererDir.path(), userPacksDir.path());
+
+    // Then: both packs appear as ABSOLUTE paths inside their own source
+    // tree. Membership (not order) is asserted — the case-insensitive sort
+    // keys on the FULL path, and the two QTemporaryDir roots have random
+    // names, so the cross-source order is not deterministic.
+    QCOMPARE(result.size(), 2);
+    QVERIFY2(result.contains(QDir(rendererDir.path()).absoluteFilePath(
+                 QStringLiteral("Resources/VoicePacks/BuiltinPack"))),
+             "the built-in pack must be reported");
+    QVERIFY2(result.contains(QDir(userPacksDir.path()).absoluteFilePath(
+                 QStringLiteral("UserPack"))),
+             "the user pack must be reported");
+}
+
+void VoicePackScannerTest::testDualDirUserWinsCollision()
+{
+    // Given: the SAME pack dir basename in both sources.
+    QTemporaryDir rendererDir;
+    QTemporaryDir userPacksDir;
+    QVERIFY2(rendererDir.isValid() && userPacksDir.isValid(),
+             "temporary directory creation failed");
+    QVERIFY2(createVoicePackDir(rendererDir.path(),
+                                QStringLiteral("SameName")),
+             "precondition: failed to create built-in SameName fixture");
+    QVERIFY2(createUserVoicePack(userPacksDir.path(),
+                                 QStringLiteral("SameName")),
+             "precondition: failed to create user SameName fixture");
+
+    // When: the dual-source overload scans both.
+    const QStringList result = core::scanAvailableVoicePacks(
+        rendererDir.path(), userPacksDir.path());
+
+    // Then: exactly ONE entry survives and it is the USER pack (a downloaded
+    // pack supersedes a same-named bundled one — storage-layout rule).
+    QCOMPARE(result.size(), 1);
+    QCOMPARE(result.first(),
+             QDir(userPacksDir.path()).absoluteFilePath(
+                 QStringLiteral("SameName")));
+}
+
+void VoicePackScannerTest::testDualDirMissingUserDirFallsBackToBuiltin()
+{
+    // Given: a built-in pack and a user packs dir that does not exist
+    // (fresh install before the first download — the owner creates the dir
+    // lazily).
+    QTemporaryDir rendererDir;
+    QVERIFY2(rendererDir.isValid(), "temporary directory creation failed");
+    QVERIFY2(createVoicePackDir(rendererDir.path(),
+                                QStringLiteral("OnlyBuiltin")),
+             "precondition: failed to create OnlyBuiltin fixture");
+    const QString missingUserDir =
+        rendererDir.path() + QStringLiteral("/no/such/user-packs");
+
+    // When: the dual-source overload scans with the missing user dir.
+    const QStringList result = core::scanAvailableVoicePacks(
+        rendererDir.path(), missingUserDir);
+
+    // Then: graceful fallback — the built-in pack is still reported.
+    QCOMPARE(result.size(), 1);
+    QCOMPARE(result.first(),
+             QDir(rendererDir.path()).absoluteFilePath(
+                 QStringLiteral("Resources/VoicePacks/OnlyBuiltin")));
+}
+
+void VoicePackScannerTest::testSingleArgOverloadMatchesDualWithEmptyUserDir()
+{
+    // Given: a built-in pack.
+    QTemporaryDir rendererDir;
+    QVERIFY2(rendererDir.isValid(), "temporary directory creation failed");
+    QVERIFY2(createVoicePackDir(rendererDir.path(),
+                                QStringLiteral("CompatPack")),
+             "precondition: failed to create CompatPack fixture");
+
+    // When: both overloads scan it (single-arg vs empty userPacksDir).
+    const QStringList single =
+        core::scanAvailableVoicePacks(rendererDir.path());
+    const QStringList dual =
+        core::scanAvailableVoicePacks(rendererDir.path(), QString());
+
+    // Then: identical results — the single-arg overload is pure sugar over
+    // the dual one with an empty user source.
+    QCOMPARE(single, dual);
+    QCOMPARE(single.size(), 1);
 }
 
 QTEST_APPLESS_MAIN(VoicePackScannerTest)

@@ -41,6 +41,13 @@ int main(int argc, char* argv[])
             selfQuitMs = QString::fromUtf8(argv[++i]).toInt();
     }
 
+    // ── Storage-layout identity (QStandardPaths) ──────────────────────────
+    // App name "desktop-pet" + deliberately NO organization name keeps every
+    // QStandardPaths location flat (<root>/desktop-pet). MUST be set before
+    // anything queries ConfigDir:: (it is static state, so even pre-QApplication
+    // is fine; an explicitly-set name is never reset by the app object).
+    QCoreApplication::setApplicationName(QStringLiteral("desktop-pet"));
+
     // ── T24 cold-start timing anchor ─────────────────────────────────────
     // Captured BEFORE QGuiApplication construction so Qt framework init cost
     // is included in the cold-start delta; std::chrono is provably safe
@@ -59,7 +66,11 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
 
     // Boot logging BEFORE any LOG_* call (both calls non-fatal on failure —
-    // console-only degradation, see Logging.hpp).
+    // console-only degradation, see Logging.hpp). Migration runs BEFORE
+    // ensureDirectories(): the scaffold (instances/ + logs/) would otherwise
+    // make a fresh config dir look "already populated" and skip migration.
+    // No-op returning false on Linux (path unchanged there).
+    ConfigDir::migrateLegacyIfNeeded();
     ConfigDir::ensureDirectories();
     Logging::init(ConfigDir::logsDir());
 

@@ -1,7 +1,11 @@
 #include "core/ConfigDir.hpp"
 
 #include <QDir>
+#include <QDirIterator>
+#include <QFile>
+#include <QFileInfo>
 #include <QString>
+#include <QStandardPaths>
 
 // spdlog MUST be included before logging/Logging.hpp — Logging.hpp references
 // the SPDLOG_* macros but does NOT include spdlog headers itself (T5 finding
@@ -13,18 +17,44 @@ namespace ConfigDir {
 
 namespace {
 
-// The shared config root relative to the user's home directory. IDENTICAL on
-// Linux and Windows (architecture-blueprint.md §4.5.1) — byte-for-byte
-// compatible with the legacy config format. Forward slashes are deliberate — Qt
-// accepts and normalizes them on both platforms, so configDir() always returns
-// a '/'-separated string.
-constexpr const char* kConfigSubpath = "/.config/desktop-pet/";
+// QStandardPaths results never end in a separator and always use '/'
+// (even on Windows) — normalize to the trailing-'/' contract every caller
+// of this namespace relies on ("<root>instances" string concatenation).
+QString withTrailingSlash(const QString& path)
+{
+    return path.endsWith(QLatin1Char('/')) ? path : path + QLatin1Char('/');
+}
 
 } // namespace
 
 QString configDir()
 {
-    return QDir::homePath() + QString::fromLatin1(kConfigSubpath);
+    // AppConfigLocation with app name "desktop-pet" + empty org name:
+    //   Linux   ~/.config/desktop-pet      (byte-identical to the old
+    //                                      homePath()+"/.config/desktop-pet")
+    //   Windows %APPDATA%\desktop-pet      (Roaming)
+    return withTrailingSlash(
+        QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation));
+}
+
+QString dataDir()
+{
+    // AppLocalDataLocation (NOT AppDataLocation — that one resolves to the
+    // ROAMING %APPDATA% on Windows): %LOCALAPPDATA%\desktop-pet on Windows,
+    // ~/.local/share/desktop-pet on Linux (identical to AppDataLocation
+    // there). Data (voice packs / downloads) is machine-local, not roaming.
+    return withTrailingSlash(
+        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation));
+}
+
+QString userVoicePacksDir()
+{
+    return dataDir() + QStringLiteral("VoicePacks/");
+}
+
+QString downloadsDir()
+{
+    return dataDir() + QStringLiteral("downloads/");
 }
 
 QString instancesDir()
@@ -35,6 +65,86 @@ QString instancesDir()
 QString logsDir()
 {
     return configDir() + QStringLiteral("logs/");
+}
+
+bool migrateLegacyIfNeeded(const QString& legacyBase, const QString& newBase)
+{
+#ifndef Q_OS_WIN
+    // Non-Windows: the config path is UNCHANGED (~/.config/desktop-pet/) —
+    // there is nothing to migrate by design.
+    Q_UNUSED(legacyBase);
+    Q_UNUSED(newBase);
+    return false;
+#else
+    const QString legacy = legacyBase.isEmpty()
+        ? QDir::homePath() + QStringLiteral("/.config/desktop-pet")
+        : legacyBase;
+    const QString target = newBase.isEmpty() ? configDir() : newBase;
+
+    // No legacy tree → fresh install (or wiped profile): nothing to do.
+    if (!QDir(legacy).exists()) {
+        LOG_DEBUG("ConfigDir: no legacy dir at \"{}\" — migration skipped",
+                  legacy.toStdString());
+        return false;
+    }
+
+    // Target already populated → the app has run with the new layout before
+    // (ensureDirectories scaffolds instances/ + logs/; DatabaseManager adds
+    // app.db). Copying legacy state over newer files could clobber them.
+    const QDir newDir(target);
+    if (newDir.exists() &&
+        !newDir.entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty()) {
+        LOG_DEBUG("ConfigDir: target \"{}\" already populated — migration "
+                  "skipped",
+                  target.toStdString());
+        return false;
+    }
+
+    if (!QDir().mkpath(target)) {
+        LOG_WARN("ConfigDir: cannot create target dir \"{}\" — legacy "
+                 "migration aborted (continuing with empty config)",
+                 target.toStdString());
+        return false;
+    }
+
+    // Recursive copy preserving relative paths. A file that fails to copy
+    // logs WARN and the walk continues — a partial migration beats none
+    // (config managers treat missing files as defaults, never errors).
+    QDirIterator it(legacy,
+                    QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        const QFileInfo fi = it.fileInfo();
+        const QString rel = QDir(legacy).relativeFilePath(it.filePath());
+        const QString dest = QDir(target).absoluteFilePath(rel);
+        if (fi.isDir()) {
+            QDir().mkpath(dest); // failure surfaces via the files below
+        } else {
+            QDir().mkpath(QFileInfo(dest).absolutePath());
+            if (!QFile::copy(it.filePath(), dest)) {
+                LOG_WARN("ConfigDir: legacy migration could not copy "
+                         "\"{}\" — skipped",
+                         rel.toStdString());
+            }
+        }
+    }
+
+    // Rename the legacy dir out of the way so this is one-time. If the
+    // rename fails the copy has already succeeded — WARN and keep booting.
+    const QString backup = legacy + QStringLiteral("-migrated-backup");
+    if (!QDir().rename(legacy, backup)) {
+        LOG_WARN("ConfigDir: legacy config copied to \"{}\" but the legacy "
+                 "dir could not be renamed to \"{}\" (left in place)",
+                 target.toStdString(), backup.toStdString());
+    } else {
+        LOG_INFO("ConfigDir: migrated legacy config \"{}\" -> \"{}\" "
+                 "(backup at \"{}\")",
+                 legacy.toStdString(), target.toStdString(),
+                 backup.toStdString());
+    }
+    return true;
+#endif
 }
 
 bool ensureDirectories(const QString& basePath)

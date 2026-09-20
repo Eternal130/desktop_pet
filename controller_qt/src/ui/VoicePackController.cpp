@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFileInfo>
 
+#include "core/ConfigDir.hpp"
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
 #include "core/MetaMkoParser.hpp"
@@ -25,7 +26,12 @@ VoicePackController::VoicePackController(QObject* parent)
 }
 
 void VoicePackController::rescan() {
-    const QStringList dirs = core::scanAvailableVoicePacks(rendererBaseDir());
+    // Dual source (storage-layout revision): bundled renderer packs + user
+    // packs under ConfigDir::userVoicePacksDir() (downloads install there;
+    // user packs win name collisions — see VoicePackScanner.hpp).
+    const QStringList dirs =
+        core::scanAvailableVoicePacks(rendererBaseDir(),
+                                      ConfigDir::userVoicePacksDir());
     // Display dir: the first discovered pack's parent; when nothing is
     // found, show the conventional location for the empty-state hint.
     m_voicePackDir = dirs.isEmpty()

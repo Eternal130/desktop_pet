@@ -33,7 +33,7 @@ JSON-over-WebSocket protocol (controller = WS server, renderer = WS client).
 
 | Area | Capability |
 |:---|:---|
-| **Instance management** | CRUD on pet instances, multi-instance concurrent operation, sidebar roster (`QAbstractListModel`), per-instance config persistence (`~/.config/desktop-pet/instances/*.json`) |
+| **Instance management** | CRUD on pet instances, multi-instance concurrent operation, sidebar roster (`QAbstractListModel`), per-instance config persistence (`<config dir>/instances/*.json` — Linux `~/.config/desktop-pet/`, Windows `%APPDATA%\desktop-pet\`) |
 | **Runtime behavior** | Idle motion scheduler (QTimer cadence), hit→motion handler with 3-tier case-folding lookup, drag-persist on instance config, crash-recovery with exponential backoff |
 | **System integration** | System tray (`QSystemTrayIcon` + QML menu popup), OS auto-launch (Win registry / Linux `.desktop`), close-action policy (close / minimize-to-tray / confirm) |
 | **Resource monitor** | Live CPU% + RSS sparklines via QtCharts (6 lines, 2s poll), `GetProcessTimes`/`GetProcessMemoryInfo` on Win, `/proc/self/*` on Linux |
@@ -105,8 +105,37 @@ covers every Qt module consumed by Phase 5–9:
 > `windeployqt` post-build step (declared in `tests/CMakeLists.txt`) so ctest
 > can run them in isolation.
 
-The exe is ready to ship from `build/bin/`. NSIS / Inno Setup installer
-generation is deferred to a later task — out of scope for Phase 5–9.
+The exe is ready to ship from `build/bin/`. The Inno Setup installer
+(`packaging/windows/installer.iss`, per-user to `%LOCALAPPDATA%\DesktopPet`)
+builds from this tree — see the file header for the per-user rationale.
+
+---
+
+## Config directory
+
+Storage follows the platform conventions via `QStandardPaths` (app name
+`desktop-pet`, deliberately **no organization name** → flat
+`<root>/desktop-pet` locations):
+
+| What | Linux | Windows |
+|:---|:---|:---|
+| Config (`ConfigDir::configDir`) | `~/.config/desktop-pet/` — **unchanged, byte-identical** | `%APPDATA%\desktop-pet\` (Roaming) |
+| Data (`ConfigDir::dataDir`) | `~/.local/share/desktop-pet/` | `%LOCALAPPDATA%\desktop-pet\` (Local) |
+
+- Data hosts the download staging (`downloads/`) and user-installed voice
+  packs (`VoicePacks/`); pack discovery merges the built-in
+  `Resources/VoicePacks/` tree with the user tree (name collisions: user
+  pack wins).
+- Linux honors the `XDG_CONFIG_HOME` / `XDG_DATA_HOME` environment
+  variables (that is `QStandardPaths` behavior — a shell exporting
+  nonstandard XDG vars will see the app follow them).
+- The historical Windows caveat (path derived from `QDir::homePath()`
+  ignoring `HOME` under MSYS2/Git Bash) is **obsolete**: the Windows path
+  no longer derives from the home directory at all.
+- One-time legacy migration (Windows only): on first start the legacy
+  `%USERPROFILE%\.config\desktop-pet\` tree is copied into the new config
+  dir and renamed to `…-migrated-backup` (`ConfigDir::migrateLegacyIfNeeded`).
+  Linux needs no migration — the path is unchanged there.
 
 ---
 

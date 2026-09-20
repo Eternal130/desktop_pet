@@ -194,6 +194,12 @@ else()
     if(WIN32)
         # GCC rejects PROC-to-void* implicit conversion in SDK's wglGetProcAddress usage
         target_compile_options(Framework PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fpermissive>)
+        # The pinned Cubism Framework emits cosmetic MinGW diagnostics that
+        # are inherent to upstream code (-fpermissive downcasts like
+        # wglGetProcAddress PROC->void*, NULL-to-int conversions). Silence
+        # them wholesale: the submodule is pinned, the warnings are not
+        # actionable here, and they bury actionable ones in CI logs.
+        target_compile_options(Framework PRIVATE $<$<CXX_COMPILER_ID:GNU>:-w>)
     endif()
 endif()
 

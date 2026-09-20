@@ -5,6 +5,14 @@
  * that can be found at https://www.live2d.com/eula/live2d-open-software-license-agreement_en.html.
  */
 
+#ifdef _WIN32
+// winsock2.h MUST precede every windows.h inclusion — LAppDelegate.hpp's
+// chain (glfw/Cubism GL headers) pulls windows.h transitively, and the
+// WinSock1/2 definition conflict makes MinGW warn ("Please include
+// winsock2.h before windows.h") via IXNetSystem.h's ws2tcpip.h.
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
 #include "LAppDelegate.hpp"
 #include <ixwebsocket/IXNetSystem.h>
 #ifdef _WIN32

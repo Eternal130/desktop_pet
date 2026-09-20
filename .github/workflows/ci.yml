@@ -119,7 +119,18 @@ jobs:
       - name: Controller (configure + build + 41 QTest binaries)
         run: |
           cd controller_qt
-          cmake --workflow --preset "${{ runner.os == 'Windows' && 'win-release' || 'linux-release' }}"
+          if ! cmake --workflow --preset "${{ runner.os == 'Windows' && 'win-release' || 'linux-release' }}"; then
+            # Windows: QTest stdout never reaches the ctest log (seen twice:
+            # ***Failed with zero FAIL!/Totals lines while outputOnFailure
+            # is on in the preset). Run the binary directly from bash — its
+            # pipes carry the real assertion output — then preserve failure.
+            if [ "${{ runner.os }}" = "Windows" ] \
+                && [ -f ../build/controller_qt/ConfigDirTest.exe ]; then
+              echo "===== direct ConfigDirTest run for assertion visibility ====="
+              ../build/controller_qt/ConfigDirTest.exe || true
+            fi
+            exit 1
+          fi
 
       - name: Renderer (configure + build + GoogleTest suite)
         run: |

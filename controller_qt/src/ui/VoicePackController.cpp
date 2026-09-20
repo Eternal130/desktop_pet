@@ -1,8 +1,10 @@
 #include "ui/VoicePackController.hpp"
 
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
+#include <QUrl>
 
 #include "core/ConfigDir.hpp"
 #include "core/InstanceManager.hpp"
@@ -47,6 +49,15 @@ void VoicePackController::rescan() {
 
 QString VoicePackController::voicePackDir() const {
     return m_voicePackDir;
+}
+
+void VoicePackController::openVoicePackDir() {
+    // mkpath first: the empty-state fallback dir (build/bin/Resources/
+    // VoicePacks) often doesn't exist until the first pack is bundled —
+    // opening a missing dir is a silent no-op on Linux and an Explorer
+    // error on Windows.
+    QDir().mkpath(m_voicePackDir);
+    QDesktopServices::openUrl(QUrl::fromLocalFile(m_voicePackDir));
 }
 
 QString VoicePackController::packDirName(int index) const {

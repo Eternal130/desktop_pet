@@ -13,6 +13,10 @@
 //   Q_INVOKABLE packGroupNames(i)        — group names (for the mapping
 //                                          preview chips)
 //   Q_INVOKABLE voicePackDir()           — the scanned directory
+//   Q_INVOKABLE openVoicePackDir()       — create-if-missing + open in the
+//                                          OS file manager (QUrl::fromLocalFile,
+//                                          NOT string-concatenated file:/// URLs
+//                                          which break on leading-slash paths)
 //   Q_INVOKABLE packPath(i)              — absolute pack directory
 //   Q_INVOKABLE setInstanceVoicePack(instanceUuid, packPathOrEmpty)
 //                                        — mount/unmount via InstanceSession
@@ -49,6 +53,10 @@ public:
 
     Q_INVOKABLE void rescan();
     Q_INVOKABLE QString voicePackDir() const;
+    // Creates the dir if missing (empty-state fallback path may not exist
+    // yet) and opens it via QDesktopServices. Mirrors AssetManager::
+    // openAssetsDir.
+    Q_INVOKABLE void openVoicePackDir();
 
     Q_INVOKABLE QString packDirName(int index) const;
     Q_INVOKABLE QString packDisplayName(int index) const;

@@ -57,8 +57,11 @@ Rectangle {
                         style: "subtle"
                         text: qsTr("📂 打开语音包目录")
                         anchors.verticalCenter: parent.verticalCenter
-                        onClicked: Qt.openUrlExternally(
-                            "file:///" + voicePacks.voicePackDir())
+                        // C++ side: mkpath + QDesktopServices with
+                        // QUrl::fromLocalFile. String-concatenating
+                        // "file:///" + absolute path yields four slashes on
+                        // Linux → invalid URL → silent no-op.
+                        onClicked: voicePacks.openVoicePackDir()
                     }
                     AppButton {
                         style: "primary"

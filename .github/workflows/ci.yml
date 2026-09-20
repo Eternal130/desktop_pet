@@ -120,14 +120,21 @@ jobs:
         run: |
           cd controller_qt
           if ! cmake --workflow --preset "${{ runner.os == 'Windows' && 'win-release' || 'linux-release' }}"; then
-            # Windows: QTest stdout never reaches the ctest log (seen twice:
-            # ***Failed with zero FAIL!/Totals lines while outputOnFailure
-            # is on in the preset). Run the binary directly from bash — its
-            # pipes carry the real assertion output — then preserve failure.
+            # Windows: QTest stdout never reaches any log (seen three times:
+            # ***Failed with zero FAIL!/Totals lines even when run directly
+            # from bash — stdout is dead at the process level, likely buffer
+            # loss on hard exit or GUI subsystem). Force visibility via
+            # QTest's file output (-o file,txt writes via QFile, bypassing
+            # stdio entirely) + capture the real exit code + probe the
+            # binary's subsystem, then preserve failure.
             if [ "${{ runner.os }}" = "Windows" ] \
                 && [ -f ../build/controller_qt/ConfigDirTest.exe ]; then
               echo "===== direct ConfigDirTest run for assertion visibility ====="
-              ../build/controller_qt/ConfigDirTest.exe || true
+              file ../build/controller_qt/ConfigDirTest.exe || true
+              ( cd ../build/controller_qt \
+                  && { ./ConfigDirTest.exe -o ConfigDirTest-direct.txt,txt \
+                          || echo "ConfigDirTest exit code: $?"; } )
+              cat ../build/controller_qt/ConfigDirTest-direct.txt 2>/dev/null || true
             fi
             exit 1
           fi

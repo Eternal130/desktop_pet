@@ -171,17 +171,23 @@ void ConfigDirTest::testPathFormat()
 void ConfigDirTest::testDirsMatchStandardLocations()
 {
     // The storage-layout contract: every accessor is exactly its
-    // QStandardPaths location + '/'. App name "desktop-pet" with an empty
-    // org name keeps each location a flat <root>/desktop-pet (an org name
-    // would insert an extra path segment and break this equality).
+    // QStandardPaths location + '/', with native separators normalized
+    // (QStandardPaths may leak '\\' on Windows — see withTrailingSlash).
+    // App name "desktop-pet" with an empty org name keeps each location a
+    // flat <root>/desktop-pet (an org name would insert an extra path
+    // segment and break this equality).
     QCOMPARE(ConfigDir::configDir(),
-             QStandardPaths::writableLocation(
-                 QStandardPaths::AppConfigLocation) + QLatin1Char('/'));
+             QString(QStandardPaths::writableLocation(
+                         QStandardPaths::AppConfigLocation))
+                     .replace(QLatin1Char('\\'), QLatin1Char('/'))
+                 + QLatin1Char('/'));
     // dataDir must be the LOCAL (non-roaming) location — %LOCALAPPDATA% on
     // Windows, ~/.local/share on Linux.
     QCOMPARE(ConfigDir::dataDir(),
-             QStandardPaths::writableLocation(
-                 QStandardPaths::AppLocalDataLocation) + QLatin1Char('/'));
+             QString(QStandardPaths::writableLocation(
+                         QStandardPaths::AppLocalDataLocation))
+                     .replace(QLatin1Char('\\'), QLatin1Char('/'))
+                 + QLatin1Char('/'));
 
     // Flat-layout guard: both locations end in "/desktop-pet" (no org-name
     // segment, no nested <org>/<app> tree).

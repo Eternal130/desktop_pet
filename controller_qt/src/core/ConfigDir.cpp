@@ -20,9 +20,15 @@ namespace {
 // QStandardPaths results never end in a separator and always use '/'
 // (even on Windows) — normalize to the trailing-'/' contract every caller
 // of this namespace relies on ("<root>instances" string concatenation).
+// QStandardPaths can hand back native separators on Windows (known to leak
+// backslashes for some locations/environments). ConfigDir's documented
+// contract is '/'-separated output on every platform, so normalize here —
+// every accessor derives from these two roots.
 QString withTrailingSlash(const QString& path)
 {
-    return path.endsWith(QLatin1Char('/')) ? path : path + QLatin1Char('/');
+    QString p = path;
+    p.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    return p.endsWith(QLatin1Char('/')) ? p : p + QLatin1Char('/');
 }
 
 } // namespace

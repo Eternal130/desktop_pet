@@ -69,6 +69,7 @@ private slots:
     void testSecondCallIsNoop();
     void testPathFormat();
     void testDirsMatchStandardLocations();
+    void testConfigAndDataAreDistinctRoots();
     void testMigrateLegacyCopiesTreeAndRenames();
     void testMigrateLegacyNoopWhenTargetPopulated();
     void testMigrateLegacyNoopWhenLegacyMissing();
@@ -197,7 +198,28 @@ void ConfigDirTest::testDirsMatchStandardLocations()
     QVERIFY2(ConfigDir::dataDir().endsWith(QStringLiteral("/desktop-pet/")),
              "dataDir() must be a flat <root>/desktop-pet/ "
              "(empty organization name)");
-    QVERIFY2(ConfigDir::configDir() != ConfigDir::dataDir(),
+    // NOTE: the config != data distinctness guard intentionally does NOT
+    // live here: Qt's Windows test-mode sandbox maps AppConfigLocation and
+    // AppLocalDataLocation onto the SAME ~/.qttest base (no Roaming/Local
+    // split in the sandbox), so the check is unsatisfiable under
+    // setTestModeEnabled(true) on Windows — proven on the CI runner. It is
+    // verified against real paths in testConfigAndDataAreDistinctRoots.
+}
+
+void ConfigDirTest::testConfigAndDataAreDistinctRoots()
+{
+    // Production-path distinctness — where it actually matters. Sample the
+    // real (non-sandboxed) locations first, restore the sandbox, THEN
+    // assert: a QVERIFY2 failure must never leak test-mode-off state into
+    // later slots. Read-only queries; nothing is created.
+    QStandardPaths::setTestModeEnabled(false);
+    const QString cfgReal = ConfigDir::configDir();
+    const QString dataReal = ConfigDir::dataDir();
+    QStandardPaths::setTestModeEnabled(true);
+
+    // Windows: %APPDATA%\desktop-pet\ (Roaming) vs %LOCALAPPDATA%\desktop-pet\
+    // (Local). Linux: ~/.config/desktop-pet/ vs ~/.local/share/desktop-pet/.
+    QVERIFY2(cfgReal != dataReal,
              "config (Roaming) and data (Local) must be distinct roots");
 }
 

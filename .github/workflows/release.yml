@@ -92,10 +92,31 @@ jobs:
       - name: Renderer Vulkan (configure + build + tests)
         continue-on-error: true
         run: |
+          # Cubism's SampleShaders WIN32 rule invokes
+          # $ENV{VK_SDK_PATH}/Bin/glslc.exe — the LEGACY LunarG variable.
+          # choco's vulkan-sdk package only sets VULKAN_SDK; without this
+          # alias the shader compile resolves to "/Bin/glslc.exe" and the
+          # vk build fails (observed: v2.0.0 shipped GL-only because this
+          # step's continue-on-error masked it). Trailing-slash stripped
+          # for cleanliness; Windows tolerates either form.
+          export VK_SDK_PATH="${VULKAN_SDK%/}"
           cd renderer
           cmake --preset win-vk-release
           cmake --build --preset win-vk-release
           ctest --preset win-vk-release
+
+      - name: Vulkan presence check
+        if: runner.os == 'Windows'
+        run: |
+          # The vk step above is continue-on-error by design (GL is the
+          # default backend; a flaky SDK must not block the release) — but
+          # shipping GL-only must never be SILENT. Surface a visible
+          # annotation on the run when the vk exe never landed in build/bin.
+          if [ ! -f build/bin/desktop-pet-renderer-vulkan.exe ]; then
+            echo "::warning::desktop-pet-renderer-vulkan.exe missing from build/bin — this release will ship GL-only. Check the 'Renderer Vulkan' step log above."
+          else
+            echo "Vulkan renderer present: $(ls -la build/bin/desktop-pet-renderer-vulkan.exe | awk '{print $5}') bytes"
+          fi
 
       - name: Portable zip (build/bin minus test artifacts)
         run: |

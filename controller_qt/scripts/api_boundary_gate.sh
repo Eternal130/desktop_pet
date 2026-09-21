@@ -27,6 +27,20 @@
 #             same-line instanceAt(...) chain. Cross-line chained
 #             lifecycle calls are a known residual blind spot — the
 #             unique-name set (QML-U) has no such gap.
+#   QML-PW  : imperative PROPERTY writes on session-plausible receivers
+#             (instance/_inst/inst/s). opacity/volume/targetFps/muted are
+#             WRITE-bearing Q_PROPERTYs on InstanceSession — `instance.
+#             opacity = x` silently bypasses every method-name pattern
+#             above (the property WRITE goes straight to setOpacity).
+#             Only imperative `=` is flagged ([^=] guard rejects ==
+#             comparisons and `===`); the declarative `id.opacity: x`
+#             binding form was evaluated and is DELIBERATELY excluded:
+#             ternary reads like `instance ? instance.opacity : 1.0`
+#             (InstanceDetailPage.qml) match that shape and would be
+#             false positives — revisit only with a context-aware check.
+#             Residual blind spots: compound assignments (`+=`) and
+#             receivers outside the plausible set (same receiver
+#             discipline as QML-SSR).
 #   UI-MGR  : src/ui calling InstanceManager::createInstance/deleteInstance
 #             directly (the roster API bridge must be used instead).
 #   UI-SES  : src/ui calling InstanceSession write methods directly (only
@@ -35,6 +49,10 @@
 # Allowlist: every entry is a documented, line-precise exemption
 # (file-path ERE :: line-content ERE) — see ALLOWLIST below for the
 # per-entry justification. Anything NOT in the table is a violation.
+#
+# 模式表维护规约（审计增补）: InstanceSession/InstanceManager 新增写
+# Q_INVOKABLE 或带 WRITE 的 Q_PROPERTY 时，同一次变更必须同步扩充本脚本
+# 模式表（并补自咬探针），否则门禁对新写面失明。
 #
 # Usage:  api_boundary_gate.sh [controller_qt-root]   (default: script's ../)
 # Exit:   0 = clean   1 = violations found (listed on stdout)   2 = usage
@@ -57,6 +75,11 @@ fi
 # rebinding set (S5-S7).
 QML_UNIQUE='[.](createInstance|deleteInstance|loadModel|playMotion|setExpression|triggerHitArea|mountVoicePack|unmountVoicePack|setOpacity|setVolume|setMuted|setFps|setAutoStart|resetLayout|getLayout)[[:space:]]*\('
 QML_SSR='(^|[^[:alnum:]_])(instance|_inst|inst|s)[.](start|stop|restart)[[:space:]]*\('
+# QML-PW (audit follow-up): imperative property assignment on the four
+# WRITE-bearing InstanceSession Q_PROPERTYs (opacity/volume/targetFps/
+# muted). Receiver discipline mirrors QML_SSR; [^=] rejects == / ===
+# comparisons. Verified zero matches on the current tree before landing.
+QML_PW='(^|[^[:alnum:]_])(instance|_inst|inst|s)[.](opacity|volume|targetFps|muted)[[:space:]]*=[^=]'
 QML_CHAIN='instanceAt\([^)]*\)[^;]*[.](start|stop|restart|loadModel|playMotion|setExpression|triggerHitArea|mountVoicePack|unmountVoicePack|setOpacity|setVolume|setMuted|setFps)[[:space:]]*\('
 UI_MGR='(m_instanceManager|instanceManager|m_manager|mgr)[[:space:]]*->[[:space:]]*(createInstance|deleteInstance)[[:space:]]*\('
 UI_SES='(s|session|inst|m_session)[[:space:]]*->[[:space:]]*(loadModel|playMotion|setExpression|triggerHitArea|mountVoicePack|unmountVoicePack|setOpacity|setVolume|setMuted|setFps|setAutoStart|resetLayout|getLayout|start|stop|restart)[[:space:]]*\('
@@ -123,6 +146,8 @@ check_qml_file() { # $1 = repo-relative .qml path
             report "$file" "$linenum" "$line" "QML-U"
         elif [[ "$line" =~ $QML_SSR ]]; then
             report "$file" "$linenum" "$line" "QML-SSR"
+        elif [[ "$line" =~ $QML_PW ]]; then
+            report "$file" "$linenum" "$line" "QML-PW"
         elif [[ "$line" =~ $QML_CHAIN ]]; then
             report "$file" "$linenum" "$line" "QML-CHAIN"
         fi

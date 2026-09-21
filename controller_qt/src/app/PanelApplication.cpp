@@ -333,7 +333,27 @@ void PanelApplication::launchAutoStartInstances()
             if (s != nullptr && s->autoStartEnabled()) {
                 LOG_INFO("autoStart: launching instance \"{}\"",
                          s->label().toStdString());
-                s->start();
+                // Audit follow-up (last host lifecycle dual-track): route the
+                // write through the SHARED pet::IInstanceControlApi facade —
+                // the same vtable RosterApiModel/InstanceControlBridge and
+                // every plugin use — instead of a direct session->start().
+                // m_instanceControlApi is constructed in this class's ctor
+                // (before any caller can reach this method); the facade
+                // resolves the session by uuid (roster lookup cannot fail
+                // here — the pointer came off the same roster — and no
+                // delete can be pending before the event loop runs, so a
+                // non-Ok result is defensive-only: WARN and continue with
+                // the remaining instances, never crash / never abort).
+                const pet::PluginError err =
+                    m_instanceControlApi->start(s->uuid());
+                if (err != pet::PluginError::Ok) {
+                    LOG_WARN("autoStart: instanceControlApi().start('{}') "
+                             "rejected (PluginError {}), instance \"{}\" "
+                             "not launched",
+                             s->uuid().toStdString(),
+                             static_cast<unsigned>(err),
+                             s->label().toStdString());
+                }
             }
         }
     });

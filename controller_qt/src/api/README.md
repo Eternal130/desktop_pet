@@ -100,8 +100,10 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 
 写开关说明（v1.2 引入、v1.3 扩面）: 宿主 kv `plugin_write_enabled`（缺省开）同时门控
 `instance_lifecycle` / `instance_tuning` / `settings_write` 三族——活读（每次 queryApi 现查），
-翻转即吊销、无需重启；只读族（`pet.model`、`pet.monitor`、voicePackApi、instanceApi）
-不受其约束。
+翻转自**下一次 queryApi 调用**起生效: 后续查询拿到 capability stub（方法返回
+`PluginError::Capability`），**插件此前已缓存持有的原接口指针不受影响**——字面
+"翻转即吊销"需 per-call 门控代理（见"阶段路线"的阶段 2 候选）。只读族（`pet.model`、
+`pet.monitor`、voicePackApi、instanceApi）不受其约束。
 
 族 × 能力 × 开关总表（v1.4 全景，queryApi 通道五族）:
 
@@ -132,6 +134,10 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
   条）= 工厂接口增加 `destroy(IPanelPlugin*)` 并由 PluginHost 切换为插件模块
   内销毁（跨模块 delete 是 UB）。listener/observer 归插件所有、宿主只调不删
   的契约两阶段通用。
+- **阶段 2 候选（可选）**: per-call 门控代理——每个写族一个转发类（持真实现
+  指针 + 每次调用内现查 `plugin_write_enabled`，关闭即返回
+  `PluginError::Capability`），可兑现字面"翻转即吊销"承诺（插件已缓存的旧
+  指针同样被拒），弥合现行"下次 queryApi 起生效、缓存指针不受影响"语义。
 
 ## 模板
 

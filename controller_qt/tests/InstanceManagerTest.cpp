@@ -65,6 +65,33 @@ QString instanceFile(const QString& base, const QString& uuid)
     return base + QStringLiteral("/instances/") + uuid + QStringLiteral(".json");
 }
 
+// S4 headless harness: a fake renderer DIRECTORY whose "desktop-pet-renderer"
+// is really a 30s sleeper script (existence is all resolveRendererPath
+// checks; shebang + exec bit make QProcess run it). POSIX-only — call sites
+// QSKIP on Windows. Out-param — QVERIFY2 needs a void return.
+void makeFakeRendererDir(const QString& base, QString* outDir)
+{
+    const QString rendererDir =
+        QDir(base).absoluteFilePath(QStringLiteral("renderer"));
+    QDir().mkpath(rendererDir);
+    const QString exe =
+        QDir(rendererDir).absoluteFilePath(QStringLiteral("desktop-pet-renderer"));
+    QFile f(exe);
+    QVERIFY2(f.open(QIODevice::WriteOnly | QIODevice::Truncate),
+             qPrintable(QStringLiteral("Failed to create %1").arg(exe)));
+    f.write(QStringLiteral("#!/bin/sh\nexec sleep 30\n").toUtf8());
+    f.close();
+    QVERIFY2(QFile::setPermissions(exe,
+                                   QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                       | QFileDevice::ExeOwner
+                                       | QFileDevice::ReadGroup
+                                       | QFileDevice::ExeGroup
+                                       | QFileDevice::ReadOther
+                                       | QFileDevice::ExeOther),
+             qPrintable(QStringLiteral("Failed to chmod %1").arg(exe)));
+    *outDir = rendererDir;
+}
+
 } // namespace
 
 class InstanceManagerTest : public QObject
@@ -80,6 +107,10 @@ private slots:
     void testCorruptInstanceDegrades();
     void testRoute();
     void testSetDatabaseDoesNotDuplicateRoster();
+
+    // ── S4 two-phase delete / async stopAll (fake-sleeper renderer; POSIX) ──
+    void testDeleteRunningInstanceIsTwoPhase();
+    void testStopAllIsAsync();
 };
 
 void InstanceManagerTest::initTestCase()
@@ -378,6 +409,158 @@ void InstanceManagerTest::testSetDatabaseDoesNotDuplicateRoster()
     mgr.setDatabase(&db);
     QCOMPARE(mgr.rowCount(), 1);
     QCOMPARE(mgr.instanceAt(0)->label(), QStringLiteral("Solo"));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 6. S4 two-phase delete of a RUNNING instance (fake-sleeper renderer).
+// Phase 1: deleteInstance returns immediately — row STAYS, no premature
+// rowsAboutToBeRemoved, start() on the doomed session is rejected, a second
+// deleteInstance merges (no-op). Phase 2: once the async stop completes the
+// row is really removed (rowsAboutToBeRemoved fires exactly once, at the
+// removal), the config is gone, the roster persisted.
+// ────────────────────────────────────────────────────────────────────────────
+
+void InstanceManagerTest::testDeleteRunningInstanceIsTwoPhase()
+{
+#ifdef Q_OS_WIN
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+
+    // Seed one instance whose rendererPath points at the fake renderer dir.
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.label = QStringLiteral("Runner");
+    QString rendererDir;
+    makeFakeRendererDir(base.path(), &rendererDir);
+    cfg.rendererPath = rendererDir;
+    cfg.graphicsBackend = QStringLiteral("opengl");
+    QVERIFY(InstanceConfigManager(base.path()).save(cfg));
+    PanelConfig panel = defaultPanelConfig();
+    panel.instanceIds = QStringList{cfg.id};
+    QVERIFY(PanelStateManager(base.path()).save(panel));
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& p) {
+                            PanelStateManager(base.path()).save(p);
+                        });
+
+    QCOMPARE(mgr.rowCount(), 1);
+    InstanceSession* session = mgr.instanceAt(0);
+    QVERIFY(session != nullptr);
+    session->setStopTimeoutMs(300); // fast kill for the winding-down phase
+
+    session->start();
+    QVERIFY2(session->isProcessRunning(), "fake renderer process failed to launch");
+
+    QSignalSpy aboutSpy(&mgr, &QAbstractItemModel::rowsAboutToBeRemoved);
+    QVERIFY(aboutSpy.isValid());
+
+    // ── Phase 1: non-blocking initiate; nothing removed yet ───────────────
+    mgr.deleteInstance(cfg.id);
+    QCOMPARE(mgr.rowCount(), 1);          // row survives until the stop lands
+    QCOMPARE(aboutSpy.count(), 0);        // no premature rowsAboutToBeRemoved
+    QVERIFY2(session->isProcessRunning(),
+             "deleteInstance must not block on the running renderer");
+
+    // start() on the doomed session is rejected (no relaunch race).
+    session->start();
+    QCOMPARE(session->status(), QStringLiteral("stopped")); // unchanged by the rejected start
+
+    // Re-delete while pending merges — safe, no double removal.
+    mgr.deleteInstance(cfg.id);
+    QCOMPARE(mgr.rowCount(), 1);
+
+    // ── Phase 2: the async stop completes → REAL removal ──────────────────
+    QTRY_COMPARE_WITH_TIMEOUT(mgr.rowCount(), 0, 5000);
+    QCOMPARE(aboutSpy.count(), 1);        // fired exactly once, at the removal
+    QVERIFY(mgr.instanceAt(0) == nullptr);
+
+    // Config row + roster cleaned up.
+    QVERIFY2(!InstanceConfigManager(base.path()).load(cfg.id).has_value(),
+             "instance config survived the deferred delete");
+    const PanelConfig reloaded = PanelStateManager(base.path()).load();
+    QCOMPARE(reloaded.instanceIds.size(), 0);
+
+    server.close();
+#endif
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 7. S4 stopAll is event-driven: returns the number of winding-down
+// renderers while they are STILL alive, emits stopAllFinished when the last
+// one is down, removes no rows, and returns 0 (emitting nothing) when
+// nothing runs.
+// ────────────────────────────────────────────────────────────────────────────
+
+void InstanceManagerTest::testStopAllIsAsync()
+{
+#ifdef Q_OS_WIN
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+
+    // Seed two instances on the fake renderer.
+    QString rendererDir;
+    makeFakeRendererDir(base.path(), &rendererDir);
+    QStringList uuids;
+    for (int i = 0; i < 2; ++i) {
+        InstanceConfig cfg = defaultInstanceConfig();
+        cfg.label = QStringLiteral("Runner %1").arg(i + 1);
+        cfg.rendererPath = rendererDir;
+        cfg.graphicsBackend = QStringLiteral("opengl");
+        QVERIFY(InstanceConfigManager(base.path()).save(cfg));
+        uuids.append(cfg.id);
+    }
+    PanelConfig panel = defaultPanelConfig();
+    panel.instanceIds = uuids;
+    QVERIFY(PanelStateManager(base.path()).save(panel));
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& p) {
+                            PanelStateManager(base.path()).save(p);
+                        });
+
+    QCOMPARE(mgr.rowCount(), 2);
+    for (int i = 0; i < 2; ++i) {
+        InstanceSession* session = mgr.instanceAt(i);
+        QVERIFY(session != nullptr);
+        session->setStopTimeoutMs(300);
+        session->start();
+        QVERIFY2(session->isProcessRunning(),
+                 qPrintable(QStringLiteral("fake renderer %1 failed to launch").arg(i)));
+    }
+
+    QSignalSpy allSpy(&mgr, &InstanceManager::stopAllFinished);
+    QVERIFY(allSpy.isValid());
+
+    const int initiated = mgr.stopAll();
+    QCOMPARE(initiated, 2);
+
+    // Non-blocking proof: both renderers still winding down on return.
+    QVERIFY2(mgr.instanceAt(0)->isProcessRunning(),
+             "stopAll must return before the renderers exit");
+    QVERIFY2(mgr.instanceAt(1)->isProcessRunning(),
+             "stopAll must return before the renderers exit");
+
+    QVERIFY2(allSpy.wait(5000), "stopAllFinished not emitted within 5s");
+    QVERIFY2(!mgr.instanceAt(0)->isProcessRunning(), "renderer 0 still alive");
+    QVERIFY2(!mgr.instanceAt(1)->isProcessRunning(), "renderer 1 still alive");
+    QCOMPARE(mgr.rowCount(), 2); // stop ≠ delete — rows intact
+
+    // Nothing running → stopAll initiates nothing and emits nothing.
+    QCOMPARE(mgr.stopAll(), 0);
+    QCOMPARE(allSpy.count(), 1); // unchanged
+
+    server.close();
+#endif
 }
 
 QTEST_MAIN(InstanceManagerTest)

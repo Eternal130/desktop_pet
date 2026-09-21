@@ -1,8 +1,6 @@
 #include "core/ProcessManager.hpp"
 
 #include <utility>
-#include <QElapsedTimer>
-#include <QEventLoop>
 #include <QFileInfo>
 #include <QTimer>
 #include <QString>
@@ -32,17 +30,28 @@ ProcessManager::ProcessManager(QObject* parent)
     // forever. onErrorOccurred emits exited(-1, true) → crash path.
     connect(&m_process, &QProcess::errorOccurred,
             this, &ProcessManager::onErrorOccurred);
+
+    // S4: async-stop poller — 100ms coarse ticks while a graceful stop is
+    // winding down. Parented to `this` so destruction cancels any pending
+    // tick (no use-after-free through the slot).
+    m_stopPollTimer.setInterval(kStopPollIntervalMs);
+    m_stopPollTimer.setTimerType(Qt::CoarseTimer);
+    connect(&m_stopPollTimer, &QTimer::timeout,
+            this, &ProcessManager::onStopPollTick);
 }
 
 ProcessManager::~ProcessManager()
 {
-    // If the renderer is still running when ProcessManager is destroyed,
-    // kill it so we don't leak an orphan process. waitForFinished prevents
-    // the QProcess destructor from detaching a half-dead child.
+    // S4: stop() is event-driven now — this sync reap is the LAST RESORT for
+    // a manager destroyed with a live renderer (app teardown, scope exit
+    // racing a stop). The normal path (stopFinished) should have completed
+    // long before destruction. 500ms bounds the worst-case block;
+    // waitForFinished also prevents the QProcess destructor from detaching a
+    // half-dead child.
     if (m_process.state() != QProcess::NotRunning) {
         LOG_WARN("ProcessManager destroyed while renderer still running; killing");
         m_process.kill();
-        m_process.waitForFinished(2000);
+        m_process.waitForFinished(500);
     }
 }
 
@@ -126,19 +135,35 @@ bool ProcessManager::isManuallyStopping() const
     return m_manuallyStopping;
 }
 
-bool ProcessManager::stop()
+void ProcessManager::stop()
 {
-    // Already stopped — nothing to do. Return true (clean state).
-    if (m_process.state() == QProcess::NotRunning)
-        return true;
+    // Re-entry guard (S4): a second stop() while one is winding down must
+    // not fork a second state machine / second completion emission — the
+    // in-flight cycle's stopFinished serves both callers.
+    if (m_stopInFlight)
+        return;
 
-    // Set the flag BEFORE sending shutdown so onFinished (which fires during
-    // waitForFinished below) observes manuallyStopping=true and reports
+    // Already stopped — nothing to do. Complete immediately (clean). Posted
+    // queued so the "exited-before-stopFinished" ordering guarantee holds
+    // uniformly even if a just-dead process's finished() is still in flight.
+    if (m_process.state() == QProcess::NotRunning) {
+        QMetaObject::invokeMethod(this, [this]() {
+            emit stopFinished(true);
+        }, Qt::QueuedConnection);
+        return;
+    }
+
+    m_stopInFlight = true;
+    m_killIssued = false;
+
+    // Set the flag BEFORE sending shutdown so onFinished (which fires when
+    // the async shutdown lands) observes manuallyStopping=true and reports
     // crashed=false for the known teardown access-violation.
     m_manuallyStopping = true;
 
     // Stage 1: send `shutdown {}` over WebSocket (architecture-blueprint.md
     // §4.6.4 step 1). The sender is wired by the app via setShutdownSender().
+    // The WS flush happens on the normal event loop — no nested loop needed.
     if (m_shutdownSender) {
         LOG_INFO("ProcessManager::stop — sending shutdown command (pid={})",
                  m_process.processId());
@@ -148,40 +173,78 @@ bool ProcessManager::stop()
                  "polling for exit anyway (pid={})", m_process.processId());
     }
 
-    // Stage 2: spin a local event loop for up to 5s (100ms poll ticks,
-    // blueprint §4.6.4 step 2). A QEventLoop is REQUIRED here — not bare
-    // QProcess::waitForFinished — because the WebSocket send from stage 1
-    // only flushes to the TCP socket when the Qt event loop runs.
-    // QProcess::waitForFinished blocks the Qt event loop (it uses a native
-    // WaitForSingleObject on Windows), so the shutdown JSON would sit in the
-    // QWebSocket's internal buffer forever and the renderer would never exit.
-    // The QEventLoop processes all events (socket I/O, QProcess signals),
-    // so the shutdown reaches the renderer AND onFinished fires inside it.
-    QElapsedTimer elapsed;
-    elapsed.start();
-    QEventLoop loop;
-    QTimer pollTimer;
-    pollTimer.setSingleShot(false);
-    QObject::connect(&pollTimer, &QTimer::timeout, &loop, [this, &elapsed, &loop]() {
-        if (m_process.state() == QProcess::NotRunning || elapsed.hasExpired(5000))
-            loop.quit();
-    });
-    pollTimer.start(100);
-    loop.exec();
-    pollTimer.stop();
+    // Stage 2 (async): poll the process state every 100ms until it exits or
+    // the grace window elapses; stage 3 (force-kill) fires from the tick.
+    m_stopElapsed.start();
+    m_stopPollTimer.start();
+}
 
-    if (m_process.state() == QProcess::NotRunning)
-        return true;
+bool ProcessManager::isStopping() const
+{
+    return m_stopInFlight;
+}
 
-    // Stage 3: timeout — force-kill (blueprint §4.6.4 step 3).
-    // SIGKILL on Unix / TerminateProcess on Windows. onFinished will fire
-    // during the kill's waitForFinished with m_manuallyStopping still true,
-    // so crashed=false (the force-kill is part of the user-initiated stop).
-    LOG_WARN("ProcessManager::stop — renderer did not exit within 5s; "
-             "force-killing (pid={})", m_process.processId());
-    m_process.kill();
-    m_process.waitForFinished(2000);
-    return false;
+void ProcessManager::setStopTimeoutMs(int ms)
+{
+    // Clamp to at least one poll interval so an injected window can never
+    // degenerate into a busy kill.
+    m_stopTimeoutMs = ms < kStopPollIntervalMs ? kStopPollIntervalMs : ms;
+}
+
+void ProcessManager::onStopPollTick()
+{
+    if (!m_stopInFlight)
+        return; // stale tick racing finishStop's timer stop — ignore
+
+    if (m_process.state() == QProcess::NotRunning) {
+        // The exit landed without a poll-side kill (onFinished usually
+        // completes the cycle first; this branch also covers exits that
+        // deliver no finished(), e.g. FailedToStart during a stop).
+        finishStop(!m_killIssued);
+        return;
+    }
+
+    const qint64 elapsedMs = m_stopElapsed.elapsed();
+    if (!m_killIssued && elapsedMs >= m_stopTimeoutMs) {
+        // Stage 3: grace window exhausted — force-kill (blueprint §4.6.4
+        // step 3). SIGKILL on Unix / TerminateProcess on Windows. Keep
+        // polling so the death is still observed and reported.
+        LOG_WARN("ProcessManager::stop — renderer did not exit within {}ms; "
+                 "force-killing (pid={})", m_stopTimeoutMs,
+                 m_process.processId());
+        m_killIssued = true;
+        m_process.kill();
+        return;
+    }
+    if (m_killIssued && elapsedMs >= m_stopTimeoutMs + kPostKillGraceMs) {
+        // Un-reapable even after SIGKILL (D-state process, zombie held by
+        // another reaper) — abandon the wait; the destructor's last-resort
+        // reap is all that remains. Report not-clean.
+        LOG_ERROR("ProcessManager::stop — renderer un-reapable {}ms after "
+                  "kill; abandoning wait (pid={})",
+                  kPostKillGraceMs, m_process.processId());
+        finishStop(false);
+    }
+}
+
+void ProcessManager::finishStop(bool clean)
+{
+    if (!m_stopInFlight)
+        return; // already completed (onFinished and the poll race benignly)
+
+    m_stopPollTimer.stop();
+    m_stopInFlight = false;
+    m_killIssued = false;
+
+    // QUEUED emission: the completion was triggered either by onFinished
+    // (exited already emitted) or by the poll observing NotRunning (any
+    // pending finished() delivery was posted before this lambda and the
+    // event queue is FIFO, so exited() still fires first). Either way,
+    // consumers of stopFinished — e.g. a queued restart — never observe the
+    // old process's exit AFTER they have already relaunched.
+    QMetaObject::invokeMethod(this, [this, clean]() {
+        emit stopFinished(clean);
+    }, Qt::QueuedConnection);
 }
 
 void ProcessManager::onReadyReadStandardOutput()
@@ -235,6 +298,15 @@ void ProcessManager::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
     // callback fires. Cleared here rather than at end of stop() so the flag
     // is reset regardless of which code path caused the process to exit.
     m_manuallyStopping = false;
+
+    // S4: an in-flight async stop completes right here — first-come
+    // completion. Doing it inside onFinished (before the queued
+    // stopFinished lands) guarantees exited() consumers always observe the
+    // exit before anyone reacts to "stop complete". The poll tick's
+    // NotRunning branch is the fallback for exits that deliver no
+    // finished() (e.g. FailedToStart during a stop).
+    if (m_stopInFlight)
+        finishStop(!m_killIssued);
 }
 
 void ProcessManager::onErrorOccurred(QProcess::ProcessError error)

@@ -21,6 +21,8 @@
 #include <QString>
 #include <QTest>
 #include <QElapsedTimer>
+#include <QFile>
+#include <QTemporaryDir>
 
 #include <optional>
 
@@ -42,6 +44,12 @@ private slots:
     void testCliArgsConstruction();
     void testOptionalArgsIncluded();
 
+    // ── S4 async-stop unit tier (fake child process; POSIX-only harness) ──
+    void testAsyncStopNotRunningCompletesImmediately();
+    void testAsyncStopCompletesCleanly();
+    void testAsyncStopTimeoutKills();
+    void testAsyncStopIdempotentWhileInFlight();
+
     // ── Integration tier [REQUIRES_RENDERER] ───────────────────────────────
     void testRealRendererLifecycle();
     void testCrashDetection();
@@ -61,6 +69,12 @@ private:
 
     // Send a `shutdown` command envelope through the server.
     static void sendShutdown(WsServer& server);
+
+    // S4 fake-child harness: write an executable that ignores its arguments
+    // and sleeps ~seconds, into dir (out-param — QVERIFY2 needs a void
+    // return). POSIX shebang script (Windows call sites QSKIP — the async
+    // semantics are also covered by the renderer tests).
+    static void makeSleeper(const QTemporaryDir& dir, int seconds, QString* outPath);
 };
 
 void ProcessManagerTest::initTestCase()
@@ -131,6 +145,138 @@ void ProcessManagerTest::testOptionalArgsIncluded()
     QVERIFY(args.contains(QStringLiteral("300")));
     QCOMPARE(args.filter(QStringLiteral("--height")).size(), 1);
     QVERIFY(args.contains(QStringLiteral("400")));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// S4 async-stop unit tier (fake child process)
+// ────────────────────────────────────────────────────────────────────────────
+
+// stop() on a manager with NO process must complete immediately (clean) —
+// the completion is posted queued, so it lands on the first loop spin.
+void ProcessManagerTest::testAsyncStopNotRunningCompletesImmediately()
+{
+    ProcessManager pm;
+    QSignalSpy stopSpy(&pm, &ProcessManager::stopFinished);
+    QVERIFY(stopSpy.isValid());
+
+    pm.stop();
+
+    QVERIFY2(stopSpy.wait(1000),
+             "stopFinished not emitted for a not-running process");
+    QCOMPARE(stopSpy.count(), 1);
+    QCOMPARE(stopSpy.at(0).at(0).toBool(), true); // clean — nothing to kill
+    QVERIFY(!pm.isStopping());
+    QVERIFY(!pm.isRunning());
+}
+
+// Happy path: the child exits by itself inside the grace window (models a
+// renderer obeying shutdown {} — the no-op sender stands in for the WS send).
+// stop() returns while the child is STILL ALIVE (non-blocking proof) and
+// stopFinished(clean=true) follows.
+void ProcessManagerTest::testAsyncStopCompletesCleanly()
+{
+#ifdef Q_OS_WIN
+    QSKIP("sleeper harness is POSIX-only; clean-stop also covered by renderer tests");
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    ProcessManager pm;
+    QSignalSpy stopSpy(&pm, &ProcessManager::stopFinished);
+    QSignalSpy exitedSpy(&pm, &ProcessManager::exited);
+    QVERIFY(stopSpy.isValid());
+
+    // ~1s child: dies on its own well inside the 5s grace window.
+    QString sleeper;
+    makeSleeper(dir, 1, &sleeper);
+    pm.startRenderer(sleeper, 9001, 0,
+                     QStringLiteral("deadbeef"), QStringLiteral("Hiyori"));
+    QVERIFY2(pm.isRunning(), "sleeper process failed to start");
+    pm.setShutdownSender([]() {}); // "shutdown command" the sleeper ignores
+
+    pm.stop();
+
+    // Non-blocking contract: the process is still winding down here.
+    QVERIFY2(pm.isRunning(), "stop() must return before the process exits");
+    QVERIFY2(pm.isStopping(), "isStopping() must be true during the stop");
+
+    QVERIFY2(stopSpy.wait(5000), "stopFinished not emitted within 5s");
+    QCOMPARE(stopSpy.count(), 1);
+    QCOMPARE(stopSpy.at(0).at(0).toBool(), true); // clean: no force-kill
+    QVERIFY2(!pm.isRunning(), "process still running after clean stop");
+    QVERIFY2(!pm.isStopping(), "isStopping() must clear on completion");
+    QTRY_VERIFY(exitedSpy.count() >= 1);
+#endif
+}
+
+// Timeout path: a child that ignores the "shutdown" outlives the (injected,
+// shrunk) grace window → force-kill → stopFinished(clean=false).
+void ProcessManagerTest::testAsyncStopTimeoutKills()
+{
+#ifdef Q_OS_WIN
+    QSKIP("sleeper harness is POSIX-only; kill path also covered by renderer tests");
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    ProcessManager pm;
+    QSignalSpy stopSpy(&pm, &ProcessManager::stopFinished);
+    QVERIFY(stopSpy.isValid());
+
+    QString sleeper;
+    makeSleeper(dir, 30, &sleeper);
+    pm.startRenderer(sleeper, 9001, 0,
+                     QStringLiteral("deadbeef"), QStringLiteral("Hiyori"));
+    QVERIFY2(pm.isRunning(), "sleeper process failed to start");
+    pm.setStopTimeoutMs(400);       // shrink the grace window (test seam)
+    pm.setShutdownSender([]() {});  // shutdown command the sleeper ignores
+
+    QElapsedTimer t;
+    t.start();
+    pm.stop();
+
+    QVERIFY2(stopSpy.wait(4000), "stopFinished not emitted after injected timeout");
+    QCOMPARE(stopSpy.count(), 1);
+    QCOMPARE(stopSpy.at(0).at(0).toBool(), false); // force-killed
+    QVERIFY2(!pm.isRunning(), "process still running after the kill path");
+    QVERIFY2(t.elapsed() >= 350,
+             qPrintable(QString("kill fired before the grace window elapsed "
+                                "(elapsed=%1ms, timeout=400ms)").arg(t.elapsed())));
+#endif
+}
+
+// Re-entry: extra stop() calls while a stop is in flight must not fork a
+// second state machine — exactly ONE stopFinished fires for the whole cycle.
+void ProcessManagerTest::testAsyncStopIdempotentWhileInFlight()
+{
+#ifdef Q_OS_WIN
+    QSKIP("sleeper harness is POSIX-only");
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    ProcessManager pm;
+    QSignalSpy stopSpy(&pm, &ProcessManager::stopFinished);
+    QVERIFY(stopSpy.isValid());
+
+    QString sleeper;
+    makeSleeper(dir, 30, &sleeper);
+    pm.startRenderer(sleeper, 9001, 0,
+                     QStringLiteral("deadbeef"), QStringLiteral("Hiyori"));
+    QVERIFY2(pm.isRunning(), "sleeper process failed to start");
+    pm.setStopTimeoutMs(400);
+    pm.setShutdownSender([]() {});
+
+    pm.stop();
+    pm.stop();  // second call while in flight — absorbed
+    pm.stop();  // third for good measure
+
+    QVERIFY2(stopSpy.wait(4000), "stopFinished not emitted");
+    QTest::qWait(300); // any stray late emission would land here
+    QCOMPARE(stopSpy.count(), 1); // exactly one completion for all three calls
+    QCOMPARE(stopSpy.at(0).at(0).toBool(), false);
+    QVERIFY(!pm.isRunning());
+#endif
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -268,10 +414,16 @@ void ProcessManagerTest::testGracefulShutdown()
     QVERIFY2(waitForAction(msgSpy, "ready", 10000),
              "renderer did not send 'ready' within 10s");
 
-    // stop() is blocking — sends shutdown, polls waitForFinished up to 5s.
-    const bool clean = pm.stop();
-    QVERIFY2(clean, "stop() should return true (renderer exited within 5s)");
+    // S4: stop() is async — the poll state machine reports completion via
+    // stopFinished (clean = exited within the grace window, no force-kill).
+    QSignalSpy stopSpy(&pm, &ProcessManager::stopFinished);
+    pm.stop();
+    QVERIFY2(stopSpy.wait(7000), "stopFinished not emitted within 7s");
+    QVERIFY2(stopSpy.at(0).at(0).toBool(),
+             "stop should complete cleanly (renderer exited within 5s)");
 
+    // stopFinished is posted queued AFTER the exit was observed, so exited()
+    // has already fired by the time the spy above saw the completion.
     QVERIFY2(exitedSpy.count() >= 1, "exited signal not emitted by stop()");
     const bool crashed = exitedSpy.at(0).at(1).toBool();
     // manuallyStopping was true → crashed must be false even if the renderer
@@ -324,11 +476,15 @@ void ProcessManagerTest::testManuallyStoppingFlag()
         QVERIFY2(waitForAction(msgSpy, "ready", 10000),
                  "renderer did not send 'ready' within 10s");
 
-        QVERIFY2(pm.stop(), "stop() should return true");
+        // S4: async stop — wait for the completion signal, then assert the
+        // flag timeline (set during the stop, cleared after exited fired).
+        QSignalSpy stopSpy(&pm, &ProcessManager::stopFinished);
+        pm.stop();
+        QVERIFY2(stopSpy.wait(7000), "stopFinished not emitted within 7s");
         QVERIFY2(flagDuringExit,
                  "isManuallyStopping() must be true when exited fires during stop()");
         QVERIFY2(!pm.isManuallyStopping(),
-                 "isManuallyStopping() must be cleared after stop() returns");
+                 "isManuallyStopping() must be cleared after the stop completes");
 
         server.close();
     }
@@ -376,6 +532,31 @@ std::optional<QString> ProcessManagerTest::findRenderer()
 {
     const QString binDir = QStringLiteral(BIN_OUTPUT_DIR);
     return core::resolveRendererPath(binDir, QStringLiteral("opengl"));
+}
+
+void ProcessManagerTest::makeSleeper(const QTemporaryDir& dir, int seconds,
+                                     QString* outPath)
+{
+    // A shebang script that ignores its arguments and sleeps. QProcess
+    // execve's it directly on Unix; the fixed renderer CLI args are ignored.
+    const QString path = dir.filePath(
+        QStringLiteral("sleeper-%1.sh").arg(seconds));
+    QFile f(path);
+    QVERIFY2(f.open(QIODevice::WriteOnly | QIODevice::Truncate),
+             qPrintable(QStringLiteral("failed to create %1").arg(path)));
+    f.write(QString(QStringLiteral("#!/bin/sh\nexec sleep %1\n"))
+                .arg(seconds)
+                .toUtf8());
+    f.close();
+    QVERIFY2(QFile::setPermissions(path,
+                                   QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                       | QFileDevice::ExeOwner
+                                       | QFileDevice::ReadGroup
+                                       | QFileDevice::ExeGroup
+                                       | QFileDevice::ReadOther
+                                       | QFileDevice::ExeOther),
+             qPrintable(QStringLiteral("failed to chmod %1").arg(path)));
+    *outPath = path;
 }
 
 bool ProcessManagerTest::waitForAction(QSignalSpy& spy, const char* action,

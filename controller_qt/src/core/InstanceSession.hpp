@@ -68,7 +68,9 @@ using DialogueSinkFn = std::function<void(const QString&, const QString&,
 //             Scheduler::triggerNow (interrupt idle cycle). Idle → no-op
 //             (avoids feedback loop).
 //   stop()    set manuallyStopping=true (suppresses crash handling) →
-//             ProcessManager::stop() 3-stage graceful shutdown → clear flags.
+//             initiate ProcessManager's ASYNC 3-stage graceful shutdown
+//             (S4: returns immediately; stopFinished fires when the renderer
+//             is gone). restart()/start()-during-stop queue on that signal.
 //   restart() stop() + reset flag + start(). restartAttempts++ (todo 12 wires
 //             RestartController policy around this counter).
 //   onMessage(env) the inbound-router entry point. WsServer / InstanceManager
@@ -147,6 +149,31 @@ public:
     // change into m_config so the next read reflects it.
     const InstanceConfig& config() const;
 
+    // ── S4 async-stop surface ──────────────────────────────────────────────
+    // True while the renderer PROCESS is alive (launch through async stop
+    // completion). Two-phase delete keys off THIS, not status() — stop()
+    // flips status to "stopped" synchronously while the teardown is still
+    // winding down.
+    Q_INVOKABLE bool isProcessRunning() const;
+
+    // Two-phase delete mark (InstanceManager::deleteInstance calls this
+    // before initiating the async stop of a RUNNING instance). While set,
+    // start()/restart() are rejected — launching a renderer would race the
+    // deferred delete. Never cleared: the session is destroyed shortly
+    // after.
+    void setDeletePending();
+
+    // S2 minimal read-only accessor: InstanceControlApiImpl reports
+    // PluginError::Busy for lifecycle ops on a pending-delete instance
+    // instead of relying on the silent in-session start()/restart()
+    // rejection — the API caller needs the reason, the session's internal
+    // void slots cannot provide it. Pure read, no behavior change.
+    bool isDeletePending() const { return m_deletePending; }
+
+    // Test seam: shrink ProcessManager's graceful-stop window so timeout /
+    // kill paths are testable in milliseconds. Production never calls this.
+    void setStopTimeoutMs(int ms);
+
     // Parsed model metadata from the .model3.json (populated on model_loaded).
     // std::nullopt before model_loaded fires OR if the .model3.json is
     // missing/corrupt. Todo 6 (UI) reads motionGroups/expressions; todo 8
@@ -155,6 +182,11 @@ public:
 
 public slots:
     // Lifecycle (slots so QML / InstanceManager can invoke them).
+    // S4: stop() is EVENT-DRIVEN — it initiates the graceful shutdown and
+    // returns immediately; stopFinished() fires once the renderer is gone.
+    // restart() queues the relaunch on that completion. start() called while
+    // a stop is still winding down is queued the same way (never launches a
+    // second renderer next to the dying one).
     void start();
     void stop();
     void restart();
@@ -317,6 +349,13 @@ signals:
     // pseudo-response path routes by action, not by id.
     void layoutUpdated(double offsetX, double offsetY, double scale);
 
+    // S4: emitted exactly once when an initiated stop completes — the
+    // renderer process is gone (gracefully, externally, or force-killed).
+    // Re-emits ProcessManager::stopFinished minus the clean flag: consumers
+    // (InstanceManager's two-phase delete + stopAll accounting) only need
+    // "the teardown is over".
+    void stopFinished();
+
 private:
     // Build, serialize (compact), and send a command envelope via the shared
     // WsServer. Centralizes the serialize→send pattern the setters share.
@@ -332,6 +371,13 @@ private:
     // m_manuallyStopping is true the exit was initiated by stop() — no
     // startFailed. Otherwise a crashed/non-zero exit → startFailed + error.
     void onProcessExited(int exitCode, bool crashed);
+
+    // ProcessManager::stopFinished → S4 async-stop completion: re-emit as
+    // InstanceSession::stopFinished (two-phase delete / stopAll accounting),
+    // then consume a queued restart/start (restart() and start()-during-stop
+    // park their intent in m_startQueued because the old renderer must be
+    // fully gone before a new one launches).
+    void onProcessStopFinished(bool clean);
 
     // WsServer::connectionStateChanged → track connected for this instance.
     void onConnectionStateChanged(int state, int instanceId);
@@ -498,6 +544,14 @@ private:
     int  m_idleMotionCount = 0;   // todo 8 (Scheduler) increments
     int  m_restartAttempts = 0;   // todo 12 (RestartController) reads
     bool m_manuallyStopping = false;
+
+    // ── S4 async lifecycle flags ──────────────────────────────────────────
+    // m_startQueued: restart() / start()-during-stop parked a relaunch that
+    // onProcessStopFinished executes once the old renderer is fully gone.
+    bool m_startQueued = false;
+    // m_deletePending: two-phase delete mark (see setDeletePending) — start/
+    // restart rejected while the deferred deletion is in flight.
+    bool m_deletePending = false;
 };
 
 // Q_DECLARE_METATYPE for the pointer form so Q_INVOKABLE methods returning

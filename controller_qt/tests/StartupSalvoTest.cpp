@@ -291,7 +291,12 @@ void StartupSalvoTest::testFullSalvoWithLiveRenderer() {
     }
 
     // ── Cleanly shut down (tolerate the known renderer teardown crash) ────
-    QVERIFY2(pm.stop(), "stop() should return true (renderer exited within 5s)");
+    // S4: stop() is async — completion arrives via stopFinished.
+    QSignalSpy stopSpy(&pm, &ProcessManager::stopFinished);
+    pm.stop();
+    QVERIFY2(stopSpy.wait(7000), "stopFinished not emitted within 7s");
+    QVERIFY2(stopSpy.at(0).at(0).toBool(),
+             "stop should complete cleanly (renderer exited within 5s)");
     QVERIFY2(exitedSpy.count() >= 1, "exited signal not emitted by stop()");
     QVERIFY2(!pm.isRunning(), "renderer process still running after stop()");
 

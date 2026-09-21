@@ -135,6 +135,16 @@ void InstanceManager::requestDelete(const QString& uuid)
 
 void InstanceManager::deleteInstance(const QString& uuid)
 {
+    // Idempotent re-request while a two-phase delete is already pending:
+    // MERGE (ignore) — the in-flight stop's single completion performs the
+    // removal. Semantics chosen for simplicity: no second stop, no queued
+    // duplicate removal, no signal spam.
+    if (m_pendingDeletes.contains(uuid)) {
+        LOG_WARN("InstanceManager::deleteInstance: uuid=\"{}\" already pending "
+                 "delete (ignored)", uuid.toStdString());
+        return;
+    }
+
     const int row = rowForUuid(uuid);
     if (row < 0) {
         LOG_WARN("InstanceManager::deleteInstance: uuid=\"{}\" not in roster (no-op)",
@@ -143,10 +153,55 @@ void InstanceManager::deleteInstance(const QString& uuid)
     }
 
     InstanceSession* victim = m_sessions.at(row);
+
+    // S4 two-phase delete: a session whose renderer still runs cannot be
+    // destroyed synchronously without blocking the GUI — the old path did
+    // `delete victim` immediately and relied on ~ProcessManager's
+    // kill+waitForFinished(2s) to reap the child, stalling the GUI thread
+    // and skipping the graceful 3-stage shutdown entirely.
+    //   Phase 1 (here): mark the session delete-pending (rejects racing
+    //   start()/restart()), record it in the pending set, initiate the ASYNC
+    //   stop, return — the row stays visible until phase 2.
+    //   Phase 2 (onSessionStopFinished → finishInstanceDeletion): real row
+    //   removal + reap + config cleanup + persist.
+    if (victim->isProcessRunning()) {
+        victim->setDeletePending();
+        m_pendingDeletes.insert(uuid, victim);
+        LOG_INFO("InstanceManager: deleteInstance uuid=\"{}\" — renderer running; "
+                 "deferring removal until the async stop completes",
+                 uuid.toStdString());
+        victim->stop();
+        return;
+    }
+
+    // No live process — immediate removal, exactly the pre-S4 behavior.
+    finishInstanceDeletion(uuid);
+}
+
+void InstanceManager::finishInstanceDeletion(const QString& uuid)
+{
+    const int row = rowForUuid(uuid);
+    if (row < 0) {
+        LOG_WARN("InstanceManager::finishInstanceDeletion: uuid=\"{}\" no longer "
+                 "in roster (no-op)", uuid.toStdString());
+        return;
+    }
+    InstanceSession* victim = m_sessions.at(row);
+
+    // rowsAboutToBeRemoved fires HERE — at the REAL removal. The detail page
+    // (and any QML view over this model) holds InstanceSession* pointers
+    // whose safety depends on this ordering.
     beginRemoveRows(QModelIndex(), row, row);
     m_sessions.removeAt(row);
     endRemoveRows();
-    delete victim; // synchronous teardown — the session is gone after this line
+
+    // deleteLater, NOT delete: the deferred (phase-2) branch runs inside the
+    // session's stopFinished emission — destroying the sender synchronously
+    // from a direct-connected slot is UB. The row is already gone from the
+    // model so no external pointer can reach the zombie; the event loop
+    // reaps it as soon as the current call stack unwinds. The immediate
+    // (already-stopped) path shares this helper for uniformity.
+    victim->deleteLater();
 
     // deleteInstance is idempotent (returns true if absent) — safe even if the
     // file was already removed out-of-band.
@@ -156,7 +211,37 @@ void InstanceManager::deleteInstance(const QString& uuid)
     if (m_detachAssetRefs)
         m_detachAssetRefs(uuid);
     persistRoster();
-    LOG_INFO("InstanceManager: deleted instance uuid=\"{}\" (row={})", uuid.toStdString(), row);
+    LOG_INFO("InstanceManager: deleted instance uuid=\"{}\" (row={})",
+             uuid.toStdString(), row);
+}
+
+void InstanceManager::onSessionStopFinished(InstanceSession* session)
+{
+    // The session may be deleteLater'd inside this call — capture the uuid
+    // (value copy) up front and NEVER dereference `session` after
+    // finishInstanceDeletion returns.
+    const QString uuid = session->config().id;
+
+    // Phase 2 of a two-phase delete: the async stop initiated by
+    // deleteInstance finished → perform the REAL removal now. Plain user
+    // stops (no pending entry) fall through to the stopAll accounting.
+    if (m_pendingDeletes.remove(uuid) > 0)
+        finishInstanceDeletion(uuid);
+
+    // stopAll-wave accounting: emit once no session still has a live
+    // renderer. Recomputed from the live roster (not a counter) so double
+    // stopAll() calls or delete-pending sessions can never wedge the wave.
+    // finishInstanceDeletion already removed any doomed row from m_sessions,
+    // so this loop never touches the zombie.
+    if (m_stopAllActive) {
+        for (InstanceSession* s : m_sessions) {
+            if (s->isProcessRunning())
+                return; // at least one renderer still winding down
+        }
+        m_stopAllActive = false;
+        LOG_INFO("InstanceManager: stopAll complete — every renderer is down");
+        emit stopAllFinished();
+    }
 }
 
 // ── Access / routing ─────────────────────────────────────────────────────────
@@ -183,24 +268,29 @@ void InstanceManager::route(int instanceId, const Envelope& env)
              instanceId, env.action.toStdString());
 }
 
-void InstanceManager::stopAll()
+int InstanceManager::stopAll()
 {
-    // Wave 7 todo 15 — graceful shutdown of every instance on app exit.
-    // InstanceSession::stop() is blocking (ProcessManager::stop runs the
-    // 3-stage graceful shutdown: close-WS → send shutdown → wait-for-exit,
-    // capped at 5s per instance). For an exit path with N instances this
-    // blocks the GUI thread up to N×5s — acceptable because the user has
-    // explicitly confirmed they want to quit.
-    //
-    // manuallyStopping is set inside stop() so onProcessExited treats the
-    // teardown as user-initiated (no startFailed emission, no RestartController
-    // re-arm). Sessions that are already stopped are a fast no-op (pm.stop
-    // checks state() != NotRunning).
-    const int count = m_sessions.size();
+    // S4 (event-driven rework — was N×5s of blocking GUI): initiate the
+    // async graceful stop for every session whose renderer runs and return
+    // how many are winding down. Sessions already stopping (user-initiated)
+    // are counted too — their single stopFinished both completes their stop
+    // and advances this wave. stopAllFinished fires from
+    // onSessionStopFinished once no session has a live renderer anymore; the
+    // exit path (Main.qml doExit) quits in that handler instead of blocking
+    // here. manullyStopping is set inside each stop() so onProcessExited
+    // treats the teardown as user-initiated (no startFailed, no
+    // RestartController re-arm).
+    int initiated = 0;
     for (InstanceSession* session : m_sessions) {
-        session->stop();
+        if (session->isProcessRunning()) {
+            session->stop();
+            ++initiated;
+        }
     }
-    LOG_INFO("InstanceManager::stopAll: stopped {} instance(s)", count);
+    m_stopAllActive = (initiated > 0);
+    LOG_INFO("InstanceManager::stopAll: initiated async stop for {} instance(s)",
+             initiated);
+    return initiated;
 }
 
 void InstanceManager::setDatabase(DatabaseManager* db)
@@ -213,6 +303,10 @@ void InstanceManager::setDatabase(DatabaseManager* db)
         qDeleteAll(m_sessions);
         m_sessions.clear();
         endResetModel();
+        // S4: the destroyed sessions can no longer complete their pending
+        // async stops — drop the two-phase / stopAll bookkeeping with them.
+        m_pendingDeletes.clear();
+        m_stopAllActive = false;
     }
     m_configManager.setDatabase(db);
     m_db = db;
@@ -241,6 +335,14 @@ void InstanceManager::wireSession(InstanceSession* session)
     // are cheap handles; empty ones no-op inside the session.
     if (m_dialogueSink)
         session->setDialogueSink(m_dialogueSink);
+
+    // S4: route every session's stop completion into the manager's two-phase
+    // delete + stopAll accounting. Direct connection on the GUI thread — the
+    // deferred delete inside uses deleteLater precisely because of that.
+    // wireSession only ever runs on freshly constructed sessions, so this
+    // can never double-connect.
+    connect(session, &InstanceSession::stopFinished, this,
+            [this, session]() { onSessionStopFinished(session); });
 }
 
 void InstanceManager::persistRoster()

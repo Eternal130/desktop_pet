@@ -60,6 +60,10 @@ private slots:
     void testOfflineLoadModelPersistsConfigOnly();
     void testModelLoadFailedIsObservable();
 
+    // ── S4 async lifecycle (headless fake-sleeper renderer; POSIX) ──────
+    void testRestartWaitsForAsyncStop();
+    void testStartDuringStopIsQueued();
+
     // ── Integration tier [REQUIRES_RENDERER] ───────────────────────────────
     void testRealRendererLifecycle();
     void testStopSuppressesCrashSignal();
@@ -81,6 +85,17 @@ private:
     // Wait until session.status() equals target, polling via QTest::qWait.
     static bool waitForStatus(InstanceSession& session, const char* target,
                               int timeoutMs);
+
+    // S4: call stop() and wait for the session-level stopFinished signal —
+    // the async replacement for asserting "stop() returned ⇒ stopped".
+    static bool stopAndWait(InstanceSession& session, int timeoutMs);
+
+    // S4 headless harness: write a fake "renderer" that is really a sleeper
+    // script (existence is all resolveRendererPath checks; shebang + exec
+    // bit make QProcess run it) into dir; outDir receives the DIRECTORY to
+    // set as cfg.rendererPath. POSIX-only — call sites QSKIP on Windows.
+    // Out-param signature — QVERIFY2 needs a void return.
+    static void makeFakeRendererDir(const QTemporaryDir& dir, QString* outDir);
 };
 
 void InstanceSessionTest::initTestCase()
@@ -331,8 +346,109 @@ void InstanceSessionTest::testModelLoadFailedIsObservable()
 
     // Clean teardown — stops the (never-started) fake process, suppresses
     // the async FailedToStart crash path.
-    session.stop();
+    QVERIFY2(stopAndWait(session, 3000), "session did not finish stopping");
     server.close();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// S4 async lifecycle (headless fake-sleeper renderer; POSIX-only harness)
+// ────────────────────────────────────────────────────────────────────────────
+
+// restart() must WAIT for the async stop before relaunching: it returns
+// immediately with status="stopped" while the OLD renderer is still winding
+// down, then relaunches exactly once the old process is gone. The kill of
+// the old process must NOT surface as startFailed (manuallyStopping).
+void InstanceSessionTest::testRestartWaitsForAsyncStop()
+{
+#ifdef Q_OS_WIN
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    QString rendererDir;
+    makeFakeRendererDir(dir, &rendererDir); // fake renderer = sleeper
+    cfg.rendererPath = rendererDir;
+    cfg.graphicsBackend = QStringLiteral("opengl");
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    QSignalSpy failedSpy(&session, &InstanceSession::startFailed);
+    QVERIFY(failedSpy.isValid());
+
+    session.start();
+    QVERIFY2(session.isProcessRunning(), "fake renderer process failed to launch");
+
+    session.setStopTimeoutMs(300); // fast kill (test seam)
+
+    session.restart();
+
+    // Async proof: restart() returned with the old renderer still winding
+    // down, status already flipped to "stopped".
+    QCOMPARE(session.status(), QStringLiteral("stopped"));
+    QVERIFY2(session.isProcessRunning(),
+             "restart() must be non-blocking (old renderer still dying)");
+
+    // Phase 2: the queued relaunch fires once the old process is gone.
+    QVERIFY2(waitForStatus(session, "connecting", 5000),
+             "restart did not relaunch after the async stop completed");
+    QVERIFY2(session.isProcessRunning(), "relaunched process not running");
+    QVERIFY2(failedSpy.isEmpty(),
+             "old-process kill must not emit startFailed (manuallyStopping guard)");
+
+    QVERIFY2(stopAndWait(session, 5000), "session did not finish stopping");
+    QCOMPARE(session.status(), QStringLiteral("stopped"));
+    QVERIFY2(failedSpy.isEmpty(), "stop must not emit startFailed");
+    server.close();
+#endif
+}
+
+// start() while a stop is still winding down is QUEUED (never a second
+// renderer next to the dying one) and fires once the stop completes.
+void InstanceSessionTest::testStartDuringStopIsQueued()
+{
+#ifdef Q_OS_WIN
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    QString rendererDir;
+    makeFakeRendererDir(dir, &rendererDir);
+    cfg.rendererPath = rendererDir;
+    cfg.graphicsBackend = QStringLiteral("opengl");
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    QSignalSpy failedSpy(&session, &InstanceSession::startFailed);
+    QVERIFY(failedSpy.isValid());
+
+    session.start();
+    QVERIFY2(session.isProcessRunning(), "fake renderer process failed to launch");
+
+    session.setStopTimeoutMs(300);
+    session.stop(); // async — old renderer winding down
+    QCOMPARE(session.status(), QStringLiteral("stopped"));
+
+    session.start(); // during the in-flight stop — must queue, not launch
+
+    // The queued start lands after the stop completes.
+    QVERIFY2(waitForStatus(session, "connecting", 5000),
+             "queued start did not fire after the async stop completed");
+    QVERIFY2(session.isProcessRunning(), "relaunched process not running");
+    QVERIFY2(failedSpy.isEmpty(), "no failure expected in the queued path");
+
+    QVERIFY2(stopAndWait(session, 5000), "session did not finish stopping");
+    server.close();
+#endif
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -377,9 +493,12 @@ void InstanceSessionTest::testRealRendererLifecycle()
     QVERIFY(failedSpy.isEmpty()); // no failure during a healthy start
 
     // Clean stop → status="stopped", no startFailed (teardown crash suppressed).
+    // S4: stop() is async — wait for the session-level completion signal.
+    QSignalSpy sessionStopSpy(&session, &InstanceSession::stopFinished);
     session.stop();
     QCOMPARE(session.status(), QStringLiteral("stopped"));
     QVERIFY(!session.connected());
+    QVERIFY2(sessionStopSpy.wait(7000), "session stopFinished not emitted within 7s");
     QVERIFY2(failedSpy.isEmpty(),
              "stop() must not emit startFailed (manuallyStopping suppresses crash)");
 
@@ -417,7 +536,9 @@ void InstanceSessionTest::testStopSuppressesCrashSignal()
     QVERIFY2(waitForStatus(session, "running", 15000),
              "renderer did not reach status='running' within 15s");
 
+    QSignalSpy sessionStopSpy(&session, &InstanceSession::stopFinished);
     session.stop();
+    QVERIFY2(sessionStopSpy.wait(7000), "session stopFinished not emitted within 7s");
 
     // The critical assertion: even though the renderer may crash during
     // teardown, manuallyStopping=true means NO startFailed.
@@ -514,7 +635,9 @@ void InstanceSessionTest::testFullLifecycleSalvoAndHitAreas()
 
     QVERIFY2(failedSpy.isEmpty(), "no failure expected during healthy lifecycle");
 
-    session.stop();
+    // S4: async stop — wait for completion before closing the server (the
+    // shutdown command flushes on the event loop this pumps).
+    QVERIFY2(stopAndWait(session, 7000), "session did not finish stopping");
     QCOMPARE(session.status(), QStringLiteral("stopped"));
 
     server.close();
@@ -576,7 +699,8 @@ void InstanceSessionTest::testDragEndPersists()
     QCOMPARE(reloaded->windowX, 100);
     QCOMPARE(reloaded->windowY, 200);
 
-    session.stop();
+    // S4: async stop — wait for completion before closing the server.
+    QVERIFY2(stopAndWait(session, 7000), "session did not finish stopping");
     server.close();
 }
 
@@ -637,7 +761,8 @@ void InstanceSessionTest::testHitSendsPlayMotion()
              qPrintable(QStringLiteral("play_motion not captured after hit "
                                        "(actions=%1)").arg(cmdSpy.count())));
 
-    session.stop();
+    // S4: async stop — wait for completion before closing the server.
+    QVERIFY2(stopAndWait(session, 7000), "session did not finish stopping");
     server.close();
 }
 
@@ -692,7 +817,8 @@ void InstanceSessionTest::testMotionFinishedNonIdleTriggersScheduler()
                                        "non-idle motion_finished (before=%1, after=%2)")
                         .arg(baseline).arg(idleSpy.count())));
 
-    session.stop();
+    // S4: async stop — wait for completion before closing the server.
+    QVERIFY2(stopAndWait(session, 7000), "session did not finish stopping");
     server.close();
 }
 
@@ -745,7 +871,8 @@ void InstanceSessionTest::testMotionFinishedIdleDoesNotTrigger()
 
     QCOMPARE(idleSpy.count(), baseline);
 
-    session.stop();
+    // S4: async stop — wait for completion before closing the server.
+    QVERIFY2(stopAndWait(session, 7000), "session did not finish stopping");
     server.close();
 }
 
@@ -803,7 +930,8 @@ void InstanceSessionTest::testLayoutChangedPersists()
     QCOMPARE(reloaded->layoutOffsetY, 2.5);
     QCOMPARE(reloaded->layoutScale, 0.8);
 
-    session.stop();
+    // S4: async stop — wait for completion before closing the server.
+    QVERIFY2(stopAndWait(session, 7000), "session did not finish stopping");
     server.close();
 }
 
@@ -858,7 +986,8 @@ void InstanceSessionTest::testWindowResizedPersists()
     QCOMPARE(reloaded->windowX, 10);
     QCOMPARE(reloaded->windowY, 20);
 
-    session.stop();
+    // S4: async stop — wait for completion before closing the server.
+    QVERIFY2(stopAndWait(session, 7000), "session did not finish stopping");
     server.close();
 }
 
@@ -912,7 +1041,8 @@ void InstanceSessionTest::testResetLayoutSendsCommand()
              qPrintable(QStringLiteral("reset_layout not captured (actions=%1)")
                         .arg(cmdSpy.count())));
 
-    session.stop();
+    // S4: async stop — wait for completion before closing the server.
+    QVERIFY2(stopAndWait(session, 7000), "session did not finish stopping");
     server.close();
 }
 
@@ -978,7 +1108,8 @@ void InstanceSessionTest::testGetLayoutRoutesViaLayoutStateEvent()
     QVERIFY2(!layoutSpy.isEmpty(),
              "layoutUpdated not fired — layout_state event did not route back");
 
-    session.stop();
+    // S4: async stop — wait for completion before closing the server.
+    QVERIFY2(stopAndWait(session, 7000), "session did not finish stopping");
     server.close();
 }
 
@@ -1003,6 +1134,44 @@ bool InstanceSessionTest::waitForStatus(InstanceSession& session, const char* ta
         QTest::qWait(50);
     }
     return session.status() == QLatin1String(target);
+}
+
+bool InstanceSessionTest::stopAndWait(InstanceSession& session, int timeoutMs)
+{
+    // Spy must exist BEFORE stop() so the queued stopFinished cannot slip by.
+    QSignalSpy spy(&session, &InstanceSession::stopFinished);
+    session.stop();
+    return spy.wait(timeoutMs);
+}
+
+void InstanceSessionTest::makeFakeRendererDir(const QTemporaryDir& dir,
+                                              QString* outDir)
+{
+    // A fake renderer DIRECTORY containing a "desktop-pet-renderer" that is
+    // really a 30s sleeper script — existence is all resolveRendererPath
+    // checks, and a shebang + exec bit make QProcess run it. start() then has
+    // a genuinely alive child process (which never speaks WS), exercising the
+    // async stop / two-phase machinery headlessly.
+    const QString rendererDir =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("renderer"));
+    QVERIFY2(QDir().mkpath(rendererDir),
+             qPrintable(QStringLiteral("failed to create %1").arg(rendererDir)));
+    const QString exe =
+        QDir(rendererDir).absoluteFilePath(QStringLiteral("desktop-pet-renderer"));
+    QFile f(exe);
+    QVERIFY2(f.open(QIODevice::WriteOnly | QIODevice::Truncate),
+             qPrintable(QStringLiteral("failed to create %1").arg(exe)));
+    f.write(QStringLiteral("#!/bin/sh\nexec sleep 30\n").toUtf8());
+    f.close();
+    QVERIFY2(QFile::setPermissions(exe,
+                                   QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                       | QFileDevice::ExeOwner
+                                       | QFileDevice::ReadGroup
+                                       | QFileDevice::ExeGroup
+                                       | QFileDevice::ReadOther
+                                       | QFileDevice::ExeOther),
+             qPrintable(QStringLiteral("failed to chmod %1").arg(exe)));
+    *outDir = rendererDir;
 }
 
 QTEST_MAIN(InstanceSessionTest)

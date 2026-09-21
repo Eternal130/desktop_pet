@@ -40,9 +40,13 @@ class PendingRequests;
 // Ownership: InstanceSession pointers are owned by THIS manager, NOT via a
 // QObject parent. Sessions are constructed with parent=nullptr and deleted
 // explicitly by the destructor + deleteInstance. This avoids the QObject-parent
-// double-delete when the model and the sessions are torn down together and
-// keeps deleteInstance synchronous (beginRemoveRows → delete → endRemoveRows
-// without deleteLater ceremony).
+// double-delete when the model and the sessions are torn down together.
+// S4: deleteInstance is TWO-PHASE for running instances (async stop first,
+// real removal in the stopFinished callback); the removal itself is
+// beginRemoveRows → removeAt → endRemoveRows → deleteLater (deleteLater
+// because the deferred branch runs inside the session's stopFinished
+// emission — destroying the sender synchronously from a direct-connected
+// slot is UB).
 class InstanceManager : public QAbstractListModel {
     Q_OBJECT
     // Roster size for QML badges/labels. Method calls like rowCount() create
@@ -116,6 +120,18 @@ public:
     // Remove + destroy the instance: drop the row, delete the InstanceSession,
     // delete the instance file, rebuild instanceIds, call savePanel. No-op
     // (WARN log) if the uuid is not in the roster — never crashes.
+    //
+    // S4 TWO-PHASE for a RUNNING renderer (event-driven; the old path did a
+    // synchronous `delete victim` whose ~ProcessManager force-killed the
+    // child after a ~2s GUI block, skipping the graceful shutdown):
+    //   Phase 1 — mark the session delete-pending (rejects racing start()/
+    //             restart()), put the uuid in the pending set, initiate the
+    //             ASYNC stop, return. The row is still present.
+    //   Phase 2 — the session's stopFinished callback performs the REAL
+    //             removal (rowsAboutToBeRemoved fires only here — the detail
+    //             page's InstanceSession* safety depends on that ordering).
+    // Re-deleting a pending uuid merges (WARN + no-op). A stopped/errored
+    // instance (no live process) takes the immediate path exactly as before.
     Q_INVOKABLE void deleteInstance(const QString& uuid);
 
     // ── Access / routing ─────────────────────────────────────────────────────
@@ -131,12 +147,14 @@ public:
 
     // Wave 7 todo 15 — graceful shutdown of every running instance. Called
     // from Main.qml's exit path (closeAction=="exit" → confirm dialog → Ok).
-    // Iterates m_sessions and calls stop() on each (InstanceSession::stop sets
-    // manuallyStopping=true then runs ProcessManager's 3-stage graceful
-    // shutdown — up to 5s per instance). Blocking but acceptable for the exit
-    // path (the user has confirmed they want to quit). No-op on an empty
-    // roster. Safe to call from the GUI thread (QML onClosing handler).
-    Q_INVOKABLE void stopAll();
+    // S4 EVENT-DRIVEN (was N×5s of blocking GUI): initiates the async
+    // graceful stop for every session whose renderer runs and RETURNS how
+    // many are winding down. stopAllFinished fires (from the per-session
+    // stop-completion callback) once no session has a live renderer anymore;
+    // the exit path quits in that handler instead of blocking here. Returns
+    // 0 (and emits nothing) when nothing is running. No-op re-invocation
+    // while a wave is active simply keeps the wave.
+    Q_INVOKABLE int stopAll();
 
     // Asset ref detachment hook (AssetManager wiring): when set,
     // deleteInstance calls it with the deleted uuid so the instance's
@@ -172,6 +190,10 @@ signals:
     // countChanged: re-emitted from rowsInserted/rowsRemoved/modelReset so
     // QML bindings on the `count` property refresh without polling.
     void countChanged();
+    // S4: emitted once a stopAll() wave completes — every session's renderer
+    // is down (gracefully or force-killed). The exit path (Main.qml doExit)
+    // quits in this handler.
+    void stopAllFinished();
 
 private:
     // Rebuild m_panelConfig.instanceIds from the live roster order and persist
@@ -182,8 +204,18 @@ private:
 
     // Inject the manager-level dialogue sink seam into a freshly constructed
     // session. Called from every session-creation site (createInstance /
-    // loadFromDisk).
+    // loadFromDisk). Also wires the S4 stop-completion routing.
     void wireSession(InstanceSession* session);
+
+    // S4: per-session stopFinished callback — phase 2 of a two-phase delete
+    // (perform the REAL removal) plus stopAll-wave accounting (emit
+    // stopAllFinished when the last renderer is down).
+    void onSessionStopFinished(InstanceSession* session);
+
+    // S4: the actual row removal + config cleanup + persistence, shared by
+    // the immediate (already-stopped) delete path and the deferred phase-2
+    // path. rowsAboutToBeRemoved fires here, at the real removal.
+    void finishInstanceDeletion(const QString& uuid);
 
     // Locate the row whose InstanceSession config().id == uuid; -1 if not found.
     int rowForUuid(const QString& uuid) const;
@@ -205,4 +237,14 @@ private:
     InstanceConfigManager m_configManager; // member by value; parent=nullptr (no Qt parent)
     PanelConfig m_panelConfig;
     QList<InstanceSession*> m_sessions; // owned — deleted in dtor + deleteInstance
+
+    // ── S4 two-phase delete / stopAll bookkeeping ──────────────────────────
+    // uuid → session awaiting the completion of its phase-1 async stop; the
+    // stopFinished callback performs the real removal. Entries are created
+    // only by deleteInstance and consumed only by onSessionStopFinished (or
+    // dropped wholesale when the roster is reset in setDatabase).
+    QHash<QString, InstanceSession*> m_pendingDeletes;
+    // True between stopAll() initiating ≥1 async stop and the resulting
+    // stopAllFinished emission.
+    bool m_stopAllActive = false;
 };

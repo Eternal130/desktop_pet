@@ -137,6 +137,11 @@ InstanceSession::InstanceSession(InstanceConfig config, WsServer& server,
     connect(&m_processManager, &ProcessManager::exited,
             this, &InstanceSession::onProcessExited);
 
+    // S4: async-stop completion — drives the queued restart/start and the
+    // manager-side two-phase delete / stopAll accounting.
+    connect(&m_processManager, &ProcessManager::stopFinished,
+            this, [this](bool clean) { onProcessStopFinished(clean); });
+
     // WsServer connection-state → track m_connected for this instance. Cast
     // the enum to int for the slot signature (avoids pulling the enum into the
     // header's onConnectionStateChanged signature; todo 11 routes per-instance).
@@ -202,6 +207,26 @@ void InstanceSession::start()
     LOG_INFO("InstanceSession::start instanceId={} id=\"{}\" model=\"{}\" backend=\"{}\"",
              m_instanceId, m_config.id.toStdString(),
              m_config.modelName.toStdString(), m_config.graphicsBackend.toStdString());
+
+    // S4 two-phase delete guard: this session is pending destruction —
+    // launching a renderer would race the deferred delete.
+    if (m_deletePending) {
+        LOG_WARN("InstanceSession[{}]: start() rejected — instance pending delete",
+                 m_instanceId);
+        return;
+    }
+
+    // S4 async-stop reentry: a stop is still winding down (grace window /
+    // force-kill). startRenderer would no-op on the not-yet-dead process
+    // ("already running" WARN) and the session would hang in "connecting" —
+    // queue the start instead; onProcessStopFinished re-invokes it once the
+    // old renderer is fully gone.
+    if (m_processManager.isStopping()) {
+        LOG_WARN("InstanceSession[{}]: start() while stop in flight — queued "
+                 "until the stop completes", m_instanceId);
+        m_startQueued = true;
+        return;
+    }
 
     setStatus(kStatusPending);
 
@@ -400,15 +425,19 @@ void InstanceSession::stop()
     m_monitorTimer.stop();
     m_monitorModel.clearHistory();
 
-    // Set the flag BEFORE stop() so onProcessExited (which fires during the
-    // blocking poll inside ProcessManager::stop) observes manuallyStopping=true
-    // and does NOT emit startFailed for the known teardown exit.
+    // Set the flag BEFORE initiating the stop so onProcessExited (which fires
+    // when the async shutdown lands) observes manuallyStopping=true and does
+    // NOT emit startFailed for the known teardown exit.
     m_manuallyStopping = true;
 
-    // ProcessManager::stop is the 3-stage graceful shutdown (send shutdown →
-    // poll up to 5s → force-kill). Blocking — call from the main thread.
+    // S4: event-driven graceful shutdown — sends shutdown {} and returns
+    // IMMEDIATELY (QTimer poll inside ProcessManager; force-kill after the
+    // grace window). stopFinished() fires once the renderer is gone. Repeat
+    // calls while a stop is in flight are absorbed there (single completion).
     m_processManager.stop();
 
+    // UI-visible state flips synchronously (button states, badges); the
+    // process teardown completes in the background on the GUI event loop.
     setConnected(false);
     setModelLoaded(false);
     setStatus(kStatusStopped);
@@ -418,12 +447,65 @@ void InstanceSession::restart()
 {
     LOG_INFO("InstanceSession::restart instanceId={} attempts={}",
              m_instanceId, m_restartAttempts + 1);
+
+    // S4 two-phase delete guard — a doomed session must not relaunch.
+    if (m_deletePending) {
+        LOG_WARN("InstanceSession[{}]: restart() rejected — instance pending delete",
+                 m_instanceId);
+        return;
+    }
+
     ++m_restartAttempts;
+    // S4: stop() is async — queue the relaunch. onProcessStopFinished resets
+    // the user-stop flag (so the new lifecycle's exits count as crashes, the
+    // same contract the old synchronous restart() upheld) and calls start()
+    // once the old renderer is fully gone.
+    m_startQueued = true;
     stop();
-    // Reset the flag so the new lifecycle's exit (if any) is treated as a crash
-    // and not a residual user-stop. TODO(todo-12): RestartController policy.
-    m_manuallyStopping = false;
-    start();
+}
+
+bool InstanceSession::isProcessRunning() const
+{
+    // Two-phase delete keys off THIS, not status(): stop() flips status to
+    // "stopped" synchronously while the renderer teardown is still running.
+    return m_processManager.isRunning();
+}
+
+void InstanceSession::setDeletePending()
+{
+    m_deletePending = true;
+    // A queued restart/start must not fire into a session that is about to
+    // be destroyed — it would race the deferred delete. start() double-
+    // checks the flag, this just avoids relying on that.
+    m_startQueued = false;
+}
+
+void InstanceSession::setStopTimeoutMs(int ms)
+{
+    m_processManager.setStopTimeoutMs(ms);
+}
+
+void InstanceSession::onProcessStopFinished(bool clean)
+{
+    LOG_INFO("InstanceSession[{}]::onProcessStopFinished clean={}",
+             m_instanceId, clean);
+
+    // Consume the queued-start flag up front — the stopFinished emission
+    // below can synchronously run the manager's two-phase-delete slot (which
+    // posts deleteLater); reading members after it would be fine (deleteLater
+    // is deferred), but the flag copy keeps the intent explicit.
+    const bool startQueued = m_startQueued;
+    m_startQueued = false;
+
+    emit stopFinished();
+
+    if (startQueued) {
+        // Reset the flag so the new lifecycle's exit (if any) is treated as
+        // a crash and not a residual user-stop. TODO(todo-12):
+        // RestartController policy.
+        m_manuallyStopping = false;
+        start();
+    }
 }
 
 void InstanceSession::loadModel(const QString& modelName)
@@ -497,7 +579,8 @@ void InstanceSession::onProcessExited(int exitCode, bool crashed)
              m_instanceId, exitCode, crashed, m_manuallyStopping);
 
     // User-initiated stop (stop() set the flag) — the exit is expected, never a
-    // crash. status is already "stopped" (set by stop() after the blocking poll).
+    // crash. status is already "stopped" (stop() flips it synchronously; the
+    // async teardown lands later).
     if (m_manuallyStopping)
         return;
 

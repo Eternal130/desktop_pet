@@ -87,12 +87,48 @@ Window {
         root.requestActivate()
     }
 
+    // S4 (event-driven stop): the exit sequence no longer blocks on stopAll.
+    // doExit initiates the async graceful stop of every running renderer and
+    // the actual quit happens in onStopAllFinished (or via the watchdog if a
+    // bug wedges the wave — the stop state machine bounds itself at ~7s).
+    property bool exitInProgress: false
+    property bool exitDone: false
+
     function doExit() {
-        instanceManager.stopAll()
+        if (root.exitInProgress)
+            return
+        root.exitInProgress = true
+        // stopAll initiates the async stop of every running renderer and
+        // returns how many are winding down; stopAllFinished completes the
+        // exit. Zero running instances → quit right away.
+        if (instanceManager.stopAll() > 0) {
+            exitWatchdog.start()
+            return
+        }
+        root.finishExit()
+    }
+
+    function finishExit() {
+        if (root.exitDone)
+            return
+        root.exitDone = true
         windowStateSaver.saveWindowState(root.x, root.y, root.width,
                                          root.height, Theme.currentTheme)
         trayManager.shutdown()
         Qt.quit()
+    }
+
+    // Bounds the async exit wait: the ProcessManager stop state machine
+    // guarantees completion (grace window + force-kill + post-kill reap,
+    // ~7s worst case), so 12s can only ever trigger on a logic bug — and a
+    // wedged exit is worse than a forceful one.
+    Timer {
+        id: exitWatchdog
+        interval: 12000
+        onTriggered: {
+            if (root.exitInProgress && !root.exitDone)
+                root.finishExit()
+        }
     }
 
     onClosing: function(close) {
@@ -379,8 +415,11 @@ Window {
                 NavItem {
                     itemKey: "instance"
                     icon: "🐱"; label: qsTr("实例详情")
-                    badgeText: instanceManager.count > 0
-                               ? instanceManager.count : ""
+                    // S3: roster count read goes through rosterModel (the
+                    // pet::IInstanceApi read path); the page itself and all
+                    // create/delete flows still use instanceManager.
+                    badgeText: rosterModel.count > 0
+                               ? rosterModel.count : ""
                     match: navPane.searchFilter
                 }
                 NavItem {
@@ -437,10 +476,19 @@ Window {
                 NavGroupLabel {
                     text: qsTr("宠物 · 实例切换")
                     visible: root.currentPage === "instance"
-                             && instanceManager.count > 0
+                             && rosterModel.count > 0
                 }
+                // S3 dogfooding: the roster LIST is RosterApiModel — the
+                // read path over pet::IInstanceApi (same shared
+                // InstanceApiImpl the plugin SDK serves). Roles are
+                // byte-identical to the old instanceManager binding, so the
+                // delegate is unchanged. Click still routes through
+                // selectInstance(row, uuid) → instanceManager.instanceAt
+                // (write/selection paths deliberately stay on the manager
+                // until S2); row indexes line up because both models share
+                // the manager's roster order.
                 Repeater {
-                    model: instanceManager
+                    model: rosterModel
                     delegate: NavInstanceItem {
                         id: instNav
                         required property string label
@@ -587,7 +635,14 @@ Window {
         message: qsTr("删除该实例？此操作不可撤销。")
         positiveText: qsTr("删除")
         onPositiveClicked: {
-            instanceManager.deleteInstance(pendingUuid)
+            const gone = pendingUuid
+            // S2 dogfooding: the actual delete goes through rosterModel —
+            // the pet::IInstanceControlApi write path (the SAME shared
+            // implementation the plugin SDK serves via queryApi). The
+            // confirm flow (requestDelete → deleteConfirmed) stays on
+            // instanceManager; a null/errored result is fire-and-forget
+            // here — the roster reset below this model reports the truth.
+            rosterModel.deleteInstance(gone)
             pendingUuid = ""
             root.currentInstance = null
             root.currentInstanceUuid = ""
@@ -595,10 +650,25 @@ Window {
             // selectInstance(row, uuid) rebinds the detail page to the
             // first surviving instance; only fall back to Home when the
             // roster is now empty.
-            if (instanceManager.rowCount() > 0)
-                root.selectInstance(0, instanceManager.instanceAt(0).uuid)
-            else
+            // S4 two-phase delete: a RUNNING instance's row survives until
+            // its async stop completes — never rebind to the doomed row
+            // (it vanishes via rowsAboutToBeRemoved shortly); bind the next
+            // survivor instead.
+            if (instanceManager.rowCount() > 0) {
+                const first = instanceManager.instanceAt(0)
+                if (first && first.uuid === gone) {
+                    if (instanceManager.rowCount() > 1)
+                        root.selectInstance(1, instanceManager.instanceAt(1).uuid)
+                    else
+                        root.switchPage("welcome")
+                } else if (first) {
+                    root.selectInstance(0, first.uuid)
+                } else {
+                    root.switchPage("welcome")
+                }
+            } else {
                 root.switchPage("welcome")
+            }
         }
         property string pendingUuid: ""
     }
@@ -617,6 +687,11 @@ Window {
         function onDeleteConfirmed(uuid) {
             deleteConfirmDialog.pendingUuid = uuid
             deleteConfirmDialog.open()
+        }
+        // S4: the async stop wave completed — finish the pending exit.
+        function onStopAllFinished() {
+            if (root.exitInProgress && !root.exitDone)
+                root.finishExit()
         }
     }
 

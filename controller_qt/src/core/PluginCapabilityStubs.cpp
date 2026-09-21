@@ -43,6 +43,62 @@ pet::PluginError DownloadApiStub::installArchive(pet::JobId job, const pet::Inst
     return pet::PluginError::Capability;
 }
 
+// ── InstanceControlApiStub (S2: loud failure, zero silent behavior) ────────
+
+pet::PluginError InstanceControlApiStub::create(const pet::InstanceSpec& spec,
+                                                QString* outUuid)
+{
+    Q_UNUSED(spec);
+    if (outUuid != nullptr)
+        outUuid->clear();
+    LOG_WARN("[plugin-api] instanceControlApi().create() without the "
+             "'instance_lifecycle' capability or with plugin writes disabled "
+             "(§B.4 / plugin_write_enabled) — ERR_CAPABILITY");
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError InstanceControlApiStub::remove(const QString& uuid)
+{
+    LOG_WARN("[plugin-api] instanceControlApi().remove('{}') without the "
+             "'instance_lifecycle' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError InstanceControlApiStub::start(const QString& uuid)
+{
+    LOG_WARN("[plugin-api] instanceControlApi().start('{}') without the "
+             "'instance_lifecycle' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError InstanceControlApiStub::stop(const QString& uuid)
+{
+    LOG_WARN("[plugin-api] instanceControlApi().stop('{}') without the "
+             "'instance_lifecycle' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError InstanceControlApiStub::restart(const QString& uuid)
+{
+    LOG_WARN("[plugin-api] instanceControlApi().restart('{}') without the "
+             "'instance_lifecycle' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError InstanceControlApiStub::loadModel(const QString& uuid,
+                                                   const QString& modelName)
+{
+    LOG_WARN("[plugin-api] instanceControlApi().loadModel('{}', '{}') without "
+             "the 'instance_lifecycle' capability or with plugin writes "
+             "disabled — ERR_CAPABILITY",
+             uuid.toStdString(), modelName.toStdString());
+    return pet::PluginError::Capability;
+}
+
 // ── VoicePackApiImpl (read-only real view; install path is P5) ─────────────
 
 VoicePackApiImpl::VoicePackApiImpl(std::function<void()> refresh, QObject* parent)

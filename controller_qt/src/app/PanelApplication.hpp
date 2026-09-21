@@ -15,6 +15,8 @@ class ProcessManager;
 
 namespace core {
 class DownloadService;
+class InstanceApiImpl;
+class InstanceControlApiImpl;
 class PluginHost;
 }
 
@@ -48,6 +50,23 @@ public:
     WsServer* wsServer();
     PendingRequests* pendingRequests();
     InstanceManager* instanceManager();
+
+    // S3 roster dogfooding: THE shared pet::IInstanceApi implementation —
+    // constructed here (right after the roster it observes) and injected
+    // both into every plugin context (via PluginHost) and into the panel's
+    // own RosterApiModel (via PanelUiBoot). Host UI and plugins therefore
+    // go through the same object and the same vtable; dies before the
+    // InstanceManager (registration-reverse teardown).
+    core::InstanceApiImpl* instanceApi();
+
+    // S2 (v1.2): THE shared pet::IInstanceControlApi implementation —
+    // same construction/sharing pattern as instanceApi(): served to
+    // plugins through PluginHost → queryApi("pet.instance_control")
+    // (capability + plugin_write_enabled gated at the context) and to the
+    // panel's own RosterApiModel write bridge (NOT gated — the host UI is
+    // the host). Registered after m_instanceApi → dies before it and
+    // before the InstanceManager (registration-reverse teardown).
+    core::InstanceControlApiImpl* instanceControlApi();
 
     // Plugin framework (P4, §B.6): the registry (entry store + state
     // machine) is created FIRST in the ctor; the host (initialize/shutdown
@@ -90,6 +109,13 @@ private:
     WsServer* m_wsServer;
     PendingRequests* m_pendingRequests;
     InstanceManager* m_instanceManager;
+    // S3: shared roster API (see instanceApi()); registered after the
+    // manager → destroyed before it (registration-reverse).
+    core::InstanceApiImpl* m_instanceApi = nullptr;
+    // S2 (v1.2): shared instance-control write API (see
+    // instanceControlApi()); registered after m_instanceApi → destroyed
+    // before it (registration-reverse).
+    core::InstanceControlApiImpl* m_instanceControlApi = nullptr;
     // Registered last (wireLegacyInstanceZeroSenders) → destroyed first.
     StartupSalvo* m_startupSalvo = nullptr;
     ProcessManager* m_processManager = nullptr;

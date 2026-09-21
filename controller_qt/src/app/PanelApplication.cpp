@@ -11,6 +11,7 @@
 #include "core/InstanceSession.hpp"
 #include "core/PanelStateManager.hpp"
 #include "core/PathResolve.hpp"
+#include "core/PluginContextImpl.hpp"
 #include "core/PluginHost.hpp"
 #include "core/ProcessManager.hpp"
 #include "core/DownloadService.hpp"
@@ -128,6 +129,27 @@ PanelApplication::PanelApplication(QObject* parent)
                          m_instanceManager->route(instanceId, env);
                      });
 
+    // ── Shared roster API (S3 dogfooding) ───────────────────────────────
+    // ONE InstanceApiImpl for the whole panel: injected into every plugin
+    // context (below, via the host) AND into the panel's own RosterApiModel
+    // (PanelUiBoot) — the sidebar's read path and the plugin SDK's read path
+    // converge on this single object. Registered AFTER the manager → dies
+    // BEFORE it (registration-reverse), so its model-signal connections
+    // never dangle. Zero core behavior change: it only re-homes the object
+    // that used to be a per-plugin PluginContextImpl member.
+    m_instanceApi = new core::InstanceApiImpl(m_instanceManager, this);
+
+    // ── Shared instance-control write API (S2, v1.2) ────────────────────
+    // ONE InstanceControlApiImpl for the whole panel, same discipline as
+    // the shared InstanceApiImpl above: injected into every plugin context
+    // (PluginHost hands it to PluginContextImpl::queryApi — gated there by
+    // the "instance_lifecycle" capability AND the live plugin_write_enabled
+    // switch) and into the panel's own RosterApiModel write bridge (host
+    // bridge, deliberately NOT capability-gated). Registered after
+    // m_instanceApi → dies before it (registration-reverse).
+    m_instanceControlApi = new core::InstanceControlApiImpl(m_instanceManager,
+                                                            this);
+
     // ── Plugin framework (P4, §B.6) ─────────────────────────────────────
     // Registry first (pure store, no deps), host last (observes the roster
     // above; its page model / stream / config root are mounted later by
@@ -147,6 +169,19 @@ PanelApplication::PanelApplication(QObject* parent)
         ConfigDir::downloadsDir(), ConfigDir::userVoicePacksDir(), this);
     m_pluginHost = new core::PluginHost(m_pluginRegistry, this);
     m_pluginHost->setInstanceManager(m_instanceManager);
+    m_pluginHost->setInstanceApi(m_instanceApi);
+    m_pluginHost->setInstanceControlApi(m_instanceControlApi);
+    // S2: the host-global plugin_write_enabled kill-switch (panel_config
+    // kv, absent/"1" = enabled — the documented default). LIVE read on
+    // every queryApi call, so flipping the kv row revokes plugin write
+    // access without a panel restart. getValue never throws (failed db →
+    // fallback value → enabled), keeping the GUI-thread no-block contract.
+    m_pluginHost->setWriteEnabledProvider([this]() {
+        return m_databaseManager->getValue(
+                   QStringLiteral("plugin_write_enabled"),
+                   QStringLiteral("1"))
+            != QStringLiteral("0");
+    });
     m_pluginHost->setConfigRoot(ConfigDir::configDir());
     m_pluginHost->setDownloadService(m_downloadService);
 }
@@ -174,6 +209,16 @@ PendingRequests* PanelApplication::pendingRequests()
 InstanceManager* PanelApplication::instanceManager()
 {
     return m_instanceManager;
+}
+
+core::InstanceApiImpl* PanelApplication::instanceApi()
+{
+    return m_instanceApi;
+}
+
+core::InstanceControlApiImpl* PanelApplication::instanceControlApi()
+{
+    return m_instanceControlApi;
 }
 
 core::PluginRegistry& PanelApplication::pluginRegistry()

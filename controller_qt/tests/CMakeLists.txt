@@ -933,3 +933,51 @@ target_link_libraries(InstallPipelineTest PRIVATE pet_panel_core Qt6::Test)
 pet_deploy_qt_test(InstallPipelineTest)
 
 add_test(NAME InstallPipelineTest COMMAND InstallPipelineTest)
+
+# RosterApiModelTest (S3 roster dogfooding): the sidebar roster READ model
+# over pet::IInstanceApi, exercised through a programmable fake API (pure
+# interface — no core/ instance needed). Five slots: initial snapshot load,
+# rosterChanged → full model reset (countChanged only on size change),
+# role-name/role-data contract (bytes match InstanceManager's roster roles
+# so QML delegates bind unchanged), unsubscribe-on-destruction (no zombie
+# fanout, no crash), null-API tolerance. Links pet_panel_core
+# (RosterApiModel lives there). QTEST_APPLESS_MAIN — pure model + a
+# synchronous fake fanout, no event loop needed.
+qt_add_executable(RosterApiModelTest RosterApiModelTest.cpp)
+target_link_libraries(RosterApiModelTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(RosterApiModelTest)
+
+add_test(NAME RosterApiModelTest COMMAND RosterApiModelTest)
+
+# InstanceControlApiImplTest (S2, v1.2): the real pet::IInstanceControlApi
+# over a REAL InstanceManager harness (same QTemporaryDir + savePanel-lambda
+# pattern as InstanceManagerTest). Five slots: create (roster visibility via
+# the shared InstanceApiImpl, autoStart persistence, empty-label rejection),
+# remove (stopped immediate + NotFound + observer rosterChanged), lifecycle
+# forwarding (start/stop/restart/loadModel state flips + NotFound),
+# observer state fanout (full InstanceRuntime snapshot on a property NOTIFY,
+# modelLoadFailed callback, unsubscribe), and the POSIX two-phase remove +
+# Busy matrix over the fake-sleeper renderer. QTEST_MAIN — the two-phase
+# slot pumps the event loop via QTRY_COMPARE_WITH_TIMEOUT.
+qt_add_executable(InstanceControlApiImplTest InstanceControlApiImplTest.cpp)
+target_link_libraries(InstanceControlApiImplTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(InstanceControlApiImplTest)
+
+add_test(NAME InstanceControlApiImplTest COMMAND InstanceControlApiImplTest)
+
+# PluginQueryApiTest (S2, v1.2): the queryApi gating matrix (capability ×
+# host plugin_write_enabled switch → shared real impl / capability stub /
+# nullptr; version floor; degraded wiring) plus the bidirectional
+# plugin↔UI dogfooding case — a fake static plugin creates an instance via
+# queryApi inside initialize() and the panel's RosterApiModel write bridge
+# fires rosterChanged back into the plugin's observer, through a real
+# PluginHost over a real InstanceManager harness. QTEST_MAIN — parity with
+# PluginHostTest.
+qt_add_executable(PluginQueryApiTest PluginQueryApiTest.cpp)
+target_link_libraries(PluginQueryApiTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(PluginQueryApiTest)
+
+add_test(NAME PluginQueryApiTest COMMAND PluginQueryApiTest)

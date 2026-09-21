@@ -95,6 +95,7 @@ target_sources(pet_panel_api INTERFACE
     src/api/IPanelPlugin.hpp
     src/api/IPluginContext.hpp
     src/api/IInstanceApi.hpp
+    src/api/IInstanceControlApi.hpp
     src/api/IVoicePackApi.hpp
     src/api/IDownloadApi.hpp
     src/api/IUiApi.hpp
@@ -284,6 +285,14 @@ qt_add_library(pet_panel_core STATIC
     # processes its Q_OBJECT metadata.
     src/ui/ModelController.cpp
     src/ui/ModelController.hpp
+    # S3 roster dogfooding: sidebar roster READ model over pet::IInstanceApi
+    # (api/ + Qt includes ONLY — no core/ dependency by design). Registered
+    # as the 'rosterModel' context property by PanelUiBoot; Main.qml's nav
+    # pane roster list + count badge bind here while every write path
+    # (create/delete/select) stays on 'instanceManager' until S2. The .hpp
+    # is listed so AUTOMOC processes its Q_OBJECT metadata.
+    src/ui/RosterApiModel.cpp
+    src/ui/RosterApiModel.hpp
     src/core/InstanceSessionMonitor.cpp
     # SQLite config backend: DatabaseManager owns <configDir>/app.db (schema:
     # panel_config kv, instance_configs, assets, asset_refs). PanelStateManager

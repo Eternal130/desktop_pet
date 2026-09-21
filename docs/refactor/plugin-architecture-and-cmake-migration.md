@@ -377,3 +377,47 @@ cmake/toolchain-mingw-renderer.cmake（renderer，系统 MinGW，路径经环境
 **v2 修订摘要**: 事实修正 F1（17 个 context property）/F3（poc 目标）/F7·F11（141 处 SOURCE_DIR、qputenv 脚注）；接口 B.3 观察者反转；A.2 qt_version/build_type 规则与理由修正（对齐 Qt 官方 BC 策略与 MinGW 实情）；A.1 崩溃转储 + CI 诚实度；B.4 能力门控降为建议性表述；B.2 析构假设标注 + 退出 QA；B.6 资源布局（qrc）+ 校验措辞降级；P1a 验收门改产物等价（DLL 清单级）；新增 P1d 最小 CI；估时更新（总量 30–42，MVP 24–30）。
 
 **2026-09-19 三项拍板（已回写正文）**: ① P1d 最小 CI 采纳，计入总量（31–43.5 人日）；② poc 目标随 P2 退役删除（删目标 + `src/poc_main.cpp`；P1a/P1b 期间照常构建并纳入产物清单）；③ qml module backing target 归 pet_panel_core（core 接受 Qt6::Quick 依赖，注册点搬迁变库内搬家）。
+
+---
+
+## 修订 v3（2026-09-21）——插件 SDK 契约修订（路线图 S1）
+
+> **状态**: 仅契约层（`src/api/` 头文件 + PluginContextImpl 桩），不实现新接口；全部为加法变更，`kApiMinor` 0 → 1（API 1.1）。趁阶段 2（动态插件）未上线完成，vtable 语义对既有插件零影响（同仓全量重编）。
+
+### 1. 推翻「IInstanceApi 维持只读」（2026-09-19 P6a 评审结论第 3 条）
+
+- **原结论**: 评审第 3 条"IInstanceApi 维持只读"（§B.3 草案注释"每方法都是永久承诺"）。
+- **推翻理由**: ① 面板自身功能（dogfooding）需要插件侧具备实例写能力——只读花名册限制了第一方插件对宿主能力的完整复用；② 对第一方进程内插件收权不增加任何安全（§A.1 已定"第一方插件 = 面板组成部分"），只读承诺是自缚手脚的无收益约束；③ 阶段 2 动态插件未上线，此刻放开成本最低（无二进制兼容包袱）。
+- **落地方式**: IInstanceApi **接口形状保持只读**（v1.0 vtable 冻结不动，零签名变更）；写能力放行至**新接口族 `IInstanceControlApi`**（阶段 S2 落地）: 生命周期（建/删/启/停）+ 调参（缩放/布局/动作），经 `queryApi` 暴露，`instance_lifecycle` / `instance_tuning` 能力门控。头注释已改写（IInstanceApi.hpp），保留决策引用。
+
+### 2. 能力词表收编（PluginTypes.hpp `kCapability*` 常量）
+
+拼写与 PluginRegistry manifest 逐字解析（大小写敏感、零归一化）及宿主门控比对严格一致:
+
+| 常量 | 字符串 | 状态 / 门控范围 |
+|---|---|---|
+| `kCapabilityNetwork` | `network` | 既有拼写收编（PluginContextImpl 原为裸 QStringLiteral 比对）；门控 IDownloadApi 真实现 |
+| `kCapabilityVoicepacksInstall` | `voicepacks_install` | S2 预留；语音包安装管线写入口 |
+| `kCapabilityInstanceLifecycle` | `instance_lifecycle` | S2 预留；IInstanceControlApi 生命周期 |
+| `kCapabilityInstanceTuning` | `instance_tuning` | S2 预留；IInstanceControlApi 调参 |
+| `kCapabilitySettingsWrite` | `settings_write` | S2 预留；ISettingsApi 白名单键写入 |
+
+### 3. `IExtApi` 标记接口 + `IPluginContext::queryApi(apiId, minVersion)` seam
+
+- **问题（冻结悖论）**: 阶段 2 规则"扩展走新接口经 IPluginContext 新 accessor 暴露"自相矛盾——加 accessor 本身就是 IPluginContext 的 vtable 追加，阶段 2 明令禁止。
+- **方案**: v1.1 用**阶段 1 尾部追加特权（一次性用掉）**加一个封闭查询通道 `queryApi`，返回 `IExtApi*`（标记基类，定义于 IPluginContext.hpp，不新建头文件）；未知 apiId 或版本不足返回 nullptr（"能力不存在"语义，调用方必须优雅处理）。此后一切新接口族（IInstanceControlApi / ISettingsApi / …）继承 IExtApi、经 queryApi 获取，IPluginContext vtable 永不再动。
+- **宿主实现**: PluginContextImpl::queryApi 当前一律返回 nullptr（TODO(S2) 注释标注逐步接入）。这是本次唯一 core 侧改动，零行为变更。
+
+### 4. 宿主全局吊销开关 `plugin_write_enabled`（S2 计划，本修订未实现）
+
+写能力族（instance_lifecycle / instance_tuning / settings_write）上线时配套**宿主全局开关** `plugin_write_enabled`（面板配置，默认开）: 关闭时 queryApi 对全部写族返回 nullptr——与 §B.4"对第一方插件吊销有唯一开关"的既有口径对齐，给用户一键收回插件写能力的知情控制权。落地于 S2，届时 SDK README 与本文档同步更新。
+
+### 5. 变更清单（本修订）
+
+| 文件 | 变更 |
+|---|---|
+| `src/api/PluginTypes.hpp` | kApiMinor 0→1；`kCapability*` × 5（inline constexpr QLatin1StringView，非 inline 函数体，不违 §B.3） |
+| `src/api/IPluginContext.hpp` | `IExtApi` 标记类；IPluginContext 尾部追加 `queryApi`（最后一个 vtable 槽位） |
+| `src/api/IInstanceApi.hpp` | 头注释重写：删除"permanent commitment"只读承诺，记录推翻决策与本条目引用 |
+| `src/api/README.md` | 版本历史（v1.1 变更清单）；冻结纪律更新（阶段 1 尾部追加特权已用）；能力词表 |
+| `src/core/PluginContextImpl.hpp/.cpp` | queryApi 声明 + nullptr 桩（TODO(S2)） |

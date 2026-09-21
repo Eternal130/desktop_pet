@@ -17,7 +17,9 @@ class PluginPageModel;
 // object and registers the QML context properties in main()'s original
 // order, names verbatim. 17 through P3; P4 appends pluginManager +
 // pluginPages (18th/19th — added at the END of the registration sequence,
-// after the original 17, so every historical name keeps its slot).
+// after the original 17, so every historical name keeps its slot). S3
+// appends rosterModel (20th, at the roster's logical spot right after
+// instanceManager — additive, nothing reorders).
 //
 // Ownership: each bridge is a heap child of this PanelUiBoot; the boot object
 // itself is parented to the QQmlApplicationEngine by registerAll(). The
@@ -66,6 +68,7 @@ private:
     class WindowStateSaver* m_windowStateSaver;
     class VoicePackController* m_voicePackController;
     class ModelController* m_modelController;
+    class RosterApiModel* m_rosterApiModel;
     // P4 plugin bridges (constructed after the original bridges, before
     // the engine loads — see the .cpp for the mounting contract).
     core::PluginManager* m_pluginManager = nullptr;

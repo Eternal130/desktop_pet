@@ -36,6 +36,21 @@ void PluginHost::setInstanceManager(InstanceManager* instanceManager)
     m_instanceManager = instanceManager;
 }
 
+void PluginHost::setInstanceApi(InstanceApiImpl* instanceApi)
+{
+    m_instanceApi = instanceApi;
+}
+
+void PluginHost::setInstanceControlApi(InstanceControlApiImpl* instanceControlApi)
+{
+    m_instanceControlApi = instanceControlApi;
+}
+
+void PluginHost::setWriteEnabledProvider(std::function<bool()> provider)
+{
+    m_writeEnabledProvider = std::move(provider);
+}
+
 void PluginHost::setPageModel(PluginPageModel* pageModel)
 {
     m_pageModel = pageModel;
@@ -98,7 +113,26 @@ void PluginHost::initializeAll()
         }
         try {
             entry->instance = entry->create();
-            auto* ctx = new PluginContextImpl(entry->manifest.id, m_instanceManager,
+            // S3 roster dogfooding: prefer the SHARED InstanceApiImpl from
+            // the service tree (PanelApplication) so plugins and the panel's
+            // own RosterApiModel observe the same object. Degraded wiring
+            // (tests / no service tree): per-host fallback over the injected
+            // InstanceManager — the pre-S3 per-context behavior, parented
+            // here so ownership stays local and registration order keeps it
+            // alive past the contexts created after it.
+            InstanceApiImpl* api = m_instanceApi;
+            if (api == nullptr)
+                api = new InstanceApiImpl(m_instanceManager, this);
+            // S2 (v1.2): same per-host fallback for the instance-control
+            // write API — a host without the PanelApplication service tree
+            // (tests, degraded wiring) still serves queryApi with a local
+            // implementation over the injected InstanceManager.
+            InstanceControlApiImpl* controlApi = m_instanceControlApi;
+            if (controlApi == nullptr)
+                controlApi = new InstanceControlApiImpl(m_instanceManager, this);
+            auto* ctx = new PluginContextImpl(entry->manifest.id, api,
+                                              controlApi,
+                                              m_writeEnabledProvider,
                                               m_pageModel, m_notificationStream,
                                               m_configRoot, m_downloadService,
                                               entry->manifest.capabilities,

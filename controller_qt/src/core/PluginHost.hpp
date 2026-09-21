@@ -32,6 +32,8 @@ class NotificationStreamController;
 namespace core {
 
 class DownloadService;
+class InstanceApiImpl;
+class InstanceControlApiImpl;
 class PluginContextImpl;
 class PluginPageModel;
 
@@ -45,6 +47,24 @@ public:
     // ── Dependency injection (all optional nullptr-safe; call before
     // initializeAll — PanelApplication/PanelUiBoot own the lifetimes) ──
     void setInstanceManager(InstanceManager* instanceManager);
+    // S3 roster dogfooding: the SHARED InstanceApiImpl handed to every
+    // plugin context (and to the panel's own RosterApiModel). When null,
+    // initializeAll falls back to a per-host InstanceApiImpl over the
+    // injected InstanceManager — the pre-S3 behavior (tests, degraded
+    // wiring).
+    void setInstanceApi(InstanceApiImpl* instanceApi);
+    // S2 (v1.2): the SHARED InstanceControlApiImpl served through
+    // queryApi("pet.instance_control") when a plugin's manifest grants
+    // "instance_lifecycle" and the write switch (below) is on. Same
+    // fallback pattern as setInstanceApi: null → initializeAll constructs
+    // a per-host implementation over the injected InstanceManager.
+    void setInstanceControlApi(InstanceControlApiImpl* instanceControlApi);
+    // S2 (v1.2): host-global plugin_write_enabled kill-switch provider
+    // (PanelApplication wires it to the panel_config kv row; absent
+    // provider = enabled, mirroring the kv default). Consulted LIVE on
+    // every queryApi call so revocation needs no restart. std::function is
+    // host-internal (core↔app seam), never crosses the plugin boundary.
+    void setWriteEnabledProvider(std::function<bool()> provider);
     void setPageModel(PluginPageModel* pageModel);
     void setNotificationStream(NotificationStreamController* stream);
     void setConfigRoot(const QString& configRoot);
@@ -92,6 +112,9 @@ public:
 private:
     PluginRegistry& m_registry;
     InstanceManager* m_instanceManager = nullptr;
+    InstanceApiImpl* m_instanceApi = nullptr; // shared (service tree), not owned
+    InstanceControlApiImpl* m_instanceControlApi = nullptr; // S2: shared, not owned
+    std::function<bool()> m_writeEnabledProvider;           // S2: live kill-switch
     PluginPageModel* m_pageModel = nullptr;
     NotificationStreamController* m_notificationStream = nullptr;
     QString m_configRoot;

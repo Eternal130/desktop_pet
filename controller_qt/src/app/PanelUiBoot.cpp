@@ -20,6 +20,7 @@
 #include "core/InstanceSession.hpp"
 #include "core/DownloadService.hpp"
 #include "core/PanelConfigController.hpp"
+#include "core/PluginContextImpl.hpp" // complete core::InstanceApiImpl (pet::IInstanceApi upcast)
 #include "core/PluginHost.hpp"
 #include "core/PluginManager.hpp"
 #include "core/PluginPageModel.hpp"
@@ -31,6 +32,7 @@
 #include "system/TrayManager.hpp"
 #include "ui/NotificationStreamController.hpp"
 #include "ui/ModelController.hpp"
+#include "ui/RosterApiModel.hpp"
 #include "ui/VoicePackController.hpp"
 
 // Moved from main() (P3/M3). All 17 context property names and their
@@ -178,14 +180,33 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     m_engine.rootContext()->setContextProperty("pendingRequests",
                                                m_app.pendingRequests());
 
-    // Instance roster context property (Phase 5, todo 7). Sidebar.qml binds
-    // `model: instanceManager` directly to the QAbstractListModel; the Add /
+    // Instance roster context property (Phase 5, todo 7). The Add /
     // Delete flows call its Q_INVOKABLE createInstance / requestDelete /
-    // deleteInstance. The model itself lives in the PanelApplication service
-    // tree (M2) — destroyed after the engine by main()'s stack-reverse, so it
-    // still outlives QML.
+    // deleteInstance (S3: write paths stay here until the S2 migration).
     m_engine.rootContext()->setContextProperty("instanceManager",
                                                m_app.instanceManager());
+
+    // RosterApiModel context property (S3 dogfooding → S2 write path).
+    // The sidebar's roster READ path — list model + count badge — goes
+    // through the SAME pet::IInstanceApi implementation the plugin SDK
+    // hands to plugins (PanelApplication constructs one shared
+    // InstanceApiImpl and injects it both here and into PluginHost).
+    // Sidebar QML binds `model: rosterModel`; selection (selectInstance →
+    // instanceAt) keeps using instanceManager above, and S2 moves the
+    // sidebar DELETE write path onto rosterModel.deleteInstance (backed
+    // by the shared pet::IInstanceControlApi — the host bridge is
+    // deliberately NOT capability-gated; the plugin side is, at
+    // queryApi). The remaining create flows (Welcome/detail pages)
+    // migrate in S5.
+    // Lifetime (M3): heap child of this PanelUiBoot (engine subtree) —
+    // dies during engine destruction, BEFORE the PanelApplication service
+    // tree that owns the shared InstanceApiImpl/InstanceControlApiImpl,
+    // so the injected interface pointers outlive the model (see
+    // mount-point note).
+    m_rosterApiModel = new RosterApiModel(m_app.instanceApi(),
+                                          m_app.instanceControlApi(), this);
+    m_engine.rootContext()->setContextProperty("rosterModel",
+                                               m_rosterApiModel);
 
     // TrayManager context property (Wave 7 todo 13). Main.qml's Connections
     // block catches requestContextMenu / visibilityToggled / showSettings /

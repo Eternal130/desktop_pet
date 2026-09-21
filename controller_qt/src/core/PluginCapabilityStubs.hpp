@@ -20,6 +20,7 @@
 #include <functional>
 
 #include "api/IDownloadApi.hpp"
+#include "api/IInstanceControlApi.hpp"
 #include "api/IVoicePackApi.hpp"
 
 namespace core {
@@ -33,6 +34,25 @@ public:
                      pet::DownloadListener* listener) override;
     void cancel(pet::JobId job) override;
     pet::PluginError installArchive(pet::JobId job, const pet::InstallSpec& spec) override;
+};
+
+// S2 (v1.2): IInstanceControlApi capability stub — handed out when the
+// plugin manifest lacks "instance_lifecycle" OR the host-global
+// plugin_write_enabled switch is off. Same loud-failure discipline as
+// DownloadApiStub: every method returns PluginError::Capability, no silent
+// no-ops. Stateless by design (one instance can serve any number of
+// contexts; the context owns it).
+class InstanceControlApiStub : public pet::IInstanceControlApi
+{
+public:
+    ~InstanceControlApiStub() override = default;
+
+    pet::PluginError create(const pet::InstanceSpec& spec, QString* outUuid) override;
+    pet::PluginError remove(const QString& uuid) override;
+    pet::PluginError start(const QString& uuid) override;
+    pet::PluginError stop(const QString& uuid) override;
+    pet::PluginError restart(const QString& uuid) override;
+    pet::PluginError loadModel(const QString& uuid, const QString& modelName) override;
 };
 
 class VoicePackApiImpl : public QObject, public pet::IVoicePackApi

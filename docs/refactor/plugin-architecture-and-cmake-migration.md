@@ -410,7 +410,7 @@ cmake/toolchain-mingw-renderer.cmake（renderer，系统 MinGW，路径经环境
 
 ### 4. 宿主全局吊销开关 `plugin_write_enabled`（S2 计划，本修订未实现）
 
-写能力族（instance_lifecycle / instance_tuning / settings_write）上线时配套**宿主全局开关** `plugin_write_enabled`（面板配置，默认开）: 关闭时 queryApi 对全部写族返回 nullptr——与 §B.4"对第一方插件吊销有唯一开关"的既有口径对齐，给用户一键收回插件写能力的知情控制权。落地于 S2，届时 SDK README 与本文档同步更新。
+写能力族（instance_lifecycle / instance_tuning / settings_write）上线时配套**宿主全局开关** `plugin_write_enabled`（面板配置，默认开）: 关闭时 queryApi 对全部写族返回 **capability stub**（每个方法返回 `PluginError::Capability`，响亮失败——与"能力未授予"同一语义，调用方无需区分失败原因）。生效时机为**下一次 queryApi 调用**起：插件此前已缓存持有的真实现指针不受影响（字面"立即吊销"需 per-call 门控代理，见 src/api/README.md 阶段 2 候选）——与 §B.4"对第一方插件吊销有唯一开关"的既有口径对齐，给用户一键收回插件写能力的知情控制权。落地于 S2，届时 SDK README 与本文档同步更新。（2026-09-21 审计勘误: 原文写作"返回 nullptr"，与 S2 落地实现不符——实装为 stub，此处按实装修正。）
 
 ### 5. 变更清单（本修订）
 
@@ -421,3 +421,84 @@ cmake/toolchain-mingw-renderer.cmake（renderer，系统 MinGW，路径经环境
 | `src/api/IInstanceApi.hpp` | 头注释重写：删除"permanent commitment"只读承诺，记录推翻决策与本条目引用 |
 | `src/api/README.md` | 版本历史（v1.1 变更清单）；冻结纪律更新（阶段 1 尾部追加特权已用）；能力词表 |
 | `src/core/PluginContextImpl.hpp/.cpp` | queryApi 声明 + nullptr 桩（TODO(S2)） |
+
+---
+
+## 修订 v4（2026-09-21）——API 优先迁移 S4-S7 落地记录（SDK v1.2 → v1.4）
+
+> **状态**: 全部已合入 master（e2f61b6..a8e1be3 + S7）。本修订为补记（S4-S6）+
+> 当期记录（S7），并记录两项架构决策：**InstanceSession 解体延期**与**API 边界门禁**。
+
+### 1. 路线图 S2-S6 摘要（已落地，详见 src/api/README.md 版本历史）
+
+- **S2 (v1.2)**: `IInstanceControlApi` 写族（建/删/启/停/重启/切模型）+ 能力门控
+  （`instance_lifecycle`/`instance_tuning`）+ 宿主全局吊销开关 `plugin_write_enabled`
+  （活读）+ `IInstanceObserver` 实例级观察。
+- **S3**: 侧边栏花名册读写改走共享 `InstanceApiImpl`/`RosterApiModel`（同一 vtable）。
+- **S4**: stop/delete 路径事件化，移除 GUI 嵌套事件循环（行为冻结面）。
+- **S5 (v1.3)**: `ITuningApi`（9 个调参操作）+ `IModelApi`（只读，单一扫描缓存）+
+  详情页 13 处写调用换绑 `InstanceControlBridge`；InstanceSession 增补
+  `mountedVoicePackChanged` 最小 NOTIFY 缝。
+- **S6 (v1.3)**: `ISettingsApi`（4 个白名单写）+ `IVoicePackApi` 尾追
+  `IPackListObserver`；PanelConfigController/VoicePackController 内部转调注入 API。
+- **宿主 dogfooding 覆盖面（S7 收口后）**: 侧边栏读写（RosterApiModel）、详情页全部
+  写（InstanceControlBridge: 13 处）、创建流三处（WelcomePage/InstanceDetailPage/
+  CreateInstanceDialog → rosterModel.createInstance）、设置页四字段 +
+  plugin_write_enabled 开关（PanelConfigController → ISettingsApi）、语音包挂载
+  （VoicePackController → ITuningApi）、模型库页（ModelLibraryPage 换绑:
+  loadModel ×2 + 应用到全部 + playMotion 试播）、欢迎页启停/重启三键、语音包页
+  triggerHitArea 试触发。**读路径一律保留活对象绑定**（Q_PROPERTY/monitorModel/
+  motionGroupNames）——已批准的架构边界: 写走 facade，读留活对象。
+
+### 2. S7 (v1.4): 监控流 `IMonitorApi`
+
+- 只读族 `pet.monitor`（照 `pet.model` 模式: 不门控、未接线 nullptr）:
+  `history()`（60 样本环形全量）+ `subscribe()`/`unsubscribe()`（逐样本推送，
+  每订阅者独立 `minIntervalMs` 合并节流: 窗口内跳过不排队，下次带最新快照）。
+- `MonitorSample` 扁平 POD: `MonitorSnapshot` 的 std::optional 半边投影为
+  **-1 哨兵**（GPU/VRAM 未上报）——optional 不跨界（§B.3）。
+- **宿主侧不迁移图表**: MonitorPage/QML 继续直用 `session.monitorModel()`
+  （活对象绑定、QtCharts 序列组装留在页面）；IMonitorApi 面向插件消费者。
+- MonitorDataModel **零改动**（history/latestSnapshot/snapshotAppended 既有公共
+  读面即接线缝）；InstanceSession 同样零改动（monitorModel() 的 QObject*
+  返回值 + 静态投射）。
+
+### 3. S7: API 边界门禁（R3 落地）
+
+- `controller_qt/scripts/api_boundary_gate.sh`: grep 检测 QML 与 src/ui 宿主桥对
+  核心写方法的直调。允许清单（文件+行级豁免，逐条理由）: `setAutoStart`/
+  `resetLayout`/`getLayout`（不在任何 API 族，记录在案）、`instanceManager.stopAll`
+  （宿主退出壳流程，TODO）、VoicePackController 降级接线回落分支（测试/无 API 注入）。
+- ctest 强制: `ApiBoundaryGateTest`（当前树绿灯）+ `ApiBoundaryGateSelfTest`
+  （注入违规探针→脚本红→清理→复绿，证明门禁会咬人；与前者共享 RESOURCE_LOCK）。
+
+### 4. 架构决策: InstanceSession 解体**延期**
+
+原路线图设想把 InstanceSession 逐步解体为薄 facade（API 优先迁移的终态之一）。
+**决策（2026-09-21，S7）: 延期**。理由: 现阶段 facade（共享 API 单例 + 桥）已满足
+全部目标（宿主与插件同 vtable、写收口、可测试），InstanceSession 仍是唯一的状态
+所有者与事件枢纽，解体只有成本没有收益。**触发判据**（满足其一再评估）:
+1. 出现第二个进程内消费者需要绕开 QML 活对象绑定直取会话状态（当前只有
+   IMonitorApi 一族，且已用"读面投影"解决）;
+2. 阶段 2 SHARED 化（pet_panel_core 变动态库）提上日程时，InstanceSession 的
+   TU 拆分布局与符号可见性需随 ABI 策略一并重审。
+
+### 5. 变更清单（S7）
+
+| 文件 | 变更 |
+|---|---|
+| `src/api/PluginTypes.hpp` | kApiMinor 3→4；`MonitorSample`/`MonitorSubscription` POD |
+| `src/api/IMonitorApi.hpp` | 新头: `IMonitorObserver` + `IMonitorApi`（apiId `pet.monitor`，族版本 1） |
+| `src/core/PluginContextImpl.hpp/.cpp` | `MonitorApiImpl`（投影 + 节流扇出）+ queryApi 路由 + 注入口 |
+| `src/core/PluginHost.hpp/.cpp` | `setMonitorApi` 注入口 + per-host 回退 |
+| `src/app/PanelApplication.hpp/.cpp` | 共享 MonitorApiImpl 单例 + accessor + 注入 |
+| `controller_qt/CMakeLists.txt` | IMonitorApi.hpp 入 pet_panel_api |
+| `qml/pages/ModelLibraryPage.qml` | 两处 loadModel + playMotion 试播换绑 instanceControl（S5 遗留收口） |
+| `qml/pages/WelcomePage.qml` | 启/停/重启三键换绑 instanceControl |
+| `qml/pages/VoicePackPage.qml` | triggerHitArea 试触发换绑 instanceControl |
+| `controller_qt/scripts/api_boundary_gate.sh` | 新增: 边界门禁脚本 |
+| `controller_qt/tests/CMakeLists.txt` | MonitorApiImplTest + 两个门禁 ctest |
+| `controller_qt/tests/MonitorApiImplTest.cpp` | 新增: 投影/节流/订阅生命周期七槽 |
+| `controller_qt/tests/api_boundary_gate_selftest.sh` | 新增: 门禁自咬测试 |
+| `src/api/README.md` | v1.4 版本历史；族×能力×开关总表（五族全景） |
+| 根 `AGENTS.md` / `controller_qt/README.md` | 知识库刷新（API 面、测试数、门禁纪律） |

@@ -207,8 +207,12 @@ Rectangle {
                     irow._failedName = ""
                     irow._rolledBack = false
                     // Running: immediate load_model; stopped: config-only
-                    // (backend contract) — same call either way.
-                    s.loadModel(combo.currentText)
+                    // (backend contract) — same call either way. S7: write
+                    // goes through the API bridge (instanceControl holds
+                    // the shared IInstanceControlApi); the model_load_failed
+                    // rollback feedback below keeps listening to the live
+                    // session signal (reads stay on the live object).
+                    instanceControl.loadModel(s.uuid, combo.currentText)
                 }
             }
         }
@@ -496,8 +500,9 @@ Rectangle {
                                         const row = root._trialRowFor(
                                             root.selectedModel)
                                         if (row >= 0)
-                                            instanceManager.instanceAt(row)
-                                                .playMotion(modelData, 0)
+                                            instanceControl.playMotion(
+                                                instanceManager.instanceAt(row).uuid,
+                                                modelData, 0)
                                     }
                                 }
                             }
@@ -663,10 +668,13 @@ Rectangle {
         message: qsTr("将把「%1」应用到以下实例：%2。\n运行中的实例即时切换，未启动的将在下次启动时生效。")
             .arg(root.selectedModel).arg(_targets)
         onPositiveClicked: {
+            // S7: writes through the shared API bridge (int error return
+            // ignored here — failures surface per-row via modelLoadFailed,
+            // the same rollback path as the single switch).
             for (let i = 0; i < instanceManager.rowCount(); ++i) {
                 const s = instanceManager.instanceAt(i)
                 if (s)
-                    s.loadModel(root.selectedModel)
+                    instanceControl.loadModel(s.uuid, root.selectedModel)
             }
         }
     }

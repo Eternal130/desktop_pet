@@ -16,11 +16,13 @@
 #include <QVector>
 
 #include <functional>
+#include <optional>
 
 #include "api/IDownloadApi.hpp"
 #include "api/IInstanceApi.hpp"
 #include "api/IInstanceControlApi.hpp"
 #include "api/IModelApi.hpp"
+#include "api/IMonitorApi.hpp"
 #include "api/IPluginContext.hpp"
 #include "api/ISettingsApi.hpp"
 #include "api/ITuningApi.hpp"
@@ -34,6 +36,7 @@ class NotificationStreamController;
 class InstanceSession;
 class DatabaseManager;
 struct PanelConfig;
+struct MonitorSnapshot; // ui/MonitorDataModel.hpp (MonitorApiImpl seam)
 
 namespace core {
 
@@ -234,6 +237,61 @@ private:
     DatabaseManager* m_db = nullptr; // shared backend, not owned
 };
 
+// S7 (v1.4): real resource-monitor read API — the pet::IMonitorApi
+// behind queryApi(kMonitorApiId). Read-only family (ungated, like
+// pet.model): wraps each session's MonitorDataModel — the SAME
+// 60-sample ring the Monitor page renders; zero MonitorDataModel
+// changes (history()/latestSnapshot()/snapshotAppended are the existing
+// public read surfaces). history() projects MonitorSnapshot → the flat
+// MonitorSample POD (std::optional halves → -1 sentinel); subscribe
+// fans out latestSnapshot() on the model's snapshotAppended signal with
+// per-subscriber minIntervalMs merge throttling. The panel's own
+// MonitorPage.qml keeps binding the live model object (approved
+// host boundary — this family serves plugin consumers only).
+class MonitorApiImpl : public QObject, public pet::IMonitorApi
+{
+    Q_OBJECT
+public:
+    // instanceManager must outlive this object (service tree guarantees
+    // it; null is tolerated → history() is empty, subscribe() NotFound).
+    MonitorApiImpl(InstanceManager* instanceManager, QObject* parent);
+
+    QVector<pet::MonitorSample> history(const QString& uuid) override;
+    pet::PluginError subscribe(const QString& uuid, pet::IMonitorObserver*,
+                               const pet::MonitorSubscription&) override;
+    void unsubscribe(const QString& uuid,
+                     pet::IMonitorObserver*) override;
+
+private:
+    // One live subscription (flat value type; the observer is NOT owned).
+    struct Subscription {
+        QString uuid;
+        pet::IMonitorObserver* observer = nullptr;
+        int minIntervalMs = 0;
+        qint64 lastPushMs = 0; // 0 → the first sample always pushes
+    };
+
+    // Attach the snapshotAppended wiring to one session's model (called
+    // for sessions present at construction and for every row later
+    // inserted — the InstanceApiImpl::observeSession pattern). The
+    // connection dies with the sender (the session deleteLaters the
+    // model with itself), so no manual teardown is needed.
+    void observeSession(InstanceSession* session);
+    // Throttled fanout of the model's LATEST snapshot to that uuid's
+    // subscribers (the merge floor is per subscriber).
+    void fanoutSample(const QString& uuid);
+    // Locate the session whose uuid() == uuid (linear scan over the
+    // manager's public roster surface; null when unknown/unwired).
+    InstanceSession* sessionForUuid(const QString& uuid) const;
+    // MonitorSnapshot → flat MonitorSample (optional halves → -1/0
+    // sentinels; see MonitorSample's PluginTypes comment).
+    static pet::MonitorSample projectSnapshot(
+        const std::optional<MonitorSnapshot>& snapshot);
+
+    InstanceManager* m_instanceManager = nullptr; // not owned (service tree)
+    QVector<Subscription> m_subscriptions;
+};
+
 // Real download API (P5): forwards to the host DownloadService when the
 // plugin's manifest grants the "network" capability; without the grant
 // every method fails with PluginError::Capability (§B.4 capability gate —
@@ -332,6 +390,10 @@ public:
     void setModelApi(pet::IModelApi* modelApi) { m_modelApi = modelApi; }
     void setSettingsApi(pet::ISettingsApi* settingsApi) { m_settingsApi = settingsApi; }
     void setVoicePackApi(pet::IVoicePackApi* voicePackApi) { m_sharedVoicePackApi = voicePackApi; }
+    // ── v1.4 (S7) shared-implementation injection ─────────────────────
+    // Same seam + semantics as the model family (a read): null → queryApi
+    // answers nullptr ("feature absent"); injected → the shared impl.
+    void setMonitorApi(pet::IMonitorApi* monitorApi) { m_monitorApi = monitorApi; }
 
 private:
     QString m_pluginId;
@@ -361,6 +423,9 @@ private:
     SettingsApiStub m_settingsStub;
     bool m_instanceTuningGranted = false;
     bool m_settingsWriteGranted = false;
+    // v1.4 (S7): shared monitor read implementation, not owned; null →
+    // nullptr ("feature absent" — a read family has no capability story).
+    pet::IMonitorApi* m_monitorApi = nullptr;
 };
 
 } // namespace core

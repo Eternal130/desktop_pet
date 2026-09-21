@@ -66,6 +66,11 @@ void PluginHost::setVoicePackApi(pet::IVoicePackApi* voicePackApi)
     m_voicePackApi = voicePackApi;
 }
 
+void PluginHost::setMonitorApi(pet::IMonitorApi* monitorApi)
+{
+    m_monitorApi = monitorApi;
+}
+
 void PluginHost::setWriteEnabledProvider(std::function<bool()> provider)
 {
     m_writeEnabledProvider = std::move(provider);
@@ -165,6 +170,13 @@ void PluginHost::initializeAll()
             pet::ISettingsApi* settingsApi = m_settingsApi;
             if (settingsApi == nullptr)
                 settingsApi = new SettingsApiImpl(m_configRoot, this);
+            // S7 (v1.4): same per-host fallback for the monitor read
+            // family (a host without the PanelApplication service tree
+            // still serves queryApi("pet.monitor") over the injected
+            // InstanceManager).
+            pet::IMonitorApi* monitorApi = m_monitorApi;
+            if (monitorApi == nullptr)
+                monitorApi = new MonitorApiImpl(m_instanceManager, this);
             auto* ctx = new PluginContextImpl(entry->manifest.id, api,
                                               controlApi,
                                               m_writeEnabledProvider,
@@ -177,6 +189,7 @@ void PluginHost::initializeAll()
             ctx->setTuningApi(tuningApi);
             ctx->setModelApi(modelApi);
             ctx->setSettingsApi(settingsApi);
+            ctx->setMonitorApi(monitorApi); // v1.4 (S7)
             if (m_voicePackApi != nullptr)
                 ctx->setVoicePackApi(m_voicePackApi);
             m_contexts.append(ctx);

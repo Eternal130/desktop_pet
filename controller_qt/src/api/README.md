@@ -2,13 +2,13 @@
 
 第一方插件 SDK 接口头集合（P4 落地，P6a 冻结点前允许演进，冻结后变更走版本化）。
 设计合同: `docs/refactor/plugin-architecture-and-cmake-migration.md` §A/§B.3。
-**当前版本: API 1.3**（2026-09-21，见文末「版本历史」）。
+**当前版本: API 1.4**（2026-09-21，见文末「版本历史」）。
 
 ## 组成
 
 | 头文件 | 内容 |
 |---|---|
-| `PluginTypes.hpp` | POD/Qt 值类型（InstanceInfo / PackInfo / DownloadRequest / InstallSpec / PageDescriptor / v1.2: InstanceSpec / InstanceRuntime / **v1.3: ModelSummary**）+ PluginError / PluginLogLevel / 宿主 API 版本常量 + 能力词表常量（v1.1: `kCapabilityNetwork` / `kCapabilityVoicepacksInstall` / `kCapabilityInstanceLifecycle` / `kCapabilityInstanceTuning` / `kCapabilitySettingsWrite`，拼写与 manifest 解析逐字一致） |
+| `PluginTypes.hpp` | POD/Qt 值类型（InstanceInfo / PackInfo / DownloadRequest / InstallSpec / PageDescriptor / v1.2: InstanceSpec / InstanceRuntime / v1.3: ModelSummary / **v1.4: MonitorSample / MonitorSubscription**）+ PluginError / PluginLogLevel / 宿主 API 版本常量 + 能力词表常量（v1.1: `kCapabilityNetwork` / `kCapabilityVoicepacksInstall` / `kCapabilityInstanceLifecycle` / `kCapabilityInstanceTuning` / `kCapabilitySettingsWrite`，拼写与 manifest 解析逐字一致） |
 | `IPanelPlugin.hpp` | 插件唯一入口：`initialize(IPluginContext&)` / `shutdown()`；iid `org.desktop-pet.PanelPlugin/1.0` |
 | `IPluginContext.hpp` | 宿主服务面：instanceApi / voicePackApi / uiApi / downloadApi / pluginConfigDir / log + **v1.1 尾部追加 `queryApi`（阶段 2 后新接口族的唯一暴露通道）**；内含 `IExtApi` 标记接口 |
 | `IInstanceApi.hpp` | 只读实例花名册 + `IRosterObserver` 纯虚订阅（**禁 std::function**）。只读 = 接口形状保持（v1.0 vtable 布局不动）；「插件永不写实例」的只读**承诺**已被 2026-09-21 决策推翻，写能力走 S2 `IInstanceControlApi`（`queryApi` 暴露，`instance_lifecycle`/`instance_tuning` 能力门控）。v1.2 追加 `IInstanceObserver` + `subscribeInstances`/`unsubscribeInstances` 尾追（实例级状态观察） |
@@ -16,6 +16,7 @@
 | `ITuningApi.hpp` | **v1.3 (S5)** 实例调参写族: setOpacity / setVolume / setMuted / setFps / playMotion / setExpression / triggerHitArea / mountVoicePack / unmountVoicePack。继承 `IExtApi` 经 `queryApi` 获取；`instance_tuning` 能力 + 宿主开关门控；mount 的 packId 是**目录名**（宿主解析为绝对路径，未知包→NotFound） |
 | `IModelApi.hpp` | **v1.3 (S5)** 模型库只读族: availableModels / refreshScan / modelInfo（ModelSummary）。经 `queryApi` 获取；**只读不门控**（不受能力与写开关约束），未接线→nullptr |
 | `ISettingsApi.hpp` | **v1.3 (S6)** 面板设置写族（类型化方法，禁 QJsonObject 逃生舱）: setCloseAction / setConfirmOnExit / setStartMinimized / setDefaultModelName。`settings_write` 能力 + 宿主开关门控；**刻意不含 autoLaunchSystem**（宿主外壳能力不进插件 API） |
+| `IMonitorApi.hpp` | **v1.4 (S7)** 资源监控只读族: history（60 样本环形全量，POD 投影 -1 哨兵）+ subscribe/unsubscribe（IMonitorObserver 逐样本推送，每订阅者独立 minIntervalMs 合并节流）。经 `queryApi` 获取；**只读不门控**，未接线→nullptr；宿主自己的 MonitorPage 保留活对象绑定（架构边界），本族面向插件消费者 |
 | `IVoicePackApi.hpp` | 语音包发现（listPacks / refreshScan / installPath）+ **v1.3 追加 `IPackListObserver` + subscribePackList/unsubscribePackList**（包列表变化观察；挂载写走 ITuningApi） |
 | `IDownloadApi.hpp` | 宿主下载咽喉点（start / cancel / installArchive + DownloadListener 纯虚回调）；manifest 未授 `network` capability 时为 stub（§B.4） |
 | `IUiApi.hpp` | 页面注册 + 气泡通知；**无 unregisterPage/页面生命周期（刻意 YAGNI，防 P6a 重议）** |
@@ -99,7 +100,21 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 
 写开关说明（v1.2 引入、v1.3 扩面）: 宿主 kv `plugin_write_enabled`（缺省开）同时门控
 `instance_lifecycle` / `instance_tuning` / `settings_write` 三族——活读（每次 queryApi 现查），
-翻转即吊销、无需重启；只读族（`pet.model`、voicePackApi、instanceApi）不受其约束。
+翻转即吊销、无需重启；只读族（`pet.model`、`pet.monitor`、voicePackApi、instanceApi）
+不受其约束。
+
+族 × 能力 × 开关总表（v1.4 全景，queryApi 通道五族）:
+
+| apiId | 接口 | 能力门控 | 写开关 | 未接线时 |
+|---|---|---|---|---|
+| `pet.instance_control` | IInstanceControlApi | `instance_lifecycle` | 受控 | capability stub |
+| `pet.instance_tuning` | ITuningApi | `instance_tuning` | 受控 | capability stub |
+| `pet.model` | IModelApi | 无（只读） | 不受控 | nullptr |
+| `pet.settings` | ISettingsApi | `settings_write` | 受控 | capability stub |
+| `pet.monitor` | IMonitorApi | 无（只读） | 不受控 | nullptr |
+
+另有三个经 IPluginContext 固定 accessor 暴露的 v1.0 族: instanceApi / voicePackApi /
+uiApi / downloadApi（downloadApi 由 `network` 能力门控真实现 vs stub）。
 
 ## 配置写规约（v2）
 
@@ -125,6 +140,33 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
 `qrc:/` URL（§B.6）。
 
 ## 版本历史
+
+### v1.4（2026-09-21，kApiMajor=1 / kApiMinor=4）— S7 监控流 + 边界门禁
+
+全部为**加法**变更（一个经 queryApi 暴露的新只读族 + 两个 POD），零既有签名/顺序
+改动；`IPluginContext` 尾追特权未使用。
+
+1. **`kApiMinor` 3 → 4**。
+2. **`MonitorSample` / `MonitorSubscription` POD**（`PluginTypes.hpp`）:
+   扁平监控样本（controller/renderer CPU、RSS；GPU/VRAM **-1 哨兵**表示未上报——
+   禁 `std::optional` 跨界，投影规则与 MonitorPage 的 -1 显示哨兵一致）+
+   订阅节流参数（`minIntervalMs` 默认 2000 = 宿主 2s 轮询节奏的合并下限）。
+3. **`IMonitorApi`**（新头，apiId `pet.monitor`，族版本 1）: history（60 样本
+   环形全量，未知 uuid→空，绝不报错）+ subscribe/unsubscribe（`IMonitorObserver`
+   逐样本推送）。只读族——**不受能力与写开关门控**，注入即返回，未接线→nullptr。
+   数据源是每实例 MonitorDataModel（与 Monitor 页同一环形缓冲，零模型改动）；
+   节流为**每订阅者独立合并**（窗口内样本跳过、不排队，下次推送带最新快照）。
+   **宿主边界**: 面板自己的 MonitorPage/QML 保留 `session.monitorModel()` 活对象
+   绑定（读留活对象）；本族面向插件消费者，图表序列组装是订阅者自己的职责。
+4. **宿主装配**: MonitorApiImpl 共享单例（PanelApplication 服务树）+ PluginHost
+   注入口/per-host 回退 + queryApi 路由（照 pet.model 只读族模式）。
+5. **API 边界门禁**（R3 落地）: `controller_qt/scripts/api_boundary_gate.sh`
+   ——grep 检测 QML（`qml/**/*.qml`）与宿主桥（`src/ui/*.cpp`）对核心写方法的
+   直调（instanceControl/rosterModel 桥接收者豁免；允许清单逐条注释理由）；
+   经 ctest（ApiBoundaryGateTest + 自咬 ApiBoundaryGateSelfTest）强制执行。
+   随本版换绑收口: ModelLibraryPage 两处 loadModel + playMotion 试播、
+   WelcomePage 三处启停/重启、VoicePackPage triggerHitArea 试触发全部改走
+   instanceControl 桥（读保留活对象，`model_load_failed` 回滚反馈不动）。
 
 ### v1.3（2026-09-21，kApiMajor=1 / kApiMinor=3）— S5 运行面+模型域 / S6 设置+语音包域
 

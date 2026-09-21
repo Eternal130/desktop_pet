@@ -18,6 +18,7 @@
 
 #include <QString>
 #include <QVector>
+#include <QtGlobal> // qint64 (MonitorSample.capturedAtMs)
 
 namespace pet {
 
@@ -44,8 +45,12 @@ namespace pet {
 // stage-1 tail-append privilege is NOT re-spent: IVoicePackApi is not
 // yet frozen, this is a stage-1 family still evolving pre-P6a; see
 // api/README.md v1.3).
+// v1.4 (2026-09-21, S7): minor bumped for the additive expansion —
+// MonitorSample / MonitorSubscription PODs (below) and the new read-only
+// monitor family IMonitorApi (queryApi "pet.monitor", subscribe pushes
+// throttled per subscriber). No existing signature changed.
 constexpr int kApiMajor = 1;
-constexpr int kApiMinor = 3;
+constexpr int kApiMinor = 4;
 
 // ── Capability vocabulary (manifest "capabilities" entries; §B.4) ───────────
 // The exact, case-sensitive strings the host parses from plugin manifests
@@ -168,6 +173,43 @@ struct ModelSummary {
     QStringList motionGroups; // group names (QMap key order = sorted)
     QStringList expressions;  // FileReferences.Expressions[].Name
     QStringList hitAreas;     // HitAreas[].Name
+};
+
+// IMonitorApi::history() row / IMonitorObserver::sample() payload
+// (v1.4, S7). Flattened projection of the host's MonitorSnapshot (the
+// 60-sample ring buffer behind the Monitor page): the std::optional
+// halves are flattened into always-present doubles with a -1 SENTINEL
+// for "not reported" — std::optional must not cross the plugin boundary
+// (§B.3). Sentinel discipline:
+//   - rendererGpu / rendererVramUsed / rendererVramTotal: -1 when the
+//     renderer has not reported GPU stats or reported them null (Linux
+//     stub) — the same -1 sentinel the QML page renders as "—".
+//   - controllerCpu/Rss + rendererCpu/Rss: 0 when that half has not
+//     reported yet (they are never null on the wire; 0 is the model's
+//     own "no data" value, matching the page's behavior).
+// Byte values are doubles because QML's number type is a JS double and
+// practical RSS/VRAM values stay far below 2^53 (same reasoning as
+// MonitorDataModel's Q_INVOKABLE getters).
+struct MonitorSample {
+    double controllerCpu = 0.0;        // percent, 0..100+
+    double rendererCpu = 0.0;          // percent, 0..100+
+    double rendererGpu = -1.0;         // percent, or -1 (not reported)
+    double controllerRssBytes = 0.0;   // resident set, bytes
+    double rendererRssBytes = 0.0;     // resident set, bytes
+    double rendererVramUsedBytes = -1.0;   // bytes, or -1 (not reported)
+    double rendererVramTotalBytes = -1.0;  // bytes, or -1 (not reported)
+    qint64 capturedAtMs = 0;           // host capture time (epoch ms)
+};
+
+// IMonitorApi::subscribe() argument (v1.4, S7). minIntervalMs is the
+// per-subscriber MERGE FLOOR: consecutive sample() pushes to THIS
+// subscriber are at least this far apart (samples arriving inside the
+// window are skipped; the next push carries the LATEST sample, so no
+// queue builds up). Values <= 0 mean "push every sample". The default
+// 2000 matches the host's own 2s poll cadence — subscribing faster
+// cannot conjure samples that do not arrive.
+struct MonitorSubscription {
+    int minIntervalMs = 2000;
 };
 
 // IDownloadApi::start() argument. All fields are host-validated before any

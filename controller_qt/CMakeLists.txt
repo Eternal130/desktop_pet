@@ -103,6 +103,8 @@ target_sources(pet_panel_api INTERFACE
     src/api/ITuningApi.hpp
     src/api/IModelApi.hpp
     src/api/ISettingsApi.hpp
+    # v1.4 (S7): monitor read family (history + throttled subscribe).
+    src/api/IMonitorApi.hpp
 )
 # ABI discipline (§B.3, src/api/README.md): pure-virtual declarations, Qt
 # value types + POD only. Qt value types need Qt6::Core's include path —

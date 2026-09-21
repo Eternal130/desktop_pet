@@ -18,6 +18,7 @@ class DownloadService;
 class InstanceApiImpl;
 class InstanceControlApiImpl;
 class ModelApiImpl;
+class MonitorApiImpl;
 class SettingsApiImpl;
 class TuningApiImpl;
 class VoicePackApiImpl;
@@ -104,6 +105,14 @@ public:
     // IPackListObserver family. Same lifetime discipline as tuningApi().
     core::VoicePackApiImpl* voicePackApi();
 
+    // S7 (v1.4): THE shared pet::IMonitorApi implementation — wraps each
+    // session's MonitorDataModel ring buffer (the same samples the
+    // Monitor page renders). Served to plugins through
+    // queryApi("pet.monitor") (a read → ungated). The panel's own
+    // MonitorPage keeps binding the live model object (approved host
+    // boundary). Same lifetime discipline as tuningApi().
+    core::MonitorApiImpl* monitorApi();
+
     // Plugin framework (P4, §B.6): the registry (entry store + state
     // machine) is created FIRST in the ctor; the host (initialize/shutdown
     // driver) LAST, so it can observe every earlier service. main()
@@ -159,6 +168,7 @@ private:
     core::ModelApiImpl* m_modelApi = nullptr;
     core::SettingsApiImpl* m_settingsApi = nullptr;
     core::VoicePackApiImpl* m_voicePackApi = nullptr;
+    core::MonitorApiImpl* m_monitorApi = nullptr; // S7 (v1.4)
     // Registered last (wireLegacyInstanceZeroSenders) → destroyed first.
     StartupSalvo* m_startupSalvo = nullptr;
     ProcessManager* m_processManager = nullptr;

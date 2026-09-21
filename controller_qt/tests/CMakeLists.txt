@@ -1043,3 +1043,62 @@ target_link_libraries(InstanceControlBridgeTest PRIVATE pet_panel_core Qt6::Test
 pet_deploy_qt_test(InstanceControlBridgeTest)
 
 add_test(NAME InstanceControlBridgeTest COMMAND InstanceControlBridgeTest)
+
+# ── v1.4 (S7) family tests ────────────────────────────────────────────────────
+
+# MonitorApiImplTest (S7, v1.4): the real pet::IMonitorApi over a REAL
+# InstanceManager harness (same QTemporaryDir + savePanel pattern as
+# TuningApiImplTest), samples fed through the session's own
+# MonitorDataModel merges (the production arrival path). Seven slots:
+# history projection + -1 sentinels (controller-only / Linux-stub /
+# full renderer shapes), incremental subscribe pushes carrying the
+# LATEST snapshot, per-subscriber minIntervalMs merge throttling
+# (60000ms window → 1 push, 0ms → every sample), unsubscribe stop +
+# unknown-pair no-ops, the NotFound/InvalidArgument matrix (incl. the
+# null-manager degraded wiring), multi-subscriber independent throttle +
+# re-subscribe window reset, and an observer unsubscribing inside the
+# callback (fanout isolation). QTEST_MAIN — harness parity.
+qt_add_executable(MonitorApiImplTest MonitorApiImplTest.cpp)
+target_link_libraries(MonitorApiImplTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(MonitorApiImplTest)
+
+add_test(NAME MonitorApiImplTest COMMAND MonitorApiImplTest)
+
+# ── API boundary gate (S7, R3 — anti-drift enforcement) ───────────────────────
+# Two bash-driven tests over scripts/api_boundary_gate.sh:
+#   ApiBoundaryGateTest     — the gate over the real tree (red on any
+#                             un-allowlisted direct core write)
+#   ApiBoundaryGateSelfTest — injects a violation probe, asserts the
+#                             gate goes red, cleans up, asserts green
+# Bash lookup: prefer Git-for-Windows bash (System32 bash.exe is WSL and
+# cannot run Windows-style path arguments); fall back to PATH (Linux).
+# Both tests share one RESOURCE_LOCK: the self-test writes a probe file
+# into qml/pages/ and must never race the plain gate run under ctest -j.
+find_program(PET_GIT_WIN_BASH NAMES bash
+    HINTS "C:/Program Files/Git/bin" "C:/Program Files/Git/usr/bin"
+    NO_DEFAULT_PATH)
+find_program(PET_PATH_BASH NAMES bash)
+if(PET_GIT_WIN_BASH)
+    set(PET_GATE_BASH "${PET_GIT_WIN_BASH}")
+elseif(PET_PATH_BASH)
+    set(PET_GATE_BASH "${PET_PATH_BASH}")
+endif()
+if(PET_GATE_BASH)
+    add_test(NAME ApiBoundaryGateTest
+        COMMAND "${PET_GATE_BASH}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/api_boundary_gate.sh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/..")
+    add_test(NAME ApiBoundaryGateSelfTest
+        COMMAND "${PET_GATE_BASH}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/api_boundary_gate_selftest.sh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/..")
+    set_tests_properties(ApiBoundaryGateTest ApiBoundaryGateSelfTest PROPERTIES
+        RESOURCE_LOCK pet_api_boundary_tree)
+else()
+    message(WARNING "bash not found — the API boundary gate tests are "
+        "registered as FAILING (the gate is a mandatory S7 enforcement; "
+        "install Git-for-Windows bash or run on a system with bash)")
+    add_test(NAME ApiBoundaryGateTest COMMAND ${CMAKE_COMMAND} -E false)
+    add_test(NAME ApiBoundaryGateSelfTest COMMAND ${CMAKE_COMMAND} -E false)
+endif()

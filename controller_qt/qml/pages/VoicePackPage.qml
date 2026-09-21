@@ -211,10 +211,10 @@ Rectangle {
                                         const row = root._mountedRowForPack(
                                             voicePacks.packPath(root.selectedPack))
                                         if (row >= 0)
-                                            instanceManager.instanceAt(row)
-                                                .triggerHitArea(
-                                                    voicePacks.packGroupCodes(
-                                                        root.selectedPack)[index])
+                                            instanceControl.triggerHitArea(
+                                                instanceManager.instanceAt(row).uuid,
+                                                voicePacks.packGroupCodes(
+                                                    root.selectedPack)[index])
                                     }
                                 }
                             }

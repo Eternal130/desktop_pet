@@ -25,6 +25,7 @@
 #include "core/PluginRegistry.hpp"
 
 #include "api/IModelApi.hpp"
+#include "api/IMonitorApi.hpp"
 #include "api/ISettingsApi.hpp"
 #include "api/ITuningApi.hpp"
 #include "api/IVoicePackApi.hpp"
@@ -40,6 +41,7 @@ class DownloadService;
 class InstanceApiImpl;
 class InstanceControlApiImpl;
 class ModelApiImpl;
+class MonitorApiImpl;
 class PluginContextImpl;
 class PluginPageModel;
 class SettingsApiImpl;
@@ -82,6 +84,12 @@ public:
     // single pack scan). Null → the per-context scan-everything impl
     // keeps serving voicePackApi() (the pre-v1.3 behavior).
     void setVoicePackApi(pet::IVoicePackApi* voicePackApi);
+    // S7 (v1.4): the SHARED MonitorApiImpl served through
+    // queryApi("pet.monitor") — a read family (ungated; same injection
+    // pattern as setModelApi). Null → initializeAll constructs a
+    // per-host implementation over the injected InstanceManager (the
+    // setInstanceApi fallback pattern; tests / degraded wiring).
+    void setMonitorApi(pet::IMonitorApi* monitorApi);
     // S2 (v1.2): host-global plugin_write_enabled kill-switch provider
     // (PanelApplication wires it to the panel_config kv row; absent
     // provider = enabled, mirroring the kv default). Consulted LIVE on
@@ -146,6 +154,7 @@ private:
     pet::IModelApi* m_modelApi = nullptr;
     pet::ISettingsApi* m_settingsApi = nullptr;
     pet::IVoicePackApi* m_voicePackApi = nullptr; // v1.3 shared, not owned
+    pet::IMonitorApi* m_monitorApi = nullptr;     // v1.4 (S7), not owned
     std::function<bool()> m_writeEnabledProvider;           // S2: live kill-switch
     PluginPageModel* m_pageModel = nullptr;
     NotificationStreamController* m_notificationStream = nullptr;

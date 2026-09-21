@@ -377,8 +377,14 @@ Rectangle {
                                             fontSize: 12
                                             onClicked: {
                                                 if (!_inst) return
-                                                if (model.status === "running") _inst.stop()
-                                                else _inst.start()
+                                                // S7: lifecycle writes
+                                                // through the shared API
+                                                // bridge (reads keep the
+                                                // live _inst object).
+                                                if (model.status === "running")
+                                                    instanceControl.stop(_inst.uuid)
+                                                else
+                                                    instanceControl.start(_inst.uuid)
                                             }
                                         }
                                         AppButton {
@@ -387,7 +393,8 @@ Rectangle {
                                             implicitHeight: 26
                                             fontSize: 12
                                             enabled: model.status === "running"
-                                            onClicked: if (_inst) _inst.restart()
+                                            onClicked: if (_inst)
+                                                instanceControl.restart(_inst.uuid)
                                         }
                                         AppButton {
                                             style: "subtle"

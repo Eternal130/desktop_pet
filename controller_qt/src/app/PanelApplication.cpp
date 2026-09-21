@@ -164,6 +164,10 @@ PanelApplication::PanelApplication(QObject* parent)
     m_settingsApi = new core::SettingsApiImpl(ConfigDir::configDir(), this);
     m_settingsApi->setDatabase(m_databaseManager);
     m_voicePackApi = new core::VoicePackApiImpl(/*refresh=*/{}, this);
+    // S7 (v1.4): shared monitor read family — wraps the sessions'
+    // MonitorDataModel rings (registered after m_voicePackApi → dies
+    // before it, registration-reverse).
+    m_monitorApi = new core::MonitorApiImpl(m_instanceManager, this);
 
     // ── Plugin framework (P4, §B.6) ─────────────────────────────────────
     // Registry first (pure store, no deps), host last (observes the roster
@@ -192,6 +196,7 @@ PanelApplication::PanelApplication(QObject* parent)
     m_pluginHost->setModelApi(m_modelApi);
     m_pluginHost->setSettingsApi(m_settingsApi);
     m_pluginHost->setVoicePackApi(m_voicePackApi);
+    m_pluginHost->setMonitorApi(m_monitorApi); // S7 (v1.4)
     // S2: the host-global plugin_write_enabled kill-switch (panel_config
     // kv, absent/"1" = enabled — the documented default). LIVE read on
     // every queryApi call, so flipping the kv row revokes plugin write
@@ -260,6 +265,11 @@ core::SettingsApiImpl* PanelApplication::settingsApi()
 core::VoicePackApiImpl* PanelApplication::voicePackApi()
 {
     return m_voicePackApi;
+}
+
+core::MonitorApiImpl* PanelApplication::monitorApi()
+{
+    return m_monitorApi;
 }
 
 core::PluginRegistry& PanelApplication::pluginRegistry()

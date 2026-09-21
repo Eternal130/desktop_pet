@@ -1,6 +1,7 @@
 #include "core/PluginContextImpl.hpp"
 
 #include <QDir>
+#include <QDateTime>
 #include <QFileInfo>
 
 #include <spdlog/spdlog.h>
@@ -19,6 +20,7 @@
 #include "core/PluginPageModel.hpp"
 #include "core/VoicePackScanner.hpp"
 #include "logging/Logging.hpp"
+#include "ui/MonitorDataModel.hpp"
 #include "ui/NotificationStreamController.hpp"
 
 namespace core {
@@ -791,6 +793,185 @@ pet::PluginError SettingsApiImpl::setDefaultModelName(const QString& name)
                : pet::PluginError::Generic;
 }
 
+// ── MonitorApiImpl (S7, v1.4) ─────────────────────────────────────────────────
+
+MonitorApiImpl::MonitorApiImpl(InstanceManager* instanceManager, QObject* parent)
+    : QObject(parent), m_instanceManager(instanceManager)
+{
+    // Same wiring pattern as InstanceApiImpl's constructor: attach to
+    // every session present at construction (instances load from disk
+    // at manager construction) + every row inserted later. Connections
+    // are sender-bound — a deleteLater'd session destroys its model with
+    // itself and severs them automatically, so subscriptions to a dead
+    // instance simply stop firing (the table entries linger harmlessly
+    // until unsubscribe; uuids are never recycled).
+    if (m_instanceManager != nullptr) {
+        connect(m_instanceManager, &QAbstractItemModel::rowsInserted, this,
+                [this](const QModelIndex&, int first, int last) {
+                    for (int row = first; row <= last; ++row)
+                        observeSession(m_instanceManager->instanceAt(row));
+                });
+        for (int row = 0; row < m_instanceManager->rowCount(); ++row)
+            observeSession(m_instanceManager->instanceAt(row));
+    }
+}
+
+void MonitorApiImpl::observeSession(InstanceSession* session)
+{
+    if (session == nullptr)
+        return;
+    // monitorModel() returns the session-owned MonitorDataModel as a
+    // QObject* (the QML-facing Q_INVOKABLE signature). The dynamic type
+    // IS MonitorDataModel (member object, single QObject inheritance) —
+    // the static_cast is a pure read-path adapter, verified by
+    // construction. Zero InstanceSession/MonitorDataModel changes.
+    auto* model = static_cast<MonitorDataModel*>(session->monitorModel());
+    if (model == nullptr)
+        return;
+    const QString uuid = session->uuid(); // value copy — safe in the lambda
+    connect(model, &MonitorDataModel::snapshotAppended, this,
+            [this, uuid]() { fanoutSample(uuid); });
+}
+
+QVector<pet::MonitorSample> MonitorApiImpl::history(const QString& uuid)
+{
+    QVector<pet::MonitorSample> out;
+    InstanceSession* session = sessionForUuid(uuid);
+    if (session == nullptr)
+        return out; // unknown uuid / degraded wiring → empty, never error
+    auto* model = static_cast<MonitorDataModel*>(session->monitorModel());
+    if (model == nullptr)
+        return out;
+    const QVector<MonitorSnapshot> ring = model->history();
+    out.reserve(ring.size());
+    for (const MonitorSnapshot& snap : ring)
+        out.append(projectSnapshot(snap));
+    return out;
+}
+
+pet::PluginError MonitorApiImpl::subscribe(const QString& uuid,
+                                           pet::IMonitorObserver* observer,
+                                           const pet::MonitorSubscription& sub)
+{
+    if (sessionForUuid(uuid) == nullptr) {
+        LOG_WARN("[plugin-api] monitorApi().subscribe('{}') — not in "
+                 "roster, ERR_NOT_FOUND", uuid.toStdString());
+        return pet::PluginError::NotFound;
+    }
+    if (observer == nullptr) {
+        LOG_WARN("[plugin-api] monitorApi().subscribe('{}') with null "
+                 "observer — ERR_INVALID_ARGUMENT", uuid.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    // Re-subscribe of the same (uuid, observer) pair refreshes the
+    // interval (and resets the throttle window) instead of duplicating
+    // the entry — same idempotence discipline as subscribeRoster.
+    for (Subscription& s : m_subscriptions) {
+        if (s.uuid == uuid && s.observer == observer) {
+            s.minIntervalMs = sub.minIntervalMs > 0 ? sub.minIntervalMs : 0;
+            s.lastPushMs = 0;
+            return pet::PluginError::Ok;
+        }
+    }
+    Subscription s;
+    s.uuid = uuid;
+    s.observer = observer;
+    s.minIntervalMs = sub.minIntervalMs > 0 ? sub.minIntervalMs : 0;
+    m_subscriptions.append(s);
+    return pet::PluginError::Ok;
+}
+
+void MonitorApiImpl::unsubscribe(const QString& uuid,
+                                 pet::IMonitorObserver* observer)
+{
+    for (int i = m_subscriptions.size() - 1; i >= 0; --i) {
+        const Subscription& s = m_subscriptions.at(i);
+        if (s.uuid == uuid && s.observer == observer)
+            m_subscriptions.remove(i);
+    }
+}
+
+void MonitorApiImpl::fanoutSample(const QString& uuid)
+{
+    if (m_subscriptions.isEmpty())
+        return;
+    InstanceSession* session = sessionForUuid(uuid);
+    if (session == nullptr)
+        return;
+    auto* model = static_cast<MonitorDataModel*>(session->monitorModel());
+    if (model == nullptr)
+        return;
+    const pet::MonitorSample sample =
+        projectSnapshot(model->latestSnapshot());
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    // Iterate REVERSE: an observer may unsubscribe (or re-subscribe)
+    // inside the callback; removing the element at index i only shifts
+    // already-visited higher indices, so reverse order guarantees each
+    // remaining subscriber exactly one visit per fanout (push order is
+    // reverse-subscription — not contractual). Plugin exceptions must
+    // not poison the fanout either (§A.1 boundary discipline).
+    for (int i = m_subscriptions.size() - 1; i >= 0; --i) {
+        Subscription& s = m_subscriptions[i];
+        if (s.uuid != uuid || s.observer == nullptr)
+            continue;
+        // Per-subscriber merge floor: samples landing inside the window
+        // are SKIPPED (not queued) — the next accepted push carries the
+        // LATEST snapshot, so bursts coalesce to one fresh sample.
+        if (s.minIntervalMs > 0 && now - s.lastPushMs < s.minIntervalMs)
+            continue;
+        s.lastPushMs = now;
+        try {
+            s.observer->sample(uuid, sample);
+        } catch (...) {
+            LOG_ERROR("[plugin-api] monitor observer threw in sample() — "
+                      "isolated, fanout continues");
+        }
+    }
+}
+
+InstanceSession* MonitorApiImpl::sessionForUuid(const QString& uuid) const
+{
+    // Same public-surface linear scan as InstanceControlApiImpl (the
+    // access QML itself uses; sidebar-sized N).
+    if (m_instanceManager == nullptr)
+        return nullptr;
+    for (int row = 0; row < m_instanceManager->rowCount(); ++row) {
+        InstanceSession* s = m_instanceManager->instanceAt(row);
+        if (s != nullptr && s->uuid() == uuid)
+            return s;
+    }
+    return nullptr;
+}
+
+pet::MonitorSample MonitorApiImpl::projectSnapshot(
+    const std::optional<MonitorSnapshot>& snapshot)
+{
+    // MonitorSnapshot (std::optional halves) → flat POD. Nullable GPU /
+    // VRAM fields project to the -1 sentinel; halves that have not
+    // reported yet project to their 0 "no data" defaults — the exact
+    // values the Monitor page's own Q_INVOKABLE getters produce.
+    pet::MonitorSample out;
+    if (!snapshot.has_value())
+        return out;
+    if (snapshot->controller.has_value()) {
+        out.controllerCpu = snapshot->controller->cpuPercent;
+        out.controllerRssBytes =
+            static_cast<double>(snapshot->controller->rssBytes);
+    }
+    if (snapshot->renderer.has_value()) {
+        out.rendererCpu = snapshot->renderer->cpuPercent;
+        out.rendererRssBytes =
+            static_cast<double>(snapshot->renderer->rssBytes);
+        out.rendererGpu = snapshot->renderer->gpuPercent.value_or(-1.0);
+        out.rendererVramUsedBytes = snapshot->renderer->vramUsedBytes
+            ? static_cast<double>(*snapshot->renderer->vramUsedBytes) : -1.0;
+        out.rendererVramTotalBytes = snapshot->renderer->vramTotalBytes
+            ? static_cast<double>(*snapshot->renderer->vramTotalBytes) : -1.0;
+    }
+    out.capturedAtMs = snapshot->capturedAtMs;
+    return out;
+}
+
 // ── PluginContextImpl ───────────────────────────────────────────────────────
 
 PluginContextImpl::PluginContextImpl(const QString& pluginId,
@@ -904,6 +1085,16 @@ pet::IExtApi* PluginContextImpl::queryApi(const char* apiId, int minVersion)
         if (minVersion > pet::kModelApiVersion)
             return nullptr;
         return m_modelApi; // may be nullptr — feature-absent by contract
+    }
+
+    // ── Family: pet.monitor (S7, v1.4) ─────────────────────────────────
+    // Same read-only routing as pet.model: no capability, no write
+    // switch, no stub — injected → the shared MonitorApiImpl; not wired
+    // → nullptr ("feature absent").
+    if (QLatin1StringView(apiId) == QLatin1StringView(pet::kMonitorApiId)) {
+        if (minVersion > pet::kMonitorApiVersion)
+            return nullptr;
+        return m_monitorApi; // may be nullptr — feature-absent by contract
     }
 
     // ── Family: pet.settings (S6, v1.3) ─────────────────────────────────

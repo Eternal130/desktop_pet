@@ -142,13 +142,13 @@ Storage follows the platform conventions via `QStandardPaths` (app name
 ## Testing
 
 ```bash
-ctest --test-dir build/controller_qt            # run all 41 QTest binaries
+ctest --test-dir build/controller_qt            # run all 58 QTest/gate binaries
 ctest --test-dir build/controller_qt -j8        # parallel
 ctest --test-dir build/controller_qt -L REQUIRES_RENDERER   # integration tier only
 ctest --test-dir build/controller_qt -E 'REQUIRES_RENDERER' # unit tier only
 ```
 
-**41 QTest binaries** under `tests/` cover every module: network (Envelope,
+**58 QTest/gate binaries** under `tests/` cover every module: network (Envelope,
 WsServer, MessageDispatcher, Handshake, PendingRequests, EventRegistry,
 ThreadMarshal, ProtocolFactory, WsServerMulti), core (InstanceSession,
 InstanceManager, Scheduler, InteractionHandler, RestartController,
@@ -159,7 +159,12 @@ ResourceStatsCollector), config (InstanceConfig, PanelConfig,
 InstanceConfigManager, PanelStateManager, ConfigDir, Robustness, PathResolve),
 infrastructure (Logging, PoCIntegration, ProcessManager, StartupSalvo,
 ProtocolFixtures), bubble stream (NotificationStreamModel,
-NotificationStreamController).
+NotificationStreamController), plugin SDK v1.2-v1.4 families
+(PluginRegistry, PluginHost, PluginManager, PluginPageModel, DownloadService,
+InstallPipeline, RosterApiModel, InstanceControlApiImpl, PluginQueryApi,
+TuningApiImpl, ModelApiImpl, SettingsApiImpl, InstanceControlBridge,
+MonitorApiImpl) + the API boundary gate (`ApiBoundaryGateTest`,
+`ApiBoundaryGateSelfTest` — bash-driven, see `scripts/api_boundary_gate.sh`).
 
 Each test exe links `Qt6::Test` and gets its own `windeployqt` post-build step
 so ctest can launch it standalone (Qt's `bin/` is NOT on `PATH` under ctest).
@@ -323,6 +328,14 @@ PATH order:
 - **`QTP0001 NEW` policy**: puts QML modules under `:/qt/qml/<URI>/` so
   `loadFromModule` works on clean builds (incremental builds masked the bug
   during T1–T27 — see `CMakeLists.txt` comment).
+- **API boundary (S1-S7, SDK v1.4)**: host WRITES to core go through the
+  plugin-SDK facade (`instanceControl`/`rosterModel` bridges in QML,
+  injected `pet::` API pointers in src/ui) — the same vtables plugins use;
+  READS stay on live session objects. Enforced by
+  `scripts/api_boundary_gate.sh` under ctest (`ApiBoundaryGateTest` +
+  self-bite `ApiBoundaryGateSelfTest`); allowlist entries are file+line
+  level with reviewed justifications. See `src/api/README.md` for the
+  family × capability × switch matrix.
 
 ---
 
@@ -330,11 +343,13 @@ PATH order:
 
 ```
 controller_qt/
-├── CMakeLists.txt              # Qt6 find_package, qt_add_executable, qt_add_qml_module
+├── CMakeLists.txt              # Qt6 find_package, pet_panel_api/pet_panel_core targets, qt_add_qml_module
 ├── README.md                   # this file
+├── scripts/                    # api_boundary_gate.sh (API boundary gate — ctest-enforced)
 ├── src/
+│   ├── api/                    # Plugin SDK v1.4 headers (9 interface families; see src/api/README.md)
+│   ├── app/                    # PanelApplication composition root + PanelUiBoot + ScreenshotRunner
 │   ├── main.cpp                # QGuiApplication + QQmlApplicationEngine entry
-│   ├── main.cpp                # entry: god-wiring (P3 组合根拆解目标) + CJK tofu guard
 │   ├── network/                # Envelope, Protocol (25 commands), WsServer, MessageDispatcher,
 │   │                           #   PendingRequests, EventRegistry, ThreadMarshal
 │   ├── core/                   # InstanceSession (+ 4 split TUs), InstanceManager, Scheduler,
@@ -343,18 +358,19 @@ controller_qt/
 │   │                           #   ModelInfoParser, ModelScanner, PanelConfigController,
 │   │                           #   ProcessManager, StartupSalvo, InstanceConfig(+Manager),
 │   │                           #   PanelConfig(+StateManager), ConfigDir, PathResolve,
-│   │                           #   EnvironmentChecker, WindowStateSaver
+│   │                           #   EnvironmentChecker, WindowStateSaver, Plugin* (registry/host/
+│   │                           #   context impls incl. the shared *ApiImpl singletons)
 │   ├── system/                 # AutoLaunchManager, TrayManager, ResourceStatsCollector
-│   ├── ui/                     # MonitorDataModel (QtCharts data source)
+│   ├── ui/                     # MonitorDataModel (QtCharts data source) + RosterApiModel +
+│   │                           #   InstanceControlBridge (host write bridges over the plugin SDK)
 │   ├── logging/                # Logging.cpp (spdlog rotating-file + Qt message bridge)
 │   └── protobuf/               # bundles.proto (schema reference — NOT compiled)
 ├── qml/
 │   ├── Main.qml, Theme.qml (singleton)
 │   ├── components/           # StatusPill, SettingRow, SectionCard, Chip
 │   └── pages/                # WelcomePage, InstanceDetailPage, MonitorPage,
-│                             #   VoicePackPage, SettingsPage
-│   └── # (legacy Sidebar/TitleBar/ResizeHandles remain on disk, unused)
-└── tests/                      # 41 QTest binaries (see Testing section)
+│                             #   VoicePackPage, ModelLibraryPage, SettingsPage
+└── tests/                      # 58 QTest/gate binaries (see Testing section)
 ```
 
 ---

@@ -610,24 +610,6 @@ Rectangle {
                                 bottomPadding: 8
                             }
                         }
-
-                        Rectangle {
-                            width: parent.width
-                            height: noteText.implicitHeight + 20
-                            radius: Theme.radiusMd
-                            color: "transparent"
-                            border.width: 1
-                            border.color: Theme.borderColor
-                            Text {
-                                id: noteText
-                                x: 12; y: 10
-                                width: parent.width - 24
-                                wrapMode: Text.WordWrap
-                                text: qsTr("控件说明：每实例换模采用下拉（AppComboBox）而非分段（Segmented）——8 个模型超出分段控件的舒适容量（2–4 项），且与「实例详情 · 舞台」的下拉换模保持一致。选择后立即生效，失败时回弹旧值并以弹窗提示。")
-                                color: root._faintColor
-                                font.pixelSize: 11
-                            }
-                        }
                     }
 
                     Card {

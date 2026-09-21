@@ -20,7 +20,10 @@
 #include "api/IDownloadApi.hpp"
 #include "api/IInstanceApi.hpp"
 #include "api/IInstanceControlApi.hpp"
+#include "api/IModelApi.hpp"
 #include "api/IPluginContext.hpp"
+#include "api/ISettingsApi.hpp"
+#include "api/ITuningApi.hpp"
 #include "api/IUiApi.hpp"
 #include "core/PluginCapabilityStubs.hpp"
 
@@ -29,6 +32,8 @@
 class InstanceManager;
 class NotificationStreamController;
 class InstanceSession;
+class DatabaseManager;
+struct PanelConfig;
 
 namespace core {
 
@@ -108,6 +113,127 @@ private:
     InstanceManager* m_instanceManager; // not owned (service tree)
 };
 
+// S5 (v1.3): real per-instance tuning API — the pet::ITuningApi behind
+// queryApi(kTuningApiId). Constructed ONCE in the PanelApplication
+// service tree (same sharing pattern as InstanceControlApiImpl) and
+// injected into every plugin context (via PluginHost), into the panel's
+// own InstanceControlBridge write bridge AND into VoicePackController's
+// mount path — host UI and plugins go through the same vtable. Every
+// method is GUI thread, non-blocking, "accepted"-semantics; it only
+// CALLS the existing InstanceSession surfaces (never modifies them).
+class TuningApiImpl : public QObject, public pet::ITuningApi
+{
+    Q_OBJECT
+public:
+    // instanceManager must outlive this object (service tree guarantees
+    // it; null is tolerated → every op returns NotFound, degraded wiring).
+    TuningApiImpl(InstanceManager* instanceManager, QObject* parent);
+
+    // Test seam for the mount packId resolution scan: overrides the two
+    // scan sources (renderer base dir + user packs dir). Empty values
+    // (production default) resolve to defaultRendererDir() +
+    // ConfigDir::userVoicePacksDir() — the same sources the voice-pack
+    // page and the plugin voicePackApi use.
+    void setPackScanDirs(const QString& rendererDir, const QString& userPacksDir);
+
+    pet::PluginError setOpacity(const QString& uuid, double opacity) override;
+    pet::PluginError setVolume(const QString& uuid, double volume) override;
+    pet::PluginError setMuted(const QString& uuid, bool muted) override;
+    pet::PluginError setFps(const QString& uuid, int fps) override;
+    pet::PluginError playMotion(const QString& uuid, const QString& group,
+                                int index) override;
+    pet::PluginError setExpression(const QString& uuid,
+                                   const QString& expressionId) override;
+    pet::PluginError triggerHitArea(const QString& uuid,
+                                    const QString& areaId) override;
+    pet::PluginError mountVoicePack(const QString& uuid,
+                                    const QString& packId) override;
+    pet::PluginError unmountVoicePack(const QString& uuid) override;
+
+private:
+    // Shared prelude: NotFound for unknown uuids, Busy while a delete is
+    // pending. Returns Ok with *out set to the session on success.
+    pet::PluginError locateAlive(const QString& uuid, InstanceSession** out) const;
+    // Linear scan over the manager's PUBLIC roster surface (same access
+    // QML uses; sidebar-sized N).
+    InstanceSession* sessionForUuid(const QString& uuid) const;
+    // packId (directory name) → absolute pack dir via the host's own
+    // dual-source pack scan; empty when unknown.
+    QString resolvePackDir(const QString& packId) const;
+
+    InstanceManager* m_instanceManager; // not owned (service tree)
+    // Pack-resolution scan sources (empty = production defaults; test seam).
+    QString m_packRendererDir;
+    QString m_packUserDir;
+};
+
+// S5 (v1.3): real model-library read API — the pet::IModelApi behind
+// queryApi(kModelApiId). Wraps the pure ModelScanner + ModelInfoParser
+// functions behind ONE scan cache (the same instance the panel's
+// ModelController consumes — one scan, not two). Read-only family: not
+// capability- or switch-gated; a host without the shared impl wired
+// answers queryApi with nullptr (no stub — there is no capability story
+// to report for a read).
+class ModelApiImpl : public QObject, public pet::IModelApi
+{
+    Q_OBJECT
+public:
+    ModelApiImpl(QObject* parent = nullptr);
+
+    // Injection seam mirroring ModelController's existing one: the
+    // renderer BASE dir (Resources/Models is appended internally);
+    // triggers a rescan so the cache is populated before the first
+    // availableModels() call.
+    void setRendererDir(const QString& dir);
+
+    QVector<pet::ModelSummary> availableModels() override;
+    void refreshScan() override;
+    pet::PluginError modelInfo(const QString& name, pet::ModelSummary* out) override;
+
+    // The scanned directory (<rendererDir>/Resources/Models); empty when
+    // no renderer dir is known (ModelController re-exports this for the
+    // page header hint + empty state).
+    QString modelsDir() const { return m_modelsDir; }
+
+private:
+    void rescan();
+
+    QString m_rendererDir;
+    QString m_modelsDir;
+    QList<pet::ModelSummary> m_models; // scan cache, scan order
+};
+
+// S6 (v1.3): real panel-settings write API — the pet::ISettingsApi
+// behind queryApi(kSettingsApiId). Every setter takes the SAME
+// load-modify-save path the panel's own PanelConfigController uses
+// (PanelStateManager over the shared DatabaseManager; the other
+// PanelConfig fields always survive the write). autoLaunchSystem is
+// deliberately absent (host-shell capability — see ISettingsApi.hpp).
+class SettingsApiImpl : public QObject, public pet::ISettingsApi
+{
+    Q_OBJECT
+public:
+    // configDir: the config root (ConfigDir::configDir() in production,
+    // injected temp path in tests). DatabaseManager optional — without
+    // it each load-modify-save opens its own connection, exactly like
+    // PanelStateManager's fallback.
+    SettingsApiImpl(const QString& configDir, QObject* parent = nullptr);
+    void setDatabase(DatabaseManager* db) { m_db = db; }
+
+    pet::PluginError setCloseAction(const QString& action) override;
+    pet::PluginError setConfirmOnExit(bool enabled) override;
+    pet::PluginError setStartMinimized(bool enabled) override;
+    pet::PluginError setDefaultModelName(const QString& name) override;
+
+private:
+    // Load-modify-save over the panel_config store (same discipline as
+    // PanelConfigController::updateField). Returns true on save success.
+    bool updateField(const std::function<void(PanelConfig&)>& mutator);
+
+    QString m_configDir;
+    DatabaseManager* m_db = nullptr; // shared backend, not owned
+};
+
 // Real download API (P5): forwards to the host DownloadService when the
 // plugin's manifest grants the "network" capability; without the grant
 // every method fails with PluginError::Capability (§B.4 capability gate —
@@ -184,12 +310,28 @@ public:
 
     // pet::IPluginContext
     pet::IInstanceApi& instanceApi() override { return *m_instanceApi; }
-    pet::IVoicePackApi& voicePackApi() override { return m_voicePackApi; }
+    pet::IVoicePackApi& voicePackApi() override
+    {
+        return m_sharedVoicePackApi != nullptr ? *m_sharedVoicePackApi
+                                               : m_voicePackApi;
+    }
     pet::IUiApi& uiApi() override { return m_uiApi; }
     pet::IDownloadApi& downloadApi() override { return m_downloadApi; }
     QString pluginConfigDir() override;
     void log(pet::PluginLogLevel level, const QString& message) override;
     pet::IExtApi* queryApi(const char* apiId, int minVersion) override;
+
+    // ── v1.3 (S5/S6) shared-implementation injection ─────────────────────
+    // Called by PluginHost::initializeAll right after construction (the
+    // ctor signature stays frozen for the existing direct-construction
+    // tests). Null (the default) keeps the per-context fallbacks: tuning
+    // and settings degrade to their capability stubs, the model family
+    // answers nullptr ("feature absent"), the voice-pack family keeps
+    // the per-context scan-everything impl.
+    void setTuningApi(pet::ITuningApi* tuningApi) { m_tuningApi = tuningApi; }
+    void setModelApi(pet::IModelApi* modelApi) { m_modelApi = modelApi; }
+    void setSettingsApi(pet::ISettingsApi* settingsApi) { m_settingsApi = settingsApi; }
+    void setVoicePackApi(pet::IVoicePackApi* voicePackApi) { m_sharedVoicePackApi = voicePackApi; }
 
 private:
     QString m_pluginId;
@@ -204,8 +346,21 @@ private:
     bool m_instanceLifecycleGranted = false;
     std::function<bool()> m_writeEnabled;
     UiApiImpl m_uiApi;
-    VoicePackApiImpl m_voicePackApi;
+    VoicePackApiImpl m_voicePackApi;          // per-context fallback
+    pet::IVoicePackApi* m_sharedVoicePackApi = nullptr; // v1.3 shared, not owned
     DownloadApiAdapter m_downloadApi;
+    // v1.3 (S5/S6): shared tuning/model/settings implementations (service
+    // tree / host fallback), not owned; null → stub (tuning, settings) or
+    // nullptr (model). Tuning/settings are ALSO capability-gated
+    // (precomputed below, same discipline as instance_lifecycle); the
+    // model family is a read → ungated.
+    pet::ITuningApi* m_tuningApi = nullptr;
+    pet::IModelApi* m_modelApi = nullptr;
+    pet::ISettingsApi* m_settingsApi = nullptr;
+    TuningApiStub m_tuningStub;
+    SettingsApiStub m_settingsStub;
+    bool m_instanceTuningGranted = false;
+    bool m_settingsWriteGranted = false;
 };
 
 } // namespace core

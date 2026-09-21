@@ -981,3 +981,65 @@ target_link_libraries(PluginQueryApiTest PRIVATE pet_panel_core Qt6::Test)
 pet_deploy_qt_test(PluginQueryApiTest)
 
 add_test(NAME PluginQueryApiTest COMMAND PluginQueryApiTest)
+
+# ── v1.3 (S5/S6) family tests ────────────────────────────────────────────────
+
+# TuningApiImplTest (S5, v1.3): the real pet::ITuningApi over a REAL
+# InstanceManager harness (same QTemporaryDir + savePanel pattern as
+# InstanceControlApiImplTest). Five slots: setter forwarding (NOTIFY +
+# config persist), trigger forwarding + empty-arg InvalidArgument, the
+# NotFound matrix (incl. null-manager degraded wiring), the pending-delete
+# Busy matrix (setDeletePending seam — no process needed), and mount
+# packId resolution by DIRECTORY NAME over a synthesized meta.mko fixture
+# (minimal protobuf writer, same as MetaMkoParserTest): unknown id →
+# NotFound, an absolute PATH → NotFound (never interpreted), garbage
+# meta.mko → Generic, legit id → Ok + persisted + the
+# mountedVoicePackChanged NOTIFY seam. QTEST_MAIN — InstanceManager
+# harness parity.
+qt_add_executable(TuningApiImplTest TuningApiImplTest.cpp)
+target_link_libraries(TuningApiImplTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(TuningApiImplTest)
+
+add_test(NAME TuningApiImplTest COMMAND TuningApiImplTest)
+
+# ModelApiImplTest (S5, v1.3): the shared model scan cache behind
+# queryApi("pet.model"). Four slots over QTemporaryDir fixture trees
+# (same layout as ModelScannerTest): populated summaries + modelInfo
+# hit/miss, refreshScan picks up later arrivals, corrupt .model3.json
+# degrades to empty details without dropping the entry, empty rendererDir
+# safety. QTEST_APPLESS_MAIN — QDir/QFile are synchronous.
+qt_add_executable(ModelApiImplTest ModelApiImplTest.cpp)
+target_link_libraries(ModelApiImplTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(ModelApiImplTest)
+
+add_test(NAME ModelApiImplTest COMMAND ModelApiImplTest)
+
+# SettingsApiImplTest (S6, v1.3): the real pet::ISettingsApi over the
+# SAME PanelStateManager persistence path the panel settings page uses.
+# Five slots: all-four-field round-trip (load-modify-save keeps foreign
+# fields), setCloseAction illegal-value matrix (incl. "ask" — the legacy
+# Java value), empty defaultModelName rejection, the compile-time
+# no-autoLaunch-member static_assert, and the shared-DatabaseManager
+# production shape. QTEST_MAIN — QSqlDatabase wants an app instance.
+qt_add_executable(SettingsApiImplTest SettingsApiImplTest.cpp)
+target_link_libraries(SettingsApiImplTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(SettingsApiImplTest)
+
+add_test(NAME SettingsApiImplTest COMMAND SettingsApiImplTest)
+
+# InstanceControlBridgeTest (S5, v1.3): the detail-page write bridge over
+# programmable fakes (FakeTuningApi/FakeControlApi — same shape as
+# RosterApiModelTest's FakeControlApi). Three slots: tuning forwards
+# (uuid+args verbatim, error-code passthrough incl. Busy), lifecycle
+# forwards (start/stop/restart/loadModel), null-API degraded wiring
+# (Generic everywhere, never a crash). QTEST_APPLESS_MAIN — pure
+# synchronous forwards.
+qt_add_executable(InstanceControlBridgeTest InstanceControlBridgeTest.cpp)
+target_link_libraries(InstanceControlBridgeTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(InstanceControlBridgeTest)
+
+add_test(NAME InstanceControlBridgeTest COMMAND InstanceControlBridgeTest)

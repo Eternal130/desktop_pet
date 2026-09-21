@@ -100,8 +100,10 @@ Rectangle {
     function _createInstance() { createDialog.open() }
 
     function _finishCreate(name, avatar) {
-        const uuid = instanceManager.createInstance(name, avatar)
-        if (uuid !== "") {
+        // S5: creation through the rosterModel write bridge (shared
+        // IInstanceControlApi; int error code, 0 = Ok).
+        const err = rosterModel.createInstance(name, avatar)
+        if (err === 0) {
             const row = instanceManager.rowCount() - 1
             Window.window.selectInstance(
                 row, instanceManager.instanceAt(row).instanceId)

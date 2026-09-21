@@ -6,10 +6,18 @@
 #include <spdlog/spdlog.h>
 
 #include "core/DownloadService.hpp"
+#include "core/ConfigDir.hpp"
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
+#include "core/ModelInfoParser.hpp"
+#include "core/ModelScanner.hpp"
+#include "core/MetaMkoParser.hpp"
+#include "core/PanelConfig.hpp"
+#include "core/PanelStateManager.hpp"
+#include "core/PathResolve.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginPageModel.hpp"
+#include "core/VoicePackScanner.hpp"
 #include "logging/Logging.hpp"
 #include "ui/NotificationStreamController.hpp"
 
@@ -126,6 +134,9 @@ void InstanceApiImpl::observeSession(InstanceSession* session)
     // full InstanceRuntime snapshot (v1.2 contract). Raw-pointer capture is
     // safe because the connection is destroyed with the sender — a
     // deleteLater'd session can never invoke this lambda afterwards.
+    // v1.3 (S5): mountedVoicePackChanged is the 9th hook — the minimal
+    // InstanceSession seam that makes mountedPackId real-time instead of
+    // "carried by the next unrelated property flip".
     for (auto signal : { &InstanceSession::statusChanged,
                          &InstanceSession::connectedChanged,
                          &InstanceSession::modelLoadedChanged,
@@ -133,7 +144,8 @@ void InstanceApiImpl::observeSession(InstanceSession* session)
                          &InstanceSession::opacityChanged,
                          &InstanceSession::targetFpsChanged,
                          &InstanceSession::volumeChanged,
-                         &InstanceSession::mutedChanged }) {
+                         &InstanceSession::mutedChanged,
+                         &InstanceSession::mountedVoicePackChanged }) {
         connect(session, signal, this, [this, session]() {
             fanoutInstanceState(session);
         });
@@ -150,10 +162,9 @@ pet::InstanceRuntime InstanceApiImpl::snapshotOf(const InstanceSession* session)
     // Full-copy POD snapshot of every field the v1.2 struct carries. The
     // mounted-pack id is the pack DIRECTORY NAME (the SDK-wide pack
     // identity, e.g. "pack_v1") — mountedVoicePack() returns the absolute
-    // dir; empty dir → empty id. Note: pack mount/unmount has NO NOTIFY
-    // signal on InstanceSession (S4 freeze), so a pure mount change does
-    // not trigger a fanout by itself — the next property flip (status,
-    // model, ...) carries the fresh value. Coarse-grained by contract.
+    // dir; empty dir → empty id. v1.3 (S5): the mountedVoicePackChanged
+    // NOTIFY makes a pure mount/unmount fan out immediately (previously
+    // the value rode the next unrelated property flip).
     pet::InstanceRuntime rt;
     rt.uuid = session->uuid();
     rt.label = session->label();
@@ -448,6 +459,338 @@ pet::PluginError InstanceControlApiImpl::loadModel(const QString& uuid,
     return pet::PluginError::Ok;
 }
 
+// ── TuningApiImpl (S5, v1.3) ─────────────────────────────────────────────────
+
+TuningApiImpl::TuningApiImpl(InstanceManager* instanceManager, QObject* parent)
+    : QObject(parent), m_instanceManager(instanceManager)
+{
+}
+
+void TuningApiImpl::setPackScanDirs(const QString& rendererDir,
+                                    const QString& userPacksDir)
+{
+    m_packRendererDir = rendererDir;
+    m_packUserDir = userPacksDir;
+}
+
+InstanceSession* TuningApiImpl::sessionForUuid(const QString& uuid) const
+{
+    // Same public-surface linear scan as InstanceControlApiImpl (sidebar-
+    // sized N).
+    if (m_instanceManager == nullptr)
+        return nullptr;
+    for (int row = 0; row < m_instanceManager->rowCount(); ++row) {
+        InstanceSession* s = m_instanceManager->instanceAt(row);
+        if (s != nullptr && s->uuid() == uuid)
+            return s;
+    }
+    return nullptr;
+}
+
+pet::PluginError TuningApiImpl::locateAlive(const QString& uuid,
+                                            InstanceSession** out) const
+{
+    *out = sessionForUuid(uuid);
+    if (*out == nullptr) {
+        LOG_WARN("[plugin-api] tuningApi() op on '{}' — not in roster, "
+                 "ERR_NOT_FOUND", uuid.toStdString());
+        return pet::PluginError::NotFound;
+    }
+    if ((*out)->isDeletePending()) {
+        LOG_WARN("[plugin-api] tuningApi() op on '{}' — pending delete, "
+                 "ERR_BUSY", uuid.toStdString());
+        return pet::PluginError::Busy;
+    }
+    return pet::PluginError::Ok;
+}
+
+QString TuningApiImpl::resolvePackDir(const QString& packId) const
+{
+    // packId is the DIRECTORY NAME (SDK-wide pack identity). Reverse-lookup
+    // against the host's own dual-source scan (VoicePackScanner returns
+    // ABSOLUTE pack dirs; user packs win collisions — same discovery the
+    // voice-pack page and the install pipeline use). An id that is not a
+    // discovered directory resolves empty → NotFound at the call site: a
+    // caller-supplied PATH never reaches the behavior engine.
+    // Scan sources: injected test seams when set, production defaults
+    // otherwise (same pair VoicePackApiImpl's standalone scan uses).
+    const QString rendererDir = !m_packRendererDir.isEmpty()
+        ? m_packRendererDir : defaultRendererDir();
+    const QString userDir = !m_packUserDir.isEmpty()
+        ? m_packUserDir : ConfigDir::userVoicePacksDir();
+    const QStringList dirs = scanAvailableVoicePacks(rendererDir, userDir);
+    for (const QString& dir : dirs) {
+        if (QFileInfo(dir).fileName() == packId)
+            return dir;
+    }
+    return QString();
+}
+
+pet::PluginError TuningApiImpl::setOpacity(const QString& uuid, double opacity)
+{
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    s->setOpacity(opacity); // no-op on same value; renderer clamps range
+    return pet::PluginError::Ok;
+}
+
+pet::PluginError TuningApiImpl::setVolume(const QString& uuid, double volume)
+{
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    s->setVolume(volume);
+    return pet::PluginError::Ok;
+}
+
+pet::PluginError TuningApiImpl::setMuted(const QString& uuid, bool muted)
+{
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    s->setMuted(muted);
+    return pet::PluginError::Ok;
+}
+
+pet::PluginError TuningApiImpl::setFps(const QString& uuid, int fps)
+{
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    s->setFps(fps);
+    return pet::PluginError::Ok;
+}
+
+pet::PluginError TuningApiImpl::playMotion(const QString& uuid,
+                                           const QString& group, int index)
+{
+    if (group.isEmpty()) {
+        LOG_WARN("[plugin-api] tuningApi().playMotion('{}') with empty "
+                 "group — ERR_INVALID_ARGUMENT", uuid.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    s->playMotion(group, index); // renderer ignores unknown group/index
+    return pet::PluginError::Ok;
+}
+
+pet::PluginError TuningApiImpl::setExpression(const QString& uuid,
+                                              const QString& expressionId)
+{
+    if (expressionId.isEmpty()) {
+        LOG_WARN("[plugin-api] tuningApi().setExpression('{}') with empty "
+                 "id — ERR_INVALID_ARGUMENT", uuid.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    s->setExpression(expressionId); // renderer ignores unknown ids
+    return pet::PluginError::Ok;
+}
+
+pet::PluginError TuningApiImpl::triggerHitArea(const QString& uuid,
+                                               const QString& areaId)
+{
+    if (areaId.isEmpty()) {
+        LOG_WARN("[plugin-api] tuningApi().triggerHitArea('{}') with empty "
+                 "area — ERR_INVALID_ARGUMENT", uuid.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    // Same decision chain a real click runs (pack behavior first, then
+    // the default hit→motion handler).
+    s->triggerHitArea(areaId);
+    return pet::PluginError::Ok;
+}
+
+pet::PluginError TuningApiImpl::mountVoicePack(const QString& uuid,
+                                               const QString& packId)
+{
+    if (packId.isEmpty()) {
+        LOG_WARN("[plugin-api] tuningApi().mountVoicePack('{}') with empty "
+                 "pack id — ERR_INVALID_ARGUMENT", uuid.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    const QString dir = resolvePackDir(packId);
+    if (dir.isEmpty()) {
+        LOG_WARN("[plugin-api] tuningApi().mountVoicePack('{}', '{}') — "
+                 "pack id not discovered by the host scan, ERR_NOT_FOUND "
+                 "(paths are never interpreted)",
+                 uuid.toStdString(), packId.toStdString());
+        return pet::PluginError::NotFound;
+    }
+    // The session parses meta.mko itself; a parse failure leaves the
+    // current mount untouched and reports Generic.
+    return s->mountVoicePack(dir) ? pet::PluginError::Ok
+                                  : pet::PluginError::Generic;
+}
+
+pet::PluginError TuningApiImpl::unmountVoicePack(const QString& uuid)
+{
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    s->unmountVoicePack(); // idempotent on an already-unmounted session
+    return pet::PluginError::Ok;
+}
+
+// ── ModelApiImpl (S5, v1.3) ─────────────────────────────────────────────────
+
+ModelApiImpl::ModelApiImpl(QObject* parent)
+    : QObject(parent)
+{
+}
+
+void ModelApiImpl::setRendererDir(const QString& dir)
+{
+    m_rendererDir = dir;
+    rescan();
+}
+
+void ModelApiImpl::refreshScan()
+{
+    rescan();
+}
+
+void ModelApiImpl::rescan()
+{
+    // Ported verbatim from ModelController::rescan (the cache moved here —
+    // ONE scan serves the panel page and the plugin API). Pre-parse at
+    // scan time so availableModels()/modelInfo() stay cache lookups; a
+    // missing/corrupt .model3.json degrades to empty detail lists, the
+    // roster entry survives.
+    m_models.clear();
+    m_modelsDir = m_rendererDir.isEmpty()
+        ? QString()
+        : QDir(m_rendererDir).absoluteFilePath(
+              QStringLiteral("Resources/Models"));
+    const QStringList names = scanAvailableModels(m_rendererDir);
+    for (const QString& name : names) {
+        pet::ModelSummary summary;
+        summary.name = name;
+        const QString model3Json = QDir(m_modelsDir).absoluteFilePath(
+            name + QLatin1Char('/') + name + QStringLiteral(".model3.json"));
+        const auto info = parseModelInfo(model3Json);
+        if (info.has_value()) {
+            summary.motionGroups = info->motionGroups.keys();
+            summary.expressions = info->expressions;
+            summary.hitAreas = info->hitAreas;
+        } else {
+            LOG_WARN("ModelApiImpl: could not parse \"{}\" — empty details",
+                     model3Json.toStdString());
+        }
+        m_models.append(std::move(summary));
+    }
+    LOG_DEBUG("ModelApiImpl: scan found {} model(s) under \"{}\"",
+              m_models.size(), m_modelsDir.toStdString());
+}
+
+QVector<pet::ModelSummary> ModelApiImpl::availableModels()
+{
+    return m_models;
+}
+
+pet::PluginError ModelApiImpl::modelInfo(const QString& name,
+                                         pet::ModelSummary* out)
+{
+    if (out != nullptr)
+        out->name.clear(); // never leave *out half-written on a miss
+    for (const pet::ModelSummary& summary : m_models) {
+        if (summary.name == name) {
+            if (out != nullptr)
+                *out = summary;
+            return pet::PluginError::Ok;
+        }
+    }
+    return pet::PluginError::NotFound;
+}
+
+// ── SettingsApiImpl (S6, v1.3) ───────────────────────────────────────────────
+
+SettingsApiImpl::SettingsApiImpl(const QString& configDir, QObject* parent)
+    : QObject(parent), m_configDir(configDir)
+{
+}
+
+bool SettingsApiImpl::updateField(const std::function<void(PanelConfig&)>& mutator)
+{
+    // IDENTICAL load-modify-save discipline to PanelConfigController::
+    // updateField (the panel's own settings page writes land here too
+    // since S6 — one persistence path, the other 8 PanelConfig fields
+    // always survive).
+    PanelStateManager psm(m_configDir);
+    if (m_db != nullptr)
+        psm.setDatabase(m_db);
+    PanelConfig cfg = psm.load();
+    mutator(cfg);
+    if (!psm.save(cfg)) {
+        LOG_WARN("[plugin-api] settingsApi write — panel_config save failed");
+        return false;
+    }
+    return true;
+}
+
+pet::PluginError SettingsApiImpl::setCloseAction(const QString& action)
+{
+    // Same B2 guard as the panel's own path: exactly "exit" | "minimize".
+    if (action != QLatin1String("exit") && action != QLatin1String("minimize")) {
+        LOG_WARN("[plugin-api] settingsApi().setCloseAction('{}') — illegal "
+                 "value (only \"exit\"/\"minimize\"), ERR_INVALID_ARGUMENT",
+                 action.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    return updateField([action](PanelConfig& cfg) { cfg.closeAction = action; })
+               ? pet::PluginError::Ok
+               : pet::PluginError::Generic;
+}
+
+pet::PluginError SettingsApiImpl::setConfirmOnExit(bool enabled)
+{
+    return updateField([enabled](PanelConfig& cfg) { cfg.confirmOnExit = enabled; })
+               ? pet::PluginError::Ok
+               : pet::PluginError::Generic;
+}
+
+pet::PluginError SettingsApiImpl::setStartMinimized(bool enabled)
+{
+    return updateField([enabled](PanelConfig& cfg) { cfg.startMinimized = enabled; })
+               ? pet::PluginError::Ok
+               : pet::PluginError::Generic;
+}
+
+pet::PluginError SettingsApiImpl::setDefaultModelName(const QString& name)
+{
+    // Free-form string (a dir name under Resources/Models) — validity is
+    // the model-library UI's concern; only the empty string is illegal
+    // (empty MEANS "use the default" at the call sites).
+    if (name.isEmpty()) {
+        LOG_WARN("[plugin-api] settingsApi().setDefaultModelName(\"\") — "
+                 "ERR_INVALID_ARGUMENT");
+        return pet::PluginError::InvalidArgument;
+    }
+    return updateField([name](PanelConfig& cfg) { cfg.defaultModelName = name; })
+               ? pet::PluginError::Ok
+               : pet::PluginError::Generic;
+}
+
 // ── PluginContextImpl ───────────────────────────────────────────────────────
 
 PluginContextImpl::PluginContextImpl(const QString& pluginId,
@@ -475,6 +818,14 @@ PluginContextImpl::PluginContextImpl(const QString& pluginId,
                     capabilities.contains(QStringLiteral("network")),
                     downloadService, this)
 {
+    // v1.3 (S5/S6): tuning/settings capability bits precomputed from the
+    // manifest (same discipline as instance_lifecycle). Set in the BODY —
+    // the members are declared after the init-list members and a reordered
+    // init list would trip -Wreorder.
+    m_instanceTuningGranted =
+        capabilities.contains(QString(pet::kCapabilityInstanceTuning));
+    m_settingsWriteGranted =
+        capabilities.contains(QString(pet::kCapabilitySettingsWrite));
 }
 
 QString PluginContextImpl::pluginConfigDir()
@@ -526,8 +877,49 @@ pet::IExtApi* PluginContextImpl::queryApi(const char* apiId, int minVersion)
         return &m_instanceControlStub;
     }
 
+    // ── Family: pet.instance_tuning (S5, v1.3) ──────────────────────────
+    // Same routing matrix as pet.instance_control, gated by the
+    // "instance_tuning" capability instead:
+    //   granted + switch on + shared impl → real TuningApiImpl
+    //   granted + switch off              → stub (PluginError::Capability)
+    //   not granted                       → stub
+    //   degraded wiring (no shared impl)  → stub
+    //   minVersion > family version       → nullptr
+    if (QLatin1StringView(apiId) == QLatin1StringView(pet::kTuningApiId)) {
+        if (minVersion > pet::kTuningApiVersion)
+            return nullptr;
+        const bool writeEnabled = m_writeEnabled ? m_writeEnabled() : true;
+        if (m_instanceTuningGranted && writeEnabled && m_tuningApi != nullptr)
+            return m_tuningApi;
+        return &m_tuningStub;
+    }
+
+    // ── Family: pet.model (S5, v1.3) ────────────────────────────────────
+    // READ-ONLY family: deliberately NOT gated by any capability or the
+    // plugin_write_enabled switch (the switch revokes WRITES; discovery
+    // metadata leaks nothing the model-library page hides). Injected →
+    // the shared real implementation; not wired → nullptr ("feature
+    // absent" — there is no capability story to report for a read).
+    if (QLatin1StringView(apiId) == QLatin1StringView(pet::kModelApiId)) {
+        if (minVersion > pet::kModelApiVersion)
+            return nullptr;
+        return m_modelApi; // may be nullptr — feature-absent by contract
+    }
+
+    // ── Family: pet.settings (S6, v1.3) ─────────────────────────────────
+    // Same routing matrix as pet.instance_control, gated by the
+    // "settings_write" capability instead.
+    if (QLatin1StringView(apiId) == QLatin1StringView(pet::kSettingsApiId)) {
+        if (minVersion > pet::kSettingsApiVersion)
+            return nullptr;
+        const bool writeEnabled = m_writeEnabled ? m_writeEnabled() : true;
+        if (m_settingsWriteGranted && writeEnabled && m_settingsApi != nullptr)
+            return m_settingsApi;
+        return &m_settingsStub;
+    }
+
     // Unknown family — the documented "feature absent" answer (see
-    // IPluginContext.hpp). Future families (ISettingsApi, ...) route here.
+    // IPluginContext.hpp).
     return nullptr;
 }
 

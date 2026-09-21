@@ -135,6 +135,8 @@ private slots:
     void testGatingMatrix();
     void testBidirectionalDogfooding();
     void testHostFallbackWithoutSharedImpl();
+    void testV13FamilyGatingMatrix();
+    void testPackListObserverFanout();
 };
 
 // ── Gating matrix (direct PluginContextImpl construction) ──────────────────
@@ -349,6 +351,219 @@ void PluginQueryApiTest::testHostFallbackWithoutSharedImpl()
     QCOMPARE(g_lastPlugin->createResult, pet::PluginError::Ok);
     QCOMPARE(mgr.rowCount(), 1);
     host.shutdownAll();
+}
+
+// ── v1.3 family gating matrix (pet.instance_tuning / pet.model / pet.settings) ──
+
+void PluginQueryApiTest::testV13FamilyGatingMatrix()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& cfg) {
+                            PanelStateManager(base.path()).save(cfg);
+                        });
+    core::InstanceApiImpl rosterApi(&mgr, nullptr);
+    core::InstanceControlApiImpl sharedControl(&mgr, nullptr);
+    core::TuningApiImpl sharedTuning(&mgr, nullptr);
+    core::ModelApiImpl sharedModel;
+    core::SettingsApiImpl sharedSettings(base.path(), nullptr);
+
+    bool writeSwitch = true;
+
+    auto makeContext = [&](const QStringList& caps) {
+        auto* ctx = new core::PluginContextImpl(
+            QStringLiteral("org.test.v13"), &rosterApi, &sharedControl,
+            [&writeSwitch]() { return writeSwitch; },
+            /*pageModel=*/nullptr, /*stream=*/nullptr, base.path(),
+            /*downloadService=*/nullptr, caps,
+            /*voicePackRefresh=*/{}, /*parent=*/nullptr);
+        ctx->setTuningApi(&sharedTuning);
+        ctx->setModelApi(&sharedModel);
+        ctx->setSettingsApi(&sharedSettings);
+        return ctx;
+    };
+
+    const QStringList tuningGranted{QStringLiteral("instance_tuning")};
+    const QStringList settingsGranted{QStringLiteral("settings_write")};
+    const QStringList allGranted{QStringLiteral("instance_tuning"),
+                                 QStringLiteral("settings_write")};
+    const QStringList noneGranted{QStringLiteral("network")};
+
+    // ── pet.instance_tuning ────────────────────────────────────────────
+    // granted + switch on + impl → real (pointer identity).
+    {
+        const std::unique_ptr<core::PluginContextImpl> ctx(makeContext(tuningGranted));
+        auto* api = ctx->queryApi(pet::kTuningApiId, 1);
+        QVERIFY(api != nullptr);
+        QCOMPARE(api, static_cast<pet::IExtApi*>(&sharedTuning));
+        QVERIFY(dynamic_cast<pet::ITuningApi*>(api) != nullptr);
+    }
+    // granted + switch OFF → stub (every method Capability).
+    {
+        writeSwitch = false;
+        const std::unique_ptr<core::PluginContextImpl> ctx(makeContext(tuningGranted));
+        auto* api = ctx->queryApi(pet::kTuningApiId, 1);
+        QVERIFY(api != nullptr);
+        QVERIFY(api != static_cast<pet::IExtApi*>(&sharedTuning));
+        auto* tuning = dynamic_cast<pet::ITuningApi*>(api);
+        QVERIFY(tuning != nullptr);
+        QCOMPARE(tuning->setOpacity(QStringLiteral("x"), 0.5),
+                 pet::PluginError::Capability);
+        QCOMPARE(tuning->mountVoicePack(QStringLiteral("x"), QStringLiteral("p")),
+                 pet::PluginError::Capability);
+        QCOMPARE(tuning->unmountVoicePack(QStringLiteral("x")),
+                 pet::PluginError::Capability);
+        writeSwitch = true;
+    }
+    // NOT granted → stub.
+    {
+        const std::unique_ptr<core::PluginContextImpl> ctx(makeContext(noneGranted));
+        auto* tuning = dynamic_cast<pet::ITuningApi*>(
+            ctx->queryApi(pet::kTuningApiId, 1));
+        QVERIFY(tuning != nullptr);
+        QCOMPARE(tuning->setFps(QStringLiteral("x"), 30),
+                 pet::PluginError::Capability);
+    }
+    // Not injected (degraded wiring) → stub.
+    {
+        const std::unique_ptr<core::PluginContextImpl> ctx(
+            new core::PluginContextImpl(
+                QStringLiteral("org.test.v13b"), &rosterApi, &sharedControl,
+                []() { return true; }, nullptr, nullptr, base.path(),
+                nullptr, tuningGranted, {}, nullptr));
+        auto* tuning = dynamic_cast<pet::ITuningApi*>(
+            ctx->queryApi(pet::kTuningApiId, 1));
+        QVERIFY(tuning != nullptr);
+        QCOMPARE(tuning->setOpacity(QStringLiteral("x"), 0.5),
+                 pet::PluginError::Capability);
+    }
+    // Version floor: above → nullptr, exact → served.
+    {
+        const std::unique_ptr<core::PluginContextImpl> ctx(makeContext(tuningGranted));
+        QCOMPARE(ctx->queryApi(pet::kTuningApiId, pet::kTuningApiVersion + 1),
+                 nullptr);
+        QVERIFY(ctx->queryApi(pet::kTuningApiId, pet::kTuningApiVersion) != nullptr);
+    }
+
+    // ── pet.model (READ family: no capability, no write switch) ────────
+    {
+        // No capabilities at all + switch OFF + injected → STILL the real
+        // implementation (reads are never revoked by the write switch).
+        writeSwitch = false;
+        const std::unique_ptr<core::PluginContextImpl> ctx(makeContext(noneGranted));
+        auto* api = ctx->queryApi(pet::kModelApiId, 1);
+        QVERIFY(api != nullptr);
+        QCOMPARE(api, static_cast<pet::IExtApi*>(&sharedModel));
+        QVERIFY(dynamic_cast<pet::IModelApi*>(api) != nullptr);
+        writeSwitch = true;
+    }
+    // Not injected → nullptr (feature-absent; no stub for a read).
+    {
+        const std::unique_ptr<core::PluginContextImpl> ctx(
+            new core::PluginContextImpl(
+                QStringLiteral("org.test.v13c"), &rosterApi, &sharedControl,
+                []() { return true; }, nullptr, nullptr, base.path(),
+                nullptr, noneGranted, {}, nullptr));
+        QCOMPARE(ctx->queryApi(pet::kModelApiId, 1), nullptr);
+        QCOMPARE(ctx->queryApi(pet::kModelApiId, pet::kModelApiVersion + 1),
+                 nullptr);
+    }
+
+    // ── pet.settings ───────────────────────────────────────────────────
+    // granted + switch on + impl → real.
+    {
+        const std::unique_ptr<core::PluginContextImpl> ctx(makeContext(settingsGranted));
+        auto* api = ctx->queryApi(pet::kSettingsApiId, 1);
+        QVERIFY(api != nullptr);
+        QCOMPARE(api, static_cast<pet::IExtApi*>(&sharedSettings));
+        QVERIFY(dynamic_cast<pet::ISettingsApi*>(api) != nullptr);
+    }
+    // granted + switch OFF → stub; NOT granted → stub; version floor.
+    {
+        writeSwitch = false;
+        const std::unique_ptr<core::PluginContextImpl> ctx(makeContext(allGranted));
+        auto* settings = dynamic_cast<pet::ISettingsApi*>(
+            ctx->queryApi(pet::kSettingsApiId, 1));
+        QVERIFY(settings != nullptr);
+        QVERIFY(dynamic_cast<pet::ISettingsApi*>(
+                    static_cast<pet::IExtApi*>(&sharedSettings)) != nullptr);
+        QVERIFY(settings != dynamic_cast<pet::ISettingsApi*>(
+                    static_cast<pet::IExtApi*>(&sharedSettings)));
+        QCOMPARE(settings->setCloseAction(QStringLiteral("exit")),
+                 pet::PluginError::Capability);
+        QCOMPARE(ctx->queryApi(pet::kSettingsApiId, pet::kSettingsApiVersion + 1),
+                 nullptr);
+        writeSwitch = true;
+
+        const std::unique_ptr<core::PluginContextImpl> ctx2(makeContext(noneGranted));
+        auto* settings2 = dynamic_cast<pet::ISettingsApi*>(
+            ctx2->queryApi(pet::kSettingsApiId, 1));
+        QVERIFY(settings2 != nullptr);
+        QCOMPARE(settings2->setStartMinimized(true), pet::PluginError::Capability);
+    }
+
+    // Unknown ids stay nullptr (the whole queryApi contract).
+    {
+        const std::unique_ptr<core::PluginContextImpl> ctx(makeContext(allGranted));
+        QCOMPARE(ctx->queryApi("pet.nope", 1), nullptr);
+        QCOMPARE(ctx->queryApi(nullptr, 1), nullptr);
+    }
+}
+
+// ── PackListObserver fanout (VoicePackApiImpl, v1.3) ────────────────────────
+
+void PluginQueryApiTest::testPackListObserverFanout()
+{
+    core::VoicePackApiImpl packApi;
+
+    struct CountingObserver : public pet::IPackListObserver
+    {
+        int changes = 0;
+        void packListChanged() override { ++changes; }
+    };
+    CountingObserver a, b;
+
+    packApi.subscribePackList(&a);
+    packApi.subscribePackList(&a); // duplicate coalesces
+    packApi.subscribePackList(&b);
+    packApi.subscribePackList(nullptr); // null ignored
+
+    QCOMPARE(a.changes, 0);
+    packApi.fanoutPacksChanged();
+    QCOMPARE(a.changes, 1);
+    QCOMPARE(b.changes, 1);
+
+    // Unsubscribe stops the fanout for that observer only; an unknown
+    // pointer is a no-op.
+    packApi.unsubscribePackList(&b);
+    packApi.unsubscribePackList(&b);
+    packApi.fanoutPacksChanged();
+    QCOMPARE(a.changes, 2);
+    QCOMPARE(b.changes, 1);
+
+    // An observer that unsubscribes INSIDE the callback must not poison
+    // the fanout (copy-isolate discipline).
+    struct SelfRemovingObserver : public pet::IPackListObserver
+    {
+        core::VoicePackApiImpl* api = nullptr;
+        int changes = 0;
+        void packListChanged() override
+        {
+            ++changes;
+            api->unsubscribePackList(this);
+        }
+    };
+    SelfRemovingObserver self;
+    self.api = &packApi;
+    packApi.subscribePackList(&self);
+    packApi.fanoutPacksChanged();
+    QCOMPARE(self.changes, 1);
+    packApi.fanoutPacksChanged(); // self is gone; a still notified
+    QCOMPARE(self.changes, 1);
+    QCOMPARE(a.changes, 4);
 }
 
 QTEST_MAIN(PluginQueryApiTest)

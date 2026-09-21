@@ -150,6 +150,21 @@ PanelApplication::PanelApplication(QObject* parent)
     m_instanceControlApi = new core::InstanceControlApiImpl(m_instanceManager,
                                                             this);
 
+    // ── Shared v1.3 families (S5/S6 dogfooding) ────────────────────────
+    // ONE implementation per family for the whole panel, same discipline
+    // as the shared InstanceApiImpl/InstanceControlApiImpl above. All
+    // registered after m_instanceControlApi → destroyed before it
+    // (registration-reverse). The model scan cache + the voice-pack
+    // source seams get their renderer-dir / host-scan wiring in
+    // PanelUiBoot (they observe UI-adjacent singletons constructed
+    // later); the settings impl shares this tree's DatabaseManager so
+    // plugin writes and the panel's own settings page hit ONE db.
+    m_tuningApi = new core::TuningApiImpl(m_instanceManager, this);
+    m_modelApi = new core::ModelApiImpl(this);
+    m_settingsApi = new core::SettingsApiImpl(ConfigDir::configDir(), this);
+    m_settingsApi->setDatabase(m_databaseManager);
+    m_voicePackApi = new core::VoicePackApiImpl(/*refresh=*/{}, this);
+
     // ── Plugin framework (P4, §B.6) ─────────────────────────────────────
     // Registry first (pure store, no deps), host last (observes the roster
     // above; its page model / stream / config root are mounted later by
@@ -171,6 +186,12 @@ PanelApplication::PanelApplication(QObject* parent)
     m_pluginHost->setInstanceManager(m_instanceManager);
     m_pluginHost->setInstanceApi(m_instanceApi);
     m_pluginHost->setInstanceControlApi(m_instanceControlApi);
+    // v1.3 families: shared impls injected; contexts gate tuning/settings
+    // per manifest capability + the live write switch.
+    m_pluginHost->setTuningApi(m_tuningApi);
+    m_pluginHost->setModelApi(m_modelApi);
+    m_pluginHost->setSettingsApi(m_settingsApi);
+    m_pluginHost->setVoicePackApi(m_voicePackApi);
     // S2: the host-global plugin_write_enabled kill-switch (panel_config
     // kv, absent/"1" = enabled — the documented default). LIVE read on
     // every queryApi call, so flipping the kv row revokes plugin write
@@ -219,6 +240,26 @@ core::InstanceApiImpl* PanelApplication::instanceApi()
 core::InstanceControlApiImpl* PanelApplication::instanceControlApi()
 {
     return m_instanceControlApi;
+}
+
+core::TuningApiImpl* PanelApplication::tuningApi()
+{
+    return m_tuningApi;
+}
+
+core::ModelApiImpl* PanelApplication::modelApi()
+{
+    return m_modelApi;
+}
+
+core::SettingsApiImpl* PanelApplication::settingsApi()
+{
+    return m_settingsApi;
+}
+
+core::VoicePackApiImpl* PanelApplication::voicePackApi()
+{
+    return m_voicePackApi;
 }
 
 core::PluginRegistry& PanelApplication::pluginRegistry()

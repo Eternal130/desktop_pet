@@ -22,8 +22,9 @@ QString rendererBaseDir() {
 }
 } // namespace
 
-VoicePackController::VoicePackController(QObject* parent)
-    : QObject(parent) {
+VoicePackController::VoicePackController(pet::ITuningApi* tuningApi,
+                                         QObject* parent)
+    : QObject(parent), m_tuningApi(tuningApi) {
     rescan();
 }
 
@@ -121,6 +122,24 @@ QString VoicePackController::packDisplayNameFor(const QString& packPath) const {
 bool VoicePackController::setInstanceVoicePack(const QString& instanceUuid,
                                                const QString& packPath)
 {
+    // S6 (v1.3) write path: forward through the SHARED pet::ITuningApi —
+    // the same vtable the detail page's bridge and plugins (with the
+    // instance_tuning grant) use. The API takes the pack DIRECTORY NAME
+    // (its own scan resolves it back to the absolute dir — path→id→path
+    // round-trips through the host's single scan). Revision/NOTIFY keep
+    // firing here so the mount-matrix QML re-evaluates as before.
+    if (m_tuningApi != nullptr) {
+        const pet::PluginError err = packPath.isEmpty()
+            ? m_tuningApi->unmountVoicePack(instanceUuid)
+            : m_tuningApi->mountVoicePack(
+                  instanceUuid, QFileInfo(packPath).fileName());
+        const bool ok = (err == pet::PluginError::Ok);
+        ++m_mountsRevision;
+        emit mountsChanged();
+        return ok;
+    }
+    // Legacy direct path (tests / degraded wiring): identical semantics
+    // to the pre-S6 implementation.
     if (m_manager == nullptr) return false;
     // Locate the session by uuid (same scan the manager's delete path uses).
     for (int i = 0; i < m_manager->rowCount(); ++i) {

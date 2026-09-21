@@ -25,9 +25,11 @@
 // each define exactly 12 fields. The key-count test therefore asserts 12 — the
 // real, ground-truth count.
 
+#include "core/DatabaseManager.hpp"
 #include "core/PanelConfig.hpp"
 #include "core/PanelConfigController.hpp"
 
+#include <QDir>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -86,6 +88,7 @@ private slots:
     void testGarbageJsonReturnsDefaults();
     void testKeyCount();
     void testDefaultModelNameControllerRoundTrip();
+    void testPluginWriteEnabledKvRoundTrip();
 };
 
 void PanelConfigTest::testRoundTripAllFields()
@@ -317,6 +320,49 @@ void PanelConfigTest::testDefaultModelNameControllerRoundTrip()
     PanelConfigController survivor(dir.path());
     QCOMPARE(survivor.defaultModelName(), QStringLiteral("Mao"));
     QCOMPARE(survivor.startMinimized(), true);
+}
+
+// S6 (v1.3): the plugin_write_enabled kill-switch mirror — reads the
+// DEDICATED kv row the PanelApplication provider consults live (absent =
+// enabled), writes flip that exact row (never the panel_config blob), and
+// a same-value write is a silent no-op.
+void PanelConfigTest::testPluginWriteEnabledKvRoundTrip()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    DatabaseManager db;
+    QVERIFY(db.open(QDir(dir.path()).filePath(QStringLiteral("app.db"))));
+
+    // Fresh db → enabled (the documented kv default).
+    PanelConfigController ctl(dir.path());
+    ctl.setDatabase(&db);
+    QCOMPARE(ctl.pluginWriteEnabled(), true);
+
+    // Flip off → the DEDICATED kv row flips (what the live provider
+    // reads), NOTIFY fires once.
+    QSignalSpy spy(&ctl, &PanelConfigController::pluginWriteEnabledChanged);
+    ctl.setPluginWriteEnabled(false);
+    QCOMPARE(ctl.pluginWriteEnabled(), false);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(db.getValue(QStringLiteral("plugin_write_enabled"),
+                         QStringLiteral("1")),
+             QStringLiteral("0"));
+
+    // Same-value write is a no-op (no row write observable via NOTIFY).
+    ctl.setPluginWriteEnabled(false);
+    QCOMPARE(spy.count(), 1);
+
+    // Flip back on → row restored; a fresh controller (the provider's
+    // next boot read) sees enabled.
+    ctl.setPluginWriteEnabled(true);
+    QCOMPARE(spy.count(), 2);
+    QCOMPARE(db.getValue(QStringLiteral("plugin_write_enabled"),
+                         QStringLiteral("1")),
+             QStringLiteral("1"));
+    PanelConfigController reloaded(dir.path());
+    reloaded.setDatabase(&db);
+    QCOMPARE(reloaded.pluginWriteEnabled(), true);
 }
 
 QTEST_MAIN(PanelConfigTest)

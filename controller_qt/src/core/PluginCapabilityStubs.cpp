@@ -99,6 +99,131 @@ pet::PluginError InstanceControlApiStub::loadModel(const QString& uuid,
     return pet::PluginError::Capability;
 }
 
+// ── TuningApiStub (S5: loud failure, zero silent behavior) ─────────────────
+
+pet::PluginError TuningApiStub::setOpacity(const QString& uuid, double opacity)
+{
+    Q_UNUSED(opacity);
+    LOG_WARN("[plugin-api] tuningApi().setOpacity('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "(§B.4 / plugin_write_enabled) — ERR_CAPABILITY",
+             uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError TuningApiStub::setVolume(const QString& uuid, double volume)
+{
+    Q_UNUSED(volume);
+    LOG_WARN("[plugin-api] tuningApi().setVolume('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError TuningApiStub::setMuted(const QString& uuid, bool muted)
+{
+    Q_UNUSED(muted);
+    LOG_WARN("[plugin-api] tuningApi().setMuted('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError TuningApiStub::setFps(const QString& uuid, int fps)
+{
+    Q_UNUSED(fps);
+    LOG_WARN("[plugin-api] tuningApi().setFps('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError TuningApiStub::playMotion(const QString& uuid,
+                                           const QString& group, int index)
+{
+    Q_UNUSED(group);
+    Q_UNUSED(index);
+    LOG_WARN("[plugin-api] tuningApi().playMotion('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError TuningApiStub::setExpression(const QString& uuid,
+                                              const QString& expressionId)
+{
+    Q_UNUSED(expressionId);
+    LOG_WARN("[plugin-api] tuningApi().setExpression('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError TuningApiStub::triggerHitArea(const QString& uuid,
+                                               const QString& areaId)
+{
+    Q_UNUSED(areaId);
+    LOG_WARN("[plugin-api] tuningApi().triggerHitArea('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError TuningApiStub::mountVoicePack(const QString& uuid,
+                                               const QString& packId)
+{
+    Q_UNUSED(packId);
+    LOG_WARN("[plugin-api] tuningApi().mountVoicePack('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError TuningApiStub::unmountVoicePack(const QString& uuid)
+{
+    LOG_WARN("[plugin-api] tuningApi().unmountVoicePack('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+// ── SettingsApiStub (S6: loud failure, zero silent behavior) ───────────────
+
+pet::PluginError SettingsApiStub::setCloseAction(const QString& action)
+{
+    LOG_WARN("[plugin-api] settingsApi().setCloseAction('{}') without the "
+             "'settings_write' capability or with plugin writes disabled "
+             "(§B.4 / plugin_write_enabled) — ERR_CAPABILITY",
+             action.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError SettingsApiStub::setConfirmOnExit(bool enabled)
+{
+    Q_UNUSED(enabled);
+    LOG_WARN("[plugin-api] settingsApi().setConfirmOnExit() without the "
+             "'settings_write' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY");
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError SettingsApiStub::setStartMinimized(bool enabled)
+{
+    Q_UNUSED(enabled);
+    LOG_WARN("[plugin-api] settingsApi().setStartMinimized() without the "
+             "'settings_write' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY");
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError SettingsApiStub::setDefaultModelName(const QString& name)
+{
+    LOG_WARN("[plugin-api] settingsApi().setDefaultModelName('{}') without "
+             "the 'settings_write' capability or with plugin writes "
+             "disabled — ERR_CAPABILITY", name.toStdString());
+    return pet::PluginError::Capability;
+}
+
 // ── VoicePackApiImpl (read-only real view; install path is P5) ─────────────
 
 VoicePackApiImpl::VoicePackApiImpl(std::function<void()> refresh, QObject* parent)
@@ -108,6 +233,17 @@ VoicePackApiImpl::VoicePackApiImpl(std::function<void()> refresh, QObject* paren
 
 QVector<pet::PackInfo> VoicePackApiImpl::listPacks()
 {
+    // v1.3 (S6): the host's single scan owner (VoicePackController's
+    // cache) wins when wired — the panel page and this API share ONE
+    // scan, not two. Standalone fallback below (tests / degraded wiring).
+    if (m_packSource) {
+        try {
+            return m_packSource();
+        } catch (...) {
+            LOG_ERROR("[plugin-api] pack source threw (isolated) — "
+                      "falling back to the standalone scan");
+        }
+    }
     // Same dual-source discovery the VoicePacks page uses: scanner takes the
     // renderer BASE dir (appends Resources/VoicePacks internally) plus the
     // per-user packs dir (storage-layout revision — downloads install there
@@ -161,6 +297,35 @@ QString VoicePackApiImpl::installPath()
     // (DownloadService installRoot — PanelApplication wiring), never inside
     // the (possibly read-only) install tree.
     return ConfigDir::userVoicePacksDir();
+}
+
+void VoicePackApiImpl::subscribePackList(pet::IPackListObserver* observer)
+{
+    // Same coalescing discipline as InstanceApiImpl's observers.
+    if (observer == nullptr || m_packObservers.contains(observer))
+        return;
+    m_packObservers.append(observer);
+}
+
+void VoicePackApiImpl::unsubscribePackList(pet::IPackListObserver* observer)
+{
+    m_packObservers.removeAll(observer);
+}
+
+void VoicePackApiImpl::fanoutPacksChanged()
+{
+    // Copy + try/catch: an observer that unsubscribes (or throws) inside
+    // the callback must not poison the fanout — same §A.1 discipline as
+    // InstanceApiImpl::fanoutRosterChanged.
+    const auto observers = m_packObservers;
+    for (pet::IPackListObserver* observer : observers) {
+        try {
+            observer->packListChanged();
+        } catch (...) {
+            LOG_ERROR("[plugin-api] pack-list observer threw in "
+                      "packListChanged() — isolated, fanout continues");
+        }
+    }
 }
 
 } // namespace core

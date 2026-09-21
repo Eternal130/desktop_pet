@@ -30,6 +30,7 @@
 #include "network/WsServer.hpp"
 #include "system/AutoLaunchManager.hpp"
 #include "system/TrayManager.hpp"
+#include "ui/InstanceControlBridge.hpp"
 #include "ui/NotificationStreamController.hpp"
 #include "ui/ModelController.hpp"
 #include "ui/RosterApiModel.hpp"
@@ -98,6 +99,12 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     m_panelConfigController = new PanelConfigController(ConfigDir::configDir(),
                                                         this);
     m_panelConfigController->setDatabase(&m_app.databaseManager());
+    // S6 (v1.3): the 4 whitelisted behavior-field writes forward through
+    // the SHARED pet::ISettingsApi — the panel's own settings page and
+    // plugins (settings_write grant) hit ONE persistence path.
+    // (autoLaunchSystem + pluginWriteEnabled stay on direct host paths —
+    // architecture decision, see ISettingsApi.hpp.)
+    m_panelConfigController->setSettingsApi(m_app.settingsApi());
 
     // AssetManager (image library + logo/instance-icon refs). Shares the
     // DatabaseManager; exposed as the "assetManager" context property for
@@ -192,12 +199,11 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     // hands to plugins (PanelApplication constructs one shared
     // InstanceApiImpl and injects it both here and into PluginHost).
     // Sidebar QML binds `model: rosterModel`; selection (selectInstance →
-    // instanceAt) keeps using instanceManager above, and S2 moves the
-    // sidebar DELETE write path onto rosterModel.deleteInstance (backed
-    // by the shared pet::IInstanceControlApi — the host bridge is
-    // deliberately NOT capability-gated; the plugin side is, at
-    // queryApi). The remaining create flows (Welcome/detail pages)
-    // migrate in S5.
+    // instanceAt) keeps using instanceManager above. Writes go through
+    // the shared pet::IInstanceControlApi bridges: sidebar delete +
+    // every create flow (Welcome/detail/CreateInstanceDialog) on
+    // rosterModel.deleteInstance/createInstance below; the detail page's
+    // tuning/lifecycle writes on the instanceControl bridge (S5).
     // Lifetime (M3): heap child of this PanelUiBoot (engine subtree) —
     // dies during engine destruction, BEFORE the PanelApplication service
     // tree that owns the shared InstanceApiImpl/InstanceControlApiImpl,
@@ -207,6 +213,21 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
                                           m_app.instanceControlApi(), this);
     m_engine.rootContext()->setContextProperty("rosterModel",
                                                m_rosterApiModel);
+
+    // InstanceControlBridge context property (S5 dogfooding → v1.3 write
+    // path). The detail page's WRITE calls (tuning setters, motion/
+    // expression/hit triggers, lifecycle buttons) go through this bridge —
+    // the SAME shared TuningApi/InstanceControlApi implementations the
+    // plugin SDK serves (capability-gated there, ungated here: the host
+    // UI is the host). Read bindings stay on the live InstanceSession.
+    // Lifetime (M3): heap child of this PanelUiBoot — dies during engine
+    // destruction, BEFORE the PanelApplication service tree that owns the
+    // shared implementations.
+    m_instanceControlBridge = new InstanceControlBridge(m_app.tuningApi(),
+                                                        m_app.instanceControlApi(),
+                                                        this);
+    m_engine.rootContext()->setContextProperty("instanceControl",
+                                               m_instanceControlBridge);
 
     // TrayManager context property (Wave 7 todo 13). Main.qml's Connections
     // block catches requestContextMenu / visibilityToggled / showSettings /
@@ -236,22 +257,56 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
                                                m_notificationStream);
 
     // VoicePackController context property. Discovery over VoicePackScanner
-    // + MetaMkoParser; todo 21 mount wiring reaches the per-instance
-    // MountedBehaviorEngine via the InstanceManager.
+    // + MetaMkoParser; the S6 mount/unmount writes forward through the
+    // shared pet::ITuningApi (constructor injection below) and this
+    // controller's scan IS the host's single pack scan — the shared
+    // VoicePackApiImpl (plugin voicePackApi()) reads it through the pack
+    // source wired further below (one scan, not two).
     // Lifetime (M3): heap child of PanelUiBoot — see mount-point note.
-    m_voicePackController = new VoicePackController(this);
+    m_voicePackController = new VoicePackController(m_app.tuningApi(), this);
     m_voicePackController->setInstanceManager(m_app.instanceManager());
     m_engine.rootContext()->setContextProperty("voicePacks",
                                                m_voicePackController);
+    // S6 (v1.3): wire the SHARED VoicePackApiImpl (served to every plugin
+    // context through PluginHost) onto this controller's single scan:
+    //   - pack source: listPacks() reads the controller's current cache
+    //     (no second scan behind the plugin API)
+    //   - refresh: refreshScan() drives the controller's rescan (the
+    //     P5 seam now lands on the shared impl too)
+    //   - fanout: the controller's packsChanged drives the
+    //     IPackListObserver family (installs, manual rescans, ...)
+    {
+        auto* sharedPackApi = m_app.voicePackApi();
+        sharedPackApi->setRefresh(
+            [this]() { m_voicePackController->rescan(); });
+        sharedPackApi->setPackSource([this]() {
+            // VoicePackInfo (host view) → pet::PackInfo (SDK row). Same
+            // field mapping the standalone scan in VoicePackApiImpl uses.
+            QVector<pet::PackInfo> out;
+            for (int i = 0; i < m_voicePackController->packCount(); ++i) {
+                pet::PackInfo row;
+                row.id = m_voicePackController->packDirName(i);
+                row.displayName = m_voicePackController->packDisplayName(i);
+                row.dirPath = m_voicePackController->packPath(i);
+                row.groupCount = m_voicePackController->packGroupCount(i);
+                out.append(row);
+            }
+            return out;
+        });
+        QObject::connect(m_voicePackController, &VoicePackController::packsChanged,
+                         sharedPackApi, &core::VoicePackApiImpl::fanoutPacksChanged);
+    }
 
-    // ModelController context property (模型库 page backend). Discovery over
-    // ModelScanner + ModelInfoParser; the rendererDir injection mirrors the
-    // SAME source VoicePackController derives internally
+    // ModelController context property (模型库 page backend). S5 (v1.3):
+    // constructed over the SHARED core::ModelApiImpl from the service tree
+    // — the plugin queryApi("pet.model") family and this page consume ONE
+    // scan cache. The rendererDir injection mirrors the SAME source
+    // VoicePackController derives internally
     // (QCoreApplication::applicationDirPath — the build places the controller
     // and renderer exes side-by-side in build/bin, so the renderer's
     // Resources/Models tree hangs off the app dir).
     // Lifetime (M3): heap child of PanelUiBoot — see mount-point note.
-    m_modelController = new ModelController(this);
+    m_modelController = new ModelController(m_app.modelApi(), this);
     m_modelController->setRendererDir(QCoreApplication::applicationDirPath());
     m_engine.rootContext()->setContextProperty("modelLibrary",
                                                m_modelController);

@@ -317,6 +317,15 @@ signals:
     void volumeChanged();
     void mutedChanged();
 
+    // v1.3 (S5) minimal observability seam: mounted-pack changes had NO
+    // NOTIFY (S4 freeze — see InstanceApiImpl::snapshotOf's old note),
+    // so InstanceRuntime.mountedPackId only refreshed on the next
+    // unrelated property flip. Emitted by mountVoicePack/unmountVoicePack
+    // when the mounted path ACTUALLY changes — the same minimal-seam
+    // precedent as isDeletePending (pure addition; zero behavior change
+    // to the S4 lifecycle machinery).
+    void mountedVoicePackChanged();
+
     // model_load_failed (interface.md §B): the renderer rejected a load_model
     // (missing model dir, corrupt .model3.json, ...). Carries the error
     // message; also drives the modelLoadFailureRevision + lastModelLoadError

@@ -32,9 +32,12 @@
 #include <QString>
 #include <QStringList>
 
+#include "api/ITuningApi.hpp"
+
 #include "core/VoicePackInfo.hpp"
 
 class InstanceManager;
+namespace pet { class ITuningApi; }
 
 class VoicePackController : public QObject {
     Q_OBJECT
@@ -46,7 +49,14 @@ class VoicePackController : public QObject {
     // mountsChanged, which is what refreshes the mount matrix UI.
     Q_PROPERTY(int mountsRevision READ mountsRevision NOTIFY mountsChanged)
 public:
-    explicit VoicePackController(QObject* parent = nullptr);
+    // S6 (v1.3) internal migration: tuningApi is the SHARED
+    // pet::ITuningApi (PanelApplication service tree) that the
+    // mount/unmount writes forward through — the voice-pack page, the
+    // detail page and plugins share ONE write path. Null (tests /
+    // degraded wiring) keeps the legacy direct-InstanceSession path.
+    // QML surface / Q_PROPERTYs unchanged.
+    explicit VoicePackController(pet::ITuningApi* tuningApi = nullptr,
+                                 QObject* parent = nullptr);
 
     int packCount() const { return static_cast<int>(m_packs.size()); }
     int mountsRevision() const { return m_mountsRevision; }
@@ -71,7 +81,8 @@ public:
 
     // Mount wiring (todo 21). The manager is injected post-construction by
     // main.cpp (the controller is created before the InstanceManager there);
-    // null manager makes these no-ops returning ""/false.
+    // null manager makes these no-ops returning ""/false (legacy read path
+    // only — the S6 write path goes through the injected ITuningApi).
     void setInstanceManager(InstanceManager* manager) { m_manager = manager; }
     Q_INVOKABLE bool setInstanceVoicePack(const QString& instanceUuid,
                                           const QString& packPath);
@@ -85,5 +96,6 @@ private:
     QList<core::VoicePackInfo> m_packs;
     QString m_voicePackDir;
     InstanceManager* m_manager = nullptr;
+    pet::ITuningApi* m_tuningApi = nullptr; // S6 shared write path, not owned
     int m_mountsRevision = 0;
 };

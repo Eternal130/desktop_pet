@@ -32,11 +32,19 @@ void PanelConfigController::loadFromDisk()
     m_startMinimized = cfg.startMinimized;
     m_autoLaunchSystem = cfg.autoLaunchSystem;
     m_defaultModelName = cfg.defaultModelName;
+    // S6: seed the kill-switch mirror from the SAME kv row the
+    // PanelApplication provider reads (absent/"1" = enabled). Falls back
+    // to enabled when no db is mounted.
+    m_pluginWriteEnabled = m_db != nullptr
+        ? m_db->getValue(QStringLiteral("plugin_write_enabled"),
+                         QStringLiteral("1")) != QStringLiteral("0")
+        : true;
     LOG_DEBUG("PanelConfigController loaded: closeAction=\"{}\" confirmOnExit={} "
-              "startMinimized={} autoLaunchSystem={} defaultModelName=\"{}\"",
+              "startMinimized={} autoLaunchSystem={} defaultModelName=\"{}\" "
+              "pluginWriteEnabled={}",
               m_closeAction.toStdString(), m_confirmOnExit,
               m_startMinimized, m_autoLaunchSystem,
-              m_defaultModelName.toStdString());
+              m_defaultModelName.toStdString(), m_pluginWriteEnabled);
 }
 
 bool PanelConfigController::updateField(std::function<void(PanelConfig&)> mutator)
@@ -62,28 +70,38 @@ bool PanelConfigController::updateField(std::function<void(PanelConfig&)> mutato
 // ── Setters ────────────────────────────────────────────────────────────────
 // Each: no-op on same value (avoids spurious NOTIFY + disk I/O), otherwise
 // update cache + persist + emit NOTIFY so QML bindings re-evaluate.
+//
+// S6 (v1.3): the four whitelisted behavior fields WRITE through the
+// injected pet::ISettingsApi (the same load-modify-save path plugins
+// with the settings_write grant use). Validation moved WITH the write:
+// the API answers InvalidArgument for illegal values (empty model name,
+// non-exit/minimize closeAction) and the controller keeps its cache + a
+// WARN, exactly like the old inline guards. Null API (tests / degraded
+// wiring) takes the legacy direct path below — byte-identical behavior.
 
 void PanelConfigController::setCloseAction(const QString& action)
 {
     if (m_closeAction == action) return;
-    // B2 guard: only accept "exit" or "minimize". Any other value is logged
-    // at WARN + silently ignored (defensive — QML SegmentedControl only
-    // produces these two values, but a corrupt panel.json or a future caller
-    // could pass anything).
+    // B2 guard: only accept "exit" or "minimize". Any other value is
+    // rejected (defensive — QML SegmentedControl only produces legal
+    // values, but a corrupt panel.json or a future caller could pass
+    // anything).
     if (action != QLatin1String("exit") && action != QLatin1String("minimize")) {
         LOG_WARN("PanelConfigController::setCloseAction: rejecting invalid value "
                  "'{}' (only \"exit\"/\"minimize\" allowed)",
                  action.toStdString());
         return;
     }
-    const QString old = m_closeAction;
-    m_closeAction = action;
-    if (!updateField([action](PanelConfig& cfg) { cfg.closeAction = action; })) {
-        // Roll back the cache on persistence failure so QML reads the value
-        // that's actually on disk (the old one).
-        m_closeAction = old;
+    if (m_settingsApi != nullptr) {
+        if (m_settingsApi->setCloseAction(action) != pet::PluginError::Ok) {
+            LOG_WARN("PanelConfigController: settingsApi setCloseAction failed");
+            return;
+        }
+    } else if (!updateField([action](PanelConfig& cfg) { cfg.closeAction = action; })) {
         return;
     }
+    const QString old = m_closeAction;
+    m_closeAction = action;
     emit closeActionChanged();
     LOG_INFO("PanelConfig: closeAction \"{}\" -> \"{}\"",
              old.toStdString(), action.toStdString());
@@ -92,11 +110,13 @@ void PanelConfigController::setCloseAction(const QString& action)
 void PanelConfigController::setConfirmOnExit(bool enabled)
 {
     if (m_confirmOnExit == enabled) return;
-    m_confirmOnExit = enabled;
-    if (!updateField([enabled](PanelConfig& cfg) { cfg.confirmOnExit = enabled; })) {
-        m_confirmOnExit = !enabled;  // roll back
+    if (m_settingsApi != nullptr) {
+        if (m_settingsApi->setConfirmOnExit(enabled) != pet::PluginError::Ok)
+            return;
+    } else if (!updateField([enabled](PanelConfig& cfg) { cfg.confirmOnExit = enabled; })) {
         return;
     }
+    m_confirmOnExit = enabled;
     emit confirmOnExitChanged();
     LOG_INFO("PanelConfig: confirmOnExit -> {}", enabled);
 }
@@ -104,17 +124,23 @@ void PanelConfigController::setConfirmOnExit(bool enabled)
 void PanelConfigController::setStartMinimized(bool enabled)
 {
     if (m_startMinimized == enabled) return;
-    m_startMinimized = enabled;
-    if (!updateField([enabled](PanelConfig& cfg) { cfg.startMinimized = enabled; })) {
-        m_startMinimized = !enabled;
+    if (m_settingsApi != nullptr) {
+        if (m_settingsApi->setStartMinimized(enabled) != pet::PluginError::Ok)
+            return;
+    } else if (!updateField([enabled](PanelConfig& cfg) { cfg.startMinimized = enabled; })) {
         return;
     }
+    m_startMinimized = enabled;
     emit startMinimizedChanged();
     LOG_INFO("PanelConfig: startMinimized -> {}", enabled);
 }
 
 void PanelConfigController::setAutoLaunchSystem(bool enabled)
 {
+    // ARCHITECTURE DECISION (S6): autoLaunchSystem deliberately stays on
+    // the DIRECT host path — OS-level autostart is a host-shell
+    // capability (registry / .desktop mutation) and is intentionally NOT
+    // part of pet::ISettingsApi (see its header). Never forwarded.
     if (m_autoLaunchSystem == enabled) return;
     m_autoLaunchSystem = enabled;
     if (!updateField([enabled](PanelConfig& cfg) { cfg.autoLaunchSystem = enabled; })) {
@@ -135,15 +161,37 @@ void PanelConfigController::setDefaultModelName(const QString& name)
         LOG_WARN("PanelConfigController::setDefaultModelName: rejecting empty name");
         return;
     }
-    const QString old = m_defaultModelName;
-    m_defaultModelName = name;
-    if (!updateField([name](PanelConfig& cfg) { cfg.defaultModelName = name; })) {
-        // Roll back the cache on persistence failure so QML reads the value
-        // that's actually on disk (the old one) — same as setCloseAction.
-        m_defaultModelName = old;
+    if (m_settingsApi != nullptr) {
+        if (m_settingsApi->setDefaultModelName(name) != pet::PluginError::Ok) {
+            LOG_WARN("PanelConfigController: settingsApi setDefaultModelName failed");
+            return;
+        }
+    } else if (!updateField([name](PanelConfig& cfg) { cfg.defaultModelName = name; })) {
         return;
     }
+    const QString old = m_defaultModelName;
+    m_defaultModelName = name;
     emit defaultModelNameChanged();
     LOG_INFO("PanelConfig: defaultModelName \"{}\" -> \"{}\"",
              old.toStdString(), name.toStdString());
+}
+
+void PanelConfigController::setPluginWriteEnabled(bool enabled)
+{
+    // S6: writes the DEDICATED kv row (never the panel_config blob) so
+    // PanelApplication's live provider flips on the very next queryApi.
+    if (m_pluginWriteEnabled == enabled) return;
+    if (m_db == nullptr) {
+        LOG_WARN("PanelConfigController::setPluginWriteEnabled: no shared "
+                 "DatabaseManager — kv row not written");
+        return;
+    }
+    if (!m_db->setValue(QStringLiteral("plugin_write_enabled"),
+                        enabled ? QStringLiteral("1") : QStringLiteral("0"))) {
+        LOG_WARN("PanelConfigController: plugin_write_enabled write failed");
+        return;
+    }
+    m_pluginWriteEnabled = enabled;
+    emit pluginWriteEnabledChanged();
+    LOG_INFO("PanelConfig: pluginWriteEnabled -> {}", enabled);
 }

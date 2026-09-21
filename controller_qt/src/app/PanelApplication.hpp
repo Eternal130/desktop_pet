@@ -17,6 +17,10 @@ namespace core {
 class DownloadService;
 class InstanceApiImpl;
 class InstanceControlApiImpl;
+class ModelApiImpl;
+class SettingsApiImpl;
+class TuningApiImpl;
+class VoicePackApiImpl;
 class PluginHost;
 }
 
@@ -68,6 +72,38 @@ public:
     // before the InstanceManager (registration-reverse teardown).
     core::InstanceControlApiImpl* instanceControlApi();
 
+    // S5 (v1.3): THE shared pet::ITuningApi implementation — same
+    // construction/sharing pattern as instanceControlApi(): served to
+    // plugins through PluginHost → queryApi("pet.instance_tuning")
+    // (capability + plugin_write_enabled gated at the context) and to
+    // the panel's own InstanceControlBridge + VoicePackController mount
+    // path (NOT gated — the host UI is the host). Registered after
+    // m_instanceControlApi → dies before it (registration-reverse).
+    core::TuningApiImpl* tuningApi();
+
+    // S5 (v1.3): THE shared pet::IModelApi implementation — ONE model
+    // scan cache serving the plugin family (queryApi("pet.model"), a
+    // read → ungated) AND the panel's own ModelController (the library
+    // page consumes this same object). Same lifetime discipline as
+    // tuningApi(). The renderer dir is injected later by PanelUiBoot
+    // (setRendererDir, mirroring the ModelController seam).
+    core::ModelApiImpl* modelApi();
+
+    // S6 (v1.3): THE shared pet::ISettingsApi implementation — the SAME
+    // load-modify-save persistence path the panel's own
+    // PanelConfigController writes land on (it forwards here since S6).
+    // Served to plugins through queryApi("pet.settings")
+    // (settings_write + switch gated at the context). Same lifetime
+    // discipline as tuningApi().
+    core::SettingsApiImpl* settingsApi();
+
+    // S6 (v1.3): THE shared voice-pack read API (core::VoicePackApiImpl
+    // — the pet::IVoicePackApi handed to every plugin context). Its pack
+    // source + refresh seams are wired by PanelUiBoot onto
+    // VoicePackController's single scan; packsChanged fanout reaches the
+    // IPackListObserver family. Same lifetime discipline as tuningApi().
+    core::VoicePackApiImpl* voicePackApi();
+
     // Plugin framework (P4, §B.6): the registry (entry store + state
     // machine) is created FIRST in the ctor; the host (initialize/shutdown
     // driver) LAST, so it can observe every earlier service. main()
@@ -116,6 +152,13 @@ private:
     // instanceControlApi()); registered after m_instanceApi → destroyed
     // before it (registration-reverse).
     core::InstanceControlApiImpl* m_instanceControlApi = nullptr;
+    // S5/S6 (v1.3): shared v1.3-family implementations (see the accessor
+    // comments); registered after m_instanceControlApi, in this order →
+    // destroyed before it and each other, registration-reverse.
+    core::TuningApiImpl* m_tuningApi = nullptr;
+    core::ModelApiImpl* m_modelApi = nullptr;
+    core::SettingsApiImpl* m_settingsApi = nullptr;
+    core::VoicePackApiImpl* m_voicePackApi = nullptr;
     // Registered last (wireLegacyInstanceZeroSenders) → destroyed first.
     StartupSalvo* m_startupSalvo = nullptr;
     ProcessManager* m_processManager = nullptr;

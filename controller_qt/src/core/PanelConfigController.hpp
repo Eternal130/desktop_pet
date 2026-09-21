@@ -4,9 +4,12 @@
 #include <QString>
 #include <functional>
 
+#include "api/ISettingsApi.hpp"
+
 #include "core/DatabaseManager.hpp"
 
 struct PanelConfig;
+namespace pet { class ISettingsApi; }
 
 // PanelConfigController (Wave 7 todo 15) — the QML bridge for the 4
 // startup/exit-behavior fields of PanelConfig that SettingsPage.qml edits:
@@ -42,6 +45,12 @@ class PanelConfigController : public QObject
     // the model-library UI's concern (it offers the scanned list); an
     // unknown name simply fails at renderer launch with model_load_failed.
     Q_PROPERTY(QString defaultModelName READ defaultModelName WRITE setDefaultModelName NOTIFY defaultModelNameChanged)
+    // S6 (v1.3): host-global plugin write kill-switch (the SAME
+    // plugin_write_enabled kv row PanelApplication's provider reads live
+    // on every queryApi). Host-shell setting — deliberately NOT routed
+    // through ISettingsApi (a switch plugins can flip would not be a
+    // switch; see ISettingsApi.hpp's scope note). Default = enabled.
+    Q_PROPERTY(bool pluginWriteEnabled READ pluginWriteEnabled WRITE setPluginWriteEnabled NOTIFY pluginWriteEnabledChanged)
 
 public:
     // configDir: the panel.json root (ConfigDir::configDir() in production, or
@@ -55,12 +64,23 @@ public:
     // it, each load-modify-save opens its own connection at <configDir>/app.db.
     void setDatabase(DatabaseManager* db) { m_db = db; }
 
+    // S6 (v1.3) internal migration: the 4 whitelisted behavior-field
+    // WRITES forward through the SHARED pet::ISettingsApi (the same
+    // load-modify-save path plugins with the settings_write grant hit);
+    // null (tests / degraded wiring) keeps the legacy direct
+    // PanelStateManager path. autoLaunchSystem stays on the direct host
+    // path either way (architecture decision — host-shell capability,
+    // not a plugin-settings key; see ISettingsApi.hpp). Q_PROPERTY NOTIFY
+    // surface unchanged.
+    void setSettingsApi(pet::ISettingsApi* api) { m_settingsApi = api; }
+
     // ── READ accessors (backed by m_cache, loaded once in ctor) ───────────
     QString closeAction() const     { return m_closeAction; }
     bool    confirmOnExit() const   { return m_confirmOnExit; }
     bool    startMinimized() const  { return m_startMinimized; }
     bool    autoLaunchSystem() const { return m_autoLaunchSystem; }
     QString defaultModelName() const { return m_defaultModelName; }
+    bool    pluginWriteEnabled() const { return m_pluginWriteEnabled; }
 
     // ── WRITE accessors (mutate cache + persist atomically + emit NOTIFY) ─
     // Each does load-modify-save: read the current panel.json, overwrite the
@@ -72,6 +92,12 @@ public:
     void setStartMinimized(bool enabled);
     void setAutoLaunchSystem(bool enabled);
     void setDefaultModelName(const QString& name);
+    // Writes the DEDICATED plugin_write_enabled kv row ("1"/"0") — the
+    // exact row PanelApplication's live provider reads, so flipping this
+    // revokes plugin write access without a restart. No-op (no write, no
+    // NOTIFY) on a same-value set. Degrades to WARN when no shared
+    // DatabaseManager is mounted (the kv row only exists in app.db).
+    void setPluginWriteEnabled(bool enabled);
 
 signals:
     void closeActionChanged();
@@ -79,6 +105,7 @@ signals:
     void startMinimizedChanged();
     void autoLaunchSystemChanged();
     void defaultModelNameChanged();
+    void pluginWriteEnabledChanged();
 
 private:
     // Load panel.json once at construction → seed the 4 cached fields. Used
@@ -94,9 +121,11 @@ private:
 
     QString m_configDir;
     DatabaseManager* m_db = nullptr;
+    pet::ISettingsApi* m_settingsApi = nullptr; // S6 shared write path, not owned
     QString m_closeAction;
     bool    m_confirmOnExit = false;
     bool    m_startMinimized = false;
     bool    m_autoLaunchSystem = false;
     QString m_defaultModelName;
+    bool    m_pluginWriteEnabled = true; // kv plugin_write_enabled mirror
 };

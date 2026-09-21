@@ -69,6 +69,8 @@ private:
     class VoicePackController* m_voicePackController;
     class ModelController* m_modelController;
     class RosterApiModel* m_rosterApiModel;
+    // S5 (v1.3): detail-page write bridge (ctx prop "instanceControl").
+    class InstanceControlBridge* m_instanceControlBridge = nullptr;
     // P4 plugin bridges (constructed after the original bridges, before
     // the engine loads — see the .cpp for the mounting contract).
     core::PluginManager* m_pluginManager = nullptr;

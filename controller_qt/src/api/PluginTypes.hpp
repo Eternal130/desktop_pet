@@ -37,8 +37,15 @@ namespace pet {
 // gated by kCapabilityInstanceLifecycle), and the IInstanceObserver +
 // IInstanceApi::subscribeInstances/unsubscribeInstances tail append
 // (stage-1 privilege, consumed with this bump).
+// v1.3 (2026-09-21, S5+S6): minor bumped for the additive expansion —
+// ModelSummary POD (below), three new queryApi families (ITuningApi /
+// IModelApi / ISettingsApi), and the IVoicePackApi tail append
+// (IPackListObserver + subscribePackList/unsubscribePackList — the
+// stage-1 tail-append privilege is NOT re-spent: IVoicePackApi is not
+// yet frozen, this is a stage-1 family still evolving pre-P6a; see
+// api/README.md v1.3).
 constexpr int kApiMajor = 1;
-constexpr int kApiMinor = 2;
+constexpr int kApiMinor = 3;
 
 // ── Capability vocabulary (manifest "capabilities" entries; §B.4) ───────────
 // The exact, case-sensitive strings the host parses from plugin manifests
@@ -149,6 +156,18 @@ struct PackInfo {
     QString version;
     QString dirPath;     // absolute path to the pack directory
     int groupCount = 0;  // behavior groups parsed from meta.mko
+};
+
+// IModelApi::availableModels()/modelInfo() row (v1.3, S5). Read-only
+// summary of one discovered Live2D model directory — the same metadata
+// the model-library page renders (pre-parsed from <Name>.model3.json at
+// scan time; a missing/corrupt file degrades to empty lists, the roster
+// entry survives).
+struct ModelSummary {
+    QString name;             // directory name == model id ("Hiyori")
+    QStringList motionGroups; // group names (QMap key order = sorted)
+    QStringList expressions;  // FileReferences.Expressions[].Name
+    QStringList hitAreas;     // HitAreas[].Name
 };
 
 // IDownloadApi::start() argument. All fields are host-validated before any

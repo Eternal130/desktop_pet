@@ -38,8 +38,12 @@ Rectangle {
     CreateInstanceDialog {
         id: createDialog
         onAccepted: (name, avatar) => {
-            const uuid = instanceManager.createInstance(name, avatar)
-            if (uuid !== "") {
+            // S5: creation goes through the rosterModel write bridge (the
+            // shared IInstanceControlApi — int error code, 0 = Ok); the
+            // dialog itself never emits accepted (see its header), this
+            // legacy binding stays for safety.
+            const err = rosterModel.createInstance(name, avatar)
+            if (err === 0) {
                 const row = instanceManager.rowCount() - 1
                 Window.window.selectInstance(
                     row, instanceManager.instanceAt(row).instanceId)
@@ -286,20 +290,25 @@ Rectangle {
                             text: qsTr("↻ 重启")
                             visible: instance && instance.status === "running"
                             anchors.verticalCenter: parent.verticalCenter
-                            onClicked: instance.restart()
+                            // S5: writes go through the shared-API bridge
+                            // (reads keep the live session object).
+                            onClicked: if (instance)
+                                instanceControl.restart(instance.uuid)
                         }
                         AppButton {
                             text: qsTr("⏹ 停止")
                             visible: instance && instance.status === "running"
                             anchors.verticalCenter: parent.verticalCenter
-                            onClicked: instance.stop()
+                            onClicked: if (instance)
+                                instanceControl.stop(instance.uuid)
                         }
                         AppButton {
                             style: "primary"
                             text: qsTr("▶ 启动")
                             visible: !(instance && instance.status === "running")
                             anchors.verticalCenter: parent.verticalCenter
-                            onClicked: instance.start()
+                            onClicked: if (instance)
+                                instanceControl.start(instance.uuid)
                         }
                     }
                 }
@@ -331,14 +340,16 @@ Rectangle {
                                 width: parent.width - 90
                                 model: instance ? instance.availableModels() : []
                                 onActivated: if (instance && currentText)
-                                    instance.loadModel(currentText)
+                                    instanceControl.loadModel(
+                                        instance.uuid, currentText)
                             }
                             AppButton {
                                 style: "primary"
                                 text: qsTr("应用")
                                 width: 78
                                 onClicked: if (instance && modelCombo.currentText)
-                                    instance.loadModel(modelCombo.currentText)
+                                    instanceControl.loadModel(
+                                        instance.uuid, modelCombo.currentText)
                             }
                         }
                         Text {
@@ -382,7 +393,8 @@ Rectangle {
                                 delegate: Chip {
                                     text: modelData + " ×" +
                                           instance.motionCount(modelData)
-                                    onActivated: instance.playMotion(modelData, 0)
+                                    onActivated: instanceControl.playMotion(
+                                        instance.uuid, modelData, 0)
                                 }
                             }
                         }
@@ -405,7 +417,8 @@ Rectangle {
                                     ? instance.expressionNames() : []
                                 delegate: Chip {
                                     text: modelData
-                                    onActivated: instance.setExpression(modelData)
+                                    onActivated: instanceControl.setExpression(
+                                        instance.uuid, modelData)
                                 }
                             }
                         }
@@ -428,7 +441,8 @@ Rectangle {
                                     ? instance.hitAreaNames() : []
                                 delegate: Chip {
                                     text: modelData
-                                    onActivated: instance.triggerHitArea(modelData)
+                                    onActivated: instanceControl.triggerHitArea(
+                                        instance.uuid, modelData)
                                 }
                             }
                         }
@@ -460,7 +474,10 @@ Rectangle {
                             valueText: (instance ? instance.opacity : 1.0).toFixed(2)
                             from: 0.1; to: 1.0; stepSize: 0.05
                             bindValue: instance ? instance.opacity : 1.0
-                            onMoved: (val) => { if (instance) instance.setOpacity(val) }
+                            onMoved: (val) => {
+                                if (instance) instanceControl.setOpacity(
+                                    instance.uuid, val)
+                            }
                         }
                         ParamRow {
                             width: parent.width
@@ -473,7 +490,10 @@ Rectangle {
                                     width: 200
                                     from: 0; to: 1; stepSize: 0.05
                                     value: instance ? instance.volume : 1.0
-                                    onMoved: (val) => { if (instance) instance.setVolume(val) }
+                                    onMoved: (val) => {
+                                        if (instance) instanceControl.setVolume(
+                                            instance.uuid, val)
+                                    }
                                 }
                                 Text {
                                     text: (instance ? instance.volume : 1.0).toFixed(2)
@@ -486,7 +506,8 @@ Rectangle {
                                     checked: instance ? instance.muted : false
                                     anchors.verticalCenter: parent.verticalCenter
                                     onToggled: if (instance)
-                                        instance.setMuted(checked)
+                                        instanceControl.setMuted(
+                                            instance.uuid, checked)
                                 }
                                 Text {
                                     text: qsTr("静音")
@@ -507,9 +528,9 @@ Rectangle {
                                 onSelected: (v) => {
                                     if (!instance) return
                                     if (v === qsTr("固定") && instance.targetFps === 0)
-                                        instance.setFps(60)
+                                        instanceControl.setFps(instance.uuid, 60)
                                     else if (v === qsTr("自适应"))
-                                        instance.setFps(0)
+                                        instanceControl.setFps(instance.uuid, 0)
                                 }
                             }
                         }
@@ -524,7 +545,8 @@ Rectangle {
                                 ? instance.targetFps : 60
                             sliderEnabled: instance && instance.targetFps > 0
                             onMoved: (val) => {
-                                if (instance) instance.setFps(Math.round(val))
+                                if (instance) instanceControl.setFps(
+                                    instance.uuid, Math.round(val))
                             }
                         }
                         ParamRow {
@@ -855,7 +877,14 @@ Rectangle {
         property string labelText: ""
         property string descText: ""
         default property alias _content: _slot.data
-        implicitHeight: Math.max(_labels.implicitHeight, _slot.childrenRect.height) + 16
+        // Binding-loop fix (S5): _slot.height used to be childrenRect.
+        // height, but vertically-anchored slot children (e.g. the
+        // auto-start ToggleSwitch) position their y off _slot.height and
+        // childrenRect unions y — height ← childrenRect ← y ← height.
+        // _slot.height below is loop-free (no child's HEIGHT depends on
+        // this item), and the row height reads THAT instead of a second
+        // childrenRect binding.
+        implicitHeight: Math.max(_labels.implicitHeight, _slot.height) + 16
 
         Column {
             id: _labels
@@ -880,7 +909,16 @@ Rectangle {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             width: childrenRect.width
-            height: childrenRect.height
+            // Max of the children's own heights (not their union rect —
+            // see the loop note above). Identical value for this page's
+            // slots: every slot child is either at y=0 or v-centered, so
+            // the union height already equals the tallest child.
+            height: {
+                let h = 0
+                for (let i = 0; i < children.length; ++i)
+                    h = Math.max(h, children[i].height)
+                return h
+            }
         }
     }
 }

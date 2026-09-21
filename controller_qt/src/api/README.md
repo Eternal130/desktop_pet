@@ -2,18 +2,21 @@
 
 第一方插件 SDK 接口头集合（P4 落地，P6a 冻结点前允许演进，冻结后变更走版本化）。
 设计合同: `docs/refactor/plugin-architecture-and-cmake-migration.md` §A/§B.3。
-**当前版本: API 1.2**（2026-09-21，见文末「版本历史」）。
+**当前版本: API 1.3**（2026-09-21，见文末「版本历史」）。
 
 ## 组成
 
 | 头文件 | 内容 |
 |---|---|
-| `PluginTypes.hpp` | POD/Qt 值类型（InstanceInfo / PackInfo / DownloadRequest / InstallSpec / PageDescriptor / **v1.2: InstanceSpec / InstanceRuntime**）+ PluginError / PluginLogLevel / 宿主 API 版本常量 + 能力词表常量（v1.1: `kCapabilityNetwork` / `kCapabilityVoicepacksInstall` / `kCapabilityInstanceLifecycle` / `kCapabilityInstanceTuning` / `kCapabilitySettingsWrite`，拼写与 manifest 解析逐字一致） |
+| `PluginTypes.hpp` | POD/Qt 值类型（InstanceInfo / PackInfo / DownloadRequest / InstallSpec / PageDescriptor / v1.2: InstanceSpec / InstanceRuntime / **v1.3: ModelSummary**）+ PluginError / PluginLogLevel / 宿主 API 版本常量 + 能力词表常量（v1.1: `kCapabilityNetwork` / `kCapabilityVoicepacksInstall` / `kCapabilityInstanceLifecycle` / `kCapabilityInstanceTuning` / `kCapabilitySettingsWrite`，拼写与 manifest 解析逐字一致） |
 | `IPanelPlugin.hpp` | 插件唯一入口：`initialize(IPluginContext&)` / `shutdown()`；iid `org.desktop-pet.PanelPlugin/1.0` |
 | `IPluginContext.hpp` | 宿主服务面：instanceApi / voicePackApi / uiApi / downloadApi / pluginConfigDir / log + **v1.1 尾部追加 `queryApi`（阶段 2 后新接口族的唯一暴露通道）**；内含 `IExtApi` 标记接口 |
 | `IInstanceApi.hpp` | 只读实例花名册 + `IRosterObserver` 纯虚订阅（**禁 std::function**）。只读 = 接口形状保持（v1.0 vtable 布局不动）；「插件永不写实例」的只读**承诺**已被 2026-09-21 决策推翻，写能力走 S2 `IInstanceControlApi`（`queryApi` 暴露，`instance_lifecycle`/`instance_tuning` 能力门控）。v1.2 追加 `IInstanceObserver` + `subscribeInstances`/`unsubscribeInstances` 尾追（实例级状态观察） |
 | `IInstanceControlApi.hpp` | **v1.2 (S2)** 实例生命周期写族: create / remove / start / stop / restart / loadModel。继承 `IExtApi` 经 `queryApi` 获取；`instance_lifecycle` 能力 + 宿主 `plugin_write_enabled` 开关门控，未授权为 stub；同步返回=受理，结果经 `IInstanceObserver` |
-| `IVoicePackApi.hpp` | 语音包发现（listPacks / refreshScan / installPath） |
+| `ITuningApi.hpp` | **v1.3 (S5)** 实例调参写族: setOpacity / setVolume / setMuted / setFps / playMotion / setExpression / triggerHitArea / mountVoicePack / unmountVoicePack。继承 `IExtApi` 经 `queryApi` 获取；`instance_tuning` 能力 + 宿主开关门控；mount 的 packId 是**目录名**（宿主解析为绝对路径，未知包→NotFound） |
+| `IModelApi.hpp` | **v1.3 (S5)** 模型库只读族: availableModels / refreshScan / modelInfo（ModelSummary）。经 `queryApi` 获取；**只读不门控**（不受能力与写开关约束），未接线→nullptr |
+| `ISettingsApi.hpp` | **v1.3 (S6)** 面板设置写族（类型化方法，禁 QJsonObject 逃生舱）: setCloseAction / setConfirmOnExit / setStartMinimized / setDefaultModelName。`settings_write` 能力 + 宿主开关门控；**刻意不含 autoLaunchSystem**（宿主外壳能力不进插件 API） |
+| `IVoicePackApi.hpp` | 语音包发现（listPacks / refreshScan / installPath）+ **v1.3 追加 `IPackListObserver` + subscribePackList/unsubscribePackList**（包列表变化观察；挂载写走 ITuningApi） |
 | `IDownloadApi.hpp` | 宿主下载咽喉点（start / cancel / installArchive + DownloadListener 纯虚回调）；manifest 未授 `network` capability 时为 stub（§B.4） |
 | `IUiApi.hpp` | 页面注册 + 气泡通知；**无 unregisterPage/页面生命周期（刻意 YAGNI，防 P6a 重议）** |
 
@@ -88,11 +91,15 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 
 | 常量 | 字符串 | 门控 |
 |---|---|---|
-| `kCapabilityNetwork` | `network` | IDownloadApi 真实现（当前唯一被强制的能力，P5） |
+| `kCapabilityNetwork` | `network` | IDownloadApi 真实现（P5 起被强制） |
 | `kCapabilityVoicepacksInstall` | `voicepacks_install` | （S2）语音包安装管线写入口 |
 | `kCapabilityInstanceLifecycle` | `instance_lifecycle` | (S2 已落地 v1.2) IInstanceControlApi 生命周期: 建/删/启/停/重启/切模型 |
-| `kCapabilityInstanceTuning` | `instance_tuning` | （S2）IInstanceControlApi 调参: 缩放/布局/动作 |
-| `kCapabilitySettingsWrite` | `settings_write` | （S2）ISettingsApi 白名单键写入 |
+| `kCapabilityInstanceTuning` | `instance_tuning` | (S5 已落地 v1.3) ITuningApi 调参: 透明度/音量/静音/帧率/动作/表情/命中/语音包挂载 |
+| `kCapabilitySettingsWrite` | `settings_write` | (S6 已落地 v1.3) ISettingsApi 白名单字段写入 |
+
+写开关说明（v1.2 引入、v1.3 扩面）: 宿主 kv `plugin_write_enabled`（缺省开）同时门控
+`instance_lifecycle` / `instance_tuning` / `settings_write` 三族——活读（每次 queryApi 现查），
+翻转即吊销、无需重启；只读族（`pet.model`、voicePackApi、instanceApi）不受其约束。
 
 ## 配置写规约（v2）
 
@@ -118,6 +125,42 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
 `qrc:/` URL（§B.6）。
 
 ## 版本历史
+
+### v1.3（2026-09-21，kApiMajor=1 / kApiMinor=3）— S5 运行面+模型域 / S6 设置+语音包域
+
+全部为**加法**变更（三个经 queryApi 暴露的新接口族 + IVoicePackApi 尾追 + ModelSummary
+POD），零既有签名/顺序改动。`IPluginContext` 的 v1.1 一次性尾追特权**未再次使用**——
+三族全部经既有 `queryApi()` 通道暴露；IVoicePackApi 的尾追属于阶段 1 未冻结族的常规
+演进（P6a 冻结后该族同样只经 queryApi 扩展）。
+
+1. **`kApiMinor` 2 → 3**。
+2. **`ModelSummary` POD**（`PluginTypes.hpp`）: IModelApi 的行类型（name +
+   motionGroups / expressions / hitAreas）。
+3. **`ITuningApi`**（新头，apiId `pet.instance_tuning`，族版本 1）: 九个实例调参操作
+   （透明度/音量/静音/帧率/playMotion/setExpression/triggerHitArea/mount/unmount）。
+   同步返回=受理（Ok/NotFound/InvalidArgument/Busy），值变化经
+   `IInstanceObserver.instanceStateChanged` 观察；pending-delete 期间全部 Busy。
+   mount 的 packId 为**目录名**，宿主按自身扫描反解为绝对路径，未知→NotFound
+   （防任意路径注入）。
+4. **`IModelApi`**（新头，apiId `pet.model`，族版本 1）: availableModels /
+   refreshScan / modelInfo。只读族——**不受能力与写开关门控**，注入即返回，未接线
+   →nullptr。数据源是宿主单一模型扫描缓存（与模型库页面同一份）。
+5. **`ISettingsApi`**（新头，apiId `pet.settings`，族版本 1）: 四个类型化白名单写
+   （setCloseAction 合法值 exit|minimize、setConfirmOnExit、setStartMinimized、
+   setDefaultModelName）。**刻意不含 autoLaunchSystem**（OS 级自启动=宿主外壳能力，
+   架构决策）与 plugin_write_enabled 本身（插件可翻的开关不是开关）。
+6. **`IVoicePackApi` 尾追 `IPackListObserver`** + `subscribePackList`/
+   `unsubscribePackList`: 包列表变化观察（粗粒度 packListChanged），挂载/卸载写路径
+   属 ITuningApi。
+7. **能力门控落地**: `instance_tuning` 与 `settings_write`（v1.1 预留词）随本版开始
+   强制；写开关 `plugin_write_enabled` 活读门控三写族。
+8. **宿主侧 dogfooding**: 详情页全部写调用改走 `InstanceControlBridge`（ctx prop
+   `instanceControl`，共享 TuningApi/InstanceControlApi，宿主桥不被门控）；创建流改走
+   `rosterModel.createInstance`；VoicePackController 挂载/卸载内部转调注入的
+   ITuningApi；PanelConfigController 四字段写内部转调注入的 ISettingsApi；
+   ModelController/VoicePackController 消费共享 ModelApiImpl / 单一包扫描；
+   InstanceSession 增补 `mountedVoicePackChanged` NOTIFY（对 S4 冻结面的最小缝，
+   mountedPackId 由"下次属性翻转携带"变为实时）。
 
 ### v1.2（2026-09-21，kApiMajor=1 / kApiMinor=2）— S2 插件写路径
 

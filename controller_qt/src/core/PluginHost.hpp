@@ -24,6 +24,11 @@
 
 #include "core/PluginRegistry.hpp"
 
+#include "api/IModelApi.hpp"
+#include "api/ISettingsApi.hpp"
+#include "api/ITuningApi.hpp"
+#include "api/IVoicePackApi.hpp"
+
 // InstanceManager + NotificationStreamController are GLOBAL-namespace
 // classes; declared outside namespace core.
 class InstanceManager;
@@ -34,8 +39,12 @@ namespace core {
 class DownloadService;
 class InstanceApiImpl;
 class InstanceControlApiImpl;
+class ModelApiImpl;
 class PluginContextImpl;
 class PluginPageModel;
+class SettingsApiImpl;
+class TuningApiImpl;
+class VoicePackApiImpl;
 
 class PluginHost : public QObject
 {
@@ -59,6 +68,20 @@ public:
     // fallback pattern as setInstanceApi: null → initializeAll constructs
     // a per-host implementation over the injected InstanceManager.
     void setInstanceControlApi(InstanceControlApiImpl* instanceControlApi);
+    // S5/S6 (v1.3): the SHARED TuningApiImpl / ModelApiImpl /
+    // SettingsApiImpl / VoicePackApiImpl served through queryApi (tuning
+    // + settings are capability/switch-gated at the context; the model
+    // family is a read and ungated). Same fallback pattern as
+    // setInstanceApi: null → initializeAll constructs per-host
+    // implementations over the injected InstanceManager / configRoot
+    // (tests, degraded wiring).
+    void setTuningApi(pet::ITuningApi* tuningApi);
+    void setModelApi(pet::IModelApi* modelApi);
+    void setSettingsApi(pet::ISettingsApi* settingsApi);
+    // v1.3 (S6): shared voice-pack read API (observers + the host's
+    // single pack scan). Null → the per-context scan-everything impl
+    // keeps serving voicePackApi() (the pre-v1.3 behavior).
+    void setVoicePackApi(pet::IVoicePackApi* voicePackApi);
     // S2 (v1.2): host-global plugin_write_enabled kill-switch provider
     // (PanelApplication wires it to the panel_config kv row; absent
     // provider = enabled, mirroring the kv default). Consulted LIVE on
@@ -114,6 +137,15 @@ private:
     InstanceManager* m_instanceManager = nullptr;
     InstanceApiImpl* m_instanceApi = nullptr; // shared (service tree), not owned
     InstanceControlApiImpl* m_instanceControlApi = nullptr; // S2: shared, not owned
+    // S5/S6 (v1.3): shared v1.3-family implementations (service tree),
+    // not owned. Tuning/model/settings also keep per-host FALLBACKS
+    // (constructed lazily in initializeAll when no shared impl was
+    // injected — the setInstanceApi pattern) so a host without the
+    // PanelApplication service tree still serves the families.
+    pet::ITuningApi* m_tuningApi = nullptr;
+    pet::IModelApi* m_modelApi = nullptr;
+    pet::ISettingsApi* m_settingsApi = nullptr;
+    pet::IVoicePackApi* m_voicePackApi = nullptr; // v1.3 shared, not owned
     std::function<bool()> m_writeEnabledProvider;           // S2: live kill-switch
     PluginPageModel* m_pageModel = nullptr;
     NotificationStreamController* m_notificationStream = nullptr;

@@ -162,11 +162,17 @@ bool InstanceSession::mountVoicePack(const QString& packPath)
     }
     m_mountedPack = std::move(*pack);
     m_behaviorEngine.setVoicePack(&*m_mountedPack);
+    // v1.3 seam: remember whether the mounted path changes so the new
+    // mountedVoicePackChanged NOTIFY fires only on a real transition
+    // (re-mounting the same pack re-parses but is not a change).
+    const bool changed = m_config.voicePack != packPath;
     m_config.voicePack = packPath;
     if (!m_configManager.save(m_config)) {
         LOG_ERROR("InstanceSession[{}]: failed to persist voice pack",
                   m_instanceId);
     }
+    if (changed)
+        emit mountedVoicePackChanged();
     LOG_INFO("InstanceSession[{}]: mounted voice pack \"{}\" ({} groups)",
              m_instanceId, m_mountedPack->displayName.toStdString(),
              m_mountedPack->groups.size());
@@ -185,6 +191,9 @@ void InstanceSession::unmountVoicePack()
         LOG_ERROR("InstanceSession[{}]: failed to persist voice-pack unmount",
                   m_instanceId);
     }
+    // v1.3 seam: this branch only runs when something WAS mounted (the
+    // guard above returned otherwise) — always a real transition.
+    emit mountedVoicePackChanged();
     LOG_INFO("InstanceSession[{}]: unmounted voice pack", m_instanceId);
 }
 

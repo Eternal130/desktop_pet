@@ -46,6 +46,26 @@ void PluginHost::setInstanceControlApi(InstanceControlApiImpl* instanceControlAp
     m_instanceControlApi = instanceControlApi;
 }
 
+void PluginHost::setTuningApi(pet::ITuningApi* tuningApi)
+{
+    m_tuningApi = tuningApi;
+}
+
+void PluginHost::setModelApi(pet::IModelApi* modelApi)
+{
+    m_modelApi = modelApi;
+}
+
+void PluginHost::setSettingsApi(pet::ISettingsApi* settingsApi)
+{
+    m_settingsApi = settingsApi;
+}
+
+void PluginHost::setVoicePackApi(pet::IVoicePackApi* voicePackApi)
+{
+    m_voicePackApi = voicePackApi;
+}
+
 void PluginHost::setWriteEnabledProvider(std::function<bool()> provider)
 {
     m_writeEnabledProvider = std::move(provider);
@@ -130,6 +150,21 @@ void PluginHost::initializeAll()
             InstanceControlApiImpl* controlApi = m_instanceControlApi;
             if (controlApi == nullptr)
                 controlApi = new InstanceControlApiImpl(m_instanceManager, this);
+            // S5/S6 (v1.3): same per-host fallback for the three new
+            // families. Constructed BEFORE the context below → registered
+            // earlier as host children → destroyed AFTER the contexts
+            // (registration-reverse), so the injected pointers outlive
+            // every context that holds them. The voice-pack family keeps
+            // its per-context impl when no shared one is injected.
+            pet::ITuningApi* tuningApi = m_tuningApi;
+            if (tuningApi == nullptr)
+                tuningApi = new TuningApiImpl(m_instanceManager, this);
+            pet::IModelApi* modelApi = m_modelApi;
+            if (modelApi == nullptr)
+                modelApi = new ModelApiImpl(this);
+            pet::ISettingsApi* settingsApi = m_settingsApi;
+            if (settingsApi == nullptr)
+                settingsApi = new SettingsApiImpl(m_configRoot, this);
             auto* ctx = new PluginContextImpl(entry->manifest.id, api,
                                               controlApi,
                                               m_writeEnabledProvider,
@@ -137,6 +172,13 @@ void PluginHost::initializeAll()
                                               m_configRoot, m_downloadService,
                                               entry->manifest.capabilities,
                                               m_voicePackRefresh, this);
+            // v1.3 shared-family injection (post-construction seam keeps
+            // the frozen ctor signature for the direct-construction tests).
+            ctx->setTuningApi(tuningApi);
+            ctx->setModelApi(modelApi);
+            ctx->setSettingsApi(settingsApi);
+            if (m_voicePackApi != nullptr)
+                ctx->setVoicePackApi(m_voicePackApi);
             m_contexts.append(ctx);
             const pet::PluginError err = entry->instance->initialize(*ctx);
             if (err != pet::PluginError::Ok) {

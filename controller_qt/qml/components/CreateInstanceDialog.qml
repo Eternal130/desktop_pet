@@ -6,10 +6,10 @@ import DesktopPet
 // scrim dialog. Caller opens via open().
 //
 // Creation happens HERE, not in the callers' onAccepted handlers: the
-// chosen model must reach instanceManager.createInstance's third
-// parameter (empty string = legacy default-model behavior), and the two
-// handler sites (InstanceDetailPage / WelcomePage) are outside this
-// lane's write boundary. After a successful create this dialog replicates
+// chosen model must reach rosterModel.createInstance's third parameter
+// (empty string = legacy default-model behavior), and the two handler
+// sites (InstanceDetailPage / WelcomePage) are outside this lane's
+// write boundary. After a successful create this dialog replicates
 // what those handlers did — select the new row, and switch to the
 // instance page when the dialog was opened from the welcome page.
 // The legacy accepted(name, avatar) signal stays DECLARED (unemitted) so
@@ -177,14 +177,17 @@ Rectangle {
                         // (empty string = legacy default-model behavior);
                         // see the header comment for why creation happens
                         // here instead of the callers' onAccepted.
+                        // S5: creation goes through the rosterModel write
+                        // bridge (shared IInstanceControlApi; int error
+                        // code, 0 = Ok).
                         const model = _modelCombo.currentIndex >= 0
                                       ? _modelCombo.currentText : ""
-                        const uuid = instanceManager.createInstance(
+                        const err = rosterModel.createInstance(
                             _nameInput.text.trim(),
                             root._selectedAvatar,
                             model)
                         root.close()
-                        if (uuid !== "") {
+                        if (err === 0) {
                             const row = instanceManager.rowCount() - 1
                             Window.window.selectInstance(
                                 row,

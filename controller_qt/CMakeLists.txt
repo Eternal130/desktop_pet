@@ -99,6 +99,10 @@ target_sources(pet_panel_api INTERFACE
     src/api/IVoicePackApi.hpp
     src/api/IDownloadApi.hpp
     src/api/IUiApi.hpp
+    # v1.3 (S5/S6): tuning/model/settings queryApi families.
+    src/api/ITuningApi.hpp
+    src/api/IModelApi.hpp
+    src/api/ISettingsApi.hpp
 )
 # ABI discipline (§B.3, src/api/README.md): pure-virtual declarations, Qt
 # value types + POD only. Qt value types need Qt6::Core's include path —
@@ -293,6 +297,15 @@ qt_add_library(pet_panel_core STATIC
     # is listed so AUTOMOC processes its Q_OBJECT metadata.
     src/ui/RosterApiModel.cpp
     src/ui/RosterApiModel.hpp
+    # S5 (v1.3) host dogfooding: detail-page WRITE bridge over the shared
+    # pet::ITuningApi (+ IInstanceControlApi lifecycle ops) — uuid-keyed
+    # Q_INVOKABLEs returning PluginError int codes, same discipline as
+    # RosterApiModel's S2 write bridge (api/ + Qt includes only, not
+    # capability-gated). Registered as the 'instanceControl' context
+    # property by PanelUiBoot. The .hpp is listed so AUTOMOC processes
+    # its Q_OBJECT metadata.
+    src/ui/InstanceControlBridge.cpp
+    src/ui/InstanceControlBridge.hpp
     src/core/InstanceSessionMonitor.cpp
     # SQLite config backend: DatabaseManager owns <configDir>/app.db (schema:
     # panel_config kv, instance_configs, assets, asset_refs). PanelStateManager

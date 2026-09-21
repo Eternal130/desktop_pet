@@ -408,6 +408,23 @@ Rectangle {
                     title: qsTr("插件管理")
                     hint: qsTr("启用/禁用为配置位，重启面板后生效（不支持热卸载）")
 
+                    // S6 (v1.3): host-global plugin WRITE kill-switch —
+                    // the plugin_write_enabled kv row the host consults
+                    // LIVE on every queryApi. Flipping it revokes plugin
+                    // write access (instance lifecycle / tuning / settings)
+                    // without a restart. Host setting by design — never
+                    // routed through the plugin settings API itself.
+                    SettingRow {
+                        width: parent.width
+                        title: qsTr("允许插件修改面板")
+                        desc: qsTr("关闭后立即吊销插件的写权限（无需重启）")
+                        ToggleSwitch {
+                            anchors.verticalCenter: parent.verticalCenter
+                            checked: panelConfig.pluginWriteEnabled
+                            onToggled: panelConfig.pluginWriteEnabled = checked
+                        }
+                    }
+
                     // empty state (fresh tree, zero plugins)
                     Text {
                         visible: pluginManager.count === 0

@@ -8,66 +8,59 @@
 #include "logging/Logging.hpp"
 #include "core/ModelInfoParser.hpp"
 #include "core/ModelScanner.hpp"
+#include "core/PluginContextImpl.hpp" // complete core::ModelApiImpl
 
-ModelController::ModelController(QObject* parent)
-    : QObject(parent)
+ModelController::ModelController(core::ModelApiImpl* api, QObject* parent)
+    : QObject(parent), m_api(api)
 {
+    if (m_api == nullptr) {
+        // Owned fallback (tests / standalone) — same object type the panel
+        // shares in production, so both paths exercise identical code.
+        m_api = new core::ModelApiImpl(this);
+        m_apiOwned = true;
+    }
     // Mirror VoicePackController: scan once at construction so a QML page
     // binding modelCount before setRendererDir sees a valid (if empty)
     // roster. scanAvailableModels on an empty dir is a cheap no-op.
     rescan();
 }
 
+ModelController::~ModelController()
+{
+    // The owned fallback is parented to this controller — Qt deletes it.
+    // The shared production impl is NOT owned here (service tree).
+}
+
 void ModelController::setRendererDir(const QString& dir)
 {
     m_rendererDir = dir;
-    // Re-scan immediately — PanelUiBoot injects the dir during boot, before
-    // QML binds, so the roster is populated by the time the page renders.
+    // ONE cache: the dir flows into the shared impl (its rescan feeds the
+    // plugin pet.model family too); this controller then re-reads the
+    // fresh scan below, exactly like a manual rescan.
+    m_api->setRendererDir(dir);
     rescan();
 }
 
 void ModelController::rescan()
 {
-    m_models.clear();
-    // Display dir: the conventional location even when nothing is bundled
-    // yet (the empty-state hint points the user there); empty rendererDir →
-    // empty dir (all accessors stay safe, nothing to point at).
-    m_modelsDir = m_rendererDir.isEmpty()
-        ? QString()
-        : QDir(m_rendererDir).absoluteFilePath(
-              QStringLiteral("Resources/Models"));
-
-    const QStringList names = core::scanAvailableModels(m_rendererDir);
-    for (const QString& name : names) {
-        Entry entry;
-        entry.dirName = name;
-        // Pre-parse the .model3.json NOW (rescan is user-initiated, not a
-        // per-frame path) so the accessors are pure cache lookups. A missing
-        // / corrupt file degrades to empty detail lists — the roster entry
-        // survives (the model still launches; the detail card shows zeros).
-        const QString model3Json = QDir(m_modelsDir).absoluteFilePath(
-            name + QLatin1Char('/') + name + QStringLiteral(".model3.json"));
-        const auto info = core::parseModelInfo(model3Json);
-        if (info.has_value()) {
-            entry.motionGroups = info->motionGroups.keys();
-            entry.expressions = info->expressions;
-            entry.hitAreas = info->hitAreas;
-        } else {
-            LOG_WARN("ModelController: could not parse \"{}\" — empty details",
-                     model3Json.toStdString());
-        }
-        m_models.append(std::move(entry));
-    }
+    // S5: the scan + pre-parse live in the impl (single cache); here we
+    // only mirror the name roster + bump the revision the QML bindings
+    // re-evaluate on.
+    m_api->refreshScan();
+    m_names.clear();
+    const QVector<pet::ModelSummary> models = m_api->availableModels();
+    for (const pet::ModelSummary& summary : models)
+        m_names.append(summary.name);
 
     ++m_revision;
     LOG_DEBUG("ModelController: rescan found {} model(s) under \"{}\"",
-              m_models.size(), m_modelsDir.toStdString());
+              m_names.size(), modelsDir().toStdString());
     emit modelsChanged();
 }
 
 QString ModelController::modelsDir() const
 {
-    return m_modelsDir;
+    return m_api->modelsDir();
 }
 
 void ModelController::openModelDir()
@@ -75,60 +68,60 @@ void ModelController::openModelDir()
     // mkpath first: the dir often does not exist until the renderer ships its
     // Resources/ tree — opening a missing dir is a silent no-op on Linux and
     // an Explorer error on Windows. Guarded for the empty-rendererDir case.
-    if (m_modelsDir.isEmpty())
+    if (modelsDir().isEmpty())
         return;
-    QDir().mkpath(m_modelsDir);
-    QDesktopServices::openUrl(QUrl::fromLocalFile(m_modelsDir));
+    QDir().mkpath(modelsDir());
+    QDesktopServices::openUrl(QUrl::fromLocalFile(modelsDir()));
 }
 
 QString ModelController::modelDirName(int index) const
 {
-    if (index < 0 || index >= m_models.size()) return {};
-    return m_models.at(index).dirName;
+    if (index < 0 || index >= m_names.size()) return {};
+    return m_names.at(index);
 }
+
+namespace {
+// One model's cached summary via the impl (empty summary on a miss —
+// every accessor below degrades to 0/{} and never throws).
+pet::ModelSummary summaryFor(const core::ModelApiImpl* api, const QString& name)
+{
+    // modelInfo() is non-const only because it is an interface override;
+    // the lookup is a pure cache read.
+    pet::ModelSummary summary;
+    const_cast<core::ModelApiImpl*>(api)->modelInfo(name, &summary);
+    return summary;
+}
+} // namespace
 
 int ModelController::modelMotionGroupCount(int index) const
 {
-    if (index < 0 || index >= m_models.size()) return 0;
-    return m_models.at(index).motionGroups.size();
+    if (index < 0 || index >= m_names.size()) return 0;
+    return summaryFor(m_api, m_names.at(index)).motionGroups.size();
 }
 
 int ModelController::modelExpressionCount(int index) const
 {
-    if (index < 0 || index >= m_models.size()) return 0;
-    return m_models.at(index).expressions.size();
+    if (index < 0 || index >= m_names.size()) return 0;
+    return summaryFor(m_api, m_names.at(index)).expressions.size();
 }
 
 int ModelController::modelHitAreaCount(int index) const
 {
-    if (index < 0 || index >= m_models.size()) return 0;
-    return m_models.at(index).hitAreas.size();
+    if (index < 0 || index >= m_names.size()) return 0;
+    return summaryFor(m_api, m_names.at(index)).hitAreas.size();
 }
 
 QStringList ModelController::modelMotionGroups(const QString& name) const
 {
-    const Entry* entry = findByName(name);
-    return entry != nullptr ? entry->motionGroups : QStringList{};
+    return summaryFor(m_api, name).motionGroups;
 }
 
 QStringList ModelController::modelExpressions(const QString& name) const
 {
-    const Entry* entry = findByName(name);
-    return entry != nullptr ? entry->expressions : QStringList{};
+    return summaryFor(m_api, name).expressions;
 }
 
 QStringList ModelController::modelHitAreas(const QString& name) const
 {
-    const Entry* entry = findByName(name);
-    return entry != nullptr ? entry->hitAreas : QStringList{};
-}
-
-const ModelController::Entry* ModelController::findByName(
-    const QString& name) const
-{
-    for (const Entry& entry : m_models) {
-        if (entry.dirName == name)
-            return &entry;
-    }
-    return nullptr;
+    return summaryFor(m_api, name).hitAreas;
 }

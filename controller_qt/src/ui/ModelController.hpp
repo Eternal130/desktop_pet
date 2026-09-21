@@ -35,9 +35,14 @@
 //   setRendererDir(dir)                    — injection seam for PanelUiBoot
 //                                             (triggers a rescan)
 //
-// rescan() pre-parses every discovered <Name>/<Name>.model3.json via
-// ModelInfoParser and caches the result; the accessors are pure cache lookups
-// so the QML detail card never does file I/O per frame.
+// S5 (v1.3) internal migration: the scan + metadata CACHE now lives in
+// the shared core::ModelApiImpl (the same object behind the plugin
+// queryApi("pet.model") family). This controller keeps its QML surface
+// byte-identical but delegates storage/lookups to the injected impl —
+// the panel page and the plugin API consume ONE scan cache, not two.
+// Constructor injection with an owned fallback: api == nullptr (tests,
+// standalone use) constructs a private ModelApiImpl, so every historical
+// call site keeps compiling and behaving identically.
 //
 // Contract: NEVER throws (blueprint §9.5). Out-of-range index / unknown name
 // → empty string / empty list / 0. An empty rendererDir → empty roster with
@@ -48,6 +53,12 @@
 #include <QString>
 #include <QStringList>
 
+#include "api/PluginTypes.hpp"
+
+namespace core {
+class ModelApiImpl;
+}
+
 class ModelController : public QObject {
     Q_OBJECT
     Q_PROPERTY(int modelCount READ modelCount NOTIFY modelsChanged)
@@ -56,9 +67,15 @@ class ModelController : public QObject {
     Q_PROPERTY(int revision READ revision NOTIFY modelsChanged)
 
 public:
-    explicit ModelController(QObject* parent = nullptr);
+    // api: the SHARED core::ModelApiImpl from the PanelApplication service
+    // tree (S5 dogfooding — the plugin pet.model family reads the same
+    // cache). Null → a private impl is constructed (owned, parented here)
+    // so standalone/test construction behaves exactly as before.
+    explicit ModelController(core::ModelApiImpl* api = nullptr,
+                             QObject* parent = nullptr);
+    ~ModelController() override;
 
-    int modelCount() const { return static_cast<int>(m_models.size()); }
+    int modelCount() const { return static_cast<int>(m_names.size()); }
     int revision() const { return m_revision; }
 
     Q_INVOKABLE void rescan();
@@ -81,28 +98,21 @@ public:
 
     // Injection seam: PanelUiBoot passes the same renderer base dir the
     // VoicePackController derives internally (applicationDirPath — the build
-    // places both exes side-by-side in build/bin). Triggers a rescan so the
-    // roster is populated before the page binds.
+    // places both exes side-by-side in build/bin). Forwards to the shared
+    // impl (one cache) and triggers this controller's rescan so the roster
+    // is populated before the page binds.
     void setRendererDir(const QString& dir);
 
 signals:
     void modelsChanged();
 
 private:
-    // Pre-parsed cache entry — one per discovered model directory.
-    struct Entry {
-        QString dirName;
-        QStringList motionGroups; // group names (QMap key order = sorted)
-        QStringList expressions;
-        QStringList hitAreas;
-    };
-
-    // Linear scan by model name; the roster is sidebar-sized. Nullptr when
-    // the name is unknown (accessors then return empty/0).
-    const Entry* findByName(const QString& name) const;
-
-    QList<Entry> m_models;
+    // Names in scan order (the summary bodies live in the impl's cache;
+    // lookups below are modelInfo() calls, not local copies).
+    QStringList m_names;
     QString m_rendererDir;
-    QString m_modelsDir;
     int m_revision = 0;
+
+    core::ModelApiImpl* m_api; // shared (injected) or owned fallback
+    bool m_apiOwned = false;
 };

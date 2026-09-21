@@ -46,6 +46,18 @@ Item {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         width: childrenRect.width
-        height: childrenRect.height
+        // Binding-loop fix (same family as InstanceDetailPage's ParamRow):
+        // childrenRect.height unions the children's Y positions, and the
+        // vertically-anchored slot children (toggles, buttons) position
+        // their y off THIS item's height — height ← childrenRect ← y ←
+        // height. Derive the height from the children's own heights only
+        // (no child's height depends on this item); identical value for
+        // every current usage (children are v-centered or at y=0).
+        height: {
+            let h = 0
+            for (let i = 0; i < children.length; ++i)
+                h = Math.max(h, children[i].height)
+            return h
+        }
     }
 }

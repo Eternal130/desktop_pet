@@ -194,32 +194,40 @@ std::optional<CompiledRule>
 RuleEngineService::compileScopedInto(RuleEngine& engine,
                                      const QJsonObject& ruleJson,
                                      RuleScope scope,
-                                     const QString& ownerUuid) const
+                                     const QString& ownerUuid,
+                                     RuleError* error) const
 {
-    RuleError error;
+    RuleError localError;
+    RuleError* err = error != nullptr ? error : &localError;
     std::optional<CompiledRule> compiled =
-        engine.compileRule(ruleJson, &error);
+        engine.compileRule(ruleJson, err);
     if (!compiled.has_value()) {
         LOG_WARN("RuleEngineService: rejected rule \"{}\": {} ({})",
-                 error.ruleId.toStdString(), error.message.toStdString(),
-                 error.code.toStdString());
+                 err->ruleId.toStdString(), err->message.toStdString(),
+                 err->code.toStdString());
         return std::nullopt;
     }
     // Host-assigned scope metadata (the rule JSON never carries a scope —
-    // strict-in). Instance ids are namespaced "inst.<uuid>.<id>" so the
-    // engine's scope-unique id keying never collides across instances AND
-    // the deletion sweep can remove a whole instance's rules by prefix.
+    // strict-in). Instance ids are namespaced "inst.<uuid>.<id>" and
+    // Plugin ids "plugin.<pluginId>.<id>" so the engine's scope-unique id
+    // keying never collides across owners AND the deletion sweeps can
+    // remove a whole owner's rules by prefix.
     compiled->scope = scope;
     compiled->ownerUuid = ownerUuid;
     if (scope == RuleScope::Instance)
         compiled->id = QStringLiteral("inst.%1.%2").arg(ownerUuid,
                                                         compiled->id);
+    else if (scope == RuleScope::Plugin)
+        compiled->id = QStringLiteral("plugin.%1.%2").arg(ownerUuid,
+                                                          compiled->id);
     RuleError upsertError;
     if (!engine.upsertRule(*compiled, &upsertError)) {
         LOG_WARN("RuleEngineService: upsert rejected rule \"{}\": {} ({})",
                  upsertError.ruleId.toStdString(),
                  upsertError.message.toStdString(),
                  upsertError.code.toStdString());
+        if (error != nullptr)
+            *error = upsertError;
         return std::nullopt;
     }
     return engine.ruleById(compiled->id);
@@ -227,10 +235,11 @@ RuleEngineService::compileScopedInto(RuleEngine& engine,
 
 std::optional<CompiledRule>
 RuleEngineService::upsertRuleJson(const QJsonObject& ruleJson,
-                                  RuleScope scope, const QString& ownerUuid)
+                                  RuleScope scope, const QString& ownerUuid,
+                                  RuleError* error)
 {
     std::optional<CompiledRule> stored =
-        compileScopedInto(m_engine, ruleJson, scope, ownerUuid);
+        compileScopedInto(m_engine, ruleJson, scope, ownerUuid, error);
     if (stored.has_value())
         recomputeSubscriptions();
     return stored;
@@ -242,6 +251,14 @@ bool RuleEngineService::removeRuleById(const QString& storedRuleId)
     if (removed)
         recomputeSubscriptions();
     return removed;
+}
+
+int RuleEngineService::removeRulesByOwnerPrefix(const QString& ownerPrefix)
+{
+    const int swept = m_engine.removeRulesByOwnerPrefix(ownerPrefix);
+    if (swept > 0)
+        recomputeSubscriptions();
+    return swept;
 }
 
 // ── Differential subscriptions ───────────────────────────────────────────────
@@ -485,7 +502,7 @@ void RuleEngineService::executeActions(const CompiledRule& rule,
                                        const EvalContext& ctx)
 {
     for (const RuleAction& action : rule.actions) {
-        if (!executeOneAction(action, event, ctx)) {
+        if (!executeOneAction(rule, action, event, ctx)) {
             LOG_WARN("RuleEngineService: rule \"{}\" action sequence "
                      "aborted (fail-fast) after action kind {}",
                      rule.id.toStdString(),
@@ -495,12 +512,49 @@ void RuleEngineService::executeActions(const CompiledRule& rule,
     }
 }
 
-bool RuleEngineService::executeOneAction(const RuleAction& action,
+bool RuleEngineService::pluginActionDenied(const CompiledRule& rule,
+                                           const RuleAction& action) const
+{
+    // Host rules (panel kv / instance blobs / the raw host channel) are
+    // never gated — the host IS the host.
+    if (!rule.id.startsWith(QStringLiteral("plugin.")))
+        return false;
+    // S8f design ruling: ONLY the two tuning-write channels are gated.
+    // play_pack_audio is already mount-gated, notify_bubble is a
+    // notification surface, publish_event is host-identity (prefix
+    // compile-checked in S8d) — none carry an owner write.
+    if (action.kind != RuleActionKind::PlayMotion
+        && action.kind != RuleActionKind::SetExpression)
+        return false;
+    // Emission-time LIVE checks — a rule registered while granted must
+    // stop acting the moment either flips (a lingered rule surface
+    // cannot outlive its grant).
+    if (m_ownerWriteEnabled && !m_ownerWriteEnabled()) {
+        LOG_WARN("RuleEngineService: rule \"{}\" action denied — the "
+                 "plugin write switch is off",
+                 rule.id.toStdString());
+        return true;
+    }
+    if (!m_ownerCapabilityQuery
+        || !m_ownerCapabilityQuery(rule.id, pet::kCapabilityInstanceTuning)) {
+        LOG_WARN("RuleEngineService: rule \"{}\" action denied — the "
+                 "owner plugin lacks the instance_tuning capability "
+                 "(unknown owner or capability query unwired)",
+                 rule.id.toStdString());
+        return true;
+    }
+    return false;
+}
+
+bool RuleEngineService::executeOneAction(const CompiledRule& rule,
+                                         const RuleAction& action,
                                          const pet::Event& event,
                                          const EvalContext& ctx)
 {
     switch (action.kind) {
     case RuleActionKind::PlayMotion: {
+        if (pluginActionDenied(rule, action))
+            return false;
         if (m_tuningApi == nullptr) {
             LOG_WARN("RuleEngineService: play_motion — no tuning API wired");
             return false;
@@ -518,6 +572,8 @@ bool RuleEngineService::executeOneAction(const RuleAction& action,
         return true;
     }
     case RuleActionKind::SetExpression: {
+        if (pluginActionDenied(rule, action))
+            return false;
         if (m_tuningApi == nullptr) {
             LOG_WARN("RuleEngineService: set_expression — no tuning API "
                      "wired");
@@ -578,8 +634,10 @@ bool RuleEngineService::executePackAudioAction(const RuleAction& action,
                                                const EvalContext& ctx)
 {
     // Mounted gate (spec): the snapshot's mounted pack must BE the action's
-    // pack — audio for a pack the user unmounted must never play.
-    // TODO(S8f): plugin-owned rules additionally gate on the owner plugin.
+    // pack — audio for a pack the user unmounted must never play. NOT
+    // owner-gated (S8f design ruling: the mount check is this rule's
+    // authority — a plugin rule cannot play audio for a pack the user has
+    // not mounted on the target instance, which is the meaningful bound).
     if (ctx.mountedPackId != action.pack) {
         LOG_WARN("RuleEngineService: play_pack_audio — pack '{}' is not "
                  "mounted on instance '{}' (\"{}\" is)",

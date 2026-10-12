@@ -29,7 +29,15 @@
 //      notify_bubble via an injected sink, publish_event back onto the bus
 //      (host identity). Fail-fast: one failed action WARNs and aborts the
 //      rule's remaining actions (the fire is still recorded — cooldown
-//      applies).
+//      applies). S8f OWNER ACTION GATE: a PLUGIN-owned rule (stored id
+//      prefix "plugin.") dispatching play_motion/set_expression is
+//      checked LIVE at emission time — the owner plugin must still hold
+//      kCapabilityInstanceTuning (injected capability query, fail closed
+//      on unknown owners) AND the plugin_write_enabled switch (injected
+//      provider, absent = enabled) must be on; otherwise that action
+//      fails with a WARN (the fire is still recorded). Host rules and
+//      the notify_bubble/play_pack_audio/publish_event channels are
+//      never owner-gated (S8f design ruling).
 //   5. LOADING — panel rules from the panel_config kv row "rules"
 //      ({"rules":[...]}, same SQLite table PanelStateManager uses),
 //      instance rules from the instance_configs blob's "rules" array (read
@@ -42,20 +50,29 @@
 //      crash). Instance rule ids are stored namespaced ("inst.<uuid>.<id>")
 //      so one engine's scope-unique keying never collides across instances.
 //
+//   6. PLUGIN RULES (S8f) — registered at runtime through the pet.rules
+//      family (queryApi → per-plugin RuleApiProxy → RuleApiImpl →
+//      upsertRuleJson with RuleScope::Plugin + ownerUuid = the plugin
+//      id); stored ids are namespaced "plugin.<pluginId>.<bareId>" so
+//      PluginHost::shutdownAll can sweep a plugin's whole set at unload
+//      (removeRulesByOwnerPrefix safety net — the same shape as the
+//      event-bus unsubscribeByPublisher sweep). Plugin rules are NOT
+//      persisted: they live exactly as long as the registration.
+//
 // Known-event table: built from api/EventIds.hpp (kEventInstanceHit and
 // kEventInstanceIdleTick cancellable, the rest of the catalog not) — powers
 // RuleEngine's load-time cancel_default WARN.
 //
-// TODO(S8f): plugin-declared rules (RuleScope::Plugin + "plugin.<id>."
-// owner-prefix sweep at unload), owner gating for play_pack_audio, the
-// rules-master toggle → resetOneShotCycles() hook (no UI switch exists in
-// S8e, so nothing calls it yet) and the plugin registration channel (the
-// upsertRuleJson/removeRuleById surface below is its landing pad).
+// TODO(rules-master-toggle): the wholesale rules on/off switch's
+// resetOneShotCycles() hook — no UI switch exists yet, so nothing calls
+// it (RuleEngine::resetOneShotCycles stands ready; cooldown windows are
+// wall-clock and deliberately survive).
 //
 // Threading: GUI thread only, never blocking (every dependency is
 // synchronous and in-process). Never throws.
 
 #include <QHash>
+#include <QLatin1String>
 #include <QJsonObject>
 #include <QObject>
 #include <QSet>
@@ -117,16 +134,56 @@ public:
     // ConfigDir::userVoicePacksDir()). Test seam over VoicePackScanner.
     void setPackScanDirs(const QString& rendererDir, const QString& userPacksDir);
 
+    // ── S8f owner action gate seams ──────────────────────────────────────
+    // Live capability oracle for plugin-owned rules: given a rule id under
+    // the "plugin." namespace, answer whether its OWNING plugin holds the
+    // capability. PanelApplication wires this over the PluginRegistry
+    // (prefix match — plugin ids are dotted, so the service cannot split
+    // them unambiguously; unknown owners answer false = fail closed).
+    // std::function is host-internal (core↔app seam), never crosses the
+    // plugin boundary. Absent query = every gated plugin action fails
+    // closed (WARN) — a plugin rule can never prove its grant alone.
+    using OwnerCapabilityQuery =
+        std::function<bool(const QString& pluginOwnedRuleId,
+                           QLatin1StringView capability)>;
+    void setOwnerCapabilityQuery(OwnerCapabilityQuery query)
+    {
+        m_ownerCapabilityQuery = std::move(query);
+    }
+    // plugin_write_enabled live read (the same kv semantics as
+    // PluginHost's write-switch provider; absent = enabled, mirroring
+    // the kv default). Consulted at EMISSION time so flipping the
+    // switch stops already-registered plugin rules without a restart.
+    void setOwnerWriteEnabled(std::function<bool()> enabled)
+    {
+        m_ownerWriteEnabled = std::move(enabled);
+    }
+
     // ── Runtime rule surface (tests in S8e; the S8f plugin registration
     // channel lands here). Compile + scope-stamp + upsert + recompute the
     // subscriptions. Returns the stored rule (namespaced id for Instance
-    // scope) or nullopt (WARN logged).
+    // and Plugin scopes) or nullopt (WARN logged; *error carries the
+    // structured reason when non-null — S8f routes it through the
+    // plugin's context log).
     std::optional<CompiledRule> upsertRuleJson(const QJsonObject& ruleJson,
                                                RuleScope scope,
-                                               const QString& ownerUuid);
-    // Remove by STORED id (namespaced for instance rules). Recomputes the
-    // subscriptions. False when absent.
+                                               const QString& ownerUuid,
+                                               RuleError* error = nullptr);
+    // Remove by STORED id (namespaced for instance/plugin rules).
+    // Recomputes the subscriptions. False when absent.
     bool removeRuleById(const QString& storedRuleId);
+    // Bulk-remove every rule whose STORED id starts with ownerPrefix —
+    // the S8f plugin-unload sweep ("plugin.<id>.", mirrored on the
+    // internal "inst.<uuid>." instance sweep). Recomputes the
+    // subscriptions; returns the removed count.
+    int removeRulesByOwnerPrefix(const QString& ownerPrefix);
+
+    // Introspection (tests / diagnostics / the S8f proxy ownership
+    // check): the stored rule for a stored id, or nullopt.
+    std::optional<CompiledRule> ruleById(const QString& storedRuleId) const
+    {
+        return m_engine.ruleById(storedRuleId);
+    }
 
     // Introspection (tests / diagnostics).
     int ruleCount() const { return m_engine.ruleCount(); }
@@ -168,12 +225,13 @@ private:
     // blob = ERROR + empty, never a crash). Returns the loaded count.
     int loadInstanceRulesInto(RuleEngine& engine, const QString& uuid) const;
     // Compile one rule JSON, stamp scope/owner (namespace Instance ids as
-    // "inst.<uuid>.<id>"), upsert into `engine`. Nullopt + WARN on any
-    // rejection.
+    // "inst.<uuid>.<id>", Plugin ids as "plugin.<pluginId>.<id>"), upsert
+    // into `engine`. Nullopt + WARN on any rejection.
     std::optional<CompiledRule> compileScopedInto(RuleEngine& engine,
                                                   const QJsonObject& ruleJson,
                                                   RuleScope scope,
-                                                  const QString& ownerUuid) const;
+                                                  const QString& ownerUuid,
+                                                  RuleError* error = nullptr) const;
     // Diff the desired set against m_subscribedIds; subscribe new ids at
     // Low priority, unsubscribe orphans. No-op without the event API.
     void recomputeSubscriptions();
@@ -187,8 +245,15 @@ private:
     // Actions in order, fail-fast (one failure WARNs + aborts the rest).
     void executeActions(const CompiledRule& rule, const pet::Event& event,
                         const EvalContext& ctx);
-    bool executeOneAction(const RuleAction& action, const pet::Event& event,
-                          const EvalContext& ctx);
+    bool executeOneAction(const CompiledRule& rule, const RuleAction& action,
+                          const pet::Event& event, const EvalContext& ctx);
+    // S8f owner gate: true when this action of this rule must be DENIED —
+    // plugin-owned (stored id prefix "plugin.") + gated channel
+    // (play_motion/set_expression) + (owner lacks instance_tuning, fail
+    // closed on unknown/unwired, OR the write switch is off). WARNs on
+    // every denial; host rules and the ungated channels answer false.
+    bool pluginActionDenied(const CompiledRule& rule,
+                            const RuleAction& action) const;
     bool executePackAudioAction(const RuleAction& action,
                                 const pet::Event& event,
                                 const EvalContext& ctx);
@@ -204,6 +269,8 @@ private:
     PackAudioChannel m_packAudioChannel;     // may be null until wired
     QString m_packRendererDir;               // scan seams (empty = defaults)
     QString m_packUserDir;
+    OwnerCapabilityQuery m_ownerCapabilityQuery; // S8f gate (absent = fail closed)
+    std::function<bool()> m_ownerWriteEnabled;   // S8f gate (absent = enabled)
 
     RuleEngine::KnownEventTable m_knownEvents;
     RuleEngine m_engine;                     // composed core (atomic swaps)

@@ -10,6 +10,7 @@
 #include "core/EventBus.hpp"
 #include "core/PluginContextImpl.hpp"
 #include "core/PluginPageModel.hpp"
+#include "core/RuleEngineService.hpp" // complete type for the S8f fallback
 #include "logging/Logging.hpp"
 #include "ui/NotificationStreamController.hpp"
 
@@ -77,6 +78,11 @@ void PluginHost::setEventApi(EventApiImpl* eventApi)
     m_eventApi = eventApi;
 }
 
+void PluginHost::setRuleApi(RuleApiImpl* ruleApi)
+{
+    m_ruleApi = ruleApi;
+}
+
 void PluginHost::setWriteEnabledProvider(std::function<bool()> provider)
 {
     m_writeEnabledProvider = std::move(provider);
@@ -127,6 +133,23 @@ void PluginHost::initializeAll()
     }
     EventApiImpl* const eventApi =
         m_eventApi != nullptr ? m_eventApi : m_eventApiFallback;
+
+    // S8f (v1.6): resolve the rules API the same way — the per-host
+    // fallback pair (a degraded RuleEngineService over the resolved
+    // event API above: no roster / tuning / db → loads nothing at
+    // startup, runtime registrations still subscribe + evaluate on the
+    // bus) covers a host without the PanelApplication service tree.
+    // Created BEFORE any context is built → registered earlier as a
+    // host child → destroyed after every context (registration-reverse),
+    // so the injected/borrowed pointers outlive each context's proxy.
+    if (m_ruleApi == nullptr) {
+        m_ruleServiceFallback = new RuleEngineService(
+            eventApi, /*instanceApi=*/nullptr, /*tuningApi=*/nullptr,
+            /*db=*/nullptr, this);
+        m_ruleApiFallback = new RuleApiImpl(m_ruleServiceFallback, this);
+    }
+    RuleApiImpl* const ruleApi =
+        m_ruleApi != nullptr ? m_ruleApi : m_ruleApiFallback;
 
     const QList<PluginEntry> entries = m_registry.orderedEntries();
     LOG_INFO("PluginHost: initializing {} plugin(s) in manifest order",
@@ -212,6 +235,10 @@ void PluginHost::initializeAll()
             // the shared bus (prefix enforcement + publisher stamping
             // live in the proxy — see EventApiProxy).
             ctx->setEventApi(eventApi);
+            // S8f (v1.6): every context gets its per-plugin rules proxy
+            // (owner-prefix + scope stamping live in the proxy + the
+            // shared impl's plugin seam — see RuleApiProxy).
+            ctx->setRuleApi(ruleApi);
             if (m_voicePackApi != nullptr)
                 ctx->setVoicePackApi(m_voicePackApi);
             m_contexts.append(ctx);
@@ -293,6 +320,25 @@ void PluginHost::shutdownAll()
                     LOG_WARN("PluginHost: plugin '{}' left {} event-bus "
                              "subscription(s) at unload — swept (no dangling "
                              "listeners)",
+                             it->toStdString(), swept);
+                }
+            }
+        }
+        // S8f (v1.6): plugin-rule unload sweep (same safety-net shape as
+        // the event sweep above) — a plugin that failed to unregister
+        // its rules in shutdown() would leave live rules (bus
+        // subscriptions + gated actions) firing forever. Drop every rule
+        // stored under its owner prefix BEFORE the delete; a non-zero
+        // count is WARNed (the plugin should have cleaned up itself —
+        // the sweep is the safety net, not the contract).
+        {
+            RuleApiImpl* const ruleApi =
+                m_ruleApi != nullptr ? m_ruleApi : m_ruleApiFallback;
+            if (ruleApi != nullptr) {
+                const int swept = ruleApi->sweepPluginRules(*it);
+                if (swept > 0) {
+                    LOG_WARN("PluginHost: plugin '{}' left {} registered "
+                             "rule(s) at unload — swept",
                              it->toStdString(), swept);
                 }
             }

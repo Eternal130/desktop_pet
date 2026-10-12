@@ -109,6 +109,9 @@ target_sources(pet_panel_api INTERFACE
     # IEventApi subscribe/publish surface).
     src/api/EventIds.hpp
     src/api/IEventApi.hpp
+    # v1.6 (S8f): rules-registration family (registerRule/unregisterRule;
+    # the rule JSON schema is documented in docs/rules.md).
+    src/api/IRuleApi.hpp
 )
 # ABI discipline (§B.3, src/api/README.md): pure-virtual declarations, Qt
 # value types + POD only. Qt value types need Qt6::Core's include path —

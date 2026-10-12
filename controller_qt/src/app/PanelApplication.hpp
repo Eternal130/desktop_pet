@@ -21,6 +21,7 @@ class InstanceApiImpl;
 class InstanceControlApiImpl;
 class ModelApiImpl;
 class MonitorApiImpl;
+class RuleApiImpl;
 class RuleEngineService;
 class SettingsApiImpl;
 class TuningApiImpl;
@@ -139,6 +140,15 @@ public:
     // m_monitorApi → destroyed before it (registration-reverse).
     core::RuleEngineService* ruleEngineService();
 
+    // S8f (v1.6): THE shared pet::IRuleApi implementation over the
+    // RuleEngineService — served to plugins through PluginHost →
+    // queryApi("pet.rules") (per-context owner-stamping proxy; the
+    // family itself is deliberately ungated at query time — the owner
+    // action gate fires at emission time inside the service).
+    // Registered after m_ruleEngineService → dies before it
+    // (registration-reverse; the impl borrows the service pointer).
+    core::RuleApiImpl* ruleApi();
+
     // Plugin framework (P4, §B.6): the registry (entry store + state
     // machine) is created FIRST in the ctor; the host (initialize/shutdown
     // driver) LAST, so it can observe every earlier service. main()
@@ -198,6 +208,9 @@ private:
     // S8e: rule-engine host service (see ruleEngineService()); registered
     // after m_monitorApi → destroyed before it (registration-reverse).
     core::RuleEngineService* m_ruleEngineService = nullptr;
+    // S8f (v1.6): shared rules-registration API (see ruleApi());
+    // registered after m_ruleEngineService → destroyed before it.
+    core::RuleApiImpl* m_ruleApi = nullptr;
     // Registered last (wireLegacyInstanceZeroSenders) → destroyed first.
     StartupSalvo* m_startupSalvo = nullptr;
     ProcessManager* m_processManager = nullptr;

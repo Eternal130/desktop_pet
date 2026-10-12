@@ -26,10 +26,12 @@
 #include "api/IModelApi.hpp"
 #include "api/IMonitorApi.hpp"
 #include "api/IPluginContext.hpp"
+#include "api/IRuleApi.hpp"
 #include "api/ISettingsApi.hpp"
 #include "api/ITuningApi.hpp"
 #include "api/IUiApi.hpp"
 #include "core/PluginCapabilityStubs.hpp"
+#include "core/RuleEngineService.hpp"
 
 // InstanceManager + NotificationStreamController are GLOBAL-namespace
 // classes (mixed-namespace codebase); declared outside namespace core.
@@ -412,6 +414,89 @@ private:
     EventApiImpl* m_shared = nullptr; // not owned; null-safe (no wiring)
 };
 
+// S8f (v1.6): shared rules-registration API — the pet::IRuleApi behind
+// queryApi(kRulesApiId) over the shared core::RuleEngineService.
+// Constructed ONCE in the PanelApplication service tree (AFTER the
+// RuleEngineService it borrows) and injected into every plugin context
+// via PluginHost. Plugins never see THIS object directly — queryApi
+// hands each context a per-plugin RuleApiProxy (below) that stamps the
+// "plugin.<ownId>." id prefix + RuleScope::Plugin; the raw impl's own
+// pet::IRuleApi surface is the HOST channel (Panel scope, empty owner —
+// the file-loading pipeline remains the primary host surface, the raw
+// channel exists for symmetry + tests).
+class RuleApiImpl : public QObject, public pet::IRuleApi
+{
+    Q_OBJECT
+public:
+    // ruleEngine must outlive this object (service-tree registration
+    // order guarantees it); null is tolerated — registerRule returns
+    // Generic, unregisterRule no-ops (degraded wiring, never a crash).
+    explicit RuleApiImpl(RuleEngineService* ruleEngine,
+                         QObject* parent = nullptr);
+
+    // pet::IRuleApi — the HOST channel: Panel scope, empty owner (the
+    // same stamp the panel-kv loading pipeline applies).
+    pet::PluginError registerRule(const QJsonObject& rule) override;
+    void unregisterRule(const QString& ruleId) override;
+
+    // ── Host/plugin-internal seams (deliberately NOT on the pet::
+    // interface — a plugin must not register rules under a foreign
+    // owner or sweep another plugin's set) ────────────────────────
+    // Proxy register: scope=Plugin + ownerUuid=pluginId; the service
+    // namespaces the stored id "plugin.<pluginId>.<bareId>". A stored
+    // id that already exists under ANOTHER owner is refused
+    // (InvalidArgument — dotted plugin ids can nest, so the id alone
+    // is not proof of ownership). Rejections return InvalidArgument
+    // with the structured reason routed through `log` (the plugin's
+    // own context log).
+    pet::PluginError registerPluginRule(
+        const QString& pluginId, const QJsonObject& rule,
+        const std::function<void(pet::PluginLogLevel, const QString&)>& log);
+    // Proxy unregister: bare id → the plugin's OWN prefixed stored id,
+    // with the stored rule's scope/ownerUuid re-verified before removal
+    // (an id computed from a dotted-prefix neighbor can never pass).
+    // Unknown id → no-op.
+    void unregisterPluginRule(const QString& pluginId,
+                              const QString& bareRuleId);
+    // Plugin-unload sweep (PluginHost::shutdownAll): removes every rule
+    // stored under "plugin.<pluginId>." and recomputes the bus
+    // subscriptions. Returns the removal count (the host WARNs on
+    // non-zero — the sweep is the safety net, not the contract).
+    int sweepPluginRules(const QString& pluginId);
+
+private:
+    // Stored id for a plugin's bare rule id.
+    static QString pluginRuleId(const QString& pluginId,
+                                const QString& bareId);
+
+    RuleEngineService* m_ruleEngine = nullptr; // not owned (service tree)
+};
+
+// S8f (v1.6): the per-plugin rules proxy served through
+// queryApi("pet.rules"). Enforces the owner rules the shared Impl
+// cannot (it serves the host too): every registration is forwarded with
+// the context's plugin id as the owner (stored id prefix
+// "plugin.<ownId>.", RuleScope::Plugin) and every unregister is
+// re-stamped with the same prefix — a plugin can only ever touch its
+// own rules. Plain class (no QObject) — a value member of
+// PluginContextImpl (EventApiProxy pattern).
+class RuleApiProxy final : public pet::IRuleApi
+{
+public:
+    // log: the context's own log() (rejection reasons surface under the
+    // plugin's id prefix); may be null.
+    RuleApiProxy(const QString& pluginId, RuleApiImpl* shared,
+                 std::function<void(pet::PluginLogLevel, const QString&)> log);
+
+    pet::PluginError registerRule(const QJsonObject& rule) override;
+    void unregisterRule(const QString& ruleId) override;
+
+private:
+    QString m_pluginId;
+    RuleApiImpl* m_shared = nullptr; // not owned; null-safe (no wiring)
+    std::function<void(pet::PluginLogLevel, const QString&)> m_log;
+};
+
 class PluginContextImpl : public QObject, public pet::IPluginContext
 {
     Q_OBJECT
@@ -481,6 +566,14 @@ public:
     // publisher-stamped. Null (the default) → queryApi answers nullptr
     // ("feature absent"); injected → the proxy.
     void setEventApi(EventApiImpl* eventApi);
+    // ── v1.6 (S8f) shared-implementation injection ─────────────────────
+    // The SHARED RuleApiImpl served through queryApi("pet.rules") —
+    // never raw: the context builds its per-plugin RuleApiProxy from
+    // (m_pluginId, shared, own log) so every registration is
+    // owner-stamped and every rejection reason lands in the plugin's
+    // own context log. Null (the default) → queryApi answers nullptr
+    // ("feature absent"); injected → the proxy.
+    void setRuleApi(RuleApiImpl* ruleApi);
 
 private:
     QString m_pluginId;
@@ -518,6 +611,11 @@ private:
     // (publisher-prefix enforcement); null → nullptr ("feature absent").
     EventApiImpl* m_sharedEventApi = nullptr;
     std::unique_ptr<EventApiProxy> m_eventProxy;
+    // v1.6 (S8f): shared rules-registration implementation (service tree
+    // / host fallback), not owned. Plugins are served through m_ruleProxy
+    // (owner-prefix stamping); null → nullptr ("feature absent").
+    RuleApiImpl* m_sharedRuleApi = nullptr;
+    std::unique_ptr<RuleApiProxy> m_ruleProxy;
 };
 
 } // namespace core

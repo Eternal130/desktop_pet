@@ -1222,3 +1222,30 @@ target_link_libraries(RuleEngineServiceTest PRIVATE pet_panel_core Qt6::Test)
 pet_deploy_qt_test(RuleEngineServiceTest)
 
 add_test(NAME RuleEngineServiceTest COMMAND RuleEngineServiceTest)
+
+# ── S8f rules-family tests ────────────────────────────────────────────────────
+
+# RuleApiTest (S8f, v1.6): the pet.rules family — per-plugin proxy
+# owner-prefix/scope stamping (queryApi("pet.rules") over a real
+# PluginContextImpl), rejection semantics (illegal schema →
+# InvalidArgument with the engine unchanged + the reason through the
+# plugin's context log; the 200-rule ceiling — new id rejects,
+# replacement at capacity stays legal), owner-scoped unregister
+# (identically named rules across plugins never cross), queryApi
+# routing three states (proxy / minVersion over / not wired → nullptr),
+# the EMISSION-time owner action gate (play_motion/set_expression of
+# plugin rules: no grant → WARN + tuning untouched with the fire still
+# recorded; grant+switch → pass; grant+switch-off → deny; host rules +
+# notify_bubble/play_pack_audio never gated — the latter reaches the
+# mount check instead), the PluginHost shutdown sweep (sloppy plugin
+# swept with WARN, tidy plugin not), and the plugin-rule north-star e2e
+# (fake plugin granted instance_tuning registers on pet.pack.mounted →
+# set_expression through the REAL TuningApiImpl mount + REAL bus; a
+# post-hoc capability revocation denies the re-mounted fire). QTEST_MAIN
+# — the real-SQLite + InstanceManager harnesses want a QCoreApplication.
+qt_add_executable(RuleApiTest RuleApiTest.cpp)
+target_link_libraries(RuleApiTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(RuleApiTest)
+
+add_test(NAME RuleApiTest COMMAND RuleApiTest)

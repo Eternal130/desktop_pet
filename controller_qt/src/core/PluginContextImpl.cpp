@@ -1067,6 +1067,146 @@ pet::PluginError EventApiProxy::publish(pet::Event& event)
     return m_shared->publish(event);
 }
 
+// ── RuleApiImpl + RuleApiProxy (S8f, v1.6) ──────────────────────────────────
+
+RuleApiImpl::RuleApiImpl(RuleEngineService* ruleEngine, QObject* parent)
+    : QObject(parent), m_ruleEngine(ruleEngine)
+{
+}
+
+pet::PluginError RuleApiImpl::registerRule(const QJsonObject& rule)
+{
+    // HOST channel: Panel scope, empty owner — the same stamp the
+    // panel-kv loading pipeline applies (the file pipeline remains the
+    // primary host surface; this channel is symmetry + tests).
+    if (m_ruleEngine == nullptr)
+        return pet::PluginError::Generic; // degraded wiring, never a crash
+    RuleError error;
+    const auto stored = m_ruleEngine->upsertRuleJson(
+        rule, RuleScope::Panel, QString(), &error);
+    return stored.has_value() ? pet::PluginError::Ok
+                              : pet::PluginError::InvalidArgument;
+}
+
+void RuleApiImpl::unregisterRule(const QString& ruleId)
+{
+    if (m_ruleEngine != nullptr)
+        m_ruleEngine->removeRuleById(ruleId);
+}
+
+QString RuleApiImpl::pluginRuleId(const QString& pluginId,
+                                  const QString& bareId)
+{
+    return QStringLiteral("plugin.%1.%2").arg(pluginId, bareId);
+}
+
+pet::PluginError RuleApiImpl::registerPluginRule(
+    const QString& pluginId, const QJsonObject& rule,
+    const std::function<void(pet::PluginLogLevel, const QString&)>& log)
+{
+    auto pluginLog =
+        [&log](pet::PluginLogLevel level, const QString& message) {
+            if (log)
+                log(level, message);
+        };
+    if (m_ruleEngine == nullptr) {
+        pluginLog(pet::PluginLogLevel::Error,
+                  QStringLiteral("rulesApi().registerRule: no rule engine "
+                                 "wired (degraded host)"));
+        return pet::PluginError::Generic;
+    }
+    // Ownership pre-check: a stored id that already exists under another
+    // owner is refused (dotted plugin ids can nest — "org.a" vs
+    // "org.a.b" — so the namespaced id alone is not proof of ownership).
+    const QJsonValue idValue = rule.value(QStringLiteral("id"));
+    if (idValue.isString()) {
+        const auto existing = m_ruleEngine->ruleById(
+            pluginRuleId(pluginId, idValue.toString()));
+        if (existing.has_value()
+            && (existing->scope != RuleScope::Plugin
+                || existing->ownerUuid != pluginId)) {
+            pluginLog(pet::PluginLogLevel::Warning,
+                      QStringLiteral("rulesApi().registerRule: id '%1' is "
+                                     "already stored under another owner — "
+                                     "rejected")
+                          .arg(idValue.toString()));
+            return pet::PluginError::InvalidArgument;
+        }
+    }
+    RuleError error;
+    const auto stored = m_ruleEngine->upsertRuleJson(
+        rule, RuleScope::Plugin, pluginId, &error);
+    if (!stored.has_value()) {
+        // The service already WARNed the structured reason; surface it
+        // through the plugin's own context log as well (the IRuleApi
+        // contract's "reason via context log" half).
+        pluginLog(pet::PluginLogLevel::Warning,
+                  QStringLiteral("rulesApi().registerRule: rejected — %1 "
+                                 "(%2)")
+                      .arg(error.message, error.code));
+        return pet::PluginError::InvalidArgument;
+    }
+    pluginLog(pet::PluginLogLevel::Info,
+              QStringLiteral("rulesApi().registerRule: stored as '%1'")
+                  .arg(stored->id));
+    return pet::PluginError::Ok;
+}
+
+void RuleApiImpl::unregisterPluginRule(const QString& pluginId,
+                                       const QString& bareRuleId)
+{
+    if (m_ruleEngine == nullptr)
+        return;
+    const QString storedId = pluginRuleId(pluginId, bareRuleId);
+    // Ownership re-verification before removal — the prefixed id alone
+    // must not be the only guard (a plugin id that is a dotted PREFIX of
+    // another plugin's id could otherwise name the neighbor's stored
+    // rules).
+    const auto existing = m_ruleEngine->ruleById(storedId);
+    if (!existing.has_value())
+        return; // unknown id — the documented legal no-op
+    if (existing->scope != RuleScope::Plugin
+        || existing->ownerUuid != pluginId) {
+        LOG_WARN("[plugin-api] rulesApi().unregisterRule(\"{}\") from "
+                 "'{}' — the stored rule belongs to another owner, "
+                 "refused",
+                 bareRuleId.toStdString(), pluginId.toStdString());
+        return;
+    }
+    m_ruleEngine->removeRuleById(storedId);
+}
+
+int RuleApiImpl::sweepPluginRules(const QString& pluginId)
+{
+    if (m_ruleEngine == nullptr)
+        return 0;
+    return m_ruleEngine->removeRulesByOwnerPrefix(
+        QStringLiteral("plugin.%1.").arg(pluginId));
+}
+
+RuleApiProxy::RuleApiProxy(
+    const QString& pluginId, RuleApiImpl* shared,
+    std::function<void(pet::PluginLogLevel, const QString&)> log)
+    : m_pluginId(pluginId), m_shared(shared), m_log(std::move(log))
+{
+}
+
+pet::PluginError RuleApiProxy::registerRule(const QJsonObject& rule)
+{
+    if (m_shared == nullptr)
+        return pet::PluginError::Generic; // no wiring — never a crash
+    // Owner stamping lives in the shared impl's plugin seam: scope=Plugin
+    // + ownerUuid=<ownId> + the "plugin.<ownId>." stored-id prefix.
+    return m_shared->registerPluginRule(m_pluginId, rule, m_log);
+}
+
+void RuleApiProxy::unregisterRule(const QString& ruleId)
+{
+    if (m_shared == nullptr)
+        return;
+    m_shared->unregisterPluginRule(m_pluginId, ruleId);
+}
+
 // ── PluginContextImpl ───────────────────────────────────────────────────────
 
 PluginContextImpl::PluginContextImpl(const QString& pluginId,
@@ -1137,6 +1277,21 @@ void PluginContextImpl::setEventApi(EventApiImpl* eventApi)
     m_sharedEventApi = eventApi;
     m_eventProxy = eventApi != nullptr
         ? std::make_unique<EventApiProxy>(m_pluginId, eventApi)
+        : nullptr;
+}
+
+void PluginContextImpl::setRuleApi(RuleApiImpl* ruleApi)
+{
+    // v1.6 (S8f): same post-construction seam discipline as setEventApi.
+    // The proxy carries the context's own log() so schema rejection
+    // reasons surface under the plugin's id prefix.
+    m_sharedRuleApi = ruleApi;
+    m_ruleProxy = ruleApi != nullptr
+        ? std::make_unique<RuleApiProxy>(
+              m_pluginId, ruleApi,
+              [this](pet::PluginLogLevel level, const QString& message) {
+                  log(level, message);
+              })
         : nullptr;
 }
 
@@ -1216,6 +1371,22 @@ pet::IExtApi* PluginContextImpl::queryApi(const char* apiId, int minVersion)
         if (minVersion > pet::kEventsApiVersion)
             return nullptr;
         return m_eventProxy.get(); // may be nullptr — feature-absent by contract
+    }
+
+    // ── Family: pet.rules (S8f, v1.6) ──────────────────────────────────
+    // Rules-registration family: NO capability word and NO write-switch
+    // consult at query time — registration is deliberately LAZY (an
+    // inert act); the gate fires at ACTION-EMISSION time inside
+    // RuleEngineService (a plugin-owned play_motion/set_expression
+    // requires the owner's LIVE instance_tuning grant + the write
+    // switch — stronger than queryApi-time gating: a lingered rule
+    // surface cannot outlive its grant). Injected → the per-context
+    // RuleApiProxy (owner-prefix stamping + scope stamping); not wired
+    // → nullptr ("feature absent").
+    if (QLatin1StringView(apiId) == QLatin1StringView(pet::kRulesApiId)) {
+        if (minVersion > pet::kRulesApiVersion)
+            return nullptr;
+        return m_ruleProxy.get(); // may be nullptr — feature-absent by contract
     }
 
     // ── Family: pet.settings (S6, v1.3) ─────────────────────────────────

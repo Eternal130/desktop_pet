@@ -243,6 +243,42 @@ PanelApplication::PanelApplication(QObject* parent)
             return -1;
         });
 
+    // ── Shared rules API + owner gate wiring (S8f, v1.6) ──────────────
+    // ONE RuleApiImpl over the RuleEngineService: injected into every
+    // plugin context below (queryApi("pet.rules") → per-plugin
+    // owner-stamping proxy). Registered after m_ruleEngineService →
+    // dies before it (registration-reverse; the impl borrows the
+    // service pointer).
+    m_ruleApi = new core::RuleApiImpl(m_ruleEngineService, this);
+    // Owner action gate (play_motion/set_expression from plugin-owned
+    // rules), checked LIVE at emission time inside the service. The
+    // capability oracle matches the rule's owner by REGISTRY prefix —
+    // plugin ids are dotted ("org.x.y"), so the rule id cannot be split
+    // unambiguously inside the service; the registry answers
+    // authoritatively and unknown owners fail closed. The write-enabled
+    // provider mirrors the setWriteEnabledProvider kv read below
+    // (absent/"1" = enabled — the documented default; LIVE read so
+    // flipping the row stops already-registered plugin rules without a
+    // restart).
+    m_ruleEngineService->setOwnerCapabilityQuery(
+        [this](const QString& pluginOwnedRuleId,
+               QLatin1StringView capability) {
+            const QList<core::PluginEntry> entries =
+                m_pluginRegistry.orderedEntries();
+            for (const core::PluginEntry& e : entries) {
+                if (pluginOwnedRuleId.startsWith(
+                        QStringLiteral("plugin.%1.").arg(e.manifest.id)))
+                    return e.manifest.capabilities.contains(capability);
+            }
+            return false; // unknown owner → fail closed
+        });
+    m_ruleEngineService->setOwnerWriteEnabled([this]() {
+        return m_databaseManager->getValue(
+                   QStringLiteral("plugin_write_enabled"),
+                   QStringLiteral("1"))
+            != QStringLiteral("0");
+    });
+
     // ── Plugin framework (P4, §B.6) ─────────────────────────────────────
     // Registry first (pure store, no deps), host last (observes the roster
     // above; its page model / stream / config root are mounted later by
@@ -272,6 +308,7 @@ PanelApplication::PanelApplication(QObject* parent)
     m_pluginHost->setVoicePackApi(m_voicePackApi);
     m_pluginHost->setMonitorApi(m_monitorApi); // S7 (v1.4)
     m_pluginHost->setEventApi(m_eventApi);     // S8a (v1.5)
+    m_pluginHost->setRuleApi(m_ruleApi);       // S8f (v1.6)
     // S2: the host-global plugin_write_enabled kill-switch (panel_config
     // kv, absent/"1" = enabled — the documented default). LIVE read on
     // every queryApi call, so flipping the kv row revokes plugin write
@@ -360,6 +397,11 @@ core::EventApiImpl* PanelApplication::eventApi()
 core::RuleEngineService* PanelApplication::ruleEngineService()
 {
     return m_ruleEngineService;
+}
+
+core::RuleApiImpl* PanelApplication::ruleApi()
+{
+    return m_ruleApi;
 }
 
 core::PluginRegistry& PanelApplication::pluginRegistry()

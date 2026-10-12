@@ -2,7 +2,7 @@
 
 第一方插件 SDK 接口头集合（P4 落地，P6a 冻结点前允许演进，冻结后变更走版本化）。
 设计合同: `docs/refactor/plugin-architecture-and-cmake-migration.md` §A/§B.3。
-**当前版本: API 1.5**（2026-10-12，见文末「版本历史」）。
+**当前版本: API 1.6**（2026-10-12，见文末「版本历史」）。
 
 ## 组成
 
@@ -18,6 +18,7 @@
 | `ISettingsApi.hpp` | **v1.3 (S6)** 面板设置写族（类型化方法，禁 QJsonObject 逃生舱）: setCloseAction / setConfirmOnExit / setStartMinimized / setDefaultModelName。`settings_write` 能力 + 宿主开关门控；**刻意不含 autoLaunchSystem**（宿主外壳能力不进插件 API） |
 | `IMonitorApi.hpp` | **v1.4 (S7)** 资源监控只读族: history（60 样本环形全量，POD 投影 -1 哨兵）+ subscribe/unsubscribe（IMonitorObserver 逐样本推送，每订阅者独立 minIntervalMs 合并节流）。经 `queryApi` 获取；**只读不门控**，未接线→nullptr；宿主自己的 MonitorPage 保留活对象绑定（架构边界），本族面向插件消费者 |
 | `IEventApi.hpp` | **v1.5 (S8a)** 事件总线族: Event/EventPriority/IEventListener + subscribe/unsubscribe/publish（**同步分发**——publish 返回时整链已跑完、cancelled 已终值）。经 `queryApi` 获取；**无能力门控、不受写开关**（通知通道而非宿主状态写），未接线→nullptr；插件拿到的是 per-context 代理（发布强制 `plugin.<ownId>.*` 前缀 + publisherId 盖戳，防伪造）；重入深度上限 8（超限 Busy）；宿主通道 ID 词表 + 载荷字段表冻结在 `EventIds.hpp`（目录即契约：字段只加不删不改名，可选值用 -1/"" 哨兵，事件 ID 永不改名移除） |
+| `IRuleApi.hpp` | **v1.6 (S8f)** 规则注册族: registerRule/unregisterRule（规则 JSON schema 见 `docs/rules.md`）。经 `queryApi` 获取；**注册是惰性动作——无能力词、queryApi 时不查写开关**，owner 门控在**动作发射时活查**（插件规则的 play_motion/set_expression 现查 owner 的 `instance_tuning` 能力 + `plugin_write_enabled`，滞留规则面无法超越其授权存活；notify_bubble/play_pack_audio/publish_event 按设计不门控）；插件拿到的是 per-context 代理（存储 id 强制 `plugin.<ownId>.` 前缀 + `RuleScope::Plugin` 盖戳，只能注册/注销/替换自己的）；schema 校验失败→InvalidArgument（原因经 context log）引擎不变；未接线→nullptr；规则不持久化（随注册存活，卸载清扫兜底） |
 | `IVoicePackApi.hpp` | 语音包发现（listPacks / refreshScan / installPath）+ **v1.3 追加 `IPackListObserver` + subscribePackList/unsubscribePackList**（包列表变化观察；挂载写走 ITuningApi） |
 | `IDownloadApi.hpp` | 宿主下载咽喉点（start / cancel / installArchive + DownloadListener 纯虚回调）；manifest 未授 `network` capability 时为 stub（§B.4） |
 | `IUiApi.hpp` | 页面注册 + 气泡通知；**无 unregisterPage/页面生命周期（刻意 YAGNI，防 P6a 重议）** |
@@ -106,7 +107,7 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 "翻转即吊销"需 per-call 门控代理（见"阶段路线"的阶段 2 候选）。只读族（`pet.model`、
 `pet.monitor`、voicePackApi、instanceApi）不受其约束。
 
-族 × 能力 × 开关总表（v1.5 全景，queryApi 通道六族）:
+族 × 能力 × 开关总表（v1.6 全景，queryApi 通道七族）:
 
 | apiId | 接口 | 能力门控 | 写开关 | 未接线时 |
 |---|---|---|---|---|
@@ -116,6 +117,13 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 | `pet.settings` | ISettingsApi | `settings_write` | 受控 | capability stub |
 | `pet.monitor` | IMonitorApi | 无（只读） | 不受控 | nullptr |
 | `pet.events` | IEventApi | 无（通知通道） | 不受控 | nullptr |
+| `pet.rules` | IRuleApi | 无（注册惰性） | 不受控（发射时活查） | nullptr |
+
+`pet.rules` 的门控列语义与其它写族不同（S8f 设计裁决）: 注册/查询时不门控——门控发生在
+**动作发射时**，规则引擎对插件规则的 play_motion/set_expression 每次发射现查 owner 的
+`instance_tuning` 能力（PluginRegistry 前缀匹配，未知 owner fail-closed）**且**
+`plugin_write_enabled` 为真；任一不满足该动作失败 WARN（命中仍记账）。这比 queryApi 时点
+门控更强: 已注册的滞留规则无法在授权被撤销后继续起效，也不存在"缓存指针绕过"面。
 
 另有三个经 IPluginContext 固定 accessor 暴露的 v1.0 族: instanceApi / voicePackApi /
 uiApi / downloadApi（downloadApi 由 `network` 能力门控真实现 vs stub）。
@@ -164,6 +172,41 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
 `qrc:/` URL（§B.6）。
 
 ## 版本历史
+
+### v1.6（2026-10-12，kApiMajor=1 / kApiMinor=6）— S8f 规则引擎插件注册通道 + owner 动作门控
+
+全部为**加法**变更（一个经 queryApi 暴露的新规则注册族 + 宿主侧 owner 门控/清扫接线），
+零既有签名/顺序改动；`IPluginContext` 尾追特权未使用。
+
+1. **`kApiMinor` 5 → 6**。
+2. **`IRuleApi`**（新头，apiId `pet.rules`，族版本 1）: registerRule（原子注册/替换本插件
+   一条规则）+ unregisterRule（按裸 id 注销，前缀限定只能删自己的）。规则 JSON 的
+   `schema_version` 是**规则文档格式版本**（当前 1），与族版本解耦。
+3. **惰性注册 + 发射时 owner 门控**（S8f 设计裁决）: 无能力词、queryApi 时不查写开关；
+   插件规则（存储 id 前缀 `plugin.<ownId>.`）发射 play_motion/set_expression 动作时，
+   `RuleEngineService` **活查** owner 的 `instance_tuning` 能力（注入的能力查询器，
+   PanelApplication 用 PluginRegistry 前缀匹配实现——插件 id 带点，服务侧无法无歧义
+   切分；未知 owner fail-closed）**且** `plugin_write_enabled`（注入活读 provider，
+   缺省=开）；任一不满足 → 该动作失败 WARN（命中仍记账、fail-fast 同既有语义）。
+   notify_bubble/play_pack_audio/publish_event 按设计**不** owner 门控（气泡是通知面、
+   pack 音频已有挂载校验、publish_event 是宿主身份 + 编译期前缀校验）。宿主规则永不门控。
+4. **身份规则**（per-plugin `RuleApiProxy` 强制）: registerRule 强制
+   scope=`RuleScope::Plugin` + ownerUuid=插件 id，存储 id 盖 `plugin.<ownId>.` 前缀
+   （同裸 id = 原子替换自己的注册；跨 owner 冲突拒绝 InvalidArgument——嵌套插件 id 场景
+   以存储规则的 ownerUuid 复核，不信任 id 前缀本身）；unregisterRule 传**裸 id**，
+   代理重新盖前缀后按 ownerUuid 复核再删，只能删到自己的规则；未知 id 合法 no-op。
+   schema 校验失败 → InvalidArgument（结构化原因经插件 context log），引擎状态不变；
+   超 MAX_RULES(200) 新 id 同样 InvalidArgument（容量内替换既有 id 仍合法）。
+5. **宿主装配**: RuleApiImpl 共享单例（PanelApplication 服务树，注册于 RuleEngineService
+   之后）+ PluginHost `setRuleApi` 注入口/per-host 回退对（无服务树时降级
+   RuleEngineService over 回退总线——启动零装载、运行时注册仍可订阅求值）+ queryApi
+   路由（注入→per-context Proxy；未接线→nullptr；版本超→nullptr）。**卸载清扫**:
+   `PluginHost::shutdownAll` 在插件 `shutdown()` 之后、delete 之前按
+   `removeRulesByOwnerPrefix("plugin.<id>.")` 清扫残留规则（非零 WARN——清扫是安全网
+   不是契约，事件订阅清扫同款位置/同款语义）。插件规则**不持久化**（随注册存活，
+   面板重启由插件 initialize() 重新注册）。
+6. **规则文档**: 全字段表/拒载错误码表（32 项）/条件动作词汇表/触发优先级阶梯/
+   插件注册示例/北极星示例 → `docs/rules.md`。
 
 ### v1.5（2026-10-12，kApiMajor=1 / kApiMinor=5）— S8a 事件总线（总线核心 + 契约 + 并行旁路发射）
 

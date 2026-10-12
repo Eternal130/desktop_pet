@@ -47,6 +47,8 @@ class ModelApiImpl;
 class MonitorApiImpl;
 class PluginContextImpl;
 class PluginPageModel;
+class RuleApiImpl;
+class RuleEngineService;
 class SettingsApiImpl;
 class TuningApiImpl;
 class VoicePackApiImpl;
@@ -102,6 +104,18 @@ public:
     // (not pet::IEventApi) is deliberate: shutdownAll needs the
     // host-only unsubscribeByPublisher unload sweep.
     void setEventApi(EventApiImpl* eventApi);
+    // S8f (v1.6): the SHARED RuleApiImpl (over the shared
+    // core::RuleEngineService) served to plugin contexts through
+    // queryApi("pet.rules") — every context receives a per-plugin
+    // RuleApiProxy built from it (owner-prefix stamping happens in the
+    // proxy + impl). Null → initializeAll constructs a per-host
+    // fallback pair (a degraded RuleEngineService over the resolved
+    // event API: no roster/tuning/db, loads nothing at startup — runtime
+    // registrations still subscribe + evaluate on the bus — plus the
+    // impl over it; the setInstanceApi fallback pattern). The concrete
+    // type (not pet::IRuleApi) is deliberate: shutdownAll needs the
+    // host-only sweepPluginRules unload sweep.
+    void setRuleApi(RuleApiImpl* ruleApi);
     // S2 (v1.2): host-global plugin_write_enabled kill-switch provider
     // (PanelApplication wires it to the panel_config kv row; absent
     // provider = enabled, mirroring the kv default). Consulted LIVE on
@@ -173,6 +187,13 @@ private:
     EventApiImpl* m_eventApi = nullptr;
     EventBus* m_eventBusFallback = nullptr;     // host-owned fallback, only
     EventApiImpl* m_eventApiFallback = nullptr; // when nothing was injected
+    // S8f (v1.6): shared rules-registration implementation, not owned.
+    // When null, initializeAll builds the per-host fallback pair (a
+    // degraded RuleEngineService + its impl — created BEFORE any context
+    // so registration order keeps them alive past every context).
+    RuleApiImpl* m_ruleApi = nullptr;
+    RuleEngineService* m_ruleServiceFallback = nullptr; // host-owned, only
+    RuleApiImpl* m_ruleApiFallback = nullptr;           // when unwired
     std::function<bool()> m_writeEnabledProvider;           // S2: live kill-switch
     PluginPageModel* m_pageModel = nullptr;
     NotificationStreamController* m_notificationStream = nullptr;

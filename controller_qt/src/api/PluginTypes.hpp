@@ -54,8 +54,15 @@ namespace pet {
 // EventPriority / IEventListener live in api/IEventApi.hpp; the host
 // channel-ID vocabulary + payload field tables live in
 // api/EventIds.hpp). No existing signature changed.
+// v1.6 (2026-10-12, S8f): minor bumped for the additive expansion —
+// the new rules-registration family IRuleApi (queryApi "pet.rules":
+// registerRule/unregisterRule live in api/IRuleApi.hpp; the rule JSON
+// schema + rejection-code matrix live in docs/rules.md). Registration
+// is deliberately lazy (no capability word); the owner gate fires at
+// action-emission time inside the host's rule engine. No existing
+// signature changed.
 constexpr int kApiMajor = 1;
-constexpr int kApiMinor = 5;
+constexpr int kApiMinor = 6;
 
 // ── Capability vocabulary (manifest "capabilities" entries; §B.4) ───────────
 // The exact, case-sensitive strings the host parses from plugin manifests

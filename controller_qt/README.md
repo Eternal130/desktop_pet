@@ -142,13 +142,13 @@ Storage follows the platform conventions via `QStandardPaths` (app name
 ## Testing
 
 ```bash
-ctest --test-dir build/controller_qt            # run all 58 QTest/gate binaries
+ctest --test-dir build/controller_qt            # run all 64 QTest/gate binaries
 ctest --test-dir build/controller_qt -j8        # parallel
 ctest --test-dir build/controller_qt -L REQUIRES_RENDERER   # integration tier only
 ctest --test-dir build/controller_qt -E 'REQUIRES_RENDERER' # unit tier only
 ```
 
-**58 QTest/gate binaries** under `tests/` cover every module: network (Envelope,
+**64 QTest/gate binaries** under `tests/` cover every module: network (Envelope,
 WsServer, MessageDispatcher, Handshake, PendingRequests, EventRegistry,
 ThreadMarshal, ProtocolFactory, WsServerMulti), core (InstanceSession,
 InstanceManager, Scheduler, InteractionHandler, RestartController,
@@ -159,11 +159,12 @@ ResourceStatsCollector), config (InstanceConfig, PanelConfig,
 InstanceConfigManager, PanelStateManager, ConfigDir, Robustness, PathResolve),
 infrastructure (Logging, PoCIntegration, ProcessManager, StartupSalvo,
 ProtocolFixtures), bubble stream (NotificationStreamModel,
-NotificationStreamController), plugin SDK v1.2-v1.4 families
+NotificationStreamController), plugin SDK v1.2-v1.6 families
 (PluginRegistry, PluginHost, PluginManager, PluginPageModel, DownloadService,
 InstallPipeline, RosterApiModel, InstanceControlApiImpl, PluginQueryApi,
 TuningApiImpl, ModelApiImpl, SettingsApiImpl, InstanceControlBridge,
-MonitorApiImpl) + the API boundary gate (`ApiBoundaryGateTest`,
+MonitorApiImpl, EventBus/EventApiProxy/EventBusEmission, RuleEngine/
+RuleEngineService/RuleApi) + the API boundary gate (`ApiBoundaryGateTest`,
 `ApiBoundaryGateSelfTest` — bash-driven, see `scripts/api_boundary_gate.sh`).
 
 Each test exe links `Qt6::Test` and gets its own `windeployqt` post-build step
@@ -328,14 +329,23 @@ PATH order:
 - **`QTP0001 NEW` policy**: puts QML modules under `:/qt/qml/<URI>/` so
   `loadFromModule` works on clean builds (incremental builds masked the bug
   during T1–T27 — see `CMakeLists.txt` comment).
-- **API boundary (S1-S7, SDK v1.4)**: host WRITES to core go through the
-  plugin-SDK facade (`instanceControl`/`rosterModel` bridges in QML,
-  injected `pet::` API pointers in src/ui) — the same vtables plugins use;
-  READS stay on live session objects. Enforced by
+- **API boundary (S1-S7; still in force at SDK v1.6)**: host WRITES to core
+  go through the plugin-SDK facade (`instanceControl`/`rosterModel` bridges in
+  QML, injected `pet::` API pointers in src/ui) — the same vtables plugins
+  use; READS stay on live session objects. Enforced by
   `scripts/api_boundary_gate.sh` under ctest (`ApiBoundaryGateTest` +
   self-bite `ApiBoundaryGateSelfTest`); allowlist entries are file+line
   level with reviewed justifications. See `src/api/README.md` for the
   family × capability × switch matrix.
+- **Event bus + rule engine (S8, SDK v1.5/v1.6)**: a Forge-style in-process
+  event bus (`core/EventBus`, `pet.events` family — synchronous dispatch,
+  priority ladder, cancellable hit/idle_tick) mirrors host emission points
+  as `pet.instance.*`/`pet.model.*`/`pet.pack.*` channels (catalog:
+  `src/api/EventIds.hpp`, payload keys owned by `core/EventCatalog`
+  builders — see `docs/bus-events.md`); the declarative rule engine
+  (`core/RuleEngine` + `RuleEngineService`, `pet.rules` registration family)
+  evaluates "event → condition → action" rules on the bus's Low tier with
+  emission-time owner gating for plugin rules (see `docs/rules.md`).
 
 ---
 
@@ -347,7 +357,7 @@ controller_qt/
 ├── README.md                   # this file
 ├── scripts/                    # api_boundary_gate.sh (API boundary gate — ctest-enforced)
 ├── src/
-│   ├── api/                    # Plugin SDK v1.4 headers (9 interface families; see src/api/README.md)
+│   ├── api/                    # Plugin SDK v1.6 headers (11 interface families; see src/api/README.md)
 │   ├── app/                    # PanelApplication composition root + PanelUiBoot + ScreenshotRunner
 │   ├── main.cpp                # QGuiApplication + QQmlApplicationEngine entry
 │   ├── network/                # Envelope, Protocol (25 commands), WsServer, MessageDispatcher,
@@ -370,7 +380,7 @@ controller_qt/
 │   ├── components/           # StatusPill, SettingRow, SectionCard, Chip
 │   └── pages/                # WelcomePage, InstanceDetailPage, MonitorPage,
 │                             #   VoicePackPage, ModelLibraryPage, SettingsPage
-└── tests/                      # 58 QTest/gate binaries (see Testing section)
+└── tests/                      # 64 QTest/gate binaries (see Testing section)
 ```
 
 ---

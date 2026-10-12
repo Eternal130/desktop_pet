@@ -25,13 +25,13 @@
 | 闲时随机动作 | ✅ 已完成（渲染器内置） | — | ✅ 由控制面板 Scheduler 调度 | — | — |
 | **controller_qt（Qt 6 控制面板）** | ✗ | — | — | — | — |
 
-> **controller_qt Phase 5-9: ✅ 已完成** — Qt 6.10 / C++17 / QML 控制面板（当前唯一的控制面板实现）。多实例宠物管理（侧边栏 `QAbstractListModel`）、完整协议覆盖（**20 命令 + 14 事件**）、每实例配置持久化（`~/.config/desktop-pet/instances/{uuid}.json`，QSaveFile 原子写入）、闲时动作调度器、点击→动作处理器（3 级大小写容错查找）、崩溃恢复（指数退避，最大 5 次）、系统托盘（QSystemTrayIcon）、开机自启（Windows 注册表 / Linux `.desktop`）、资源监视器（QtCharts 火花线：CPU% + RSS）、语音包发现与挂载（手写 protobuf reader，无 libprotobuf 依赖）、通知流（气泡信息流，取代原字幕系统）、布局同步。**41 个 QTest 二进制全部通过**。蓝图 §9.5「永不崩溃」哲学合规性已审计（T25）。详见 `controller_qt/README.md`。
+> **controller_qt Phase 5-9: ✅ 已完成** — Qt 6.10 / C++17 / QML 控制面板（当前唯一的控制面板实现）。多实例宠物管理（侧边栏 `QAbstractListModel`）、完整协议覆盖（**20 命令 + 14 事件**）、每实例配置持久化（SQLite `app.db`，事务原子写入）、闲时动作调度器、点击→动作处理器（3 级大小写容错查找）、崩溃恢复（指数退避，最大 5 次）、系统托盘（QSystemTrayIcon）、开机自启（Windows 注册表 / Linux `.desktop`）、资源监视器（QtCharts 火花线：CPU% + RSS）、语音包发现与挂载（手写 protobuf reader，无 libprotobuf 依赖）、通知流（气泡信息流，取代原字幕系统）、布局同步。**64 个 QTest 二进制全部通过**。蓝图 §9.5「永不崩溃」哲学合规性已审计（T25）。详见 `controller_qt/README.md`。
 
 > **阶段说明**：Phase 1 = WebSocket 通信层，Phase 2 = 控制面板与多实例管理（现由 controller_qt 承担），Phase 2.x = Vulkan 渲染后端解耦（OpenGL/Vulkan 双后端，编译时切换），Phase 3 = 音频与语音包模块（细分为 3a 基础挂载、3b 音频播放、3c 口型同步、3d 行为图引擎）。
 >
 > **当前状态**：MVP、Phase 1、Phase 2.x（Vulkan 渲染后端）已完成，平台支持已扩展至 Windows（MinGW Makefiles，win32 环境）。控制面板为 controller_qt（Qt 6.10 / C++17 / QML，Phase 5-9 已完成），支持多宠物实例管理。Phase 2.x 在渲染引擎中引入 `IGraphicsBackend` 抽象接口，提供 `OpenGLBackend` 与 `VulkanBackend` 双实现，通过编译时开关 `-DUSE_VULKAN=ON` 切换（无运行时切换），`platform/WindowManager.cpp` 被 GL/Vulkan 共享。Phase 3a（语音包挂载）控制面板侧与渲染器侧均已实现——控制面板侧（controller_qt）语音包扫描（`VoicePackScanner`）、meta.mko 解析（`MetaMkoParser`，手写 protobuf wire-format reader）、运行时行为引擎（`MountedBehaviorEngine`），渲染器侧 `play_motion_ext` 指令已注册。Phase 3b 渲染器侧音频播放已实现（`AudioManager`，miniaudio + libvorbis 播放 OGG，`play_audio`/`stop_audio`/`set_volume` 三指令已接入），控制器侧音频映射管理与 UI 待实现。Phase 3c/3d 待后续实现。
 >
-> **controller_qt（Qt 6 控制面板，Phase 5-9）已全部完成**：Qt 6.10 / C++17 / QML，多实例宠物管理，完整协议覆盖（20 命令 + 14 事件），每实例配置持久化（QSaveFile 原子写入），闲时调度器，点击→动作处理，崩溃恢复（指数退避），系统托盘，开机自启，资源监视器（QtCharts），语音包发现与挂载（手写 protobuf reader），通知流（气泡信息流），布局同步。41 个 QTest 二进制全部通过。蓝图 §9.5「永不崩溃」合规性已审计。详见 `controller_qt/README.md`。
+> **controller_qt（Qt 6 控制面板，Phase 5-9）已全部完成**：Qt 6.10 / C++17 / QML，多实例宠物管理，完整协议覆盖（20 命令 + 14 事件），每实例配置持久化（SQLite 事务原子写入），闲时调度器，点击→动作处理，崩溃恢复（指数退避），系统托盘，开机自启，资源监视器（QtCharts），语音包发现与挂载（手写 protobuf reader），通知流（气泡信息流），布局同步。64 个 QTest 二进制全部通过。蓝图 §9.5「永不崩溃」合规性已审计。详见 `controller_qt/README.md`。
 
 ---
 
@@ -235,3 +235,5 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | [控制面板架构蓝图](./controller_qt/architecture-blueprint.md) | 架构无关的控制面板功能规格与接口契约 | ✅ 指导 Phase 5-9 实现 |
 | [控制面板分步开发方案](./controller_qt/development-plan.md) | 10 阶段开发路线图（技术栈无关，含 Qt/Slint 实现要点） | ✅ 2026-07 规划完成 |
 | [controller_qt/README.md](../controller_qt/README.md) | Qt 6 控制面板完整文档（Phase 5-9：特性、构建、打包、测试、架构、QML 页面、协议互通） | ✅ Phase 5-9 已完成 |
+| [事件总线目录](./bus-events.md) | pet.events 进程内事件总线：通道词表与载荷字段表、优先级阶梯与取消语义、同步分发与防伪造规则（S8a，SDK v1.5） | ✅ S8 已实现 |
+| [规则引擎](./rules.md) | 声明式规则系统：规则 JSON schema、拒载错误码表、条件/动作/谓词词汇表、插件注册通道与 owner 门控（S8d-S8f，SDK v1.6） | ✅ S8 已实现 |

@@ -61,6 +61,12 @@ public:
     // ── instance_configs ──────────────────────────────────────────────────
     bool saveInstance(const InstanceConfig& cfg);            // upsert by uuid
     std::optional<InstanceConfig> loadInstance(const QString& uuid) const;
+    // Raw instance blob read (S8e rule loading): the parsed instance_configs
+    // json column BEFORE the InstanceConfig serde drops unknown fields (the
+    // rule engine's "rules" array is exactly such a field). Nullopt when the
+    // row is absent or not a JSON object — same discipline as loadInstance,
+    // minus the serde. Never throws.
+    std::optional<QJsonObject> loadInstanceJson(const QString& uuid) const;
     QList<InstanceConfig> loadAllInstances() const;          // sorted by uuid
     bool deleteInstance(const QString& uuid);                // idempotent
 

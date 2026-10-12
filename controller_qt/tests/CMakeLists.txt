@@ -1107,21 +1107,28 @@ pet_deploy_qt_test(EventApiProxyTest)
 
 add_test(NAME EventApiProxyTest COMMAND EventApiProxyTest)
 
-# EventBusEmissionTest (S8a, v1.5): the emission-point wiring (parallel
-# bypass, zero behavior change) + the flagship first half. Five slots:
-# hit emission (triggerHitArea drives the REAL handleHitEvent → the
-# recording publisher sees the catalog payload + host header fields,
-# while the pre-existing play_motion command stream still fires), pack
-# mount/unmount double emission at the mountedVoicePackChanged NOTIFY
-# point (same `changed` gate — re-mount stays quiet), lifecycle
-# emissions over the POSIX fake-sleeper renderer (ready verbatim /
-# model_loaded host-supplemented / drag_end post-commit /
-# model_load_failed / motion_started + drag_start publish-only overrides
-# / motion_finished variant归一), idle_tick emission with the original
-# priority=1 play_motion intact (S8a ignores cancelled), and the
-# flagship first half (fake plugin subscribes to pet.instance.hit via
-# queryApi on a REAL PluginHost → a REAL session's triggerHitArea
-# publishes through the shared bus → the plugin listener receives).
+# EventBusEmissionTest (S8a/S8b, v1.5): the emission-point wiring + the
+# flagship paths. Eleven slots: hit emission over a REAL bus
+# (triggerHitArea drives the REAL handleHitEvent → the shared impl
+# dispatches the catalog payload + host header fields, while the S8b
+# decision adapters on the same bus still produce the default
+# play_motion), pack mount/unmount double emission at the
+# mountedVoicePackChanged NOTIFY point (same `changed` gate — re-mount
+# stays quiet), lifecycle emissions over the POSIX fake-sleeper renderer
+# (ready verbatim / model_loaded host-supplemented / drag_end
+# post-commit / model_load_failed / motion_started + drag_start
+# publish-only overrides / motion_finished variant归一), idle_tick
+# emission with the original priority=1 play_motion intact, the flagship
+# first half (fake plugin subscribes to pet.instance.hit via queryApi on
+# a REAL PluginHost → a REAL session's triggerHitArea publishes through
+# the shared bus → the plugin listener receives), and the S8b decision
+# chain: hit via bus → MountedBehaviorEngine play_motion_ext, MBE⟂IH
+# mutual exclusion via cancelled传播, the flagship SECOND half (a
+# Normal-tier plugin cancels head + plays a custom motion via the shared
+# ITuningApi → BOTH defaults suppressed; non-head areas keep the IH
+# default), idle_tick cancellation (no play_motion), adapter unsubscribe
+# at session destruction (no dangling listener over a raw-pointer bus),
+# and the audio_finished publish-only override (verbatim payload).
 # QTEST_MAIN — QProcess + QTRY_* need the event loop; the fake-renderer
 # slots QSKIP on non-POSIX (hit/pack/flagship slots run everywhere).
 qt_add_executable(EventBusEmissionTest EventBusEmissionTest.cpp)
@@ -1189,3 +1196,29 @@ target_link_libraries(RuleEngineTest PRIVATE pet_panel_core Qt6::Test)
 pet_deploy_qt_test(RuleEngineTest)
 
 add_test(NAME RuleEngineTest COMMAND RuleEngineTest)
+
+# ── S8e rule-engine service tests ───────────────────────────────────────────
+
+# RuleEngineServiceTest (S8e): the host wiring around the core — exercised
+# against the REAL core::EventBus + EventApiImpl + RuleEngine. Eight slots:
+# the differential subscription diff (enabled triggers ∪ activity triple,
+# zero rules → zero subscriptions, asserted on the bus's entry count), the
+# where/scope/connection gates + the publish_event action (host identity),
+# cancel_default (final event.cancelled after publish + the entry-cancelled
+# skip behind a Highest pre-claimer), dry_run (would-fire INFO, zero action
+# calls), state tracking (hit/motion_finished advance the clocks; idle_for /
+# since_last_motion flip false→true on real wall clocks; consecutive hits
+# re-arm), the loading pipeline (real SQLite: panel kv + raw instance blobs,
+# per-rule WARN-skip, corrupt blob → ERROR + empty, roster-diff load/sweep),
+# and the two north-star e2e rules — hit(head)+idle_for>300s → play_motion +
+# notify_bubble + cancel_default (fake session layer), motion_finished(tap)
+# → play_pack_audio over a real InstanceManager harness with a real shared
+# TuningApiImpl mount + a QTemporaryDir meta.mko fixture (mounted-mismatch
+# fail-fast included). QTEST_MAIN — QSqlDatabase + QTest::qWait want the
+# app instance + event loop.
+qt_add_executable(RuleEngineServiceTest RuleEngineServiceTest.cpp)
+target_link_libraries(RuleEngineServiceTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(RuleEngineServiceTest)
+
+add_test(NAME RuleEngineServiceTest COMMAND RuleEngineServiceTest)

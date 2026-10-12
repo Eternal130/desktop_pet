@@ -21,6 +21,7 @@ class InstanceApiImpl;
 class InstanceControlApiImpl;
 class ModelApiImpl;
 class MonitorApiImpl;
+class RuleEngineService;
 class SettingsApiImpl;
 class TuningApiImpl;
 class VoicePackApiImpl;
@@ -127,6 +128,17 @@ public:
     core::EventBus* eventBus();
     core::EventApiImpl* eventApi();
 
+    // S8e: the rule-engine host service — owns the RuleEngine core plus
+    // its bus subscriptions (Low tier), activity tracking, EvalContext
+    // assembly, action dispatch and the panel-kv + instance-blob loading
+    // pipeline. Constructed after the shared v1.2–v1.4 API impls (it holds
+    // eventApi/instanceApi/tuningApi + the DatabaseManager) and BEFORE the
+    // plugin host. The bubble sink is late-injected by PanelUiBoot (the
+    // NotificationStreamController is a UiBoot child); until then
+    // notify_bubble actions fail with WARN, never crash. Registered after
+    // m_monitorApi → destroyed before it (registration-reverse).
+    core::RuleEngineService* ruleEngineService();
+
     // Plugin framework (P4, §B.6): the registry (entry store + state
     // machine) is created FIRST in the ctor; the host (initialize/shutdown
     // driver) LAST, so it can observe every earlier service. main()
@@ -183,6 +195,9 @@ private:
     core::SettingsApiImpl* m_settingsApi = nullptr;
     core::VoicePackApiImpl* m_voicePackApi = nullptr;
     core::MonitorApiImpl* m_monitorApi = nullptr; // S7 (v1.4)
+    // S8e: rule-engine host service (see ruleEngineService()); registered
+    // after m_monitorApi → destroyed before it (registration-reverse).
+    core::RuleEngineService* m_ruleEngineService = nullptr;
     // Registered last (wireLegacyInstanceZeroSenders) → destroyed first.
     StartupSalvo* m_startupSalvo = nullptr;
     ProcessManager* m_processManager = nullptr;

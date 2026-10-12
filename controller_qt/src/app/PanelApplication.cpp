@@ -16,6 +16,7 @@
 #include "core/PluginHost.hpp"
 #include "core/ProcessManager.hpp"
 #include "core/DownloadService.hpp"
+#include "core/RuleEngineService.hpp"
 #include "core/StartupSalvo.hpp"
 #include "logging/Logging.hpp"
 #include "network/Envelope.hpp"
@@ -208,6 +209,40 @@ PanelApplication::PanelApplication(QObject* parent)
     // before it, registration-reverse).
     m_monitorApi = new core::MonitorApiImpl(m_instanceManager, this);
 
+    // ── Rule-engine host service (S8e) ────────────────────────────────────
+    // The RuleEngine core's bus/db wiring. Constructed after every API it
+    // consumes (eventApi/instanceApi/tuningApi + the shared DatabaseManager
+    // for the panel "rules" kv + instance blobs) and before the plugin
+    // host / auto-start — so startup rules are live before any renderer
+    // connects. The play_pack_audio renderer channel is wired immediately
+    // (roster + WsServer both exist here); the notify_bubble sink is
+    // late-injected by PanelUiBoot (NotificationStreamController is a
+    // UiBoot child constructed later) — the service tolerates the null
+    // sink with a per-action WARN until then. Registered after
+    // m_monitorApi → dies before it (registration-reverse).
+    m_ruleEngineService = new core::RuleEngineService(
+        m_eventApi, m_instanceApi, m_tuningApi, m_databaseManager, this);
+    m_ruleEngineService->setPackAudioChannel(
+        [this](const QString& uuid, const QJsonObject& command) {
+            // Locate the session by uuid over the roster's PUBLIC read
+            // surface (same scan shape TuningApiImpl::sessionForUuid
+            // uses) and push the serialized play_audio envelope over the
+            // per-instance WS channel (MBE direct-protocol precedent).
+            for (int row = 0; row < m_instanceManager->rowCount(); ++row) {
+                InstanceSession* s = m_instanceManager->instanceAt(row);
+                if (s != nullptr && s->uuid() == uuid) {
+                    const QByteArray json = QJsonDocument(command).toJson(
+                        QJsonDocument::Compact);
+                    return m_wsServer->sendText(
+                               s->instanceId(),
+                               QString::fromUtf8(json))
+                        ? 0
+                        : -1;
+                }
+            }
+            return -1;
+        });
+
     // ── Plugin framework (P4, §B.6) ─────────────────────────────────────
     // Registry first (pure store, no deps), host last (observes the roster
     // above; its page model / stream / config root are mounted later by
@@ -320,6 +355,11 @@ core::EventBus* PanelApplication::eventBus()
 core::EventApiImpl* PanelApplication::eventApi()
 {
     return m_eventApi;
+}
+
+core::RuleEngineService* PanelApplication::ruleEngineService()
+{
+    return m_ruleEngineService;
 }
 
 core::PluginRegistry& PanelApplication::pluginRegistry()

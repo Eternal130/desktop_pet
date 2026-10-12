@@ -22,6 +22,7 @@
 #include "core/PanelConfigController.hpp"
 #include "core/PluginContextImpl.hpp" // complete core::InstanceApiImpl (pet::IInstanceApi upcast)
 #include "core/PluginHost.hpp"
+#include "core/RuleEngineService.hpp" // S8e: complete type for the bubble-sink injection below
 #include "core/PluginManager.hpp"
 #include "core/PluginPageModel.hpp"
 #include "core/WindowStateSaver.hpp"
@@ -133,6 +134,16 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
                int durationMs) {
             Q_UNUSED(instanceId);
             m_notificationStream->push(name, avatar, text, durationMs);
+        });
+    // S8e: rule-engine notify_bubble actions land in the SAME stream.
+    // Late injection (this controller is a UiBoot child, constructed after
+    // PanelApplication's RuleEngineService) — until this point the service
+    // carries a null sink and WARNs per notify_bubble action. A rule
+    // action carries text/duration only, so name/avatar stay empty.
+    m_app.ruleEngineService()->setBubbleSink(
+        [this](const QString& text, int durationMs) {
+            m_notificationStream->push(QString(), QString(), text,
+                                       durationMs);
         });
 
     // Required BEFORE any QQuickWindow is created: enables alpha in the

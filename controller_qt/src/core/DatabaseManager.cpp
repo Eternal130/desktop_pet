@@ -159,6 +159,28 @@ DatabaseManager::loadInstance(const QString& uuid) const
     return instanceConfigFromJson(doc.object());
 }
 
+std::optional<QJsonObject>
+DatabaseManager::loadInstanceJson(const QString& uuid) const
+{
+    // S8e rule-loading seam: the RAW parsed blob, before the InstanceConfig
+    // serde drops unknown fields. Mirrors loadInstance's row read + parse
+    // discipline (never throws; corrupt → nullopt + WARN).
+    if (!m_open)
+        return std::nullopt;
+    const QStringList row = queryRow(
+        QStringLiteral("SELECT json FROM instance_configs WHERE uuid = ?"),
+        {uuid});
+    if (row.isEmpty())
+        return std::nullopt;
+    const QJsonDocument doc = QJsonDocument::fromJson(row.first().toUtf8());
+    if (!doc.isObject()) {
+        LOG_WARN("DatabaseManager: corrupt instance row \"{}\"; no raw blob",
+                 uuid.toStdString());
+        return std::nullopt;
+    }
+    return doc.object();
+}
+
 QList<InstanceConfig> DatabaseManager::loadAllInstances() const
 {
     QList<InstanceConfig> out;

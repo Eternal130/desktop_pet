@@ -172,6 +172,12 @@ struct RuleAction {
 struct CompiledRule {
     QString id;
     RuleScope scope = RuleScope::Panel;
+    // S8e minimal seam (spec-sanctioned "scope 归属查询"): the uuid of the
+    // instance that declared an Instance-scope rule ("" for Panel/Plugin
+    // rules). Purely loader-assigned metadata — RuleEngine's ordering,
+    // bookkeeping and evaluation kernel NEVER read it; the S8e bus layer
+    // (RuleEngineService) filters Instance rules by it when dispatching.
+    QString ownerUuid;
     int declarationOrder = 0;
     bool enabled = true;
     QString triggerEvent;

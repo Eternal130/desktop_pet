@@ -382,6 +382,15 @@ qt_add_library(pet_panel_core STATIC
     # phase — S8e wires it to EventBus, S8f adds the plugin owner-prefix
     # sweep. RuleSchema.hpp is the data-model half (structs only).
     src/core/RuleEngine.cpp
+    # S8e: rule-engine HOST SERVICE — the wiring around the core: the
+    # differential bus subscriptions (Low priority), the activity/motion
+    # tracking triple, EvalContext assembly (roster lookup + runtime
+    # cache), the 5-kind action dispatch (shared tuning API, MBE
+    # audio-only semantics, bubble sink, host publish) and the panel-kv +
+    # instance-blob loading pipeline with atomic engine swap. The .hpp is
+    # listed so AUTOMOC processes its Q_OBJECT metadata.
+    src/core/RuleEngineService.cpp
+    src/core/RuleEngineService.hpp
 )
 
 # Expose src/ so consumers (exe shell + 41 tests + future plugins) can write

@@ -65,6 +65,13 @@ QJsonObject makeIdleTickPayload(const QString& group, int index)
     return payload;
 }
 
+QJsonObject makeAudioFinishedPayload(const QJsonObject& wsPayload)
+{
+    // Verbatim (the makeReadyPayload discipline): the bus consumer sees
+    // exactly what the renderer sent — audio_path is already snake_case.
+    return wsPayload;
+}
+
 QJsonObject makeDragStartedPayload(double x, double y)
 {
     QJsonObject payload;

@@ -58,10 +58,13 @@ using DialogueSinkFn = std::function<void(const QString&, const QString&,
 //             HitAreaCacheManager for cached hitAreas → send set_hit_areas →
 //             store ModelInfo → start the Scheduler (idle-motion cycling) →
 //             setModelLoaded(true).
-//   hit       → MountedBehaviorEngine (Phase 8 todo 20) routes to play_motion_ext
-//             when a voice-pack group exists for the hit area; otherwise
-//             InteractionHandler handles it (3-tier case-fold → play_motion).
-//             Voice-pack path pauses the idle Scheduler.
+//   hit       → (S8b) the handler PUBLISHES pet.instance.hit onto the event
+//             bus and does nothing else; the decision chain runs as two
+//             Lowest-tier bus adapters (MountedBehaviorEngine first, then
+//             InteractionHandler — same tier, subscription order decides).
+//             Higher-priority listeners (plugins at Normal+, the rule
+//             engine at Low) see the hit FIRST and may claim it by setting
+//             event.cancelled. Voice-pack path pauses the idle Scheduler.
 //   drag_end  → extract payload.window_x/window_y → persist via
 //             InstanceConfigManager::save (blueprint §4.4.3 drag persistence).
 //   motion_finished → judge idle vs non-idle (variant A: group=="Idle";
@@ -242,11 +245,12 @@ public slots:
     Q_INVOKABLE void playMotion(const QString& group, int index);
 
     // Manually trigger a hit area as if the renderer had reported a `hit`
-    // event for it — runs the SAME decision chain (MountedBehaviorEngine →
-    // play_motion_ext when a pack is mounted, else InteractionHandler →
-    // play_motion). This is what the hit-area chips and voice-pack preview
-    // chips call; playMotion(group) is wrong for them because a hit-area
-    // name is not a motion group name.
+    // event for it — publishes pet.instance.hit onto the bus; the decision
+    // adapters route it (MountedBehaviorEngine → play_motion_ext when a
+    // pack is mounted, else InteractionHandler → play_motion). This is
+    // what the hit-area chips and voice-pack preview chips call;
+    // playMotion(group) is wrong for them because a hit-area name is not
+    // a motion group name.
     Q_INVOKABLE void triggerHitArea(const QString& areaId);
 
     // Build + send a set_expression command (interface.md §B.4). The renderer
@@ -275,20 +279,26 @@ public slots:
     void setDialogueSink(DialogueSinkFn sink)
     { m_dialogueSink = std::move(sink); }
 
-    // ── Event publisher seam (S8a, v1.5) ──────────────────────────────────
+    // ── Event publisher seam (S8a/S8b, v1.5) ──────────────────────────────
     // The shared pet::IEventApi this session's WS-event handlers publish
-    // onto (bypass fanout — S8a APPENDS a publish next to each handler's
-    // existing logic; nothing in the panel consumes event.cancelled yet,
-    // so observable behavior is identical to pre-S8a). Injected by
-    // PanelApplication for sessions on disk + every later rowsInserted
-    // create. Interface pointer (NOT the concrete EventApiImpl) so tests
-    // inject fakes; plain C++ setter — deliberately NOT a Q_INVOKABLE /
+    // onto, AND the bus the two hit-decision adapters (below) listen on.
+    // Interface pointer (NOT the concrete EventApiImpl) so tests inject
+    // fakes; plain C++ setter — deliberately NOT a Q_INVOKABLE /
     // Q_PROPERTY WRITE (the api-boundary gate's pattern table stays
-    // untouched; same discipline as setDialogueSink). Null default =
-    // every emission site null-guards (tests / degraded wiring publish
-    // nothing, exactly as pre-S8a).
-    void setEventPublisher(pet::IEventApi* publisher)
-    { m_eventPublisher = publisher; }
+    // untouched; same discipline as setDialogueSink). Injected by
+    // PanelApplication for sessions on disk + every later rowsInserted
+    // create.
+    //
+    // S8b binding semantics: a non-null injection SUBSCRIBES both hit
+    // adapters on pet.instance.hit at EventPriority::Lowest — MBE first,
+    // IH second (same tier; the tier's FIFO gives MBE priority exactly as
+    // the pre-S8b if/else chain did). Re-injection first UNSUBSCRIBES
+    // from the old publisher, and the destructor unsubscribes both (the
+    // bus holds raw listener pointers — no dangling). Null injection /
+    // null default: no subscription, no emission, and hit decisions are
+    // no-ops (pre-S8a wiring shape: nothing published, nothing listened —
+    // with S8b the decision chain lives ON the bus).
+    void setEventPublisher(pet::IEventApi* publisher);
 
     // ── Phase-5 Wave 8 todo 22 (layout UI helpers) ───────────────────────────
     // Q_INVOKABLE triggers consumed by InstanceDetailPage.qml's Layout panel.
@@ -424,12 +434,15 @@ private:
     // start() AFTER registerDefaults() — QMap::insert replaces, so the override
     // wins over the log-only default.
 
-    // hit → if MountedBehaviorEngine has a voice-pack group for payload.area_id,
-    // build play_motion_ext (todo 20); else delegate to InteractionHandler (3-
-    // tier case-fold lookup → play_motion). The voice-pack path also pauses
-    // the idle Scheduler; the motion_finished handler resumes it via triggerNow.
-    // When the chosen action carries dialogue text, it is forwarded to the
-    // dialogue sink (bubble stream) — never to the renderer.
+    // hit → (S8b) PURE EMISSION: publishes pet.instance.hit (cancellable)
+    // and returns. The decision chain runs as two Lowest-tier bus adapters
+    // subscribed in setEventPublisher: the MountedBehaviorAdapter consults
+    // the voice pack (todo 20 glue — cooldown, dialogue sink, scheduler
+    // pause) and CANCELS the event when it produced a behavior; the
+    // InteractionFallbackAdapter then runs InteractionHandler's 3-tier
+    // case-fold lookup unless cancelled. This function deliberately does
+    // NOT read event.cancelled (Forge style: each default-behavior
+    // listener checks the flag itself).
     void handleHitEvent(const Envelope& env);
 
     // drag_end → extract payload.window_x/window_y → persist m_config via
@@ -474,6 +487,14 @@ private:
     // generic message. Never throws.
     void handleModelLoadFailedEvent(const Envelope& env);
 
+    // audio_finished (docs/protocol/events.md §15 — an audio track reached
+    // its NATURAL end; stop_audio and preemption never emit it) →
+    // publish-only override: reproduces the EventRegistry default's DEBUG
+    // log verbatim + fans the VERBATIM WS payload onto the bus as
+    // pet.instance.audio_finished (non-cancellable telemetry). No other
+    // behavior.
+    void handleAudioFinishedEvent(const Envelope& env);
+
     // ── Phase-5 Wave 8 todo 18 (monitor poller + stats_state merge) ──────────
     // Bodies live in InstanceSessionMonitor.cpp (extracted to keep
     // InstanceSession.cpp under the 250 pure-LOC ceiling, same split as
@@ -498,18 +519,65 @@ private:
 
     // Start (or restart) the idle Scheduler using m_modelInfo->motionGroups +
     // m_config.idleInterval. Called from the model_loaded handler. The callback
-    // sends play_motion with priority=1 (Idle per interface.md §B.1).
+    // publishes the cancellable pet.instance.idle_tick and — unless a bus
+    // listener cancelled it — sends play_motion with priority=1 (Idle per
+    // interface.md §B.1).
     void startIdleScheduler();
 
-    // ── S8a (v1.5) event-bus emission helper ───────────────────────────────
+    // ── S8a/S8b (v1.5) event-bus emission helper ──────────────────────────
     // Stamps the host fields (instanceUuid = this session, publisherId =
     // kEventPublisherHost) and publishes through the injected publisher
-    // (no-op when none is injected). Payloads ALWAYS come from the
-    // EventCatalog builders — emission sites never hand-write key names.
-    // Synchronous dispatch; S8a deliberately ignores the return + the
-    // final event.cancelled (zero behavior change — no consumer兑现取消).
-    void publishHostEvent(const QString& eventId, bool cancellable,
+    // (no-op returning false when none is injected). Payloads ALWAYS come
+    // from the EventCatalog builders — emission sites never hand-write key names.
+    // Synchronous dispatch; returns the FINAL event.cancelled value at
+    // publish return (S8b: idle_tick's trigger callback consumes it to
+    // skip the play_motion; the hit path deliberately does not — each
+    // default-behavior listener checks the flag itself).
+    bool publishHostEvent(const QString& eventId, bool cancellable,
                           const QJsonObject& payload);
+
+    // ── S8b hit-decision bus adapters ──────────────────────────────────────
+    // The pre-S8b hit decision chain (a direct if/else inside
+    // handleHitEvent) lives on the event bus as two Lowest-tier
+    // listeners, subscribed in setEventPublisher (MBE first, IH second —
+    // same tier, subscription order decides). Plugins subscribe at
+    // Normal+ (and the rule engine at Low), so they always see a hit
+    // BEFORE the defaults and can claim it via event.cancelled. Both
+    // adapters filter on the event's instanceUuid (the shared bus fans
+    // hits to EVERY session's adapters) and self-check event.cancelled
+    // (the bus never shortens the chain). The bus holds RAW pointers —
+    // setEventPublisher unsubscribes on re-injection and the destructor
+    // unsubscribes both (no dangling listener).
+    //
+    // MountedBehaviorAdapter: the todo-20 voice-pack glue moved here
+    // verbatim (cooldown gate, play_motion_ext build+send, dialogue sink
+    // forward, scheduler pause). Sets event.cancelled when it produced a
+    // behavior — AND when the cooldown swallows the hit (pre-S8b the
+    // cooldown return skipped the WHOLE chain, IH included; cancelling
+    // preserves that). Leaves the event uncancelled when the pack has no
+    // group / no motion action so the IH adapter still reacts.
+    class MountedBehaviorAdapter final : public pet::IEventListener
+    {
+    public:
+        explicit MountedBehaviorAdapter(InstanceSession* session)
+            : m_session(session) {}
+        void onEvent(pet::Event& event) override; // InstanceSessionHandlers.cpp
+    private:
+        InstanceSession* m_session; // the owner of this adapter; never null
+    };
+
+    // InteractionFallbackAdapter: rebuilds the WS hit envelope from the
+    // bus payload (the catalog payload mirrors the wire keys verbatim)
+    // and reuses InteractionHandler's 3-tier case-fold lookup unchanged.
+    class InteractionFallbackAdapter final : public pet::IEventListener
+    {
+    public:
+        explicit InteractionFallbackAdapter(InstanceSession* session)
+            : m_session(session) {}
+        void onEvent(pet::Event& event) override; // InstanceSessionHandlers.cpp
+    private:
+        InstanceSession* m_session; // the owner of this adapter; never null
+    };
 
 private:
     // ── Owned per-instance tuple (M2: NOT shared from main.cpp) ──────────────
@@ -592,6 +660,15 @@ private:
     // m_deletePending: two-phase delete mark (see setDeletePending) — start/
     // restart rejected while the deferred deletion is in flight.
     bool m_deletePending = false;
+
+    // ── S8b hit-decision adapters (see the class comments above) ───────────
+    // Declared last + initialized last in the ctor init list (keeps the
+    // -Wreorder sequence honest). Like m_interactionHandler's capturing
+    // lambda they hold `this` — safe because onEvent is never invoked
+    // during construction, only inside publish() from a later
+    // setEventPublisher + hit/triggerHitArea.
+    MountedBehaviorAdapter     m_mbeAdapter;
+    InteractionFallbackAdapter m_ihAdapter;
 };
 
 // Q_DECLARE_METATYPE for the pointer form so Q_INVOKABLE methods returning

@@ -39,7 +39,9 @@
 #include "core/InstanceConfig.hpp"
 #include "core/InstanceConfigManager.hpp"
 #include "core/InstanceSession.hpp"
+#include "core/EventBus.hpp"
 #include "core/PathResolve.hpp"
+#include "core/PluginContextImpl.hpp"
 #include "network/Envelope.hpp"
 #include "network/PendingRequests.hpp"
 #include "network/WsServer.hpp"
@@ -704,8 +706,11 @@ void InstanceSessionTest::testDragEndPersists()
     server.close();
 }
 
-// hit → InteractionHandler → play_motion. The commandSent signal must capture
-// a play_motion action after the synthetic hit event is injected.
+// hit → (S8b) the bus adapters → InteractionHandler → play_motion. The hit
+// decision chain now runs on the event bus, so the test injects a REAL
+// EventBus + shared EventApiImpl (the PanelApplication wiring shape) via
+// setEventPublisher; the commandSent signal must still capture a play_motion
+// action after the synthetic hit event is injected.
 void InstanceSessionTest::testHitSendsPlayMotion()
 {
     const auto path = findRenderer();
@@ -721,7 +726,13 @@ void InstanceSessionTest::testHitSendsPlayMotion()
     cfg.graphicsBackend = QStringLiteral("opengl");
     cfg.modelName = QStringLiteral("Hiyori");
 
+    // S8b: real bus (must outlive the session) + the shared events impl —
+    // the hit adapters subscribe on injection and carry the decision chain.
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+
     InstanceSession session(cfg, server, pending);
+    session.setEventPublisher(&eventApi);
     QObject::connect(&server, &WsServer::messageReceived,
                      &session, [&session](int, const Envelope& env) {
                          session.onMessage(env);

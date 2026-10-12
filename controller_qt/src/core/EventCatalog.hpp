@@ -44,6 +44,10 @@ QJsonObject makeMotionFinishedPayload(const QString& motionPath);
 // callback.
 QJsonObject makeIdleTickPayload(const QString& group, int index);
 
+// pet.instance.audio_finished — VERBATIM copy of the WS `audio_finished`
+// payload (audio_path; events.md §15 — natural playback end only).
+QJsonObject makeAudioFinishedPayload(const QJsonObject& wsPayload);
+
 // pet.instance.drag_started — {x, y}.
 QJsonObject makeDragStartedPayload(double x, double y);
 

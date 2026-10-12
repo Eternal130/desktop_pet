@@ -28,11 +28,15 @@ const QString kActiveEvents[] = {
 // Phase 6+ events — interaction/motion telemetry the controller does not yet
 // act on. Default logs at DEBUG: live in dev (SPDLOG_ACTIVE_LEVEL=DEBUG),
 // stripped in release builds. No business logic until Phase 6.
+// S8b: audio_finished joins the default set (events.md §15 — the 14th
+// protocol event, natural audio-playback end; the session's publish-only
+// override replaces this default at start()).
 const QString kPhase6Events[] = {
     QStringLiteral("hit"),
     QStringLiteral("motion_started"),
     QStringLiteral("motion_finished"),
     QStringLiteral("drag_start"),
+    QStringLiteral("audio_finished"),
 };
 
 // Compact JSON for one-line logging. Empty payload serializes as "{}".

@@ -83,12 +83,23 @@ inline constexpr QLatin1StringView kEventInstanceMotionFinished =
     QLatin1StringView("pet.instance.motion_finished");
 
 // Source: the idle Scheduler's trigger callback (NOT a WS event). Fires
-// right before the idle play_motion is sent. CANCELLABLE (S8b: a consumer
-// may cancel the idle motion; S8a does not read it). Payload:
+// right before the idle play_motion is sent. CANCELLABLE — S8b honors it:
+// a listener that sets event.cancelled skips the idle play_motion (the
+// poster reads the final value after publish returns). Payload:
 //   | group | string | configured idle group (default "Idle") |
 //   | index | int    | randomized 0..count-1                  |
 inline constexpr QLatin1StringView kEventInstanceIdleTick =
     QLatin1StringView("pet.instance.idle_tick");
+
+// Source: WS `audio_finished` (docs/protocol/events.md §15 — an audio
+// track reached its NATURAL end; stop_audio and preemption deliberately
+// never emit it). Pure telemetry on the panel side (S8b wires the
+// publish-only handler; no local behavior). NOT cancellable. Payload
+// (verbatim WS payload copy):
+//   | audio_path | string | the audio file path as passed to play_audio /
+//                           play_motion_ext (echoed verbatim)             |
+inline constexpr QLatin1StringView kEventInstanceAudioFinished =
+    QLatin1StringView("pet.instance.audio_finished");
 
 // Source: WS `drag_start`. Payload:
 //   | x | double | drag-start mouse X (window client coordinates) |

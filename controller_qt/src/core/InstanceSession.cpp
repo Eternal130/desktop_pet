@@ -81,6 +81,10 @@ InstanceSession::InstanceSession(InstanceConfig config, WsServer& server,
     , m_monitorModel(this)
     , m_statsCollector()
     , m_monitorTimer(this)
+    // S8b hit adapters (declared last — see the member comment): hold
+    // `this`, never invoked during construction.
+    , m_mbeAdapter(this)
+    , m_ihAdapter(this)
 {
     // Derive a stable positive int from the config UUID. The WsServer token
     // registry (QMap<int, QString>) keys on an int instance_id; InstanceConfig
@@ -179,7 +183,19 @@ InstanceSession::InstanceSession(InstanceConfig config, WsServer& server,
     }
 }
 
-InstanceSession::~InstanceSession() = default;
+InstanceSession::~InstanceSession()
+{
+    // S8b: the bus holds RAW listener pointers — remove both hit adapters
+    // before the members they reach into (behavior engine, scheduler,
+    // interaction handler, ...) are destroyed. No-op when no publisher
+    // was injected (never subscribed).
+    if (m_eventPublisher != nullptr) {
+        m_eventPublisher->unsubscribe(pet::kEventInstanceHit.toString(),
+                                      &m_mbeAdapter);
+        m_eventPublisher->unsubscribe(pet::kEventInstanceHit.toString(),
+                                      &m_ihAdapter);
+    }
+}
 
 // ── Read accessors ───────────────────────────────────────────────────────────
 
@@ -455,6 +471,17 @@ void InstanceSession::start()
                                      .toDouble(),
                                  env.payload.value(QStringLiteral("y"))
                                      .toDouble()));
+        });
+
+    // S8b (v1.5): audio_finished (docs/protocol/events.md §15 — the 14th
+    // protocol event; an audio track reached its NATURAL end, stop_audio
+    // and preemption never emit it). Same publish-only override shape as
+    // motion_started/drag_start above: the body (Handlers TU) reproduces
+    // the default's DEBUG log verbatim + fans the VERBATIM WS payload
+    // onto the bus. Pure telemetry — no local behavior.
+    m_dispatcher.registerEventHandler(
+        QStringLiteral("audio_finished"), [this](const Envelope& env) {
+            handleAudioFinishedEvent(env);
         });
 
     // Launch the renderer. The renderer connects back to 127.0.0.1:kWsPort with

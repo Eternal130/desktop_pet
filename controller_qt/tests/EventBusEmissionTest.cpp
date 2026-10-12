@@ -1,18 +1,20 @@
-// EventBusEmissionTest (S8a, v1.5) — the emission-point wiring + the
-// "flagship first half" end-to-end path.
+// EventBusEmissionTest (S8a/S8b, v1.5) — the emission-point wiring + the
+// "flagship" end-to-end paths.
 //
 // Slots:
-//   - hit emission: triggerHitArea drives the REAL handleHitEvent → the
-//     recording publisher sees pet.instance.hit with the EventCatalog
-//     payload + the host header fields (uuid/publisherId/cancellable);
-//     the pre-existing play_motion command stream still fires (zero
-//     behavior change).
+//   - hit emission: triggerHitArea drives the REAL handleHitEvent → a
+//     REAL bus (EventBus + EventApiImpl) delivers pet.instance.hit with
+//     the EventCatalog payload + the host header fields
+//     (uuid/publisherId/cancellable); the S8b decision adapters on the
+//     same bus still produce the default play_motion (behavioral
+//     equivalence with the pre-S8b direct chain).
 //   - pack mount/unmount double emission: mountVoicePack/unmountVoicePack
 //     publish pet.pack.mounted/unmounted at the mountedVoicePackChanged
 //     NOTIFY point (same `changed` gate); the NOTIFY itself still fires.
 //   - lifecycle emissions (POSIX fake-sleeper renderer): ready (verbatim
 //     payload), model_loaded (host-supplemented motion_groups),
-//     drag_end (post-commit), model_load_failed.
+//     drag_end (post-commit), model_load_failed, audio_finished
+//     (S8b publish-only override, verbatim payload).
 //   - idle_tick emission + unchanged original behavior: the scheduler
 //     tick publishes pet.instance.idle_tick AND still sends the
 //     priority=1 play_motion (Scheduler semantics untouched).
@@ -20,6 +22,14 @@
 //     pet.instance.hit through queryApi("pet.events") on a REAL
 //     PluginHost; a REAL session's triggerHitArea publishes through the
 //     shared bus; the plugin's listener receives it.
+//   - S8b decision-chain slots:
+//       hit via bus → MBE      (mounted pack owns the area → play_motion_ext)
+//       MBE ⟂ IH mutual exclusion (cancelled传播 — no default play_motion)
+//       flagship SECOND half e2e (plugin cancels head + plays a custom
+//         motion via ITuningApi → BOTH defaults suppressed; non-head
+//         areas still run the IH default)
+//       idle_tick cancellation (a cancelling subscriber → no play_motion)
+//       adapter unsubscribe on session destruction (no dangling listener)
 //
 // QTEST_MAIN — the fake-renderer slots launch a QProcess + pump the
 // event loop (QTest::qWait). The fake renderer is the POSIX sleeper
@@ -30,6 +40,7 @@
 #include "api/EventIds.hpp"
 #include "api/IEventApi.hpp"
 #include "api/IPanelPlugin.hpp"
+#include "api/ITuningApi.hpp"
 #include "core/EventBus.hpp"
 #include "core/EventCatalog.hpp"
 #include "core/InstanceConfig.hpp"
@@ -60,7 +71,10 @@ namespace {
 
 // ── Recording publisher (fake pet::IEventApi) ───────────────────────────────
 // Captures every publish; subscribe/unsubscribe are unused by the
-// emission sites (host emissions are publish-only).
+// emission sites (host emissions are publish-only). NOTE (S8b): this fake
+// does NOT dispatch — slots that need the decision chain to RUN mount a
+// real core::EventBus + EventApiImpl and capture via RecordingListener
+// below instead.
 class RecordingPublisher : public pet::IEventApi
 {
 public:
@@ -92,6 +106,53 @@ public:
         return nullptr;
     }
 };
+
+// ── Recording / cancelling listeners over a REAL bus (S8b) ──────────────────
+// RecordingListener: Highest tier, never cancels — captures the event
+// shape at dispatch time. CancellingListener: claims every event it sees.
+class RecordingListener : public pet::IEventListener
+{
+public:
+    QList<pet::Event> events;
+    void onEvent(pet::Event& event) override { events.append(event); }
+
+    int countOf(const QString& eventId) const
+    {
+        int n = 0;
+        for (const pet::Event& e : events)
+            if (e.eventId == eventId)
+                ++n;
+        return n;
+    }
+    const pet::Event* first(const QString& eventId) const
+    {
+        for (const pet::Event& e : events)
+            if (e.eventId == eventId)
+                return &e;
+        return nullptr;
+    }
+};
+
+class CancellingListener : public pet::IEventListener
+{
+public:
+    int calls = 0;
+    void onEvent(pet::Event& event) override
+    {
+        ++calls;
+        event.cancelled = true;
+    }
+};
+
+// Count occurrences of one action string in a commandSent QSignalSpy.
+int countAction(const QSignalSpy& spy, const QString& action)
+{
+    int n = 0;
+    for (int i = 0; i < spy.count(); ++i)
+        if (spy.at(i).at(0).toString() == action)
+            ++n;
+    return n;
+}
 
 // ── Fake-renderer harness (InstanceControlApiImplTest pattern) ─────────────
 // A directory whose "desktop-pet-renderer" is a 30s sleeper script —
@@ -183,8 +244,13 @@ QByteArray encodeMessageField(int fieldNumber, const QByteArray& message)
 }
 
 // Write a minimal VALID meta.mko (meta + one group + one motion action)
-// so mountVoicePack's parseMetaMko accepts it.
-bool writeMetaMkoFixture(const QString& packDir)
+// so mountVoicePack's parseMetaMko accepts it. `groupCode` is the group
+// key the mounted behavior engine matches hit areas against
+// (hasGroupForArea is a case-insensitive areaId == groupCode equality —
+// S8b tests use the plain area name, e.g. "head").
+bool writeMetaMkoFixture(const QString& packDir,
+                         const QString& groupCode =
+                             QStringLiteral("tap_head"))
 {
     if (!QDir().mkpath(packDir))
         return false;
@@ -192,12 +258,12 @@ bool writeMetaMkoFixture(const QString& packDir)
     meta += encodeStringField(1, QStringLiteral("Test Voice Pack"));
     meta += encodeStringField(2, QStringLiteral("pack_v1"));
     QByteArray group;
-    group += encodeStringField(1, QStringLiteral("tap_head"));
+    group += encodeStringField(1, groupCode);
     group += encodeVarintField(2, 5);
     group += encodeStringField(3, QStringLiteral("Tap Head"));
     QByteArray action;
     action += encodeVarintField(1, 42);
-    action += encodeStringField(2, QStringLiteral("tap_head"));
+    action += encodeStringField(2, groupCode);
     action += encodeStringField(3,
                                 QStringLiteral("motions/tap01.motion3.json"));
     QByteArray bundle;
@@ -273,6 +339,81 @@ QString flagshipManifest()
         "\"api_version\":\"1.5\",\"order\":100,\"capabilities\":[]}");
 }
 
+// ── Forge plugin (S8b flagship SECOND half — cancel + custom motion) ────────
+// Subscribes pet.instance.hit at NORMAL (ahead of the Lowest-tier default
+// adapters). For area=="head" it CLAIMS the hit (event.cancelled = true)
+// and plays a custom motion through the shared ITuningApi — the exact
+// Forge gameplay the cancellable-hit channel exists for. Non-head areas
+// pass through untouched (defaults run).
+struct ForgePlugin;
+ForgePlugin* g_forgePlugin = nullptr;
+
+struct ForgeListener : public pet::IEventListener
+{
+    pet::ITuningApi* tuning = nullptr; // injected by the plugin after queryApi
+    int hits = 0;
+    int cancels = 0;
+    pet::PluginError lastPlay = pet::PluginError::Generic;
+
+    void onEvent(pet::Event& event) override
+    {
+        ++hits;
+        const QString area =
+            event.payload.value(QStringLiteral("area_id")).toString();
+        if (area != QStringLiteral("head"))
+            return;
+        event.cancelled = true;
+        ++cancels;
+        lastPlay = tuning->playMotion(event.instanceUuid,
+                                      QStringLiteral("ForgeWave"), 0);
+    }
+};
+
+struct ForgePlugin final : public pet::IPanelPlugin
+{
+    ForgeListener listener;
+    pet::IEventApi* eventsApi = nullptr;
+
+    pet::PluginError initialize(pet::IPluginContext& context) override
+    {
+        // The events family for the subscription + the tuning family for
+        // the custom motion (capability-gated: manifest grants
+        // "instance_tuning").
+        listener.tuning = dynamic_cast<pet::ITuningApi*>(
+            context.queryApi(pet::kTuningApiId, 1));
+        auto* api = dynamic_cast<pet::IEventApi*>(
+            context.queryApi(pet::kEventsApiId, 1));
+        if (api == nullptr || listener.tuning == nullptr)
+            return pet::PluginError::Generic;
+        eventsApi = api;
+        return api->subscribe(pet::kEventInstanceHit.toString(), &listener,
+                              pet::EventPriority::Normal);
+    }
+
+    void shutdown() override
+    {
+        if (eventsApi != nullptr)
+            eventsApi->unsubscribe(pet::kEventInstanceHit.toString(),
+                                   &listener);
+    }
+};
+
+pet::IPanelPlugin* spawnForgePlugin()
+{
+    auto* p = new ForgePlugin;
+    g_forgePlugin = p;
+    return p;
+}
+
+QString forgeManifest()
+{
+    // "instance_tuning" grants ITuningApi (ITuningApi.hpp's gate).
+    return QStringLiteral(
+        "{\"id\":\"org.test.forge\",\"version\":\"1.0\","
+        "\"api_version\":\"1.5\",\"order\":100,"
+        "\"capabilities\":[\"instance_tuning\"]}");
+}
+
 } // namespace
 
 class EventBusEmissionTest : public QObject
@@ -280,13 +421,25 @@ class EventBusEmissionTest : public QObject
     Q_OBJECT
 
 private slots:
-    void init() { g_flagshipPlugin = nullptr; }
+    void init()
+    {
+        g_flagshipPlugin = nullptr;
+        g_forgePlugin = nullptr;
+    }
 
     void testHitEmission();
     void testPackMountEmission();
     void testLifecycleEmissions();
     void testIdleTickEmission();
     void testFlagshipPluginReceivesHostHit();
+
+    // ── S8b: hit/idle decision chain on the bus + cancellation ───────────
+    void testHitRoutedToMountedBehaviorEngine();
+    void testMbeMutualExclusionWithIh();
+    void testFlagshipPluginCancelsHitDefaults();
+    void testIdleTickCancelledSkipsPlayMotion();
+    void testHitAdaptersUnsubscribedOnDestruction();
+    void testAudioFinishedEmission();
 
 private:
     InstanceSession* makeSession(const QTemporaryDir& base, WsServer& server,
@@ -320,35 +473,45 @@ void EventBusEmissionTest::stopSession(InstanceSession* session)
     delete session;
 }
 
-// ── 1. hit emission (no process needed — triggerHitArea calls the real
-//    handleHitEvent directly) ────────────────────────────────────────────────
+// ── 1. hit emission over a REAL bus (no process needed — triggerHitArea
+//    calls the real handleHitEvent directly) ─────────────────────────────────
 void EventBusEmissionTest::testHitEmission()
 {
     QTemporaryDir base;
     QVERIFY(base.isValid());
     WsServer server;
     PendingRequests pending;
-    RecordingPublisher publisher;
+
+    // S8b: the decision chain runs ON the bus now — a real EventBus +
+    // shared EventApiImpl (the PanelApplication wiring shape), with a
+    // Highest-tier recorder capturing the event shape at dispatch time.
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+    RecordingListener recorder;
+    QCOMPARE(eventApi.subscribe(pet::kEventInstanceHit.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
 
     InstanceSession* session =
-        makeSession(base, server, pending, &publisher);
+        makeSession(base, server, pending, &eventApi);
 
-    // Zero-behavior evidence: the existing play_motion command stream
-    // still fires (the InteractionHandler path), THEN the bus event.
+    // Behavioral equivalence with the pre-S8b direct chain: the IH
+    // adapter (Lowest, subscribed in setEventPublisher) resolves the
+    // default "head" → TapHead mapping and the play_motion command still
+    // fires — exactly once, exactly as before.
     QSignalSpy commandSpy(session, &InstanceSession::commandSent);
     session->triggerHitArea(QStringLiteral("head"));
 
     QCOMPARE(commandSpy.count(), 1);
     QCOMPARE(commandSpy.at(0).at(0).toString(), QStringLiteral("play_motion"));
 
-    QCOMPARE(publisher.countOf(pet::kEventInstanceHit.toString()), 1);
-    const pet::Event* evt = publisher.first(pet::kEventInstanceHit.toString());
+    QCOMPARE(recorder.countOf(pet::kEventInstanceHit.toString()), 1);
+    const pet::Event* evt = recorder.first(pet::kEventInstanceHit.toString());
     QVERIFY(evt != nullptr);
     QCOMPARE(evt->instanceUuid, session->uuid());
     QCOMPARE(evt->publisherId, QString(pet::kEventPublisherHost));
     QVERIFY(evt->cancellable); // hit is THE cancellable channel
-    // (timestampMs is the real bus's stamp — covered by EventBusTest;
-    // the recording fake never stamps, by design.)
+    QVERIFY(evt->timestampMs > 0); // real bus stamps at publish
     // Payload keys per events.md §hit via the EventCatalog builder.
     QCOMPARE(evt->payload.value(QStringLiteral("area_id")).toString(),
              QStringLiteral("head"));
@@ -628,12 +791,336 @@ void EventBusEmissionTest::testFlagshipPluginReceivesHostHit()
     QCOMPARE(g_flagshipPlugin->listener.hits, 1);
     QCOMPARE(g_flagshipPlugin->listener.lastAreaId, QStringLiteral("body"));
 
+    // S8b: the session's two hit adapters are ALSO subscribed on this bus
+    // (bound to the session's lifetime, publisherId "" host channel) —
+    // delete the session FIRST so the zero-leftovers assertion below
+    // exercises exactly what it names (the plugin's own unsubscribe at
+    // shutdownAll, plus the adapter unsubscribe at session destruction).
+    delete session;
+    QCOMPARE(bus.subscriptionCount(), 1); // only the plugin listener remains
+
     // Unload path: shutdownAll sweeps a plugin that unsubscribes
     // properly (zero leftovers — the sweep WARN stays silent).
     host.shutdownAll();
     QCOMPARE(bus.subscriptionCount(), 0);
+}
+
+// ── 6. S8b: hit via the bus routes to the MountedBehaviorEngine ────────────
+// A pack owning the hit area ("head") makes the MBE adapter (Lowest,
+// subscribed first) build + send the play_motion_ext; a second hit on an
+// area the pack does NOT own ("body") falls through to the IH adapter
+// (default TapBody play_motion) — the no-match fallback half of the
+// pre-S8b if/else semantics.
+void EventBusEmissionTest::testHitRoutedToMountedBehaviorEngine()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+
+    InstanceSession* session =
+        makeSession(base, server, pending, &eventApi);
+
+    const QString packRoot =
+        QDir(base.path()).absoluteFilePath(QStringLiteral("packs"));
+    const QString packDir =
+        QDir(packRoot).absoluteFilePath(QStringLiteral("pack_head"));
+    QVERIFY(writeMetaMkoFixture(packDir, QStringLiteral("head")));
+    QVERIFY(session->mountVoicePack(packDir));
+
+    QSignalSpy commandSpy(session, &InstanceSession::commandSent);
+
+    // Pack owns "head" → MBE adapter produces the pack behavior command.
+    session->triggerHitArea(QStringLiteral("head"));
+    QCOMPARE(commandSpy.count(), 1);
+    QCOMPARE(commandSpy.at(0).at(0).toString(),
+             QStringLiteral("play_motion_ext"));
+
+    // Pack does NOT own "body" → MBE adapter leaves the event uncancelled
+    // → IH adapter's default mapping fires ("body" → TapBody).
+    session->triggerHitArea(QStringLiteral("body"));
+    QCOMPARE(commandSpy.count(), 2);
+    QCOMPARE(commandSpy.at(1).at(0).toString(), QStringLiteral("play_motion"));
 
     delete session;
+}
+
+// ── 7. S8b: MBE ⟂ IH mutual exclusion (cancelled propagation) ───────────────
+// When the MBE adapter produces a behavior it sets event.cancelled — the
+// later same-Lowest-tier IH adapter must then stay SILENT (pre-S8b
+// semantics: "MBE handles → IH does not run"). Exactly one command for
+// the owned area, and it is play_motion_ext — never a default
+// play_motion.
+void EventBusEmissionTest::testMbeMutualExclusionWithIh()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+
+    InstanceSession* session =
+        makeSession(base, server, pending, &eventApi);
+
+    const QString packDir = QDir(base.path()).absoluteFilePath(
+        QStringLiteral("packs/pack_mutex"));
+    QVERIFY(writeMetaMkoFixture(packDir, QStringLiteral("head")));
+    QVERIFY(session->mountVoicePack(packDir));
+
+    QSignalSpy commandSpy(session, &InstanceSession::commandSent);
+    session->triggerHitArea(QStringLiteral("head"));
+
+    // ONE command total (the pack behavior); ZERO default play_motion.
+    QCOMPARE(commandSpy.count(), 1);
+    QCOMPARE(commandSpy.at(0).at(0).toString(),
+             QStringLiteral("play_motion_ext"));
+    QCOMPARE(countAction(commandSpy, QStringLiteral("play_motion")), 0);
+
+    delete session;
+}
+
+// ── 8. S8b flagship SECOND half: a Normal-tier plugin claims the hit ────────
+// The Forge plugin cancels area=="head" and plays a custom motion through
+// the shared ITuningApi. Both Lowest-tier defaults (MBE with a head-pack
+// mounted AND the IH fallback) must stay quiet; a non-head area still
+// runs the default chain. Runs over the REAL PluginHost + shared bus +
+// shared TuningApiImpl (the PanelApplication service-tree shape).
+void EventBusEmissionTest::testFlagshipPluginCancelsHitDefaults()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+
+    InstanceManager mgr(base.path(), server, pending,
+                        [](const PanelConfig&) {}, nullptr);
+    core::PluginRegistry registry;
+    core::PluginHost host(registry);
+    host.setInstanceManager(&mgr);
+    host.setEventApi(&eventApi);
+    core::TuningApiImpl tuningApi(&mgr, nullptr);
+    host.setTuningApi(&tuningApi);
+    registry.addStaticPlugin(forgeManifest(), &spawnForgePlugin);
+    host.initializeAll();
+
+    QVERIFY(g_forgePlugin != nullptr);
+
+    // The session must live in the manager's roster (the plugin's
+    // playMotion resolves the uuid through ITuningApi) and publish on the
+    // shared bus — exactly the production wiring.
+    const QString uuid = mgr.createInstance(QStringLiteral("ForgePet"));
+    QVERIFY(!uuid.isEmpty());
+    InstanceSession* session = mgr.instanceAt(0);
+    QVERIFY(session != nullptr);
+    session->setEventPublisher(&eventApi);
+
+    // Arm the MBE default TOO (pack owns "head") so the test proves BOTH
+    // defaults are suppressed, not just the IH fallback.
+    const QString packDir = QDir(base.path()).absoluteFilePath(
+        QStringLiteral("packs/pack_forge"));
+    QVERIFY(writeMetaMkoFixture(packDir, QStringLiteral("head")));
+    QVERIFY(session->mountVoicePack(packDir));
+
+    QSignalSpy commandSpy(session, &InstanceSession::commandSent);
+
+    // head: plugin (Normal) sees it FIRST → cancels + plays ForgeWave.
+    // The MBE + IH adapters (Lowest) observe cancelled=true and no-op.
+    session->triggerHitArea(QStringLiteral("head"));
+    QCOMPARE(g_forgePlugin->listener.hits, 1);
+    QCOMPARE(g_forgePlugin->listener.cancels, 1);
+    QCOMPARE(g_forgePlugin->listener.lastPlay, pet::PluginError::Ok);
+    QCOMPARE(commandSpy.count(), 1); // ONLY the plugin's custom motion
+    QCOMPARE(commandSpy.at(0).at(0).toString(), QStringLiteral("play_motion"));
+    QCOMPARE(countAction(commandSpy, QStringLiteral("play_motion_ext")), 0);
+
+    // body: the plugin passes it through → defaults run (pack does not
+    // own "body" → IH fallback plays the default TapBody motion).
+    session->triggerHitArea(QStringLiteral("body"));
+    QCOMPARE(g_forgePlugin->listener.hits, 2);
+    QCOMPARE(g_forgePlugin->listener.cancels, 1); // only the head claim
+    QCOMPARE(commandSpy.count(), 2);               // + the IH default
+    QCOMPARE(countAction(commandSpy, QStringLiteral("play_motion_ext")), 0);
+
+    // Plugin unload sweeps its subscription; the session's adapters stay
+    // bound until the session dies (the manager destroys them at ~mgr —
+    // the bus outlives it by declaration order).
+    host.shutdownAll();
+    QCOMPARE(bus.subscriptionCount(), 2); // the two session adapters
+}
+
+// ── 9. S8b: idle_tick cancellation skips the play_motion ────────────────────
+// Phase 1 (control): an uncancelled tick still sends the priority=1
+// play_motion. Phase 2: a Normal-tier listener cancels every idle_tick →
+// ticks keep firing (idleMotionTriggered) but NO further play_motion.
+void EventBusEmissionTest::testIdleTickCancelledSkipsPlayMotion()
+{
+#ifndef Q_OS_UNIX
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    QString rendererDir;
+    QVERIFY2(makeFakeRendererDir(base.path(), &rendererDir),
+             "failed to build the fake renderer dir");
+    writeModel3Json(rendererDir, QStringLiteral("Hiyori"));
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+
+    InstanceSession* session =
+        makeSession(base, server, pending, &eventApi, rendererDir);
+    session->start();
+    QVERIFY2(session->isProcessRunning(),
+             "fake renderer process failed to launch");
+
+    session->onMessage(makeEvent(
+        QStringLiteral("model_loaded"),
+        QJsonObject{ { QStringLiteral("model_id"),
+                       QStringLiteral("Hiyori") } }));
+    QVERIFY(session->modelLoaded()); // scheduler armed by model_loaded
+
+    QSignalSpy commandSpy(session, &InstanceSession::commandSent);
+    QSignalSpy idleSpy(session, &InstanceSession::idleMotionTriggered);
+
+    // Phase 1 — control: an uncancelled tick publishes AND sends.
+    QTRY_VERIFY_WITH_TIMEOUT(idleSpy.count() >= 1, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        countAction(commandSpy, QStringLiteral("play_motion")) >= 1, 3000);
+    const int motionsAfterControl =
+        countAction(commandSpy, QStringLiteral("play_motion"));
+
+    // Phase 2 — a Normal-tier listener claims every idle_tick.
+    CancellingListener canceller;
+    QCOMPARE(eventApi.subscribe(pet::kEventInstanceIdleTick.toString(),
+                                &canceller, pet::EventPriority::Normal),
+             pet::PluginError::Ok);
+    const int ticksBefore = idleSpy.count();
+    QTRY_VERIFY_WITH_TIMEOUT(idleSpy.count() >= ticksBefore + 1, 3000);
+    QVERIFY(canceller.calls >= 1); // the listener actually ran
+
+    // The scheduler kept ticking, but the play_motion stream froze.
+    QVERIFY(idleSpy.count() >= ticksBefore + 1);
+    QCOMPARE(countAction(commandSpy, QStringLiteral("play_motion")),
+             motionsAfterControl);
+
+    eventApi.unsubscribe(pet::kEventInstanceIdleTick.toString(),
+                         &canceller);
+    stopSession(session);
+#endif
+}
+
+// ── 10. S8b: the hit adapters unsubscribe at session destruction ───────────
+// While alive, the session holds exactly 2 subscriptions (MBE + IH); after
+// deletion a direct bus publish of pet.instance.hit must dispatch to a
+// fresh listener WITHOUT touching the dead adapters (no dangling-pointer
+// crash — the raw-pointer contract of EventBus).
+void EventBusEmissionTest::testHitAdaptersUnsubscribedOnDestruction()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+
+    InstanceSession* session =
+        makeSession(base, server, pending, &eventApi);
+    QCOMPARE(bus.subscriptionCount(), 2); // MBE + IH on pet.instance.hit
+
+    const QString uuid = session->uuid();
+    delete session; // ~InstanceSession unsubscribes both adapters
+    QCOMPARE(bus.subscriptionCount(), 0);
+
+    class ProbeListener : public pet::IEventListener
+    {
+    public:
+        int calls = 0;
+        void onEvent(pet::Event&) override { ++calls; }
+    };
+    ProbeListener probe;
+    QCOMPARE(bus.subscribe(pet::kEventInstanceHit.toString(), &probe,
+                           pet::EventPriority::Normal, QString()),
+             pet::PluginError::Ok);
+
+    pet::Event evt;
+    evt.eventId = pet::kEventInstanceHit.toString();
+    evt.instanceUuid = uuid; // the DEAD session's uuid — must be ignored
+    evt.publisherId = QString(pet::kEventPublisherHost);
+    evt.cancellable = true;
+    evt.payload.insert(QStringLiteral("area_id"), QStringLiteral("head"));
+
+    QCOMPARE(bus.publish(evt), pet::PluginError::Ok); // no dangling crash
+    QCOMPARE(probe.calls, 1);
+    QCOMPARE(bus.subscriptionCount(), 1); // only the probe remains
+}
+
+// ── 11. S8b: audio_finished publish-only override ───────────────────────────
+// The renderer's 14th protocol event (events.md §15) reaches the session
+// via onMessage → the override publishes pet.instance.audio_finished
+// with the VERBATIM payload, non-cancellable, host-stamped.
+void EventBusEmissionTest::testAudioFinishedEmission()
+{
+#ifndef Q_OS_UNIX
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    QString rendererDir;
+    QVERIFY2(makeFakeRendererDir(base.path(), &rendererDir),
+             "failed to build the fake renderer dir");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+    RecordingListener recorder;
+    QCOMPARE(eventApi.subscribe(pet::kEventInstanceAudioFinished.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+
+    InstanceSession* session =
+        makeSession(base, server, pending, &eventApi, rendererDir);
+    session->start();
+    QVERIFY2(session->isProcessRunning(),
+             "fake renderer process failed to launch");
+
+    const QJsonObject wirePayload{
+        { QStringLiteral("audio_path"),
+          QStringLiteral("Resources/VoicePacks/pack-a/sound_01.ogg") }
+    };
+    session->onMessage(
+        makeEvent(QStringLiteral("audio_finished"), wirePayload));
+
+    QCOMPARE(recorder.countOf(pet::kEventInstanceAudioFinished.toString()), 1);
+    const pet::Event* evt =
+        recorder.first(pet::kEventInstanceAudioFinished.toString());
+    QVERIFY(evt != nullptr);
+    QCOMPARE(evt->payload, wirePayload); // VERBATIM audio_path echo
+    QCOMPARE(evt->instanceUuid, session->uuid());
+    QCOMPARE(evt->publisherId, QString(pet::kEventPublisherHost));
+    QVERIFY(!evt->cancellable); // pure telemetry — never cancellable
+
+    // Pure telemetry: no command side effects.
+    QSignalSpy commandSpy(session, &InstanceSession::commandSent);
+    session->onMessage(
+        makeEvent(QStringLiteral("audio_finished"), wirePayload));
+    QCOMPARE(commandSpy.count(), 0);
+
+    stopSession(session);
+#endif
 }
 
 QTEST_MAIN(EventBusEmissionTest)

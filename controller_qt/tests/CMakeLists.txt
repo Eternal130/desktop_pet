@@ -1065,6 +1065,72 @@ pet_deploy_qt_test(MonitorApiImplTest)
 
 add_test(NAME MonitorApiImplTest COMMAND MonitorApiImplTest)
 
+# ── v1.5 (S8a) event-bus family tests ────────────────────────────────────────
+
+# EventBusTest (S8a, v1.5): the bus CORE contract, exercised directly on
+# core::EventBus. Eleven slots: priority dispatch order (Highest→Lowest),
+# same-priority FIFO stability, the cancellable chain (mid-listener
+# cancel → later listeners still run, poster reads the final true),
+# non-cancellable write ignored, 9-level re-entrancy → the 9th publish
+# returns Busy, the event-ID syntax table (empty segment / uppercase /
+# wildcard / 2 segments / leading-trailing dots) at BOTH subscribe and
+# publish, unknown-eventId subscribe legality (subscribe-before-publish),
+# mid-fanout unsubscribe (snapshot iteration, no crash), throwing-listener
+# isolation, the unsubscribeByPublisher sweep, duplicate-subscribe merge
+# with priority update, timestamp stamping. QTEST_APPLESS_MAIN — the bus
+# is synchronous, no event loop needed.
+qt_add_executable(EventBusTest EventBusTest.cpp)
+target_link_libraries(EventBusTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(EventBusTest)
+
+add_test(NAME EventBusTest COMMAND EventBusTest)
+
+# EventApiProxyTest (S8a, v1.5): the per-plugin EventApiProxy + shared
+# EventApiImpl seams + queryApi("pet.events") routing + the EventCatalog
+# builder key tables. Seven slots: plugin publish on pet.* →
+# InvalidArgument with ZERO dispatch, publish on plugin.<ownId>.* → Ok
+# with publisherId force-stamped, publish on plugin.<other>.* →
+# InvalidArgument, proxy subscribe booking the plugin id (the unload
+# sweep finds it), host-channel publish forwarding publisherId verbatim,
+# the queryApi matrix (injected → proxy distinct from the raw impl /
+# minVersion above → nullptr / not wired → nullptr, over a real
+# InstanceManager harness), and the builder payload keys (hit §hit
+# verbatim, motion_finished variant normalization with the -1/""_
+# sentinels, model_loaded host-supplemented halves, drag pair, ready
+# verbatim copy, idle tick, load-failed, pack id). QTEST_MAIN — the
+# InstanceManager harness touches QSqlDatabase (needs a QCoreApplication).
+qt_add_executable(EventApiProxyTest EventApiProxyTest.cpp)
+target_link_libraries(EventApiProxyTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(EventApiProxyTest)
+
+add_test(NAME EventApiProxyTest COMMAND EventApiProxyTest)
+
+# EventBusEmissionTest (S8a, v1.5): the emission-point wiring (parallel
+# bypass, zero behavior change) + the flagship first half. Five slots:
+# hit emission (triggerHitArea drives the REAL handleHitEvent → the
+# recording publisher sees the catalog payload + host header fields,
+# while the pre-existing play_motion command stream still fires), pack
+# mount/unmount double emission at the mountedVoicePackChanged NOTIFY
+# point (same `changed` gate — re-mount stays quiet), lifecycle
+# emissions over the POSIX fake-sleeper renderer (ready verbatim /
+# model_loaded host-supplemented / drag_end post-commit /
+# model_load_failed / motion_started + drag_start publish-only overrides
+# / motion_finished variant归一), idle_tick emission with the original
+# priority=1 play_motion intact (S8a ignores cancelled), and the
+# flagship first half (fake plugin subscribes to pet.instance.hit via
+# queryApi on a REAL PluginHost → a REAL session's triggerHitArea
+# publishes through the shared bus → the plugin listener receives).
+# QTEST_MAIN — QProcess + QTRY_* need the event loop; the fake-renderer
+# slots QSKIP on non-POSIX (hit/pack/flagship slots run everywhere).
+qt_add_executable(EventBusEmissionTest EventBusEmissionTest.cpp)
+target_link_libraries(EventBusEmissionTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(EventBusEmissionTest)
+
+add_test(NAME EventBusEmissionTest COMMAND EventBusEmissionTest)
+
 # ── API boundary gate (S7, R3 — anti-drift enforcement) ───────────────────────
 # Two bash-driven tests over scripts/api_boundary_gate.sh:
 #   ApiBoundaryGateTest     — the gate over the real tree (red on any
@@ -1102,3 +1168,24 @@ else()
     add_test(NAME ApiBoundaryGateTest COMMAND ${CMAKE_COMMAND} -E false)
     add_test(NAME ApiBoundaryGateSelfTest COMMAND ${CMAKE_COMMAND} -E false)
 endif()
+
+# ── S8d rule-engine core tests ───────────────────────────────────────────────
+
+# RuleEngineTest (S8d): the declarative rule engine CORE — strict schema
+# parse/validate (table-driven reject matrix), compile-to-CompiledRule
+# (defaults + full-feature deep check over every where op / condition kind /
+# action kind), and the pure evaluation kernel (cooldown window not reset by
+# skipped probes, one-shot latch + enabled-cycle reset, type-sensitive where
+# predicates, all five condition kinds incl. the 22→6 wrap window,
+# fail-closed unknown context fields, connected gate), plus rule-set
+# management (atomic upsert replace, MAX_RULES=200 ceiling, owner-prefix
+# sweep with fire-state cleanup, composite priority/scope/declaration
+# ordering, differential subscription set) and the load-time cancel_default
+# WARN over a CapturingSink. Pure logic — links pet_panel_core
+# (RuleEngine lives there) + spdlog. QTEST_APPLESS_MAIN — no event loop.
+qt_add_executable(RuleEngineTest RuleEngineTest.cpp)
+target_link_libraries(RuleEngineTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(RuleEngineTest)
+
+add_test(NAME RuleEngineTest COMMAND RuleEngineTest)

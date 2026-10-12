@@ -7,10 +7,12 @@
 #include <QtGlobal>
 
 #include <spdlog/spdlog.h>
-#include "logging/Logging.hpp"
+#include "api/EventIds.hpp"
+#include "core/EventCatalog.hpp"
 #include "core/MetaMkoParser.hpp"
 #include "core/ModelInfoParser.hpp"
 #include "core/PathResolve.hpp"
+#include "logging/Logging.hpp"
 #include "network/PendingRequests.hpp"
 #include "network/Protocol.hpp"
 #include "network/WsServer.hpp"
@@ -286,7 +288,7 @@ void InstanceSession::start()
     // set_position, set_size, set_opacity, set_fps, set_volume, set_layout —
     // in that exact order.
     m_dispatcher.registerEventHandler(
-        QStringLiteral("ready"), [this](const Envelope&) {
+        QStringLiteral("ready"), [this](const Envelope& env) {
             LOG_INFO("InstanceSession[{}]: ready → running + salvo", m_instanceId);
             setStatus(kStatusRunning);
             setConnected(true);
@@ -296,6 +298,12 @@ void InstanceSession::start()
             // response arrives via the stats_state EVENT handler registered
             // below. Stopped in stop() to avoid spamming a dead socket.
             m_monitorTimer.start();
+            // S8a (v1.5): post-commit bypass publish — AFTER the status /
+            // connected flips, the salvo and the poller arm. Payload is the
+            // VERBATIM WS payload (version + capabilities, zero-copy through
+            // the builder).
+            publishHostEvent(pet::kEventInstanceReady, /*cancellable=*/false,
+                             core::makeReadyPayload(env.payload));
         });
 
     // model_loaded → parse the .model3.json for hit areas (the renderer's
@@ -345,6 +353,21 @@ void InstanceSession::start()
             setModelLoaded(true);
             // Start idle-motion cycling now that motionGroups are known.
             startIdleScheduler();
+            // S8a (v1.5): post-commit bypass publish — AFTER set_hit_areas,
+            // the layout re-push, the modelLoaded flip and the idle
+            // scheduler start. The wire event's motions/expressions are
+            // ALWAYS empty (events.md §2); the bus payload carries the
+            // host-parsed metadata instead (empty lists = parse-failure
+            // sentinel, never absent keys).
+            publishHostEvent(pet::kEventModelLoaded, /*cancellable=*/false,
+                             core::makeModelLoadedPayload(
+                                 m_config.modelName,
+                                 m_modelInfo.has_value()
+                                     ? m_modelInfo->motionGroups.keys()
+                                     : QStringList(),
+                                 m_modelInfo.has_value()
+                                     ? m_modelInfo->expressions
+                                     : QStringList()));
         });
 
     // Phase-5 todo 10 event-handler overrides. QMap::insert replaces the
@@ -397,6 +420,41 @@ void InstanceSession::start()
     m_dispatcher.registerEventHandler(
         QStringLiteral("model_load_failed"), [this](const Envelope& env) {
             handleModelLoadFailedEvent(env);
+        });
+
+    // S8a (v1.5): publish-only overrides for the two interaction events
+    // the session never had real handlers for (EventRegistry's
+    // registerDefaults installs log-only DEBUG defaults for them). Each
+    // override REPRODUCES the default's DEBUG log line verbatim (zero
+    // log/behavior change) and additionally fans the event onto the bus
+    // through the EventCatalog builders. Registered AFTER
+    // registerDefaults() — QMap::insert replaces, so these win.
+    m_dispatcher.registerEventHandler(
+        QStringLiteral("motion_started"), [this](const Envelope& env) {
+            LOG_DEBUG("event action='motion_started' payload={}",
+                      QString::fromUtf8(QJsonDocument(env.payload).toJson(
+                                            QJsonDocument::Compact))
+                          .toStdString());
+            publishHostEvent(pet::kEventInstanceMotionStarted,
+                             /*cancellable=*/false,
+                             core::makeMotionStartedPayload(
+                                 env.payload.value(QStringLiteral("group"))
+                                     .toString(),
+                                 env.payload.value(QStringLiteral("index"))
+                                     .toInt()));
+        });
+    m_dispatcher.registerEventHandler(
+        QStringLiteral("drag_start"), [this](const Envelope& env) {
+            LOG_DEBUG("event action='drag_start' payload={}",
+                      QString::fromUtf8(QJsonDocument(env.payload).toJson(
+                                            QJsonDocument::Compact))
+                          .toStdString());
+            publishHostEvent(pet::kEventDragStarted, /*cancellable=*/false,
+                             core::makeDragStartedPayload(
+                                 env.payload.value(QStringLiteral("x"))
+                                     .toDouble(),
+                                 env.payload.value(QStringLiteral("y"))
+                                     .toDouble()));
         });
 
     // Launch the renderer. The renderer connects back to 127.0.0.1:kWsPort with

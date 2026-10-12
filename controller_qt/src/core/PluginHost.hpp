@@ -24,6 +24,7 @@
 
 #include "core/PluginRegistry.hpp"
 
+#include "api/IEventApi.hpp"
 #include "api/IModelApi.hpp"
 #include "api/IMonitorApi.hpp"
 #include "api/ISettingsApi.hpp"
@@ -38,6 +39,8 @@ class NotificationStreamController;
 namespace core {
 
 class DownloadService;
+class EventBus;
+class EventApiImpl;
 class InstanceApiImpl;
 class InstanceControlApiImpl;
 class ModelApiImpl;
@@ -90,6 +93,15 @@ public:
     // per-host implementation over the injected InstanceManager (the
     // setInstanceApi fallback pattern; tests / degraded wiring).
     void setMonitorApi(pet::IMonitorApi* monitorApi);
+    // S8a (v1.5): the SHARED EventApiImpl (over the shared core::EventBus)
+    // served to plugin contexts through queryApi("pet.events") — every
+    // context receives a per-plugin EventApiProxy built from it (prefix
+    // enforcement + publisher stamping happen in the proxy). Null →
+    // initializeAll constructs a per-host bus + impl fallback (the
+    // setInstanceApi pattern; tests / degraded wiring). The concrete type
+    // (not pet::IEventApi) is deliberate: shutdownAll needs the
+    // host-only unsubscribeByPublisher unload sweep.
+    void setEventApi(EventApiImpl* eventApi);
     // S2 (v1.2): host-global plugin_write_enabled kill-switch provider
     // (PanelApplication wires it to the panel_config kv row; absent
     // provider = enabled, mirroring the kv default). Consulted LIVE on
@@ -155,6 +167,12 @@ private:
     pet::ISettingsApi* m_settingsApi = nullptr;
     pet::IVoicePackApi* m_voicePackApi = nullptr; // v1.3 shared, not owned
     pet::IMonitorApi* m_monitorApi = nullptr;     // v1.4 (S7), not owned
+    // S8a (v1.5): shared event-bus implementation, not owned. When null,
+    // initializeAll builds the per-host fallback pair (bus first, then
+    // impl — registration order keeps the bus alive past the impl).
+    EventApiImpl* m_eventApi = nullptr;
+    EventBus* m_eventBusFallback = nullptr;     // host-owned fallback, only
+    EventApiImpl* m_eventApiFallback = nullptr; // when nothing was injected
     std::function<bool()> m_writeEnabledProvider;           // S2: live kill-switch
     PluginPageModel* m_pageModel = nullptr;
     NotificationStreamController* m_notificationStream = nullptr;

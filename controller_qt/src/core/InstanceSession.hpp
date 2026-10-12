@@ -16,6 +16,7 @@
 #include "core/RestartController.hpp"
 #include "core/Scheduler.hpp"
 #include "core/StartupSalvo.hpp"
+#include "api/IEventApi.hpp"
 #include "network/Envelope.hpp"
 #include "network/EventRegistry.hpp"
 #include "network/MessageDispatcher.hpp"
@@ -274,6 +275,21 @@ public slots:
     void setDialogueSink(DialogueSinkFn sink)
     { m_dialogueSink = std::move(sink); }
 
+    // ── Event publisher seam (S8a, v1.5) ──────────────────────────────────
+    // The shared pet::IEventApi this session's WS-event handlers publish
+    // onto (bypass fanout — S8a APPENDS a publish next to each handler's
+    // existing logic; nothing in the panel consumes event.cancelled yet,
+    // so observable behavior is identical to pre-S8a). Injected by
+    // PanelApplication for sessions on disk + every later rowsInserted
+    // create. Interface pointer (NOT the concrete EventApiImpl) so tests
+    // inject fakes; plain C++ setter — deliberately NOT a Q_INVOKABLE /
+    // Q_PROPERTY WRITE (the api-boundary gate's pattern table stays
+    // untouched; same discipline as setDialogueSink). Null default =
+    // every emission site null-guards (tests / degraded wiring publish
+    // nothing, exactly as pre-S8a).
+    void setEventPublisher(pet::IEventApi* publisher)
+    { m_eventPublisher = publisher; }
+
     // ── Phase-5 Wave 8 todo 22 (layout UI helpers) ───────────────────────────
     // Q_INVOKABLE triggers consumed by InstanceDetailPage.qml's Layout panel.
     // getLayout sends §E.2 get_layout (empty payload); the response routes back
@@ -485,6 +501,16 @@ private:
     // sends play_motion with priority=1 (Idle per interface.md §B.1).
     void startIdleScheduler();
 
+    // ── S8a (v1.5) event-bus emission helper ───────────────────────────────
+    // Stamps the host fields (instanceUuid = this session, publisherId =
+    // kEventPublisherHost) and publishes through the injected publisher
+    // (no-op when none is injected). Payloads ALWAYS come from the
+    // EventCatalog builders — emission sites never hand-write key names.
+    // Synchronous dispatch; S8a deliberately ignores the return + the
+    // final event.cancelled (zero behavior change — no consumer兑现取消).
+    void publishHostEvent(const QString& eventId, bool cancellable,
+                          const QJsonObject& payload);
+
 private:
     // ── Owned per-instance tuple (M2: NOT shared from main.cpp) ──────────────
     // Declaration order = construction order. m_dispatcher MUST precede
@@ -512,6 +538,11 @@ private:
     // ── Dialogue sink seam (bubble-stream switch) ──────────────────────────
     // Injected by InstanceManager; empty = no-op. See the public setter.
     DialogueSinkFn m_dialogueSink;
+
+    // ── S8a (v1.5) event publisher seam ────────────────────────────────────
+    // The shared pet::IEventApi (PanelApplication service tree); not
+    // owned; null = publish nothing (pre-S8a behavior).
+    pet::IEventApi* m_eventPublisher = nullptr;
 
     // Voice-pack behavior cooldown: while a behavior's motion/audio plays,
     // further hits on the model are swallowed (no re-trigger, no bubble).

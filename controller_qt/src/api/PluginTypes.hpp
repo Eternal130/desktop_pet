@@ -49,8 +49,13 @@ namespace pet {
 // MonitorSample / MonitorSubscription PODs (below) and the new read-only
 // monitor family IMonitorApi (queryApi "pet.monitor", subscribe pushes
 // throttled per subscriber). No existing signature changed.
+// v1.5 (2026-10-12, S8a): minor bumped for the additive expansion —
+// the new event-bus family IEventApi (queryApi "pet.events": Event /
+// EventPriority / IEventListener live in api/IEventApi.hpp; the host
+// channel-ID vocabulary + payload field tables live in
+// api/EventIds.hpp). No existing signature changed.
 constexpr int kApiMajor = 1;
-constexpr int kApiMinor = 4;
+constexpr int kApiMinor = 5;
 
 // ── Capability vocabulary (manifest "capabilities" entries; §B.4) ───────────
 // The exact, case-sensitive strings the host parses from plugin manifests

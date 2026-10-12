@@ -4,6 +4,8 @@
 #include <QJsonObject>
 
 #include <spdlog/spdlog.h>
+#include "api/EventIds.hpp"
+#include "core/EventCatalog.hpp"
 #include "logging/Logging.hpp"
 #include "network/Envelope.hpp"
 #include "network/Protocol.hpp"
@@ -13,6 +15,29 @@
 // 250 pure-LOC ceiling (same split discipline as InstanceSessionSetters.cpp +
 // InstanceSessionCommands.cpp). Each method is invoked by a one-liner lambda
 // registered in InstanceSession::start() via m_dispatcher.registerEventHandler.
+//
+// S8a (v1.5): the handlers below additionally PUBLISH their events onto the
+// shared bus (publishHostEvent) — pure appends next to the untouched
+// pre-existing logic lines. Zero behavior change: nothing reads
+// event.cancelled, and a session without an injected publisher publishes
+// nothing at all (identical to pre-S8a).
+
+void InstanceSession::publishHostEvent(const QString& eventId, bool cancellable,
+                                       const QJsonObject& payload)
+{
+    if (m_eventPublisher == nullptr)
+        return; // tests / degraded wiring — pre-S8a behavior
+    pet::Event evt;
+    evt.eventId = eventId;
+    evt.instanceUuid = m_config.id;
+    evt.publisherId = QString(pet::kEventPublisherHost);
+    evt.cancellable = cancellable;
+    evt.payload = payload;
+    // Synchronous dispatch (publish returns after the whole chain ran).
+    // S8a ignores both the result and evt.cancelled — the bypass is
+    // fire-and-forget until S8b wires consumers.
+    m_eventPublisher->publish(evt);
+}
 
 void InstanceSession::handleHitEvent(const Envelope& env)
 {
@@ -31,6 +56,19 @@ void InstanceSession::handleHitEvent(const Envelope& env)
     // InteractionHandler fallback also no-ops, so a malformed hit is a no-op.
     const QString areaId = env.payload.value(
         QStringLiteral("area_id")).toString();
+
+    // S8a (v1.5): bypass publish BEFORE the decision chain — hit is the
+    // designated CANCELLABLE pre-action channel (S8b reads evt.cancelled
+    // here to gate the reaction; S8a deliberately does not, so the chain
+    // below runs byte-identically to pre-S8a). Payload keys come from the
+    // EventCatalog builder (events.md §hit verbatim); missing WS halves
+    // degrade to their zero defaults, matching the area_id handling.
+    publishHostEvent(pet::kEventInstanceHit, /*cancellable=*/true,
+                     core::makeHitPayload(
+                         areaId,
+                         env.payload.value(QStringLiteral("x")).toDouble(),
+                         env.payload.value(QStringLiteral("y")).toDouble(),
+                         env.payload.value(QStringLiteral("button")).toInt()));
 
     if (m_behaviorEngine.hasGroupForArea(areaId)) {
         // Cooldown gate: while the previous behavior's motion/audio is still
@@ -107,6 +145,17 @@ void InstanceSession::handleDragEndEvent(const Envelope& env)
         LOG_ERROR("InstanceSession[{}]: failed to persist window position after drag_end",
                   m_instanceId);
     }
+
+    // S8a (v1.5): post-commit publish — fires only AFTER the position is
+    // persisted (or its failure logged); the bypass never gates the
+    // persistence above. Malformed drag_end events (the early return)
+    // publish nothing: no commit, no event.
+    publishHostEvent(pet::kEventDragEnded, /*cancellable=*/false,
+                     core::makeDragEndedPayload(
+                         env.payload.value(QStringLiteral("x")).toDouble(),
+                         env.payload.value(QStringLiteral("y")).toDouble(),
+                         static_cast<int>(xVal.toInteger()),
+                         static_cast<int>(yVal.toInteger())));
 }
 
 void InstanceSession::handleMotionFinishedEvent(const Envelope& env)
@@ -127,6 +176,28 @@ void InstanceSession::handleMotionFinishedEvent(const Envelope& env)
     // triggerNow only fires when connected — no point queuing a play_motion
     // the renderer cannot receive.
     const bool hasMotionPath = env.payload.contains(QStringLiteral("motion_path"));
+
+    // S8a (v1.5): bypass publish at entry — motion_finished is pure
+    // telemetry (this handler commits no local state before judging
+    // idle/non-idle), and the builder normalizes BOTH wire variants into
+    // the one bus shape (group:""/index:-1 vs motion_path:"" sentinels —
+    // api/EventIds.hpp).
+    if (hasMotionPath) {
+        publishHostEvent(pet::kEventInstanceMotionFinished,
+                         /*cancellable=*/false,
+                         core::makeMotionFinishedPayload(
+                             env.payload.value(QStringLiteral("motion_path"))
+                                 .toString()));
+    } else {
+        publishHostEvent(pet::kEventInstanceMotionFinished,
+                         /*cancellable=*/false,
+                         core::makeMotionFinishedPayload(
+                             env.payload.value(QStringLiteral("group"))
+                                 .toString(),
+                             env.payload.value(QStringLiteral("index"))
+                                 .toInt()));
+    }
+
     bool isIdle = false;
     if (hasMotionPath) {
         // Variant B — assume non-idle until Phase 8 adds idle-pack path matching.
@@ -173,6 +244,15 @@ void InstanceSession::startIdleScheduler()
         intervalMs,
         m_modelInfo->motionGroups,
         [this](const QString& group, int index) {
+            // S8a (v1.5): bypass publish BEFORE the sendCommand —
+            // pet.instance.idle_tick is CANCELLABLE so S8b can skip the
+            // play_motion for a cancelled tick; S8a deliberately does
+            // NOT read evt.cancelled (zero behavior change).
+            // TODO(S8b): read the publish result / evt.cancelled here and
+            // skip the sendCommand below when cancelled.
+            publishHostEvent(pet::kEventInstanceIdleTick,
+                             /*cancellable=*/true,
+                             core::makeIdleTickPayload(group, index));
             // priority=1 (Idle) per interface.md §B.1.
             // (todo 16: previously inline createCommand; now via typed factory.)
             sendCommand(Protocol::buildPlayMotion(group, index, 1));
@@ -293,4 +373,12 @@ void InstanceSession::handleModelLoadFailedEvent(const Envelope& env)
              m_instanceId, m_modelLoadFailureRevision,
              m_lastModelLoadError.toStdString());
     emit modelLoadFailed(m_lastModelLoadError);
+    // S8a (v1.5): post-commit publish — after the revision bump, the
+    // modelLoaded flip and the modelLoadFailed signal. Payload halves are
+    // the VERBATIM wire values (the degraded UI string above stays a QML
+    // concern; "" is the bus-side sentinel for "wire event carried none").
+    publishHostEvent(pet::kEventModelLoadFailed, /*cancellable=*/false,
+                     core::makeModelLoadFailedPayload(
+                         env.payload.value(QStringLiteral("error_code")).toInt(),
+                         message));
 }

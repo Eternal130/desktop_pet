@@ -2,7 +2,7 @@
 
 第一方插件 SDK 接口头集合（P4 落地，P6a 冻结点前允许演进，冻结后变更走版本化）。
 设计合同: `docs/refactor/plugin-architecture-and-cmake-migration.md` §A/§B.3。
-**当前版本: API 1.4**（2026-09-21，见文末「版本历史」）。
+**当前版本: API 1.5**（2026-10-12，见文末「版本历史」）。
 
 ## 组成
 
@@ -17,6 +17,7 @@
 | `IModelApi.hpp` | **v1.3 (S5)** 模型库只读族: availableModels / refreshScan / modelInfo（ModelSummary）。经 `queryApi` 获取；**只读不门控**（不受能力与写开关约束），未接线→nullptr |
 | `ISettingsApi.hpp` | **v1.3 (S6)** 面板设置写族（类型化方法，禁 QJsonObject 逃生舱）: setCloseAction / setConfirmOnExit / setStartMinimized / setDefaultModelName。`settings_write` 能力 + 宿主开关门控；**刻意不含 autoLaunchSystem**（宿主外壳能力不进插件 API） |
 | `IMonitorApi.hpp` | **v1.4 (S7)** 资源监控只读族: history（60 样本环形全量，POD 投影 -1 哨兵）+ subscribe/unsubscribe（IMonitorObserver 逐样本推送，每订阅者独立 minIntervalMs 合并节流）。经 `queryApi` 获取；**只读不门控**，未接线→nullptr；宿主自己的 MonitorPage 保留活对象绑定（架构边界），本族面向插件消费者 |
+| `IEventApi.hpp` | **v1.5 (S8a)** 事件总线族: Event/EventPriority/IEventListener + subscribe/unsubscribe/publish（**同步分发**——publish 返回时整链已跑完、cancelled 已终值）。经 `queryApi` 获取；**无能力门控、不受写开关**（通知通道而非宿主状态写），未接线→nullptr；插件拿到的是 per-context 代理（发布强制 `plugin.<ownId>.*` 前缀 + publisherId 盖戳，防伪造）；重入深度上限 8（超限 Busy）；宿主通道 ID 词表 + 载荷字段表冻结在 `EventIds.hpp`（目录即契约：字段只加不删不改名，可选值用 -1/"" 哨兵，事件 ID 永不改名移除） |
 | `IVoicePackApi.hpp` | 语音包发现（listPacks / refreshScan / installPath）+ **v1.3 追加 `IPackListObserver` + subscribePackList/unsubscribePackList**（包列表变化观察；挂载写走 ITuningApi） |
 | `IDownloadApi.hpp` | 宿主下载咽喉点（start / cancel / installArchive + DownloadListener 纯虚回调）；manifest 未授 `network` capability 时为 stub（§B.4） |
 | `IUiApi.hpp` | 页面注册 + 气泡通知；**无 unregisterPage/页面生命周期（刻意 YAGNI，防 P6a 重议）** |
@@ -105,7 +106,7 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 "翻转即吊销"需 per-call 门控代理（见"阶段路线"的阶段 2 候选）。只读族（`pet.model`、
 `pet.monitor`、voicePackApi、instanceApi）不受其约束。
 
-族 × 能力 × 开关总表（v1.4 全景，queryApi 通道五族）:
+族 × 能力 × 开关总表（v1.5 全景，queryApi 通道六族）:
 
 | apiId | 接口 | 能力门控 | 写开关 | 未接线时 |
 |---|---|---|---|---|
@@ -114,9 +115,26 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 | `pet.model` | IModelApi | 无（只读） | 不受控 | nullptr |
 | `pet.settings` | ISettingsApi | `settings_write` | 受控 | capability stub |
 | `pet.monitor` | IMonitorApi | 无（只读） | 不受控 | nullptr |
+| `pet.events` | IEventApi | 无（通知通道） | 不受控 | nullptr |
 
 另有三个经 IPluginContext 固定 accessor 暴露的 v1.0 族: instanceApi / voicePackApi /
 uiApi / downloadApi（downloadApi 由 `network` 能力门控真实现 vs stub）。
+
+### QJsonObject 载荷纪律（v1.5，pet.events）
+
+`pet::Event.payload` 是本 SDK 唯一自由形状的 QJsonObject 载荷。纪律（冻结于
+`EventIds.hpp` 头注释 + 各事件字段表）:
+
+- **snake_case 键**，与协议/配置层一致；
+- **字段只加不删不改名**——消费者必须忽略未知键；
+- **可选值用哨兵不用缺键**: 数值 -1、字符串 ""（禁 `std::optional` 跨界，与
+  MonitorSample 的 -1 哨兵同一纪律）;
+- **宿主事件 ID 词表冻结在 `api/EventIds.hpp`**（`pet.instance.*` /
+  `pet.model.*` / `pet.pack.*` 三域，"一域一通道"）; 事件 ID 永不改名移除;
+- **插件只可发 `plugin.<ownId>.*`**（per-context 代理强制 + publisherId 盖戳;
+  宿主可发任意合法 ID）;
+- 键名拼写由 `core/EventCatalog.hpp` 的 typed builder 单点拥有——宿主发射点
+  禁止手写键名（与 Protocol 命令工厂同一纪律）。
 
 ## 配置写规约（v2）
 
@@ -146,6 +164,55 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
 `qrc:/` URL（§B.6）。
 
 ## 版本历史
+
+### v1.5（2026-10-12，kApiMajor=1 / kApiMinor=5）— S8a 事件总线（总线核心 + 契约 + 并行旁路发射）
+
+全部为**加法**变更（一个经 queryApi 暴露的新事件总线族 + 两个契约头），零既有签名/
+顺序改动；`IPluginContext` 尾追特权未使用。本阶段铁律: **零行为变化**——旁路发射，
+无人兑现 `event.cancelled`，既有管道一行不改（只允许"追加发射"）。
+
+1. **`kApiMinor` 4 → 5**。
+2. **`IEventApi`**（新头，apiId `pet.events`，族版本 1）: `Event`（eventId/
+   instanceUuid/publisherId/timestampMs/cancellable/cancelled/payload）+
+   `EventPriority`（Highest=0 … Lowest=4，底类型 `unsigned int`）+
+   `IEventListener`（GUI 线程快进快出）+ subscribe/unsubscribe/publish。
+   **同步分发语义**: publish 返回时整链已分发、cancelled 已终值。订阅未知
+   eventId 合法（先订后发）; 重复 (eventId,listener) 订阅=合并更新优先级;
+   shutdown 前必须 unsubscribe 全部（宿主卸载清扫兜底，漏退订 WARN 不悬垂）;
+   监听器生命周期归插件。**防伪造前缀规则**: 插件仅可发 `plugin.<ownId>.*`
+   （代理违规→InvalidArgument 零分发），宿主可发任意。重入深度上限 8
+   （per-thread，超限 Busy）。
+3. **`EventIds.hpp`**（新头）: 宿主事件 ID 常量（`kEventInstanceReady/Hit/
+   MotionStarted/MotionFinished/IdleTick`、`kEventDragStarted/DragEnded`、
+   `kEventModelLoaded/LoadFailed`、`kEventPackMounted/Unmounted`，`pet.instance.*`/
+   `pet.model.*`/`pet.pack.*` 三域，"一域一通道"）+ 每事件 payload 字段表
+   （字段/类型/语义/哨兵，照 events.md 风格）+ ID 语法规则常量
+   （≥3 段、非空段、仅 [a-z0-9_]、拒通配符）。**目录即契约**: 字段只加不删
+   不改名、可选字段用哨兵（-1/""）、事件 ID 永不改名移除。
+4. **载荷纪律**: QJsonObject snake_case 键; 键名由 `core/EventCatalog.hpp`
+   typed builder 单点拥有（hit 键与 events.md §hit 逐字一致; motion_finished
+   双变体归一 {group,index(-1 哨兵),motion_path("" 哨兵)}; model_loaded 的
+   motion_groups/expressions 由 ModelInfoParser 补全——宿主增补字段）。
+   **宿主发射点禁止手写键名**。
+5. **门控矩阵**: `pet.events` 无能力门控、不受 `plugin_write_enabled` 写开关
+   （开关撤销的是宿主状态写; 总线是通知通道，插件侧伪造防护=代理前缀规则）。
+   注入即返回 per-context 代理（`EventApiProxy`: publish 强制
+   publisherId=插件 id + 前缀校验）; 未接线→nullptr（照 pet.model 读族先例）。
+   宿主桥（发射点）持裸共享 `EventApiImpl`——宿主可发 `pet.*`。
+6. **宿主装配**: `core::EventBus`（订阅表/快照扇出/逐监听器异常隔离/重入上限/
+   publisherId 记账 + `unsubscribeByPublisher` 卸载清扫）+ `EventApiImpl`
+   共享单例（PanelApplication 服务树，**注册于 InstanceManager 之前**——会话
+   持发布者指针，总线必须后于所有会话析构）+ PluginHost 注入口/per-host 回退 +
+   queryApi 路由。PluginHost 卸载路径调 `unsubscribeByPublisher`（插件
+   shutdown 后、delete 实例前）。
+7. **旁路发射点**（全部追加、既有逻辑一行不动）: InstanceSession 各 WS 事件
+   handler（hit 可取消、ready/model_loaded/drag_end/model_load_failed 提交后、
+   motion_started/drag_start 保默认日志的 publish-only override）、Scheduler
+   idle 回调（idle_tick 可取消，S8a 不读 cancelled，TODO(S8b)）、语音包
+   挂载/卸载（与 mountedVoicePackChanged NOTIFY 同点同 gate）。注入形式:
+   `InstanceSession::setEventPublisher(pet::IEventApi*)` 纯 C++ setter
+   （非 Q_INVOKABLE/非 WRITE 属性——门禁模式表零维护，setDialogueSink 同款），
+   PanelApplication 对存量+rowsInserted 新建会话统一注入。
 
 ### v1.4（2026-09-21，kApiMajor=1 / kApiMinor=4）— S7 监控流 + 边界门禁
 

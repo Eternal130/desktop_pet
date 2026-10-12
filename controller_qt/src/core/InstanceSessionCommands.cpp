@@ -1,8 +1,11 @@
 ﻿#include "core/InstanceSession.hpp"
 
+#include <QFileInfo>
 #include <QJsonObject>
 
 #include <spdlog/spdlog.h>
+#include "api/EventIds.hpp"
+#include "core/EventCatalog.hpp"
 #include "logging/Logging.hpp"
 #include "core/MetaMkoParser.hpp"
 #include "core/ModelScanner.hpp"
@@ -173,6 +176,13 @@ bool InstanceSession::mountVoicePack(const QString& packPath)
     }
     if (changed)
         emit mountedVoicePackChanged();
+    // S8a (v1.5): bus publish at the SAME point as the NOTIFY — only on
+    // a real mount transition (same `changed` gate). pack_id is the pack
+    // DIRECTORY name, the SDK-wide pack identity (a caller-supplied PATH
+    // never reaches the payload).
+    if (changed)
+        publishHostEvent(pet::kEventPackMounted, /*cancellable=*/false,
+                         core::makePackPayload(QFileInfo(packPath).fileName()));
     LOG_INFO("InstanceSession[{}]: mounted voice pack \"{}\" ({} groups)",
              m_instanceId, m_mountedPack->displayName.toStdString(),
              m_mountedPack->groups.size());
@@ -184,6 +194,10 @@ void InstanceSession::unmountVoicePack()
     if (!m_mountedPack.has_value() && m_config.voicePack.isEmpty()) {
         return;
     }
+    // S8a (v1.5): capture the pack id BEFORE the config field is cleared
+    // (the bus payload needs the directory name of what WAS mounted).
+    const QString previousPackId =
+        QFileInfo(m_config.voicePack).fileName();
     m_behaviorEngine.setVoicePack(nullptr);
     m_mountedPack.reset();
     m_config.voicePack.clear();
@@ -194,6 +208,9 @@ void InstanceSession::unmountVoicePack()
     // v1.3 seam: this branch only runs when something WAS mounted (the
     // guard above returned otherwise) — always a real transition.
     emit mountedVoicePackChanged();
+    // S8a (v1.5): bus publish at the SAME point as the NOTIFY.
+    publishHostEvent(pet::kEventPackUnmounted, /*cancellable=*/false,
+                     core::makePackPayload(previousPackId));
     LOG_INFO("InstanceSession[{}]: unmounted voice pack", m_instanceId);
 }
 

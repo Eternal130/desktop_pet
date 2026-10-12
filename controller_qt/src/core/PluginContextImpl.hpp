@@ -16,9 +16,11 @@
 #include <QVector>
 
 #include <functional>
+#include <memory>
 #include <optional>
 
 #include "api/IDownloadApi.hpp"
+#include "api/IEventApi.hpp"
 #include "api/IInstanceApi.hpp"
 #include "api/IInstanceControlApi.hpp"
 #include "api/IModelApi.hpp"
@@ -41,6 +43,7 @@ struct MonitorSnapshot; // ui/MonitorDataModel.hpp (MonitorApiImpl seam)
 namespace core {
 
 class DownloadService;
+class EventBus;
 class PluginHost;
 class PluginPageModel;
 
@@ -332,6 +335,83 @@ private:
     NotificationStreamController* m_notificationStream; // not owned (may be null)
 };
 
+// S8a (v1.5): real event-bus API — the shared pet::IEventApi behind
+// queryApi(kEventsApiId). Constructed ONCE in the PanelApplication
+// service tree over the shared core::EventBus (same sharing pattern as
+// MonitorApiImpl) and injected into every plugin context (via
+// PluginHost) AND into the host's own emission points (InstanceSession
+// publishers). Plugins never see THIS object directly — queryApi hands
+// each context a per-plugin EventApiProxy (below) that enforces the
+// publisher-prefix rule; the host emission points hold the raw Impl
+// precisely because the host IS allowed to publish pet.*.
+class EventApiImpl : public QObject, public pet::IEventApi
+{
+    Q_OBJECT
+public:
+    // bus must outlive this object (service-tree registration order in
+    // PanelApplication / PluginHost fallback guarantees it).
+    explicit EventApiImpl(EventBus* bus, QObject* parent = nullptr);
+
+    // pet::IEventApi — the HOST channel. subscribe books publisherId ""
+    // (host bookkeeping; the unsubscribe sweep never matches "" — plugins
+    // always book their own id). publish forwards publisherId VERBATIM
+    // (the host emitter owns the field — no overwrite).
+    pet::PluginError subscribe(const QString& eventId,
+                               pet::IEventListener*,
+                               pet::EventPriority) override;
+    void unsubscribe(const QString& eventId,
+                     pet::IEventListener*) override;
+    pet::PluginError publish(pet::Event& event) override;
+
+    // ── Host/plugin-internal seams (deliberately NOT on the pet::
+    // interface — plugins must not be able to book a foreign publisherId
+    // or sweep another plugin's subscriptions) ────────────────────────
+    // Proxy subscribe: books `publisherId` so the unload sweep can find
+    // these entries. Same validation/merge rules as subscribe().
+    pet::PluginError subscribeAs(const QString& publisherId,
+                                 const QString& eventId,
+                                 pet::IEventListener*,
+                                 pet::EventPriority);
+    // Plugin-unload sweep (PluginHost::shutdownAll): drops every
+    // subscription booked under publisherId; returns the removal count
+    // (the host WARNs when a plugin needed sweeping).
+    int unsubscribeByPublisher(const QString& publisherId);
+
+    // The wrapped bus (EventApiProxy + host emission points never need
+    // this; exposed for tests).
+    EventBus* bus() const { return m_bus; }
+
+private:
+    EventBus* m_bus = nullptr; // not owned (service tree / host fallback)
+};
+
+// S8a (v1.5): the per-plugin publishing proxy served through
+// queryApi("pet.events"). Enforces the anti-forgery rules the shared
+// Impl cannot (it serves the host too):
+//   - publish force-stamps publisherId with the context's plugin id;
+//   - publish rejects any channel OUTSIDE "plugin.<ownId>.*" with
+//     InvalidArgument and ZERO dispatch (a plugin cannot impersonate
+//     pet.* host channels);
+//   - subscribe/unsubscribe forward to the shared bus with the plugin
+//     id booked as publisherId (the unload-sweep accounting).
+// Plain class (no QObject) — a value member of PluginContextImpl.
+class EventApiProxy final : public pet::IEventApi
+{
+public:
+    EventApiProxy(const QString& pluginId, EventApiImpl* shared);
+
+    pet::PluginError subscribe(const QString& eventId,
+                               pet::IEventListener*,
+                               pet::EventPriority) override;
+    void unsubscribe(const QString& eventId,
+                     pet::IEventListener*) override;
+    pet::PluginError publish(pet::Event& event) override;
+
+private:
+    QString m_pluginId;
+    EventApiImpl* m_shared = nullptr; // not owned; null-safe (no wiring)
+};
+
 class PluginContextImpl : public QObject, public pet::IPluginContext
 {
     Q_OBJECT
@@ -394,6 +474,13 @@ public:
     // Same seam + semantics as the model family (a read): null → queryApi
     // answers nullptr ("feature absent"); injected → the shared impl.
     void setMonitorApi(pet::IMonitorApi* monitorApi) { m_monitorApi = monitorApi; }
+    // ── v1.5 (S8a) shared-implementation injection ─────────────────────
+    // The SHARED EventApiImpl served through queryApi("pet.events") —
+    // never raw: the context builds its per-plugin EventApiProxy from
+    // (m_pluginId, shared) so every plugin publish is prefix-checked and
+    // publisher-stamped. Null (the default) → queryApi answers nullptr
+    // ("feature absent"); injected → the proxy.
+    void setEventApi(EventApiImpl* eventApi);
 
 private:
     QString m_pluginId;
@@ -426,6 +513,11 @@ private:
     // v1.4 (S7): shared monitor read implementation, not owned; null →
     // nullptr ("feature absent" — a read family has no capability story).
     pet::IMonitorApi* m_monitorApi = nullptr;
+    // v1.5 (S8a): shared event-bus implementation (service tree / host
+    // fallback), not owned. Plugins are served through m_eventProxy
+    // (publisher-prefix enforcement); null → nullptr ("feature absent").
+    EventApiImpl* m_sharedEventApi = nullptr;
+    std::unique_ptr<EventApiProxy> m_eventProxy;
 };
 
 } // namespace core

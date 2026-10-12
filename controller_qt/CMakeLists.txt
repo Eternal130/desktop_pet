@@ -105,6 +105,10 @@ target_sources(pet_panel_api INTERFACE
     src/api/ISettingsApi.hpp
     # v1.4 (S7): monitor read family (history + throttled subscribe).
     src/api/IMonitorApi.hpp
+    # v1.5 (S8a): event-bus family (host channel-ID vocabulary + the
+    # IEventApi subscribe/publish surface).
+    src/api/EventIds.hpp
+    src/api/IEventApi.hpp
 )
 # ABI discipline (§B.3, src/api/README.md): pure-virtual declarations, Qt
 # value types + POD only. Qt value types need Qt6::Core's include path —
@@ -359,6 +363,25 @@ qt_add_library(pet_panel_core STATIC
     src/core/DownloadServiceInstall.cpp
     src/core/ZipArchive.cpp
     src/core/ZipArchive.hpp
+    # S8a (v1.5): Forge-style event bus core + the typed payload builder
+    # catalog. EventBus holds the eventId→priority-sorted listener table
+    # (snapshot fanout, per-listener exception isolation, per-thread
+    # re-entrancy cap, publisherId bookkeeping for the plugin-unload
+    # sweep); EventCatalog centralizes every bus payload's keys (emission
+    # sites are forbidden from hand-writing key names — same discipline
+    # as the Protocol command factories). The .hpp files are listed so
+    # AUTOMOC processes EventBus's Q_OBJECT metadata.
+    src/core/EventBus.cpp
+    src/core/EventBus.hpp
+    src/core/EventCatalog.cpp
+    src/core/EventCatalog.hpp
+    # S8d: declarative rule engine CORE — strict schema parse/validate/
+    # compile to CompiledRule (zero JSON key lookups at eval time) + the
+    # cooldown / one-shot / priority evaluation kernel. Pure logic, no
+    # QObject (no AUTOMOC entry needed): zero bus / DB / QML wiring in this
+    # phase — S8e wires it to EventBus, S8f adds the plugin owner-prefix
+    # sweep. RuleSchema.hpp is the data-model half (structs only).
+    src/core/RuleEngine.cpp
 )
 
 # Expose src/ so consumers (exe shell + 41 tests + future plugins) can write

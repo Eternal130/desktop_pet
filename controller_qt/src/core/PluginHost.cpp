@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include "core/DownloadService.hpp"
+#include "core/EventBus.hpp"
 #include "core/PluginContextImpl.hpp"
 #include "core/PluginPageModel.hpp"
 #include "logging/Logging.hpp"
@@ -71,6 +72,11 @@ void PluginHost::setMonitorApi(pet::IMonitorApi* monitorApi)
     m_monitorApi = monitorApi;
 }
 
+void PluginHost::setEventApi(EventApiImpl* eventApi)
+{
+    m_eventApi = eventApi;
+}
+
 void PluginHost::setWriteEnabledProvider(std::function<bool()> provider)
 {
     m_writeEnabledProvider = std::move(provider);
@@ -110,6 +116,18 @@ void PluginHost::setVoicePackRefresh(std::function<void()> refresh)
 
 void PluginHost::initializeAll()
 {
+    // S8a (v1.5): resolve the event-bus API once, BEFORE any context is
+    // created — the per-host fallback pair (bus first, then impl;
+    // registration order keeps the bus alive past the impl) covers a
+    // host without the PanelApplication service tree, the same
+    // degraded-wiring pattern as the roster/control fallbacks above.
+    if (m_eventApi == nullptr) {
+        m_eventBusFallback = new EventBus(this);
+        m_eventApiFallback = new EventApiImpl(m_eventBusFallback, this);
+    }
+    EventApiImpl* const eventApi =
+        m_eventApi != nullptr ? m_eventApi : m_eventApiFallback;
+
     const QList<PluginEntry> entries = m_registry.orderedEntries();
     LOG_INFO("PluginHost: initializing {} plugin(s) in manifest order",
              entries.size());
@@ -190,6 +208,10 @@ void PluginHost::initializeAll()
             ctx->setModelApi(modelApi);
             ctx->setSettingsApi(settingsApi);
             ctx->setMonitorApi(monitorApi); // v1.4 (S7)
+            // S8a (v1.5): every context gets its per-plugin proxy over
+            // the shared bus (prefix enforcement + publisher stamping
+            // live in the proxy — see EventApiProxy).
+            ctx->setEventApi(eventApi);
             if (m_voicePackApi != nullptr)
                 ctx->setVoicePackApi(m_voicePackApi);
             m_contexts.append(ctx);
@@ -255,6 +277,25 @@ void PluginHost::shutdownAll()
             LOG_WARN("PluginHost: plugin '{}' shutdown threw an unknown "
                      "exception (isolated)",
                      it->toStdString());
+        }
+        // S8a (v1.5): event-bus unload sweep — a plugin that failed to
+        // unsubscribe its bus listeners in shutdown() would leave
+        // dangling pointers the instant the instance is deleted below.
+        // Drop everything booked under its id BEFORE the delete; a
+        // non-zero count is WARNed (the plugin should have cleaned up
+        // itself — the sweep is the safety net, not the contract).
+        {
+            EventApiImpl* const eventApi =
+                m_eventApi != nullptr ? m_eventApi : m_eventApiFallback;
+            if (eventApi != nullptr) {
+                const int swept = eventApi->unsubscribeByPublisher(*it);
+                if (swept > 0) {
+                    LOG_WARN("PluginHost: plugin '{}' left {} event-bus "
+                             "subscription(s) at unload — swept (no dangling "
+                             "listeners)",
+                             it->toStdString(), swept);
+                }
+            }
         }
         delete entry->instance; // host-owned (stage 1: same binary, safe)
         entry->instance = nullptr;

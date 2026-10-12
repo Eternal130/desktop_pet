@@ -15,6 +15,8 @@ class ProcessManager;
 
 namespace core {
 class DownloadService;
+class EventBus;
+class EventApiImpl;
 class InstanceApiImpl;
 class InstanceControlApiImpl;
 class ModelApiImpl;
@@ -113,6 +115,18 @@ public:
     // boundary). Same lifetime discipline as tuningApi().
     core::MonitorApiImpl* monitorApi();
 
+    // S8a (v1.5): THE shared event bus + its pet::IEventApi face. The
+    // bus carries the panel's bypass event publishes (InstanceSession's
+    // WS-event handlers, the idle scheduler tick, pack mount/unmount —
+    // all pure ADD-ONS with zero behavior change) and every plugin
+    // subscription (queryApi("pet.events") → per-context proxy).
+    // Registered BEFORE the InstanceManager (unlike the other shared
+    // APIs, which follow it): sessions hold the publisher pointer, so
+    // the bus must OUTLIVE every session — registration order has it
+    // destroyed after the manager (and thus after all its sessions).
+    core::EventBus* eventBus();
+    core::EventApiImpl* eventApi();
+
     // Plugin framework (P4, §B.6): the registry (entry store + state
     // machine) is created FIRST in the ctor; the host (initialize/shutdown
     // driver) LAST, so it can observe every earlier service. main()
@@ -182,4 +196,10 @@ private:
     core::PluginRegistry m_pluginRegistry;
     core::PluginHost* m_pluginHost = nullptr;
     core::DownloadService* m_downloadService = nullptr;
+
+    // S8a (v1.5): shared event bus + API face. Registered in the ctor
+    // BEFORE the InstanceManager (see eventBus()) → destroyed AFTER it,
+    // so no session ever sees a dead publisher pointer during teardown.
+    core::EventBus* m_eventBus = nullptr;
+    core::EventApiImpl* m_eventApi = nullptr;
 };

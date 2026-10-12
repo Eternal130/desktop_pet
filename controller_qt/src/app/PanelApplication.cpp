@@ -7,6 +7,7 @@
 
 #include "core/ConfigDir.hpp"
 #include "core/DatabaseManager.hpp"
+#include "core/EventBus.hpp"
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
 #include "core/PanelStateManager.hpp"
@@ -21,6 +22,8 @@
 #include "network/PendingRequests.hpp"
 #include "network/Protocol.hpp"
 #include "network/WsServer.hpp"
+
+#include <QAbstractItemModel>
 
 // Moved from main() (P3/M2). Construction and connect order below are the
 // original main() order, statement for statement; only the storage form
@@ -84,6 +87,17 @@ PanelApplication::PanelApplication(QObject* parent)
     m_wsServer = new WsServer(this);
     m_pendingRequests = new PendingRequests(this);
 
+    // ── Shared event bus + events API (S8a, v1.5) ──────────────────────
+    // Constructed BEFORE the InstanceManager (unlike the v1.2-v1.4
+    // shared APIs further down, which follow it): every session holds
+    // the publisher pointer, so teardown order requires the bus to die
+    // AFTER the manager (and thus after every session). The bus depends
+    // on nothing, so the early registration is safe. The API face wraps
+    // the bus; PluginHost receives it below (plugin contexts get the
+    // per-plugin proxy, never this raw impl).
+    m_eventBus = new core::EventBus(this);
+    m_eventApi = new core::EventApiImpl(m_eventBus, this);
+
     // ── Instance roster (Phase 5, todo 7) ────────────────────────────────
     // InstanceManager owns every InstanceSession, loads existing instances
     // from panel.json instanceIds order on construction (m4 fix), and persists
@@ -118,6 +132,31 @@ PanelApplication::PanelApplication(QObject* parent)
         [this](const PanelConfig& cfg) { m_panelStateManager->save(cfg); },
         this);
     m_instanceManager->setDatabase(m_databaseManager);
+
+    // S8a (v1.5): hand every session the shared event publisher (bypass
+    // emissions). Sessions restored from disk already exist; rowsInserted
+    // covers every later create. The publisher is a NOTIFICATION-ONLY,
+    // pet::IEventApi-typed seam (interface pointer — NOT the concrete
+    // impl — so tests inject fakes); plain C++ setter, deliberately no
+    // Q_INVOKABLE / Q_PROPERTY WRITE (api-boundary gate pattern table
+    // stays untouched, setDialogueSink discipline). Null-guarded inside
+    // every emission site — sessions without a publisher behave exactly
+    // as pre-S8a.
+    QObject::connect(m_instanceManager, &QAbstractItemModel::rowsInserted,
+                     this,
+                     [this](const QModelIndex&, int first, int last) {
+                         for (int row = first; row <= last; ++row) {
+                             InstanceSession* s =
+                                 m_instanceManager->instanceAt(row);
+                             if (s != nullptr)
+                                 s->setEventPublisher(m_eventApi);
+                         }
+                     });
+    for (int row = 0; row < m_instanceManager->rowCount(); ++row) {
+        InstanceSession* s = m_instanceManager->instanceAt(row);
+        if (s != nullptr)
+            s->setEventPublisher(m_eventApi);
+    }
 
     // WsServer::messageReceived(int instanceId, env) → InstanceManager::route.
     // Phase 5 todo 11: per-instanceId demux — the WsServer carries the parsed
@@ -197,6 +236,7 @@ PanelApplication::PanelApplication(QObject* parent)
     m_pluginHost->setSettingsApi(m_settingsApi);
     m_pluginHost->setVoicePackApi(m_voicePackApi);
     m_pluginHost->setMonitorApi(m_monitorApi); // S7 (v1.4)
+    m_pluginHost->setEventApi(m_eventApi);     // S8a (v1.5)
     // S2: the host-global plugin_write_enabled kill-switch (panel_config
     // kv, absent/"1" = enabled — the documented default). LIVE read on
     // every queryApi call, so flipping the kv row revokes plugin write
@@ -270,6 +310,16 @@ core::VoicePackApiImpl* PanelApplication::voicePackApi()
 core::MonitorApiImpl* PanelApplication::monitorApi()
 {
     return m_monitorApi;
+}
+
+core::EventBus* PanelApplication::eventBus()
+{
+    return m_eventBus;
+}
+
+core::EventApiImpl* PanelApplication::eventApi()
+{
+    return m_eventApi;
 }
 
 core::PluginRegistry& PanelApplication::pluginRegistry()

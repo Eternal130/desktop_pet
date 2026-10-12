@@ -6,8 +6,10 @@
 
 #include <spdlog/spdlog.h>
 
+#include "api/EventIds.hpp"
 #include "core/DownloadService.hpp"
 #include "core/ConfigDir.hpp"
+#include "core/EventBus.hpp"
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
 #include "core/ModelInfoParser.hpp"
@@ -972,6 +974,99 @@ pet::MonitorSample MonitorApiImpl::projectSnapshot(
     return out;
 }
 
+// ── EventApiImpl + EventApiProxy (S8a, v1.5) ────────────────────────────────
+
+EventApiImpl::EventApiImpl(EventBus* bus, QObject* parent)
+    : QObject(parent), m_bus(bus)
+{
+}
+
+pet::PluginError EventApiImpl::subscribe(const QString& eventId,
+                                         pet::IEventListener* listener,
+                                         pet::EventPriority priority)
+{
+    if (m_bus == nullptr)
+        return pet::PluginError::Generic; // degraded wiring, never a crash
+    return m_bus->subscribe(eventId, listener, priority, QString());
+}
+
+void EventApiImpl::unsubscribe(const QString& eventId,
+                               pet::IEventListener* listener)
+{
+    if (m_bus == nullptr)
+        return;
+    m_bus->unsubscribe(eventId, listener);
+}
+
+pet::PluginError EventApiImpl::publish(pet::Event& event)
+{
+    if (m_bus == nullptr)
+        return pet::PluginError::Generic; // degraded wiring, never a crash
+    // Direct/host channel: publisherId forwarded VERBATIM (the host
+    // emitter owns the field — only the proxy force-stamps).
+    return m_bus->publish(event);
+}
+
+pet::PluginError EventApiImpl::subscribeAs(const QString& publisherId,
+                                           const QString& eventId,
+                                           pet::IEventListener* listener,
+                                           pet::EventPriority priority)
+{
+    if (m_bus == nullptr)
+        return pet::PluginError::Generic;
+    return m_bus->subscribe(eventId, listener, priority, publisherId);
+}
+
+int EventApiImpl::unsubscribeByPublisher(const QString& publisherId)
+{
+    return m_bus != nullptr ? m_bus->unsubscribeByPublisher(publisherId) : 0;
+}
+
+EventApiProxy::EventApiProxy(const QString& pluginId, EventApiImpl* shared)
+    : m_pluginId(pluginId), m_shared(shared)
+{
+}
+
+pet::PluginError EventApiProxy::subscribe(const QString& eventId,
+                                          pet::IEventListener* listener,
+                                          pet::EventPriority priority)
+{
+    if (m_shared == nullptr)
+        return pet::PluginError::Generic; // no wiring — never a crash
+    // Booked under the plugin id: PluginHost's unload sweep finds these
+    // entries even when the plugin forgot to unsubscribe.
+    return m_shared->subscribeAs(m_pluginId, eventId, listener, priority);
+}
+
+void EventApiProxy::unsubscribe(const QString& eventId,
+                                pet::IEventListener* listener)
+{
+    if (m_shared == nullptr)
+        return;
+    m_shared->unsubscribe(eventId, listener);
+}
+
+pet::PluginError EventApiProxy::publish(pet::Event& event)
+{
+    if (m_shared == nullptr)
+        return pet::PluginError::Generic; // no wiring — never a crash
+    // Anti-forgery (api/EventIds.hpp): a plugin may ONLY publish its own
+    // plugin.<ownId>.* namespace — host pet.* channels are not
+    // impersonable. Violations die here with ZERO dispatch.
+    event.publisherId = m_pluginId; // forced stamp, before validation
+    const QString ownPrefix =
+        QString(pet::kEventPluginNamespace) + m_pluginId + QLatin1Char('.');
+    if (!event.eventId.startsWith(ownPrefix)) {
+        LOG_WARN("[plugin-api] eventsApi().publish(\"{}\") from '{}' — "
+                 "outside the plugin's own \"{}*\" namespace, "
+                 "ERR_INVALID_ARGUMENT (zero dispatch)",
+                 event.eventId.toStdString(), m_pluginId.toStdString(),
+                 ownPrefix.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    return m_shared->publish(event);
+}
+
 // ── PluginContextImpl ───────────────────────────────────────────────────────
 
 PluginContextImpl::PluginContextImpl(const QString& pluginId,
@@ -1031,6 +1126,18 @@ void PluginContextImpl::log(pet::PluginLogLevel level, const QString& message)
     case pet::PluginLogLevel::Warning: LOG_WARN("[plugin/{}] {}", id, message.toStdString()); break;
     case pet::PluginLogLevel::Error:   LOG_ERROR("[plugin/{}] {}", id, message.toStdString()); break;
     }
+}
+
+void PluginContextImpl::setEventApi(EventApiImpl* eventApi)
+{
+    // Post-construction seam (the frozen-ctor-signature discipline of
+    // the v1.3/v1.4 setters). The proxy is (re)built only when a shared
+    // impl exists; a null injection tears the proxy down — queryApi then
+    // answers nullptr ("feature absent").
+    m_sharedEventApi = eventApi;
+    m_eventProxy = eventApi != nullptr
+        ? std::make_unique<EventApiProxy>(m_pluginId, eventApi)
+        : nullptr;
 }
 
 pet::IExtApi* PluginContextImpl::queryApi(const char* apiId, int minVersion)
@@ -1095,6 +1202,20 @@ pet::IExtApi* PluginContextImpl::queryApi(const char* apiId, int minVersion)
         if (minVersion > pet::kMonitorApiVersion)
             return nullptr;
         return m_monitorApi; // may be nullptr — feature-absent by contract
+    }
+
+    // ── Family: pet.events (S8a, v1.5) ──────────────────────────────────
+    // Bus family: NOT capability-gated and NOT write-switch-gated (the
+    // switch revokes WRITES to host state; the bus is a notification
+    // channel whose plugin-side forgery protection is the proxy's
+    // publisher-prefix rule). Injected → the per-context EventApiProxy
+    // (every plugin publish prefix-checked + publisher-stamped; the host
+    // bridges hold the raw shared Impl precisely because the host may
+    // publish pet.*); not wired → nullptr ("feature absent").
+    if (QLatin1StringView(apiId) == QLatin1StringView(pet::kEventsApiId)) {
+        if (minVersion > pet::kEventsApiVersion)
+            return nullptr;
+        return m_eventProxy.get(); // may be nullptr — feature-absent by contract
     }
 
     // ── Family: pet.settings (S6, v1.3) ─────────────────────────────────

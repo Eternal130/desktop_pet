@@ -252,25 +252,23 @@ PanelApplication::PanelApplication(QObject* parent)
     m_ruleApi = new core::RuleApiImpl(m_ruleEngineService, this);
     // Owner action gate (play_motion/set_expression from plugin-owned
     // rules), checked LIVE at emission time inside the service. The
-    // capability oracle matches the rule's owner by REGISTRY prefix —
-    // plugin ids are dotted ("org.x.y"), so the rule id cannot be split
-    // unambiguously inside the service; the registry answers
-    // authoritatively and unknown owners fail closed. The write-enabled
-    // provider mirrors the setWriteEnabledProvider kv read below
-    // (absent/"1" = enabled — the documented default; LIVE read so
-    // flipping the row stops already-registered plugin rules without a
-    // restart).
+    // service passes the rule's ownerUuid — the owner plugin's OWN id,
+    // stamped at registration — so the oracle does an EXACT registry
+    // entry() lookup. NO prefix matching: nested plugin ids ("org.a" vs
+    // "org.a.b") must never cross-match grants (audit P1 — the old
+    // orderedEntries()+startsWith scan answered org.a's capability for
+    // an org.a.b-owned rule = false authorization). Unknown owner id →
+    // entry() == nullptr → fail closed. The write-enabled provider
+    // mirrors the setWriteEnabledProvider kv read below (absent/"1" =
+    // enabled — the documented default; LIVE read so flipping the row
+    // stops already-registered plugin rules without a restart).
     m_ruleEngineService->setOwnerCapabilityQuery(
-        [this](const QString& pluginOwnedRuleId,
+        [this](const QString& ownerPluginId,
                QLatin1StringView capability) {
-            const QList<core::PluginEntry> entries =
-                m_pluginRegistry.orderedEntries();
-            for (const core::PluginEntry& e : entries) {
-                if (pluginOwnedRuleId.startsWith(
-                        QStringLiteral("plugin.%1.").arg(e.manifest.id)))
-                    return e.manifest.capabilities.contains(capability);
-            }
-            return false; // unknown owner → fail closed
+            const core::PluginEntry* entry =
+                m_pluginRegistry.entry(ownerPluginId);
+            return entry != nullptr
+                && entry->manifest.capabilities.contains(capability);
         });
     m_ruleEngineService->setOwnerWriteEnabled([this]() {
         return m_databaseManager->getValue(

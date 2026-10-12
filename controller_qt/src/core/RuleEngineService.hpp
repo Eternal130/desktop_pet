@@ -135,16 +135,19 @@ public:
     void setPackScanDirs(const QString& rendererDir, const QString& userPacksDir);
 
     // ── S8f owner action gate seams ──────────────────────────────────────
-    // Live capability oracle for plugin-owned rules: given a rule id under
-    // the "plugin." namespace, answer whether its OWNING plugin holds the
-    // capability. PanelApplication wires this over the PluginRegistry
-    // (prefix match — plugin ids are dotted, so the service cannot split
-    // them unambiguously; unknown owners answer false = fail closed).
-    // std::function is host-internal (core↔app seam), never crosses the
-    // plugin boundary. Absent query = every gated plugin action fails
-    // closed (WARN) — a plugin rule can never prove its grant alone.
+    // Live capability oracle for plugin-owned rules: given the OWNING
+    // plugin's id (rule.ownerUuid — unambiguous at registration time),
+    // answer whether that plugin holds the capability. PanelApplication
+    // wires this over the PluginRegistry EXACT-id entry() lookup — no
+    // prefix matching, so nested plugin ids ("org.a" vs "org.a.b") can
+    // never cross-match grants (audit P1: the old rule-id-prefix scan
+    // could answer org.a's capability for an org.a.b-owned rule); unknown
+    // owner ids answer false = fail closed. std::function is
+    // host-internal (core↔app seam), never crosses the plugin boundary.
+    // Absent query = every gated plugin action fails closed (WARN) — a
+    // plugin rule can never prove its grant alone.
     using OwnerCapabilityQuery =
-        std::function<bool(const QString& pluginOwnedRuleId,
+        std::function<bool(const QString& ownerPluginId,
                            QLatin1StringView capability)>;
     void setOwnerCapabilityQuery(OwnerCapabilityQuery query)
     {

@@ -20,6 +20,10 @@
 //      with the write switch off; notify_bubble + play_pack_audio are
 //      NOT owner-gated (the latter reaches the mount check instead);
 //      host rules never gated even with zero gate wiring.
+//   5b. testOwnerGateNestedPluginIds — audit P1 regression: nested ids
+//      "org.a" (granted) vs "org.a.b" (NOT granted) in ONE registry;
+//      org.a.b's rule is DENIED (pre-fix prefix oracle borrowed org.a's
+//      grant = false authorization), org.a's own rule still passes.
 //   6. testShutdownSweep — PluginHost::shutdownAll sweeps a sloppy
 //      plugin's leftover rules (WARN) while a plugin that unregistered
 //      in shutdown() produces no sweep.
@@ -612,6 +616,7 @@ private slots:
     void testUnregisterIsOwnerScoped();
     void testQueryApiRouting();
     void testOwnerGateMatrix();
+    void testOwnerGateNestedPluginIds();
     void testShutdownSweep();
     void testNorthStarPluginRule();
 
@@ -848,9 +853,9 @@ void RuleApiTest::testOwnerGateMatrix()
         service.setOwnerWriteEnabled(
             [&writeSwitch]() { return writeSwitch; });
         service.setOwnerCapabilityQuery(
-            [&granted](const QString& ruleId, QLatin1StringView capability) {
-                return ruleId.startsWith(
-                           QStringLiteral("plugin.org.test.plug."))
+            [&granted](const QString& ownerPluginId,
+                       QLatin1StringView capability) {
+                return ownerPluginId == QStringLiteral("org.test.plug")
                     && granted.contains(QString(capability));
             });
 
@@ -993,6 +998,88 @@ void RuleApiTest::testOwnerGateMatrix()
     }
 }
 
+// ── 5b. owner gate × nested plugin ids (audit P1 regression) ─────────────────
+
+void RuleApiTest::testOwnerGateNestedPluginIds()
+{
+    // Audit P1: the pre-fix oracle keyed on the RULE id with a
+    // "plugin.<id>." startsWith scan over orderedEntries(). With the
+    // nested pair below, orderedEntries() (same order=100, id asc)
+    // lists org.a FIRST, and the org.a.b-owned rule's stored id
+    // ("plugin.org.a.b.nested") STARTS WITH "plugin.org.a." → the scan
+    // answered org.a's grant → the motion FIRED (false authorization).
+    // The fixed seam passes the OWNER PLUGIN ID (rule.ownerUuid) and
+    // the oracle does an EXACT entry() lookup, so org.a.b has no grant
+    // of its own → DENIED.
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    DatabaseManager db;
+    QVERIFY(db.open(base.path() + QStringLiteral("/app.db")));
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+    FakeInstanceApi instanceApi;
+    instanceApi.setRows({makeInfo(QStringLiteral("u1"), true)});
+    FakeTuningApi tuning;
+    core::RuleEngineService service(&eventApi, &instanceApi, &tuning,
+                                    &db);
+
+    // ONE registry, nested ids, asymmetric grants: org.a holds
+    // instance_tuning; org.a.b holds NOTHING (empty capabilities list).
+    core::PluginRegistry registry;
+    registry.addStaticPlugin(
+        manifestJson("org.a", "\"instance_tuning\""), nullptr);
+    registry.addStaticPlugin(manifestJson("org.a.b", ""), nullptr);
+    service.setOwnerCapabilityQuery(
+        [&registry](const QString& ownerPluginId,
+                    QLatin1StringView capability) {
+            const core::PluginEntry* entry =
+                registry.entry(ownerPluginId);
+            return entry != nullptr
+                && entry->manifest.capabilities.contains(capability);
+        });
+    service.setOwnerWriteEnabled([]() { return true; });
+
+    // (a) org.a.b's rule fires play_motion → DENIED. Pre-fix this exact
+    //     wiring authorized the action (org.a's grant leaked through
+    //     the prefix match); the exact-owner oracle must not. Also red
+    //     pre-fix in the OPPOSITE direction: had the service still
+    //     passed rule.id, entry("plugin.org.a.b.nested") would miss →
+    //     (b) below would fail (allowed rule wrongly denied).
+    QVERIFY(service
+                .upsertRuleJson(
+                    ruleJsonFor(
+                        QStringLiteral("nested"),
+                        QStringLiteral("pet.instance.hit"),
+                        {actionPlayMotionFor(QStringLiteral("flick"))}),
+                    core::RuleScope::Plugin,
+                    QStringLiteral("org.a.b"))
+                .has_value());
+    pet::Event hit = makeEvent(
+        QString(pet::kEventInstanceHit), QStringLiteral("u1"),
+        core::makeHitPayload(QStringLiteral("head"), 0.0, 0.0, 0));
+    QCOMPARE(eventApi.publish(hit), pet::PluginError::Ok);
+    QCOMPARE(tuning.motions.size(), 0); // DENIED — org.a.b has no grant
+    QVERIFY(countMessages(*m_sink, "action denied") >= 1);
+    QVERIFY(countMessages(*m_sink, "rule fired") >= 1); // fire recorded
+
+    // (b) Reverse: org.a's OWN rule on the SAME event — granted owner,
+    //     exact-id lookup finds it → ALLOWED (proves the tightened key
+    //     did not over-restrict genuine grants).
+    QVERIFY(service
+                .upsertRuleJson(
+                    ruleJsonFor(
+                        QStringLiteral("outer"),
+                        QStringLiteral("pet.instance.hit"),
+                        {actionPlayMotionFor(QStringLiteral("nod"))}),
+                    core::RuleScope::Plugin,
+                    QStringLiteral("org.a"))
+                .has_value());
+    pet::Event hit2 = hit; // fresh copy — hit is cancellable
+    QCOMPARE(eventApi.publish(hit2), pet::PluginError::Ok);
+    QCOMPARE(tuning.motions.size(), 1);
+    QCOMPARE(tuning.motions.at(0).group, QStringLiteral("nod"));
+}
+
 // ── 6. PluginHost shutdown sweep ─────────────────────────────────────────────
 
 void RuleApiTest::testShutdownSweep()
@@ -1082,19 +1169,17 @@ void RuleApiTest::testNorthStarPluginRule()
     core::RuleApiImpl ruleApi(&service);
 
     // The production-shape gate wiring: capability oracle over the REAL
-    // registry (prefix match, unknown owner → fail closed) + the write
+    // registry (EXACT owner-id entry() lookup — the audit-P1-fixed
+    // PanelApplication shape; unknown owner → fail closed) + the write
     // switch permanently on (this test's focus is the grant path).
     core::PluginRegistry registry;
     service.setOwnerCapabilityQuery(
-        [&registry](const QString& ruleId, QLatin1StringView capability) {
-            const QList<core::PluginEntry> entries =
-                registry.orderedEntries();
-            for (const core::PluginEntry& e : entries) {
-                if (ruleId.startsWith(
-                        QStringLiteral("plugin.%1.").arg(e.manifest.id)))
-                    return e.manifest.capabilities.contains(capability);
-            }
-            return false;
+        [&registry](const QString& ownerPluginId,
+                    QLatin1StringView capability) {
+            const core::PluginEntry* entry =
+                registry.entry(ownerPluginId);
+            return entry != nullptr
+                && entry->manifest.capabilities.contains(capability);
         });
     service.setOwnerWriteEnabled([]() { return true; });
 

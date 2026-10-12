@@ -103,6 +103,7 @@ RuleEngine::KnownEventTable RuleEngineService::makeKnownEventTable()
     table.insert(QString(pet::kEventInstanceReady), false);
     table.insert(QString(pet::kEventInstanceMotionStarted), false);
     table.insert(QString(pet::kEventInstanceMotionFinished), false);
+    table.insert(QString(pet::kEventInstanceAudioFinished), false);
     table.insert(QString(pet::kEventDragStarted), false);
     table.insert(QString(pet::kEventDragEnded), false);
     table.insert(QString(pet::kEventModelLoaded), false);
@@ -535,8 +536,14 @@ bool RuleEngineService::pluginActionDenied(const CompiledRule& rule,
                  rule.id.toStdString());
         return true;
     }
+    // The oracle is keyed by the OWNER PLUGIN ID (rule.ownerUuid — the
+    // plugin id itself for Plugin-scope rules, stamped at registration).
+    // NEVER re-derive it by splitting the dotted rule id: "plugin.org.a.b.r"
+    // cannot distinguish an org.a owner from org.a.b (audit P1 — the old
+    // prefix split could borrow org.a's grant for an org.a.b-owned rule).
     if (!m_ownerCapabilityQuery
-        || !m_ownerCapabilityQuery(rule.id, pet::kCapabilityInstanceTuning)) {
+        || !m_ownerCapabilityQuery(rule.ownerUuid,
+                                   pet::kCapabilityInstanceTuning)) {
         LOG_WARN("RuleEngineService: rule \"{}\" action denied — the "
                  "owner plugin lacks the instance_tuning capability "
                  "(unknown owner or capability query unwired)",

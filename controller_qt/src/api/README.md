@@ -256,6 +256,10 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
    `InstanceSession::setEventPublisher(pet::IEventApi*)` 纯 C++ setter
    （非 Q_INVOKABLE/非 WRITE 属性——门禁模式表零维护，setDialogueSink 同款），
    PanelApplication 对存量+rowsInserted 新建会话统一注入。
+8. **勘误（2026-10-12 审计补记）**: `kEventModelLoaded`/`kEventModelLoadFailed`
+   两事件 ID 实施为 `pet.model.loaded`/`pet.model.load_failed`——设计目录原写
+   `pet.instance.model_*`，实施时取与 `pet.model` API 族对称的 `pet.model.*`
+   新域命名。ID 已随 v1.5 冻结（目录即契约），以实施为准、不再回改。
 
 ### v1.4（2026-09-21，kApiMajor=1 / kApiMinor=4）— S7 监控流 + 边界门禁
 

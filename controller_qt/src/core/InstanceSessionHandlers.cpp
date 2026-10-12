@@ -35,8 +35,15 @@ void InstanceSession::setEventPublisher(pet::IEventApi* publisher)
     // S8b binding: (re)bind the hit-decision adapters along with the
     // publisher. MBE subscribes FIRST, IH SECOND — both at Lowest, so the
     // tier's FIFO order gives MBE priority exactly as the pre-S8b if/else
-    // chain did. Re-injection first unsubscribes from the OLD publisher
-    // (the bus holds raw pointers — a stale entry would dangle).
+    // chain did. CONTRACT (audit-hardened): these two Lowest
+    // subscriptions MUST remain ADJACENT with MBE FIRST — the MBE→IH
+    // mutual exclusion depends on same-tier FIFO order (MBE claims the
+    // hit, IH is the fallback), and any other subscription inserted
+    // BETWEEN them silently breaks that dependency; read EventBus's
+    // same-tier ordering semantics BEFORE inserting any other
+    // subscription here. Re-injection first unsubscribes from the OLD
+    // publisher (the bus holds raw pointers — a stale entry would
+    // dangle).
     if (m_eventPublisher != nullptr) {
         m_eventPublisher->unsubscribe(pet::kEventInstanceHit.toString(),
                                       &m_mbeAdapter);

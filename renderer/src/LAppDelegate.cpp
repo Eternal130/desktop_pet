@@ -183,6 +183,14 @@ bool LAppDelegate::Initialize()
     if (!_audioManager->Init()) {
         LAppPal::PrintLogLn("[LAppDelegate] Audio engine init failed, continuing without audio");
     }
+    // Natural-completion notification → audio_finished event. PollFinished()
+    // (Run loop) invokes this on the main render thread, so emitting over WS
+    // here respects the thread discipline (never from the audio thread).
+    _audioManager->SetFinishedCallback([this](const std::string& audioPath) {
+        if (_eventEmitter) {
+            _eventEmitter->emit("audio_finished", {{"audio_path", audioPath}});
+        }
+    });
 
     InitializeNetwork();
 
@@ -327,6 +335,14 @@ void LAppDelegate::Run()
 
         // バッファの入れ替え
         _graphicsBackend->EndFrame(_windowManager->GetWindow());
+
+        // Audio natural-completion poll (main thread): detects sounds whose
+        // data ran out since last frame and fires audio_finished via the
+        // EventEmitter. stop_audio / preemption paths never get here because
+        // StopAll() removes those sounds silently.
+        if (_audioManager) {
+            _audioManager->PollFinished();
+        }
 
         PollNetworkMessages();
 

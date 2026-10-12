@@ -404,19 +404,42 @@ if(BUILD_TESTS)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_stats_payload.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/ProtocolTest.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/MessageHandlerTest.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/EventEmitterTest.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/AudioManagerTest.cpp
+      # LAppPal sink stub: AudioManager.cpp logs through LAppPal::PrintLogLn,
+      # but the real LAppPal.cpp pulls the Cubism Framework runtime.
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/LAppPalStub.cpp
       # Implementation files needed by the tests:
       ${CMAKE_CURRENT_SOURCE_DIR}/src/monitor/StatsPayload.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/network/Protocol.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/network/MessageHandler.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/network/EventEmitter.cpp
+      # AudioManager + miniaudio implementation (MINIAUDIO_IMPLEMENTATION TU;
+      # also compiles miniaudio_libvorbis.c, hence the vorbisfile link below).
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.cpp
     )
 
     target_include_directories(renderer_tests
       PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+        # For LAppPal.hpp (stub TU only — declarations, no Framework link)
+        ${CORE_PATH}/include
+        ${FRAMEWORK_PATH}/src
     )
 
-    target_link_libraries(renderer_tests PRIVATE GTest::gtest_main)
+    find_package(Threads REQUIRED)
+    target_link_libraries(renderer_tests
+      PRIVATE
+        GTest::gtest_main
+        vorbisfile   # miniaudio_libvorbis decoder backend
+        vorbisenc    # in-test OGG fixture generation
+        Threads::Threads
+        ${CMAKE_DL_LIBS}
+    )
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(renderer_tests PRIVATE m)
+    endif()
 
     include(GoogleTest)
     gtest_discover_tests(renderer_tests)

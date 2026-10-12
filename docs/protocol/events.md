@@ -227,14 +227,15 @@
 Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit()` 调用点遍布 `LAppDelegate.cpp` / `LAppLive2DManager.cpp` / `LAppModel.cpp` / `CommandHandlers.cpp`，均无音频相关 emit）：
 
 - **Phase 3a**（`play_motion_ext`）：**复用现有的 `motion_finished` 事件**，但 payload 与 `play_motion` 不同——使用 `{ "motion_path": "<动作文件路径>" }` 而非 `{ "group", "index" }`（由 `LAppModel.cpp:763` 的 `OnExtMotionFinishedStatic` 回调发出）。详见 [Commands §10.1](./commands.md#101-play_motion_ext--播放外部动作文件phase-3a-已实现)。
-- **Phase 3b**（音频播放）：采用**即发即忘（fire-and-forget）**模式，`AudioManager` 播放完成不上报事件。早期设计的 `audio_started`/`audio_ended` 事件**未实现**。
+- **Phase 3b**（音频播放）：Phase 3b 实现时曾采用即发即忘（fire-and-forget）模式，播放完成不上报。**事件总线阶段（S8）已补上 `audio_finished` 事件**（仅自然播放结束时上报，见 [§15](#15-audio_finished--音频自然播放结束)）；`stop_audio` 主动停止与被新播放抢占仍不上报。
 
 | 早期设计 action | 状态 | 说明 |
 |:---|:---:|:---|
 | `audio_started` | ❌ 未实现 | 早期设计草案，Phase 3b 实现时改为即发即忘，不上报 |
-| `audio_ended` | ❌ 未实现 | 同上 |
+| `audio_ended` | ❌ 未实现 | 早期设计草案；S8 实现时按控制面板事件目录定名为 `audio_finished`（已实现，见 §15），本名称废弃 |
+| `audio_finished` | ✅ 已实现 | S8 事件总线新增，见 [§15](#15-audio_finished--音频自然播放结束) |
 
-> **事件总览**：当前渲染器实际发出的事件共 13 个——`ready`、`model_loaded`、`model_load_failed`、`motion_started`、`motion_finished`（两种 payload 变体）、`hit`、`drag_start`、`drag_end`、`layout_changed`、`window_resized`、`layout_state`（`get_layout` 命令的响应事件）、`stats_state`（`get_stats` 命令的响应事件）、`error`。
+> **事件总览**：当前渲染器实际发出的事件共 14 个——`ready`、`model_loaded`、`model_load_failed`、`motion_started`、`motion_finished`（两种 payload 变体）、`hit`、`drag_start`、`drag_end`、`audio_finished`（自然播放结束）、`layout_changed`、`window_resized`、`layout_state`（`get_layout` 命令的响应事件）、`stats_state`（`get_stats` 命令的响应事件）、`error`。
 
 ---
 
@@ -384,3 +385,37 @@ Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit(
 > **与 `layout_changed` 的区别**：`layout_changed` 由用户交互触发（被动通知），`layout_state` 由控制面板主动查询触发（请求-响应）。两者 payload 结构相同，但语义不同。
 
 > **`id` 不用于 request-response 匹配**：`layout_state` 是事件而非 Response，其 `id` 由渲染器新建（`createEvent` 生成），**不复用** `get_layout` 的 `id`。控制面板按 action 类型路由，不按 `id` 匹配 pending request。
+
+---
+
+## 15. `audio_finished` — 音频自然播放结束
+
+音频**自然播放至数据耗尽**时渲染器发送。与早期草案的 `audio_ended` 不同，本事件按控制面板事件目录（`pet.instance.audio_finished`）定名，S8 事件总线阶段实现。
+
+**触发语义（三分支）**：
+
+| 分支 | 是否上报 | 说明 |
+|:---|:---:|:---|
+| 自然播放结束 | ✅ 上报 | 数据源耗尽（`ma_sound_at_end`），完成检测在**主渲染线程**逐帧轮询，事件延迟 ≤ 1 帧（约 16ms） |
+| `stop_audio` 主动停止 | ❌ 不上报 | `stop_audio` 命令清理全部活动声音，被停声音不上报 |
+| 被新播放抢占 | ❌ 不上报 | 抢占路径（如 `play_motion_ext` 音频轨）先 `StopAll` 再 `Play`，旧声音按"被停"处理；自然结束后尚未被轮询到即遭抢占的边界情形同样不上报（保守取舍） |
+
+**Payload**：
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `audio_path` | string | 播放时传入的音频文件路径（与 `play_audio` / `play_motion_ext` 命令载荷中的 `audio_path` 键一致，原样回传） |
+
+**示例**：
+
+```json
+{
+  "type": "event", "action": "audio_finished",
+  "id": "...", "payload": { "audio_path": "Resources/VoicePacks/pack-a/sound_01.ogg" },
+  "timestamp": ...
+}
+```
+
+**控制面板预期行为**：事件目录 `pet.instance.audio_finished`。可用于语音播报结束后的联动时序（如推进行为队列、关闭配套台词气泡、触发后续动作）。信封 `instance_id` 路由与既有事件一致（经 WS 连接本身区分实例，不在 payload 内）。
+
+> **线程纪律**：完成检测刻意不使用 miniaudio 的音频线程回调——`AudioManager::PollFinished()` 在渲染主循环中逐帧执行，`audio_finished` 的 WebSocket 发射始终在主渲染线程（与 `get_stats` 的采集线程约束同源，音频线程禁直接网络调用）。

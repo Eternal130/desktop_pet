@@ -216,7 +216,7 @@
 Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册实现：
 
 - **Phase 3a**（外置语音包挂载）：`play_motion_ext` 已实现，支持从外部绝对路径加载 `.motion3.json` 动作并可选附带音频。详见 [外置语音包挂载](../system/voice-pack-mounting.md)。
-- **Phase 3b**（音频播放）：`play_audio`、`stop_audio`、`set_volume` 已实现，接入 `AudioManager`（miniaudio + libvorbis，OGG 播放）。音频播放为**即发即忘**模式，无播放完成事件上报。
+- **Phase 3b**（音频播放）：`play_audio`、`stop_audio`、`set_volume` 已实现，接入 `AudioManager`（miniaudio + libvorbis，OGG 播放）。自然播放结束上报 [`audio_finished`](./events.md#15-audio_finished--音频自然播放结束) 事件（S8 事件总线新增）。
 
 > **未实现的早期设计**：早期文档中设计的 `set_audio_mapping`、`set_mute` 两条指令当前**未注册**。其中 `set_mute` 的功能已合并进 `set_volume`（通过 `muted` 字段实现）；`set_audio_mapping` 属于控制器侧映射管理概念（`AudioMappingManager`），渲染器侧不需要。
 
@@ -273,7 +273,7 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 | `7003` | 音频文件不存在 | `"audio file not found: <path>"` |
 | `7004` | `audio_path` 路径包含不安全字符（`..`、`~` 等） | `"audio_path contains unsafe traversal"` |
 
-> **即发即忘**：音频播放完成不上报事件（无 `audio_started`/`audio_ended` 事件，见 [Events §10](./events.md#10-phase-3-事件)）。
+> **完成通知**：音频**自然播放结束**时上报 [`audio_finished`](./events.md#15-audio_finished--音频自然播放结束) 事件（S8 新增，原即发即忘模式已废止）；`stop_audio` 停止与被新播放抢占不上报。
 
 ---
 

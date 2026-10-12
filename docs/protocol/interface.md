@@ -429,7 +429,7 @@
 
 #### C.1 `play_audio` — 播放音频（Phase 3b ✅）
 
-播放独立音频文件（OGG）。**即发即忘**——播放完成不上报事件。
+播放独立音频文件（OGG）。**自然播放结束**时上报 [`audio_finished`](./events.md#15-audio_finished--音频自然播放结束) 事件（S8 事件总线新增）；`stop_audio` 停止与被抢占不上报。
 
 - **回执**：✓ 需要 Response
 

@@ -87,7 +87,7 @@
 | 7003 | `play_audio` 时音频文件不存在 | `"audio file not found: <path>"` |
 | 7004 | `play_audio` 时路径包含不安全字符（`..`、`~` 等） | `"audio_path contains unsafe traversal"` |
 
-> **即发即忘模式**：Phase 3b 音频播放不上报完成事件，控制面板无法收到播放结束通知（无错误码也无事件）。`stop_audio` 无论引擎状态如何均返回 `success: true`。
+> **完成通知**：Phase 3b 曾为即发即忘模式（播放完成不上报）；S8 事件总线已新增 [`audio_finished`](./events.md#15-audio_finished--音频自然播放结束) 事件，仅自然播放结束上报，`stop_audio` 停止与被抢占不上报（无错误码）。`stop_audio` 无论引擎状态如何均返回 `success: true`。
 
 ---
 

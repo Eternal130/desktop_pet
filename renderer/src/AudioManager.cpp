@@ -27,6 +27,7 @@ ManagedSound::~ManagedSound()
 AudioManager::AudioManager()
     : _engine(nullptr)
     , _initialized(false)
+    , _headless(false)
     , _muted(false)
     , _volume(1.0f)
 {
@@ -37,7 +38,7 @@ AudioManager::~AudioManager()
     Uninit();
 }
 
-bool AudioManager::Init()
+bool AudioManager::Init(bool headless)
 {
     std::lock_guard<std::mutex> lock(_mutex);
 
@@ -48,6 +49,15 @@ bool AudioManager::Init()
     _engine = new ma_engine();
 
     ma_engine_config config = ma_engine_config_init();
+    if (headless) {
+        // No playback device: the mixer only advances via PumpFrames(). A
+        // device-less engine cannot inherit format defaults from a device, so
+        // channels/sampleRate must be set explicitly (miniaudio returns
+        // MA_INVALID_ARGS otherwise).
+        config.noDevice = MA_TRUE;
+        config.channels = 2;
+        config.sampleRate = 48000;
+    }
 
     ma_result result = ma_engine_init(&config, _engine);
     if (result != MA_SUCCESS) {
@@ -57,10 +67,12 @@ bool AudioManager::Init()
         return false;
     }
 
+    _headless = headless;
     ma_engine_set_volume(_engine, _volume);
     _initialized = true;
 
-    LAppPal::PrintLogLn("[AudioManager] Audio engine initialized (libvorbis backend)");
+    LAppPal::PrintLogLn("[AudioManager] Audio engine initialized (libvorbis backend%s)",
+                        headless ? ", headless" : "");
     return true;
 }
 
@@ -135,6 +147,7 @@ void AudioManager::Play(const std::string& filePath, float volume)
     CleanupFinishedSounds();
 
     auto* ms = new ManagedSound();
+    ms->filePath = filePath;
 
     if (!ReadFileToBuffer(filePath, ms->fileData)) {
         LAppPal::PrintLogLn("[AudioManager] Failed to read file: %s", filePath.c_str());
@@ -189,6 +202,57 @@ void AudioManager::StopAll()
     LAppPal::PrintLogLn("[AudioManager] All sounds stopped");
 }
 
+void AudioManager::PollFinished()
+{
+    std::vector<std::string> finished;
+
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+
+        if (!_initialized || !_engine) {
+            return;
+        }
+
+        CleanupFinishedSounds(&finished);
+    }
+
+    // Callback fires on the caller's thread (main render thread in production),
+    // outside the lock — it emits over WebSocket and must never run on the
+    // audio device thread or with the mixer lock held.
+    if (_finishedCallback) {
+        for (const auto& path : finished) {
+            LAppPal::PrintLogLn("[AudioManager] Finished naturally: %s", path.c_str());
+            _finishedCallback(path);
+        }
+    }
+}
+
+uint32_t AudioManager::PumpFrames(uint32_t frameCount)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    if (!_initialized || !_engine || !_headless || frameCount == 0) {
+        return 0;
+    }
+
+    // Scratch buffer sized for the engine's interleaved output format.
+    const ma_uint32 channels = ma_engine_get_channels(_engine);
+    std::vector<float> mix(static_cast<size_t>(frameCount) * channels);
+
+    ma_uint64 framesRead = 0;
+    ma_result result = ma_engine_read_pcm_frames(_engine, mix.data(), frameCount, &framesRead);
+    if (result != MA_SUCCESS) {
+        return 0;
+    }
+    return static_cast<uint32_t>(framesRead);
+}
+
+void AudioManager::SetFinishedCallback(FinishedCallback cb)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+    _finishedCallback = std::move(cb);
+}
+
 void AudioManager::SetVolume(float volume)
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -231,11 +295,14 @@ bool AudioManager::IsInitialized() const
     return _initialized;
 }
 
-void AudioManager::CleanupFinishedSounds()
+void AudioManager::CleanupFinishedSounds(std::vector<std::string>* finishedPaths)
 {
     auto it = _activeSounds.begin();
     while (it != _activeSounds.end()) {
         if (ma_sound_at_end((*it)->sound)) {
+            if (finishedPaths != nullptr) {
+                finishedPaths->push_back((*it)->filePath);
+            }
             CleanupSound(*it);
             it = _activeSounds.erase(it);
         } else {

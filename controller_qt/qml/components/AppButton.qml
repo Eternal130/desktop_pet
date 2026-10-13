@@ -2,7 +2,10 @@ import QtQuick
 import DesktopPet
 
 // AppButton — design-mock .btn variants: normal / primary / subtle / danger.
-// Emits clicked(); text-only control.
+// Emits clicked(); text + optional leading vector icon (AppIcon). The icon
+// replaces emoji glyph prefixes ("📂 打开…", "🗑 删除") that rendered as tofu
+// on hosts without a color-emoji font; plain-symbol prefixes that render
+// everywhere ("▶", "↻", "＋") stay text where they stand alone.
 Rectangle {
     id: root
 
@@ -10,10 +13,12 @@ Rectangle {
     property string style: "normal"   // normal | primary | subtle | danger
     property bool enabled: true
     property real fontSize: 13
+    property string iconName: ""      // optional AppIcon key; "" = text-only
+    property real iconSize: 14
 
     signal clicked()
 
-    implicitWidth: _label.implicitWidth + 32
+    implicitWidth: _content.implicitWidth + 32
     implicitHeight: 32
     radius: Theme.radiusMd
 
@@ -36,18 +41,36 @@ Rectangle {
     border.color: _danger ? Qt.alpha(Theme.errorColor, 0.4)
                           : Qt.alpha(Theme.textColor, 0.18)
 
-    Text {
-        id: _label
+    Row {
+        id: _content
         anchors.centerIn: parent
-        text: root.text
-        color: {
-            if (!root.enabled) return Theme.text3Color
-            if (root._primary) return "#ffffff"
-            if (root._danger) return Theme.errorColor
-            return Theme.textColor
+        spacing: 6
+
+        AppIcon {
+            name: root.iconName
+            size: root.iconSize
+            // icon follows the label color: on a primary fill that is
+            // Theme.accentTextColor, so the pair always stays readable
+            color: _label.color
+            visible: root.iconName.length > 0
+            anchors.verticalCenter: parent.verticalCenter
         }
-        font.pixelSize: root.fontSize
-        font.weight: root._primary ? Font.DemiBold : Font.Normal
+        Text {
+            id: _label
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.text
+            // Wave-2 fix (④): primary fill text used a hardcoded #ffffff —
+            // accentTextColor (sys.highlightedText) pairs with the system
+            // accent and auto-flips for light accents / dark scheme.
+            color: {
+                if (!root.enabled) return Theme.text3Color
+                if (root._primary) return Theme.accentTextColor
+                if (root._danger) return Theme.errorColor
+                return Theme.textColor
+            }
+            font.pixelSize: root.fontSize
+            font.weight: root._primary ? Font.DemiBold : Font.Normal
+        }
     }
 
     HoverHandler { id: _hover; enabled: root.enabled }

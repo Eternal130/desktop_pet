@@ -133,10 +133,14 @@ Rectangle {
                 visible: assetManager.logoUrl.length > 0
                          && status === Image.Ready
             }
-            Text {
+            // vector paw mark (was the 🐾 emoji — tofu on emoji-font-less
+            // hosts); accentTextColor keeps it on the accent disc
+            AppIcon {
                 anchors.centerIn: parent
                 visible: assetManager.logoUrl.length === 0
-                text: "🐾"; font.pixelSize: 34
+                name: "paw"
+                size: 40
+                color: Theme.accentTextColor
             }
         }
         Text {
@@ -174,7 +178,7 @@ Rectangle {
             width: root.width - 2 * Theme.spacePage
             x: Theme.spacePage
             spacing: Theme.spaceGroup
-            topPadding: 28
+            topPadding: Theme.spacePage
 
             // ── Header ─────────────────────────────────────────────────
             Item {
@@ -185,7 +189,7 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("主页")
                     color: Theme.textColor
-                    font.pixelSize: 24
+                    font.pixelSize: Theme.fontTitle
                     font.weight: Font.DemiBold
                 }
                 Row {
@@ -215,7 +219,8 @@ Rectangle {
                     }
                     AppButton {
                         style: "subtle"
-                        text: qsTr("📂 打开语音包目录")
+                        iconName: "folderopen"
+                        text: qsTr("打开语音包目录")
                         anchors.verticalCenter: parent.verticalCenter
                         // Same C++ entry as VoicePackPage's header button
                         // (mkpath + QDesktopServices + fromLocalFile).
@@ -350,8 +355,16 @@ Rectangle {
                                     }
                                     Text {
                                         anchors.centerIn: parent
-                                        text: model.avatar
-                                        font.pixelSize: 28
+                                        // avatar DATA (emoji string from the
+                                        // create dialog) renders through the
+                                        // AppIcon emoji→vector map; unknown
+                                        // strings fall back to plain text
+                                        AppIcon {
+                                            anchors.centerIn: parent
+                                            glyph: model.avatar
+                                            size: 30
+                                            color: Theme.textColor
+                                        }
                                     }
                                 }
 
@@ -413,11 +426,19 @@ Rectangle {
                                             // visible on the card itself —
                                             // the button becomes the retry
                                             // entry (still calls start).
+                                            // ▶/⏸ glyph prefixes → one
+                                            // vector icon family (⏸ was
+                                            // tofu without an emoji font).
+                                            iconName: model.status === "error"
+                                                      ? ""
+                                                      : (model.status === "running"
+                                                         ? "stop" : "play")
                                             text: model.status === "running"
-                                                  ? qsTr("⏸ 停止")
+                                                  ? qsTr("停止")
                                                   : (model.status === "error"
                                                      ? qsTr("启动失败，点击重试")
-                                                     : qsTr("▶ 启动"))
+                                                     : qsTr("启动"))
+                                            iconSize: 12
                                             // P2-12: debounce — no lifecycle
                                             // spam while a transition is in
                                             // flight.
@@ -439,7 +460,9 @@ Rectangle {
                                         }
                                         AppButton {
                                             style: "subtle"
-                                            text: qsTr("↻ 重启")
+                                            iconName: "restart"
+                                            text: qsTr("重启")
+                                            iconSize: 12
                                             implicitHeight: 26
                                             fontSize: 12
                                             // P2-12: running guard +

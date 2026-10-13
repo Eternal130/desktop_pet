@@ -32,7 +32,7 @@ Rectangle {
         anchors.fill: parent
         anchors.leftMargin: Theme.spacePage
         anchors.rightMargin: Theme.spacePage
-        anchors.topMargin: 28
+        anchors.topMargin: Theme.spacePage
         spacing: 24
 
         // ── Left anchor nav ────────────────────────────────────────────
@@ -43,15 +43,15 @@ Rectangle {
             Text {
                 text: qsTr("设置")
                 color: Theme.textColor
-                font.pixelSize: 22
+                font.pixelSize: Theme.fontTitle
                 font.weight: Font.DemiBold
                 bottomPadding: 16
             }
-            AnchorNavItem { text: qsTr("🔀 行为"); section: "behavior" }
-            AnchorNavItem { text: qsTr("🚀 启动"); section: "startup" }
-            AnchorNavItem { text: qsTr("🎨 外观"); section: "appearance" }
-            AnchorNavItem { text: qsTr("🧩 插件"); section: "plugins" }
-            AnchorNavItem { text: qsTr("ℹ 关于"); section: "about" }
+            AnchorNavItem { iconName: "shuffle"; text: qsTr("行为"); section: "behavior" }
+            AnchorNavItem { iconName: "rocket"; text: qsTr("启动"); section: "startup" }
+            AnchorNavItem { iconName: "palette"; text: qsTr("外观"); section: "appearance" }
+            AnchorNavItem { iconName: "puzzle"; text: qsTr("插件"); section: "plugins" }
+            AnchorNavItem { iconName: "info"; text: qsTr("关于"); section: "about" }
         }
 
         // ── Right settings column ──────────────────────────────────────
@@ -198,10 +198,14 @@ Rectangle {
                                     fillMode: Image.PreserveAspectFit
                                     visible: logoCard.selectedAssetId >= 0
                                 }
-                                Text {
+                                // vector paw (was 🐾) on the neutral
+                                // preview surface
+                                AppIcon {
                                     anchors.centerIn: parent
                                     visible: logoCard.selectedAssetId < 0
-                                    text: "🐾"; font.pixelSize: 44
+                                    name: "paw"
+                                    size: 48
+                                    color: Theme.text3Color
                                 }
                             }
                             Text {
@@ -272,9 +276,13 @@ Rectangle {
                                                 GradientStop { position: 0; color: "#8b8bf0" }
                                                 GradientStop { position: 1; color: Theme.accentColor }
                                             }
-                                            Text {
+                                            // vector paw (was 🐾) on the
+                                            // accent-gradient default tile
+                                            AppIcon {
                                                 anchors.centerIn: parent
-                                                text: "🐾"; font.pixelSize: 20
+                                                name: "paw"
+                                                size: 22
+                                                color: Theme.accentTextColor
                                             }
                                         }
                                         Text {
@@ -531,6 +539,7 @@ Rectangle {
 
     component AnchorNavItem : Rectangle {
         id: navBtn
+        property string iconName: ""
         property string text: ""
         property string section: ""
         width: 130
@@ -547,12 +556,24 @@ Rectangle {
             radius: 2
             color: Theme.accentColor
         }
-        Text {
+        Row {
             anchors.centerIn: parent
-            text: navBtn.text
-            color: navBtn.sel ? Theme.accentColor : Theme.textColor
-            font.pixelSize: 13
-            font.weight: navBtn.sel ? Font.DemiBold : Font.Normal
+            spacing: 8
+            // vector anchor icon (was emoji prefixes — tofu without an
+            // emoji font); tint follows the selection
+            AppIcon {
+                name: navBtn.iconName
+                size: 15
+                color: navBtn.sel ? Theme.accentColor : Theme.text2Color
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Text {
+                text: navBtn.text
+                color: navBtn.sel ? Theme.accentColor : Theme.textColor
+                font.pixelSize: 13
+                font.weight: navBtn.sel ? Font.DemiBold : Font.Normal
+                anchors.verticalCenter: parent.verticalCenter
+            }
         }
         HoverHandler { id: _hover }
         TapHandler { onTapped: root._scrollTo(navBtn.section) }

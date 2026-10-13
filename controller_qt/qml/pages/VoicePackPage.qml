@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 import DesktopPet
 
 // Voice-pack page (design doc §4). Library + mapping preview left, mount
@@ -13,6 +14,32 @@ Rectangle {
     readonly property color _faintColor: Theme.text3Color
 
     property int selectedPack: 0
+
+    // Wave-2 selection memory: survives page switches via the window-level
+    // key (Main.qml rememberedPackKey). The key is the pack PATH, not the
+    // index — a rescan can reorder packs, and a vanished pack falls back
+    // to index 0.
+    Component.onCompleted: root._restoreSelection()
+
+    function _restoreSelection() {
+        const w = Window.window
+        const key = w && w.rememberedPackKey !== undefined
+                    ? String(w.rememberedPackKey) : ""
+        if (key.length > 0) {
+            for (let i = 0; i < voicePacks.packCount; ++i)
+                if (voicePacks.packPath(i) === key) {
+                    selectedPack = i
+                    return
+                }
+        }
+        selectedPack = voicePacks.packCount > 0 ? 0 : selectedPack
+    }
+    onSelectedPackChanged: {
+        const w = Window.window
+        if (w && w.rememberedPackKey !== undefined
+                && selectedPack >= 0 && selectedPack < voicePacks.packCount)
+            w.rememberedPackKey = voicePacks.packPath(selectedPack)
+    }
 
     function _mountedRowForPack(packPath) {
         for (let i = 0; i < instanceManager.rowCount(); ++i) {
@@ -35,7 +62,7 @@ Rectangle {
             width: root.width - 2 * Theme.spacePage
             x: Theme.spacePage
             spacing: Theme.spaceGroup
-            topPadding: 28
+            topPadding: Theme.spacePage
 
             // ── Header ─────────────────────────────────────────────────
             Item {
@@ -46,7 +73,7 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("语音包")
                     color: Theme.textColor
-                    font.pixelSize: 24
+                    font.pixelSize: Theme.fontTitle
                     font.weight: Font.DemiBold
                 }
                 Row {
@@ -55,7 +82,8 @@ Rectangle {
                     spacing: 8
                     AppButton {
                         style: "subtle"
-                        text: qsTr("📂 打开语音包目录")
+                        iconName: "folderopen"
+                        text: qsTr("打开语音包目录")
                         anchors.verticalCenter: parent.verticalCenter
                         // C++ side: mkpath + QDesktopServices with
                         // QUrl::fromLocalFile. String-concatenating
@@ -65,7 +93,8 @@ Rectangle {
                     }
                     AppButton {
                         style: "primary"
-                        text: qsTr("↻ 重新扫描")
+                        iconName: "restart"
+                        text: qsTr("重新扫描")
                         anchors.verticalCenter: parent.verticalCenter
                         onClicked: voicePacks.rescan()
                     }
@@ -145,9 +174,14 @@ Rectangle {
                                                 GradientStop { position: 0; color: "#ffd9a8" }
                                                 GradientStop { position: 1; color: "#f0a860" }
                                             }
-                                            Text {
+                                            // vector mic (was the 🎙 emoji —
+                                            // tofu on emoji-font-less hosts);
+                                            // white reads on the warm tile
+                                            AppIcon {
                                                 anchors.centerIn: parent
-                                                text: "🎙"; font.pixelSize: 16
+                                                name: "mic"
+                                                size: 18
+                                                color: "#ffffff"
                                             }
                                         }
                                         Column {

@@ -40,7 +40,11 @@ Rectangle {
         color: root.enabled ? Theme.accentColor : Theme.text3Color
     }
     Rectangle {
-        // knob: white disc with 5px accent ring (design mock .knob)
+        // knob: white disc with 5px accent ring (design mock .knob).
+        // White in BOTH schemes by Fluent spec: the knob is a control
+        // surface sitting ON the accent track, not text on an accent fill —
+        // WinUI3 ships white knobs for light and dark, so this stays a
+        // fixed constant (④ scope: only accent-fill TEXT got the token).
         x: Math.max(0, Math.min(root.width - width,
                                 root._frac(root.value) * root.width - width / 2))
         anchors.verticalCenter: parent.verticalCenter

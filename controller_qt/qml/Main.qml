@@ -30,6 +30,21 @@ Window {
     property var currentInstance: null
     property string currentInstanceUuid: ""
 
+    // ── Wave-2 selection memory ─────────────────────────────────────────
+    // The builtin pageLoader DESTROYS a page when another one loads, so
+    // every page-local selection used to reset on return: the monitor fell
+    // back to row 0, the model library to the first entry, voice packs to
+    // index 0. These window-level keys survive page switches — pages read
+    // them at Component.onCompleted (falling back to their legal defaults
+    // when a stored key no longer resolves: deleted instance / rescanned-
+    // away model or pack) and write back on every selection change.
+    // selectInstance's sourceComponent=undefined force-rebuild guard is
+    // untouched: memory only decides what a freshly created page restores,
+    // never the Loader mechanics.
+    property string rememberedMonitorUuid: ""
+    property string rememberedModelKey: ""
+    property string rememberedPackKey: ""
+
     function switchPage(name) {
         navPane.activeKey = name
         _loadPage(name)
@@ -52,6 +67,9 @@ Window {
         root.currentPage = name
         if (name === "instance" && root.currentInstance === null)
             root.currentInstance = instanceManager.instanceAt(0)
+        console.warn("[PROBE] _loadPage", name, "currentInstance=",
+                     String(root.currentInstance),
+                     "rowCount=" + instanceManager.rowCount())
         // P4 (§B.5): plugin pages load through the plugin Repeater below
         // (per-page Loader in a delegate context); the builtin loader is
         // switched OFF for them. No engine->load — pages stay inside this
@@ -398,15 +416,27 @@ Window {
                     color: Qt.alpha(Theme.textColor, 0.25)
                 }
 
-                Text {
+                // 🔍 placeholder replaced by a vector search icon + text —
+                // the emoji glyph rendered as tofu on emoji-font-less hosts.
+                Row {
                     visible: searchInput.text.length === 0
                     x: 10
                     y: (parent.height - height) / 2
-                    // P2-5: honest copy — the box only filters nav labels
-                    // (pages + instance names), it does not search content.
-                    text: qsTr("🔍 筛选导航…")
-                    color: Theme.text3Color
-                    font.pixelSize: 12
+                    spacing: 6
+                    AppIcon {
+                        name: "search"
+                        size: 13
+                        color: Theme.text3Color
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Text {
+                        // P2-5: honest copy — the box only filters nav labels
+                        // (pages + instance names), it does not search content.
+                        text: qsTr("筛选导航…")
+                        color: Theme.text3Color
+                        font.pixelSize: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
                 }
                 TextInput {
                     id: searchInput
@@ -473,12 +503,12 @@ Window {
 
                 NavItem {
                     itemKey: "welcome"
-                    icon: "🏠"; label: qsTr("主页")
+                    iconName: "home"; label: qsTr("主页")
                     match: navPane.searchFilter
                 }
                 NavItem {
                     itemKey: "instance"
-                    icon: "🐱"; label: qsTr("实例详情")
+                    iconName: "cat"; label: qsTr("实例详情")
                     // S3: roster count read goes through rosterModel (the
                     // pet::IInstanceApi read path); the page itself and all
                     // create/delete flows still use instanceManager.
@@ -488,26 +518,26 @@ Window {
                 }
                 NavItem {
                     itemKey: "monitor"
-                    icon: "📊"; label: qsTr("资源监控")
+                    iconName: "chart"; label: qsTr("资源监控")
                     match: navPane.searchFilter
                 }
                 NavItem {
                     itemKey: "voicepack"
-                    icon: "🎙"; label: qsTr("语音包")
+                    iconName: "mic"; label: qsTr("语音包")
                     badgeText: voicePacks.packCount > 0
                                ? voicePacks.packCount : ""
                     match: navPane.searchFilter
                 }
                 NavItem {
                     itemKey: "models"
-                    icon: "🎭"; label: qsTr("模型库")
+                    iconName: "cube"; label: qsTr("模型库")
                     badgeText: modelLibrary.modelCount > 0
                                ? modelLibrary.modelCount : ""
                     match: navPane.searchFilter
                 }
                 NavItem {
                     itemKey: "assets"
-                    icon: "🗂"; label: qsTr("资源管理")
+                    iconName: "folder"; label: qsTr("资源管理")
                     badgeText: assetManager.assetCount() > 0
                                ? assetManager.assetCount() : ""
                     match: navPane.searchFilter
@@ -528,7 +558,7 @@ Window {
                         required property string pageKey
                         required property string title
                         itemKey: pageKey
-                        icon: "🧩"; label: title
+                        iconName: "puzzle"; label: title
                         match: navPane.searchFilter
                     }
                 }
@@ -575,7 +605,7 @@ Window {
             anchors.right: parent.right
             anchors.bottom: profileRow.top
             itemKey: "settings"
-            icon: "⚙"; label: qsTr("设置")
+            iconName: "gear"; label: qsTr("设置")
             match: navPane.searchFilter
         }
 
@@ -829,9 +859,12 @@ Window {
     }
 
     // ── Inline components ───────────────────────────────────────────────
-    // Panel logo: the custom logo image when one is applied, else the 🐾
-    // glyph. Shared by the titlebar (top-left) and the nav profile footer
-    // (bottom-left); re-evaluates on AssetManager::logoUrlChanged.
+    // Panel logo: the custom logo image when one is applied, else the
+    // vector paw mark (was the 🐾 emoji — tofu without a color-emoji font,
+    // and it could not follow the theme). Shared by the titlebar (top-left)
+    // and the nav profile footer (bottom-left); re-evaluates on
+    // AssetManager::logoUrlChanged. accentTextColor keeps the paw readable
+    // on the accent-filled avatar disc in both schemes.
     component PanelLogoGlyph : Item {
         id: logoGlyph
         property int size: 16
@@ -844,11 +877,12 @@ Window {
             visible: assetManager.logoUrl.length > 0
                      && status === Image.Ready
         }
-        Text {
+        AppIcon {
             anchors.centerIn: parent
             visible: assetManager.logoUrl.length === 0
-            text: "🐾"
-            font.pixelSize: logoGlyph.size * 0.8
+            name: "paw"
+            size: logoGlyph.size * 0.72
+            color: Theme.accentTextColor
         }
     }
 
@@ -968,7 +1002,7 @@ Window {
     component NavItem : Item {
         id: item
         property string itemKey: ""
-        property string icon: ""
+        property string iconName: ""
         property string label: ""
         property string badgeText: ""
         property string match: ""
@@ -999,10 +1033,13 @@ Window {
             Row {
                 x: 12; y: (parent.height - height) / 2
                 spacing: 14
-                Text {
-                    text: item.icon
-                    font.pixelSize: 14
-                    opacity: 0.85
+                // vector nav icon (was emoji text) — tint follows the
+                // selection like Fluent nav panes do
+                AppIcon {
+                    name: item.iconName
+                    size: 16
+                    color: item.active ? Theme.accentColor : Theme.text2Color
+                    anchors.verticalCenter: parent.verticalCenter
                 }
                 Text {
                     text: item.label
@@ -1058,7 +1095,12 @@ Window {
             Row {
                 x: 12; y: (parent.height - height) / 2
                 spacing: 14
-                Text { text: "🐾"; font.pixelSize: 14 }
+                AppIcon {
+                    name: "paw"
+                    size: 16
+                    color: Theme.text2Color
+                    anchors.verticalCenter: parent.verticalCenter
+                }
                 Text {
                     text: iitem.instanceLabel
                     color: Theme.textColor

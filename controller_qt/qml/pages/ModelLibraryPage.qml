@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 import DesktopPet
 
 // 模型库 page — 1:1 port of the approved mock
@@ -109,8 +110,23 @@ Rectangle {
     }
 
     Component.onCompleted: {
-        if (root.selectedModel === "" && modelLibrary.modelCount > 0)
+        // Wave-2 selection memory: restore the remembered model key when it
+        // still resolves (survives page switches via Main.qml's window-level
+        // rememberedModelKey); first-entry fallback otherwise.
+        if (modelLibrary.modelCount === 0) return
+        const w = Window.window
+        const key = w && w.rememberedModelKey !== undefined
+                    ? String(w.rememberedModelKey) : ""
+        if (key.length > 0 && root.allNames.indexOf(key) >= 0)
+            root.selectedModel = key
+        else
             root.selectedModel = modelLibrary.modelDirName(0)
+    }
+    onSelectedModelChanged: {
+        const w = Window.window
+        if (w && w.rememberedModelKey !== undefined
+                && selectedModel.length > 0)
+            w.rememberedModelKey = selectedModel
     }
 
     // Keep the detail card pointing at an existing model after a rescan
@@ -259,7 +275,7 @@ Rectangle {
             width: root.width - 2 * Theme.spacePage
             x: Theme.spacePage
             spacing: Theme.spaceGroup
-            topPadding: 28
+            topPadding: Theme.spacePage
 
             // ── Header ─────────────────────────────────────────────
             Item {
@@ -270,7 +286,7 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("模型库")
                     color: Theme.textColor
-                    font.pixelSize: 24
+                    font.pixelSize: Theme.fontTitle
                     font.weight: Font.DemiBold
                 }
                 Row {
@@ -279,13 +295,15 @@ Rectangle {
                     spacing: 8
                     AppButton {
                         style: "subtle"
-                        text: qsTr("📂 打开模型目录")
+                        iconName: "folderopen"
+                        text: qsTr("打开模型目录")
                         anchors.verticalCenter: parent.verticalCenter
                         onClicked: modelLibrary.openModelDir()
                     }
                     AppButton {
                         style: "primary"
-                        text: qsTr("↻ 重新扫描")
+                        iconName: "restart"
+                        text: qsTr("重新扫描")
                         anchors.verticalCenter: parent.verticalCenter
                         onClicked: modelLibrary.rescan()
                     }

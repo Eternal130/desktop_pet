@@ -118,10 +118,12 @@ Rectangle {
                         Column {
                             anchors.centerIn: parent
                             spacing: 6
-                            Text {
+                            // current avatar (emoji data) via the vector map
+                            AppIcon {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                text: instance ? instance.avatar : "🐱"
-                                font.pixelSize: 24
+                                glyph: instance ? instance.avatar : "🐱"
+                                size: 24
+                                color: Theme.textColor
                             }
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
@@ -197,7 +199,7 @@ Rectangle {
             id: detailCol
             width: root.width - 2 * Theme.spacePage
             x: Theme.spacePage
-            y: 24
+            y: Theme.spacePage
             spacing: Theme.spaceGroup
 
             // ══════════════ Header bar ════════════════════════════════
@@ -238,8 +240,14 @@ Rectangle {
                             Text {
                                 anchors.centerIn: parent
                                 visible: avatarButton.iconUrl.length === 0
-                                text: instance ? instance.avatar : "🐱"
-                                font.pixelSize: 16
+                                // avatar DATA (emoji string) → vector map;
+                                // unknown/custom strings fall back to text
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    glyph: instance ? instance.avatar : "🐱"
+                                    size: 18
+                                    color: Theme.textColor
+                                }
                             }
                             MouseArea {
                                 anchors.fill: parent
@@ -295,8 +303,13 @@ Rectangle {
                         AppButton {
                             style: instance && instance.status === "running"
                                    ? "subtle" : "primary"
+                            // ▶/⏹/↻/🗑 cluster → one vector icon family
+                            // (⏹ was tofu on emoji-font-less hosts).
+                            iconName: instance && instance.status === "running"
+                                      ? "stop" : "play"
                             text: instance && instance.status === "running"
-                                  ? qsTr("⏹ 停止") : qsTr("▶ 启动")
+                                  ? qsTr("停止") : qsTr("启动")
+                            iconSize: 12
                             // P2-12: debounce — no lifecycle spam while a
                             // start/stop transition is in flight.
                             enabled: instance && instance.status !== "pending"
@@ -310,7 +323,9 @@ Rectangle {
                                     : instanceControl.start(instance.uuid)
                         }
                         AppButton {
-                            text: qsTr("↻ 重启")
+                            iconName: "restart"
+                            text: qsTr("重启")
+                            iconSize: 12
                             // P2-12: running guard + transition debounce.
                             enabled: instance && instance.status === "running"
                                      && instance.status !== "pending"
@@ -322,7 +337,9 @@ Rectangle {
                         Item { width: 16; height: 1 }
                         AppButton {
                             style: "danger"
-                            text: qsTr("🗑 删除")
+                            iconName: "trash"
+                            text: qsTr("删除")
+                            iconSize: 12
                             anchors.verticalCenter: parent.verticalCenter
                             // requestDelete expects the uuid STRING; passing
                             // instance.instanceId (an int routing id) never
@@ -833,7 +850,9 @@ Rectangle {
                         spacing: 8
                         AppButton {
                             style: "subtle"
-                            text: qsTr("⧉ 复制")
+                            iconName: "copy"
+                            text: qsTr("复制")
+                            iconSize: 12
                             implicitHeight: 26; fontSize: 12
                             onClicked: {
                                 let s = ""

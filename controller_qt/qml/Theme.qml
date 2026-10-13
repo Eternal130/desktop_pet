@@ -13,10 +13,10 @@
 // pages never hardcode palette roles, they read these tokens.
 //
 // ── COLOR LITERAL RULE ────────────────────────────────────────────────────
-// NEVER write 8-digit hex colors ("#ffffff14") anywhere in qml/. QML parses
-// them as #AARRGGBB — alpha FIRST — which is almost never what the author
-// meant: it silently turned our dark-mode card borders into opaque yellow
-// (11 sites, found 2026-10-13, all removed in this migration). Use
+// NEVER write 8-digit hex colors (alpha-first "#AARRGGBB" strings) anywhere
+// in qml/. QML parses them alpha FIRST — which is almost never what the
+// author meant: it silently turned our dark-mode card borders into opaque
+// yellow (11 sites, found 2026-10-13, all removed in this migration). Use
 // Qt.rgba()/Qt.alpha() or a palette derivative instead. The only allowed hex
 // literals are 6-digit (#RRGGBB) constants (semantic status colors below,
 // chart ramp, fixed-dark log console).

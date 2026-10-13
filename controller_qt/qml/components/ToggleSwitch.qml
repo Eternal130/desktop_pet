@@ -22,6 +22,8 @@ Rectangle {
         width: 14
         height: 14
         radius: 7
+        // Fluent-spec white knob in both schemes (control surface on the
+        // pill, not text on an accent fill — see AppSlider's knob note).
         color: "#ffffff"
         y: 3
         x: root.checked ? root.width - width - 3 : 3

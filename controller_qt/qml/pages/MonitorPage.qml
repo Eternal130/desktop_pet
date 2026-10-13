@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import DesktopPet
 
 // Monitor page (design doc §3). Instance selector + 3x2 sparkline cards +
@@ -14,7 +15,23 @@ Rectangle {
     property var monitorModel: null
     property int selectedRow: 0
 
-    Component.onCompleted: root._selectInstance(0)
+    // Wave-2 selection memory: the page is destroyed/recreated on every
+    // page switch, so the selected instance is persisted on the WINDOW
+    // (Main.qml rememberedMonitorUuid) and restored here. A key that no
+    // longer resolves (instance deleted) legally falls back to row 0.
+    Component.onCompleted: root._selectInstance(root._rememberedRow())
+
+    function _rememberedRow() {
+        const w = Window.window
+        const key = w && w.rememberedMonitorUuid !== undefined
+                    ? String(w.rememberedMonitorUuid) : ""
+        if (key.length === 0) return 0
+        for (let i = 0; i < instanceManager.rowCount(); ++i) {
+            const s = instanceManager.instanceAt(i)
+            if (s && s.uuid === key) return i
+        }
+        return 0
+    }
 
     function _selectInstance(row) {
         if (!instanceManager.instanceAt) return
@@ -23,6 +40,9 @@ Rectangle {
         selectedRow = row
         instance = inst
         monitorModel = inst.monitorModel()
+        const w = Window.window
+        if (w && w.rememberedMonitorUuid !== undefined)
+            w.rememberedMonitorUuid = inst.uuid
     }
 
     readonly property color _mutedColor: Theme.text2Color
@@ -83,7 +103,7 @@ Rectangle {
             width: root.width - 2 * Theme.spacePage
             x: Theme.spacePage
             spacing: Theme.spaceGroup
-            topPadding: 28
+            topPadding: Theme.spacePage
 
             // ── Header + instance selector ────────────────────────────
             Item {
@@ -94,7 +114,7 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("资源监控")
                     color: Theme.textColor
-                    font.pixelSize: 24
+                    font.pixelSize: Theme.fontTitle
                     font.weight: Font.DemiBold
                 }
                 // P2-6/P2-3: was a horizontal chip strip at a fixed

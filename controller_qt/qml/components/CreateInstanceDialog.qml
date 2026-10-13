@@ -137,10 +137,14 @@ Rectangle {
                            ? Qt.alpha(Theme.accentColor, 0.14) : "transparent"
                     border.width: root._selectedAvatar === modelData ? 1 : 0
                     border.color: Theme.accentColor
-                    Text {
+                    // picker shows the emoji DATA through the AppIcon
+                    // emoji→vector map (the picker still stores emoji —
+                    // only the rendering went vector)
+                    AppIcon {
                         anchors.centerIn: parent
-                        text: modelData
-                        font.pixelSize: 20
+                        glyph: modelData
+                        size: 22
+                        color: Theme.textColor
                     }
                     MouseArea {
                         anchors.fill: parent

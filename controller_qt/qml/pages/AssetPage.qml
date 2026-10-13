@@ -88,20 +88,20 @@ Rectangle {
         Column {
             id: col
             x: Theme.spacePage
-            y: 24
+            y: Theme.spacePage
             width: root.width - 2 * Theme.spacePage
             spacing: Theme.spaceGroup
 
             // ── Title row ─────────────────────────────────────────────
             Item {
                 width: parent.width
-                height: 36
+                height: 40
                 Text {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("资源管理")
                     color: Theme.textColor
-                    font.pixelSize: 22
+                    font.pixelSize: Theme.fontTitle
                     font.weight: Font.DemiBold
                 }
                 Row {
@@ -110,17 +110,20 @@ Rectangle {
                     spacing: 8
                     AppButton {
                         style: "subtle"
-                        text: qsTr("📂 打开资源目录")
+                        iconName: "folderopen"
+                        text: qsTr("打开资源目录")
                         onClicked: assetManager.openAssetsDir()
                     }
                     AppButton {
                         style: "subtle"
-                        text: qsTr("🖌 去设置换 Logo")
+                        iconName: "brush"
+                        text: qsTr("去设置换 Logo")
                         onClicked: root.requestSwitchPage("settings")
                     }
                     AppButton {
                         style: "primary"
-                        text: qsTr("⬆ 上传图片")
+                        iconName: "upload"
+                        text: qsTr("上传图片")
                         onClicked: uploadDialog.open()
                     }
                 }
@@ -222,7 +225,9 @@ Rectangle {
                                     spacing: 8
                                     AppButton {
                                         style: "subtle"
-                                        text: qsTr("👁 预览")
+                                        iconName: "eye"
+                                        text: qsTr("预览")
+                                        iconSize: 12
                                         implicitHeight: 26; fontSize: 12
                                         onClicked: {
                                             root.previewAsset =
@@ -233,10 +238,14 @@ Rectangle {
                                     }
                                     AppButton {
                                         style: "danger"
-                                        // P2-10: was a bare 🗑 glyph with no
-                                        // label or tooltip — unreadable.
-                                        text: qsTr("🗑 删除")
+                                        iconName: "trash"
+                                        text: qsTr("删除")
+                                        iconSize: 12
                                         implicitHeight: 26; fontSize: 12
+                                        // P2-10: was a bare 🗑 glyph with no
+                                        // label or tooltip — unreadable. The
+                                        // vector icon keeps the affordance
+                                        // without the emoji-font dependency.
                                         onClicked: {
                                             if (card.modelData.inUse) {
                                                 blockDialog.message = qsTr(

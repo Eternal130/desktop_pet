@@ -487,6 +487,7 @@ qt_add_qml_module(pet_panel_core
         QML_FILES
 qml/Theme.qml
 qml/Main.qml
+qml/components/AppIcon.qml
 qml/components/AppButton.qml
   qml/components/AppComboBox.qml
   qml/components/AppDialog.qml

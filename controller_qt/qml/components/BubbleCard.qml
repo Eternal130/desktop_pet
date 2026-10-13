@@ -142,8 +142,18 @@ Item {
             Text {
                 anchors.centerIn: parent
                 visible: root.avatarFile.length === 0
-                text: root.avatar.length > 0 ? root.avatar : "🐾"
+                         && root.avatar.length > 0
+                text: root.avatar
                 font.pixelSize: 18
+            }
+            // empty avatar → vector paw fallback (was the 🐾 emoji)
+            AppIcon {
+                anchors.centerIn: parent
+                visible: root.avatarFile.length === 0
+                         && root.avatar.length === 0
+                name: "paw"
+                size: 20
+                color: Theme.textColor
             }
         }
 

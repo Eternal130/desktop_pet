@@ -1,5 +1,5 @@
 // EventEmitter tests for the audio_finished / expression_applied /
-// motion_progress event envelopes.
+// motion_progress / window_focus event envelopes.
 // Follows the existing ProtocolTest round-trip style: emit → capture the
 // serialized wire string → deserialize → assert Envelope fields.
 #include <gtest/gtest.h>
@@ -204,5 +204,75 @@ TEST(EventEmitterTest, MotionProgressEachEmitGetsFreshEnvelope)
     // One snapshot per 500ms window — consecutive snapshots carry distinct
     // renderer-generated ids and monotonically advancing timestamps.
     EXPECT_NE(first->id, second->id);
+    EXPECT_GE(second->timestamp, first->timestamp);
+}
+
+// --- window_focus (events.md §18) ----------------------------------------
+// The renderer emits this from the GLFW window-focus callback
+// (LAppDelegate::OnWindowFocusCallback, main thread); these cases pin the
+// envelope + payload shape for both focus directions at the wire level.
+
+TEST(EventEmitterTest, WindowFocusEnvelopeConformsToEventFormat)
+{
+    Network::EventEmitter emitter;
+    std::vector<std::string> sent;
+    emitter.setSendCallback([&](const std::string& msg) { sent.push_back(msg); });
+    ASSERT_TRUE(emitter.isActive());
+
+    emitter.emit("window_focus", {{"focused", true}});
+
+    ASSERT_EQ(sent.size(), 1u);
+    const auto env = Network::deserialize(sent[0]);
+    ASSERT_TRUE(env.has_value());
+    EXPECT_EQ(env->type, "event");
+    EXPECT_EQ(env->action, "window_focus");
+    // Single snake_case-friendly bool payload key per events.md §18; must
+    // survive as a JSON boolean, never a string/int coercion.
+    ASSERT_TRUE(env->payload.contains("focused"));
+    ASSERT_TRUE(env->payload.at("focused").is_boolean());
+    EXPECT_EQ(env->payload.at("focused").get<bool>(), true);
+    EXPECT_FALSE(env->id.empty());
+    EXPECT_GT(env->timestamp, 0);
+}
+
+TEST(EventEmitterTest, WindowFocusFocusedFalseRoundTripsAsBoolean)
+{
+    Network::EventEmitter emitter;
+    std::vector<std::string> sent;
+    emitter.setSendCallback([&](const std::string& msg) { sent.push_back(msg); });
+
+    // Focus-loss direction: false must round-trip as a JSON boolean and
+    // stay distinguishable from the focus-gain event.
+    emitter.emit("window_focus", {{"focused", false}});
+
+    ASSERT_EQ(sent.size(), 1u);
+    const auto env = Network::deserialize(sent[0]);
+    ASSERT_TRUE(env.has_value());
+    ASSERT_TRUE(env->payload.contains("focused"));
+    ASSERT_TRUE(env->payload.at("focused").is_boolean());
+    EXPECT_EQ(env->payload.at("focused").get<bool>(), false);
+}
+
+TEST(EventEmitterTest, WindowFocusEachEmitGetsFreshEnvelope)
+{
+    Network::EventEmitter emitter;
+    std::vector<std::string> sent;
+    emitter.setSendCallback([&](const std::string& msg) { sent.push_back(msg); });
+
+    // A focus → unfocus pair (user tabs in then out) yields two envelopes,
+    // each with its own renderer-generated id.
+    emitter.emit("window_focus", {{"focused", true}});
+    emitter.emit("window_focus", {{"focused", false}});
+
+    ASSERT_EQ(sent.size(), 2u);
+    const auto first = Network::deserialize(sent[0]);
+    const auto second = Network::deserialize(sent[1]);
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    EXPECT_NE(first->id, second->id);
+    EXPECT_EQ(first->action, "window_focus");
+    EXPECT_EQ(second->action, "window_focus");
+    EXPECT_EQ(first->payload.at("focused").get<bool>(), true);
+    EXPECT_EQ(second->payload.at("focused").get<bool>(), false);
     EXPECT_GE(second->timestamp, first->timestamp);
 }

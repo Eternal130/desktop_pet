@@ -38,6 +38,7 @@ public:
     void OnMouseCallBack(GLFWwindow* window, int button, int action, int modify);
     void OnMouseCallBack(GLFWwindow* window, double x, double y);
     void OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+    void OnWindowFocusCallback(GLFWwindow* window, int focused);
 
     static void GetClientSize(int& rWidth, int& rHeight);
 
@@ -147,5 +148,10 @@ public:
     static void OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
     {
         LAppDelegate::GetInstance()->OnScrollCallback(window, xoffset, yoffset);
+    }
+
+    static void OnWindowFocusCallback(GLFWwindow* window, int focused)
+    {
+        LAppDelegate::GetInstance()->OnWindowFocusCallback(window, focused);
     }
 };

@@ -235,7 +235,7 @@ Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit(
 | `audio_ended` | ❌ 未实现 | 早期设计草案；S8 实现时按控制面板事件目录定名为 `audio_finished`（已实现，见 §15），本名称废弃 |
 | `audio_finished` | ✅ 已实现 | S8 事件总线新增，见 [§15](#15-audio_finished--音频自然播放结束) |
 
-> **事件总览**：当前渲染器实际发出的事件共 16 个——`ready`、`model_loaded`、`model_load_failed`、`motion_started`、`motion_finished`（两种 payload 变体）、`motion_progress`（500ms 节流进度快照，见 [§17](#17-motion_progress--动作播放进度快照节流)）、`hit`、`drag_start`、`drag_end`、`audio_finished`（自然播放结束）、`expression_applied`（`set_expression` 应用成功回执）、`layout_changed`、`window_resized`、`layout_state`（`get_layout` 命令的响应事件）、`stats_state`（`get_stats` 命令的响应事件）、`error`。
+> **事件总览**：当前渲染器实际发出的事件共 17 个——`ready`、`model_loaded`、`model_load_failed`、`motion_started`、`motion_finished`（两种 payload 变体）、`motion_progress`（500ms 节流进度快照，见 [§17](#17-motion_progress--动作播放进度快照节流)）、`hit`、`drag_start`、`drag_end`、`audio_finished`（自然播放结束）、`expression_applied`（`set_expression` 应用成功回执）、`layout_changed`、`window_resized`、`window_focus`（窗口焦点变化，见 [§18](#18-window_focus--窗口焦点变化)）、`layout_state`（`get_layout` 命令的响应事件）、`stats_state`（`get_stats` 命令的响应事件）、`error`。
 
 ---
 
@@ -508,3 +508,33 @@ Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit(
 > **`id` 不用于 request-response 匹配**：与 `stats_state`/`expression_applied` 同理，`id` 由渲染器新建（`createEvent` 生成）。
 
 > **线程纪律**：进度检查挂在渲染主循环（`LAppDelegate::Run`），逐帧查询 Cubism motion manager 的队列条目（纯 CPU 读取，无 GL 调用），WebSocket 发射始终在主渲染线程——与 `audio_finished` 的 `PollFinished` 先例同源。
+
+---
+
+## 18. `window_focus` — 窗口焦点变化
+
+渲染器宠物窗口获得/失去操作系统级焦点（键盘输入焦点）时发送。回调由 GLFW `glfwSetWindowFocusCallback` 触发，`focused` 为 `true` 表示获得焦点、`false` 表示失去焦点。
+
+**Payload**：
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `focused` | bool | `true` = 窗口获得焦点；`false` = 窗口失去焦点 |
+
+**示例**：
+
+```json
+{
+  "type": "event", "action": "window_focus",
+  "id": "...", "payload": { "focused": false },
+  "timestamp": ...
+}
+```
+
+**控制面板预期行为**：可用于感知"用户当前是否在与宠物窗口交互"（如聚焦时暂停闲时动作的降级策略、失焦时降低监控采样频率）。信封 `instance_id` 路由与既有事件一致（经 WS 连接本身区分实例，不在 payload 内）。
+
+> **频繁度**：用户每次切入/切出宠物窗口即各发射一条（Alt-Tab、任务栏点击、点击其他窗口等），**属低频事件**——仅在焦点状态真正翻转时发射，无逐帧/轮询发射，不需要节流。
+
+> **`id` 不用于 request-response 匹配**：与 `stats_state`/`expression_applied` 同理，`id` 由渲染器新建（`createEvent` 生成）。
+
+> **线程纪律**：GLFW 焦点回调在主线程的事件处理（`glfwPollEvents`/`WaitEvents`，`LAppDelegate::Run` 主循环内）派发——与鼠标/滚轮回调（`drag_start`/`window_resized` 的发射路径）同源，WebSocket 发射始终在主渲染线程，不涉及 WS 回调线程或音频线程。

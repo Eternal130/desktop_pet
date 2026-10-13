@@ -135,6 +135,7 @@ bool LAppDelegate::Initialize()
     glfwSetMouseButtonCallback(window, EventHandler::OnMouseCallBack);
     glfwSetCursorPosCallback(window, EventHandler::OnMouseCallBack);
     glfwSetScrollCallback(window, EventHandler::OnScrollCallback);
+    glfwSetWindowFocusCallback(window, EventHandler::OnWindowFocusCallback);
 
     _windowManager->GetWindowSize(_windowWidth, _windowHeight);
     _graphicsBackend->BeginFrame(_windowWidth, _windowHeight);
@@ -687,6 +688,19 @@ void LAppDelegate::OnScrollCallback(GLFWwindow* window, double xoffset, double y
             {"window_x", newPosX},
             {"window_y", newPosY}
         });
+    }
+}
+
+void LAppDelegate::OnWindowFocusCallback(GLFWwindow* window, int focused)
+{
+    // OS-level focus transitions of the pet window → window_focus event
+    // (events.md §18). GLFW delivers this callback on the main thread from
+    // inside glfwPollEvents/WaitEvents (Run loop) — the same dispatch path
+    // as the mouse/scroll callbacks above, so the WS emission here keeps
+    // the main-thread-only discipline (never from a WS or audio thread).
+    if (_eventEmitter && _eventEmitter->isActive())
+    {
+        _eventEmitter->emit("window_focus", {{"focused", focused != 0}});
     }
 }
 

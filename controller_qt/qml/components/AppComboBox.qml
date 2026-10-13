@@ -11,7 +11,9 @@ import DesktopPet
 ComboBox {
     id: root
 
-    property color borderColor: Theme.dark ? "#ffffff49" : "#00000045"
+    // input border: solid mid tone (sys.mid via Theme), matching every other
+    // bordered control post palette-migration
+    property color borderColor: Theme.borderColor
 
     implicitHeight: 32
     font.pixelSize: 13

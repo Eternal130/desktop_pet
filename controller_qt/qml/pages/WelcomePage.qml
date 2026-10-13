@@ -120,7 +120,7 @@ Rectangle {
         Rectangle {
             width: 72; height: 72; radius: 36
             color: assetManager.logoUrl.length > 0
-                   ? (Theme.dark ? "#2a2a2a" : "#eaeaea")
+                   ? Theme.offBgColor
                    : Theme.accentColor
             border.width: assetManager.logoUrl.length > 0 ? 1 : 0
             border.color: Theme.borderColor
@@ -434,7 +434,12 @@ Rectangle {
                             Text {
                                 anchors.centerIn: parent
                                 text: envChecker.allReady ? "✓" : "!"
-                                color: "#fff"; font.pixelSize: 12
+                                // on a success/error fill: window color keeps
+                                // contrast in both schemes (dark-green fill +
+                                // near-white window text in light; light-green
+                                // fill + near-black window text in dark)
+                                color: Theme.bgColor
+                                font.pixelSize: 12
                                 font.weight: Font.DemiBold
                             }
                         }

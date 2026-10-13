@@ -110,7 +110,7 @@ Rectangle {
                             width: instLabel.implicitWidth + 24
                             height: 28
                             radius: Theme.radiusMd
-                            color: sel ? Theme.accentAlpha(0.14) : "transparent"
+                            color: sel ? Qt.alpha(Theme.accentColor, 0.14) : "transparent"
                             border.width: 1
                             border.color: sel ? Theme.accentColor : Theme.borderColor
                             Text {
@@ -149,7 +149,7 @@ Rectangle {
                          && root._tick >= 0 && monitorModel.isStaleNow()
                 radius: Theme.radiusMd
                 color: Theme.warningBgColor
-                border.color: Theme.withAlpha(Theme.warningColor, 0.3)
+                border.color: Qt.alpha(Theme.warningColor, 0.3)
                 border.width: 1
                 Text {
                     anchors.centerIn: parent

@@ -1,77 +1,92 @@
-// Global theme singleton — Fluent UI redesign palette (docs/design/
-// fluent-ui-redesign.html) with light/dark modes and a mutable accent.
+// Global design tokens — palette-migration revision (2026-10-13).
 //
-// Light values mirror the design mock :root block verbatim. Dark values are
-// the Fluent 2 dark equivalents. accentColor is writable (SettingsPage §⑤
-// swatches); all dependent colors recompute via bindings.
+// COLOR SOURCE: the SYSTEM PALETTE ONLY. Every color below derives from a
+// SystemPalette role (or Qt.alpha/lighter/darker of one), so the whole panel
+// follows the platform color scheme — light/dark switches with the OS
+// (Qt.styleHints.colorScheme), accent follows the style/theme default
+// (FluentWinUI3 system accent on Windows, Fluent blue on Linux). There is NO
+// in-app theme toggle and NO custom palette anymore; the old hand-rolled
+// light/dark palettes, overlays and gradient stops were removed.
+//
+// Theme deliberately KEEPS its historical semantic token names (bgColor,
+// textColor, accentColor, …) so the QML pages keep one indirection point:
+// pages never hardcode palette roles, they read these tokens.
+//
+// ── COLOR LITERAL RULE ────────────────────────────────────────────────────
+// NEVER write 8-digit hex colors ("#ffffff14") anywhere in qml/. QML parses
+// them as #AARRGGBB — alpha FIRST — which is almost never what the author
+// meant: it silently turned our dark-mode card borders into opaque yellow
+// (11 sites, found 2026-10-13, all removed in this migration). Use
+// Qt.rgba()/Qt.alpha() or a palette derivative instead. The only allowed hex
+// literals are 6-digit (#RRGGBB) constants (semantic status colors below,
+// chart ramp, fixed-dark log console).
 pragma Singleton
 
 import QtQuick
 
 QtObject {
-    // Persisted theme name (WindowStateSaver round-trips this string).
-    property string currentTheme: "浅色"
+    // The one palette source. SystemPalette tracks QGuiApplication::palette,
+    // which follows the platform theme and Qt.styleHints::colorScheme (also
+    // flip-able for QA via PET_COLORSCHEME=dark|light in main.cpp).
+    readonly property SystemPalette sys: SystemPalette { }
 
-    // "light" | "dark" — derived from currentTheme so T28 persistence keeps
-    // working; setDarkMode() is the mutation entry point.
-    readonly property bool dark: currentTheme === "深色"
-    function setDarkMode(d) {
-        setTheme(d ? "深色" : "浅色")
-    }
+    // "Is the system scheme dark" — live-updates with the OS switch. Same
+    // name as the pre-migration toggle so existing consumers keep working;
+    // it is now DERIVED, not stored.
+    readonly property bool dark: Qt.styleHints.colorScheme === Qt.Dark
 
-    readonly property var themes: ["浅色", "深色"]
+    // ── Core surfaces / text ──────────────────────────────────────────────
+    readonly property color bgColor:        sys.window
+    // card surface: light scheme = base (pure white over gray window);
+    // dark scheme = window lifted ~6% (Fluent-style elevation — cards must
+    // sit ABOVE the window; base in a dark palette goes the other way)
+    readonly property color surfaceColor:   dark ? Qt.lighter(sys.window, 1.06)
+                                                 : sys.base
+    readonly property color textColor:      sys.windowText
+    // secondary text: placeholder role is the platform-tuned muted tone
+    readonly property color text2Color:     sys.placeholderText
+    // tertiary/hints: alpha wash of the primary text (palette has no 3rd tier)
+    readonly property color text3Color:     Qt.alpha(sys.windowText, 0.55)
 
-    signal themeChanged(string name)
+    // ── Accent (style/system accent; FluentWinUI3 populates highlight) ───
+    readonly property color accentColor:       sys.highlight
+    readonly property color accentHoverColor:  Qt.darker(sys.highlight, 1.15)
+    // readable text ON an accent fill (Fluent pairs highlight/highlightedText)
+    readonly property color accentTextColor:   sys.highlightedText
 
-    // ── Core palette ──────────────────────────────────────────────────────
-    readonly property color bgColor:       dark ? "#202020" : "#f3f3f3"
-    // Design-mock body gradient (135deg, near-instant hues over the canvas)
-    readonly property color bgGradA: dark ? "#1d1d21" : "#eef0f7"
-    readonly property color bgGradB: dark ? "#202024" : "#f3f0f7"
-    readonly property color bgGradC: dark ? "#1c1f1e" : "#f0f4f2"
-    // Titlebar / nav are TRANSLUCENT layers over that canvas (mock: .55/.75)
-    readonly property color titleBarOverlay: dark ? Qt.rgba(0.17, 0.17, 0.18, 0.55)
-                                                  : Qt.rgba(1, 1, 1, 0.55)
-    readonly property color navOverlay:     dark ? Qt.rgba(0.14, 0.14, 0.15, 0.75)
-                                                  : Qt.rgba(0.95, 0.95, 0.95, 0.75)
-    readonly property color hairlineColor:  dark ? "#ffffff12" : "#0000000d"
-    readonly property color surfaceColor:  dark ? "#2b2b2b" : "#ffffff"
-    readonly property color navColor:      dark ? "#272727" : "#f9f9f9"
-    readonly property color titleBarColor: dark ? "#2b2b2b" : "#ffffff"
-    readonly property color textColor:     dark ? "#ffffff" : "#1a1a1a"
-    readonly property color text2Color:    dark ? "#c8c8c8" : "#5c5c5c"
-    readonly property color text3Color:    dark ? "#9a9a9a" : "#8a8a8a"
-    property color accentColor: "#5b5bd6"   // design mock --accent
-    readonly property color accentHoverColor: "#4c4cc4"
-    readonly property color accentLightColor:
-        dark ? Qt.rgba(0.36, 0.36, 0.84, 0.22) : "#e8e8fb"
-    readonly property color hoverColor:     dark ? "#333333" : "#e9e9e9"
-    readonly property color closeHoverColor: "#c42b1c"
+    // ── Chrome ────────────────────────────────────────────────────────────
+    // control borders (inputs, buttons, tiles): solid mid tone
+    readonly property color borderColor:    sys.mid
+    // hairline separators: faint wash of the text color, works on any scheme
+    readonly property color hairlineColor:  Qt.alpha(sys.windowText, 0.08)
+    // generic hover wash (Fluent-style text-alpha hover, scheme-agnostic)
+    readonly property color hoverColor:     Qt.alpha(sys.windowText, 0.06)
+    // neutral "off" surface behind icons/thumbnails
+    readonly property color offBgColor:     Qt.alpha(sys.windowText, 0.05)
 
-    // kept aliases (older bindings used these names)
-    readonly property color mutedTextColor: text2Color
-    readonly property color borderColor:    dark ? "#3d3d3d" : "#e5e5e5"
-    readonly property color sidebarColor:   navColor
+    // ── Semantic status ───────────────────────────────────────────────────
+    // System palette has no success/warning roles — keep tuned constants with
+    // per-scheme values (dark variants are the bright Fluent-2 dark tones so
+    // text/borders keep contrast on dark surfaces; fixes the old same-value
+    // dark readability problem).
+    readonly property color successColor:    dark ? "#6ccb5f" : "#0f7b0f"
+    readonly property color successBgColor:  Qt.alpha(successColor, dark ? 0.20 : 0.12)
+    readonly property color warningColor:    dark ? "#ffb900" : "#9d5d00"
+    readonly property color warningBgColor:  Qt.alpha(warningColor, dark ? 0.20 : 0.12)
+    readonly property color errorColor:      dark ? "#ff99a4" : "#c42b1c"
+    readonly property color errorBgColor:    Qt.alpha(errorColor, dark ? 0.20 : 0.12)
 
-    // ── Semantic status (design mock) ────────────────────────────────────
-    readonly property color successColor: "#0f7b0f"
-    readonly property color successBgColor: dark ? "#11331122" : "#e6f2e6"
-    readonly property color warningColor: "#9d5d00"
-    readonly property color warningBgColor: dark ? "#9d5d0022" : "#fdf3dd"
-    readonly property color errorColor: "#c42b1c"
-    readonly property color errorBgColor: dark ? "#c42b1c22" : "#fde7e7"
-    readonly property color offBgColor: dark ? "#ffffff14" : "#0000000f"
-
-    // ── Chart ramp (design mock chart1..chart6) ──────────────────────────
+    // ── Chart ramp (KEPT: data-visualization palette, not UI theming) ─────
     readonly property var chartColors: [
         "#4cc2ff", "#f472d0", "#0f7b0f",
         "#eaa300", "#29b8db", "#5b5bd6"
     ]
 
-    // ── Elevation (floating layers only; resting cards use a hairline) ──
-    readonly property color shadowColor: Qt.rgba(0, 0, 0, dark ? 0.5 : 0.22)
+    // ── Log console (KEPT: intentionally fixed dark terminal look) ────────
+    readonly property color logBgColor: "#202020"
+    readonly property color logTextColor: "#d6d6d6"
 
-    // ── Radius (design mock: card 8 · button 5 · badge full) ────────────
+    // ── Radius (design mock: card 8 · button 5 · badge full) ─────────────
     readonly property real radiusSm: 4
     readonly property real radiusMd: 5
     readonly property real radiusLg: 8
@@ -87,22 +102,4 @@ QtObject {
     readonly property int fontBody: 13
     readonly property int fontSubhead: 15
     readonly property int fontTitle: 24
-
-    // Log console (design mock .log)
-    readonly property color logBgColor: "#202020"
-    readonly property color logTextColor: "#d6d6d6"
-
-    function accentAlpha(a) {
-        return Qt.rgba(accentColor.r, accentColor.g, accentColor.b, a)
-    }
-    function withAlpha(c, a) {
-        return Qt.rgba(c.r, c.g, c.b, a)
-    }
-
-    function setTheme(name) {
-        if (name === currentTheme) return
-        if (themes.indexOf(name) === -1) return
-        currentTheme = name
-        themeChanged(name)
-    }
 }

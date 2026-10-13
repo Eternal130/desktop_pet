@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Shapes
+import DesktopPet
 
 // BubbleCard — one notification bubble in the top-right stream. Plain
 // QtQuick + QtQuick.Shapes only (NO FluentUI, NO QtQuick.Effects):
@@ -77,27 +78,27 @@ Item {
         }
     }
 
-    // Milky-white card fill (兽耳 style): milky white, base fully opaque;
-    // a barely-there top highlight — no blue tint. Alpha steps down with
-    // stackIndex (newest = opaque): 1.0 → −0.10 per slot (floor 0.30).
+    // Card fill follows the SYSTEM scheme (was hardcoded milky-white): base
+    // color from the palette, alpha stepped down with stackIndex (newest =
+    // most opaque). Border = faint text-color wash.
     Rectangle {
         id: cardBody
         width: root.width
         height: contentRow.implicitHeight + 2 * 12
         radius: 12
         border.width: 1
-        border.color: Qt.rgba(1.0, 1.0, 1.0,
-                              Math.max(0.75 - 0.12 * root.stackIndex, 0.15))
+        border.color: Qt.alpha(Theme.textColor,
+                               Math.max(0.12 - 0.02 * root.stackIndex, 0.04))
         gradient: Gradient {
             GradientStop {
                 position: 0.0
-                color: Qt.rgba(1.0, 0.995, 0.98,
-                               Math.max(1.0 - 0.10 * root.stackIndex, 0.30))
+                color: Qt.alpha(Theme.surfaceColor,
+                                Math.max(0.96 - 0.10 * root.stackIndex, 0.30))
             }
             GradientStop {
                 position: 1.0
-                color: Qt.rgba(0.985, 0.975, 0.96,
-                               Math.max(0.97 - 0.10 * root.stackIndex, 0.30))
+                color: Qt.alpha(Theme.surfaceColor,
+                                Math.max(0.90 - 0.10 * root.stackIndex, 0.28))
             }
         }
     }
@@ -120,8 +121,8 @@ Item {
                 radius: width / 2
                 visible: root.avatarFile.length === 0
                 gradient: Gradient {
-                    GradientStop { position: 0; color: "#8b8bf0" }
-                    GradientStop { position: 1; color: "#5b5bd6" }
+                    GradientStop { position: 0; color: Qt.lighter(Theme.accentColor, 1.3) }
+                    GradientStop { position: 1; color: Theme.accentColor }
                 }
                 Rectangle {
                     anchors.fill: parent
@@ -154,7 +155,7 @@ Item {
             Text {
                 width: parent.width
                 text: root.name
-                color: "#4A4AC2"
+                color: Theme.accentColor
                 font.pixelSize: 12
                 font.bold: true
                 elide: Text.ElideRight
@@ -162,7 +163,7 @@ Item {
             Text {
                 width: parent.width
                 text: root.text
-                color: "#2F2F33"
+                color: Theme.textColor
                 font.pixelSize: 13
                 wrapMode: Text.WordWrap
                 maximumLineCount: 2

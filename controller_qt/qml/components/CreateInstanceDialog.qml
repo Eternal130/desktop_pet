@@ -91,7 +91,7 @@ Rectangle {
                 width: parent.width
                 height: 34
                 radius: Theme.radiusMd
-                color: Theme.dark ? "#262626" : "#fafafa"
+                color: Theme.surfaceColor
                 border.width: 1
                 border.color: _nameInput.activeFocus ? Theme.accentColor : Theme.borderColor
 
@@ -127,7 +127,7 @@ Rectangle {
                     height: GridView.view.cellHeight - 6
                     radius: Theme.radiusMd
                     color: root._selectedAvatar === modelData
-                           ? Theme.accentAlpha(0.14) : "transparent"
+                           ? Qt.alpha(Theme.accentColor, 0.14) : "transparent"
                     border.width: root._selectedAvatar === modelData ? 1 : 0
                     border.color: Theme.accentColor
                     Text {

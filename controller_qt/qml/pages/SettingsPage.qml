@@ -151,46 +151,13 @@ Rectangle {
                     id: appearanceCard
                     width: parent.width
                     title: qsTr("外观")
+                    hint: qsTr("深浅色与强调色跟随系统设置")
 
-                    SettingRow {
-                        width: parent.width
-                        title: qsTr("主题模式")
-                        desc: qsTr("跟随系统或手动指定")
-                        Segmented {
-                            options: [qsTr("浅色"), qsTr("深色")]
-                            currentValue: Theme.dark ? qsTr("深色") : qsTr("浅色")
-                            onSelected: (v) => { Theme.setDarkMode(v === qsTr("深色")) }
-                        }
-                    }
-                    SettingRow {
-                        width: parent.width
-                        title: qsTr("强调色")
-                        desc: qsTr("导航/按钮/图表统一色相")
-                        Row {
-                            spacing: 8
-                            Repeater {
-                                model: [
-                                    "#5b5bd6", "#0078d4", "#107c10",
-                                    "#ca5010", "#c239b3"
-                                ]
-                                delegate: Rectangle {
-                                    required property string modelData
-                                    width: 22; height: 22
-                                    radius: Theme.radiusSm
-                                    color: modelData
-                                    border.width: Theme.accentColor.toString()
-                                                  .toUpperCase() === modelData.toUpperCase()
-                                                  ? 2 : 0
-                                    border.color: Theme.textColor
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: Theme.accentColor = parent.modelData
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // palette-migration note: the in-app theme toggle and the
+                    // accent swatches were removed (2026-10-13) — light/dark
+                    // now follows the system color scheme and the accent
+                    // follows the style/system default. The Logo section below
+                    // is what remains under 外观.
                 }
 
                 // ── Logo 替换 (design §7 — lives in 外观, not its own nav) ──
@@ -218,7 +185,7 @@ Rectangle {
                                 // Neutral surface behind the image: user PNGs
                                 // can have transparency — an accent gradient
                                 // here tinted transparent logos indigo.
-                                color: Theme.dark ? "#2a2a2a" : "#eaeaea"
+                                color: Theme.offBgColor
                                 border.width: 1
                                 border.color: Theme.borderColor
                                 Image {
@@ -284,7 +251,7 @@ Rectangle {
                                     width: 72; height: 92
                                     radius: Theme.radiusMd
                                     color: logoCard.selectedAssetId < 0
-                                           ? Theme.accentAlpha(0.14)
+                                           ? Qt.alpha(Theme.accentColor, 0.14)
                                            : Theme.surfaceColor
                                     border.width: logoCard.selectedAssetId < 0 ? 2 : 1
                                     border.color: logoCard.selectedAssetId < 0
@@ -329,7 +296,7 @@ Rectangle {
                                         radius: Theme.radiusMd
                                         color: logoCard.selectedAssetId
                                                === srcTile.modelData.id
-                                               ? Theme.accentAlpha(0.14)
+                                               ? Qt.alpha(Theme.accentColor, 0.14)
                                                : Theme.surfaceColor
                                         border.width: logoCard.selectedAssetId
                                                       === srcTile.modelData.id ? 2 : 1
@@ -486,7 +453,7 @@ Rectangle {
                                             pluginRow.pluginId)
                                         width: pendingText.implicitWidth + 14
                                         height: 18; radius: 9
-                                        color: Theme.accentAlpha(0.14)
+                                        color: Qt.alpha(Theme.accentColor, 0.14)
                                         Text {
                                             id: pendingText
                                             anchors.centerIn: parent
@@ -570,8 +537,8 @@ Rectangle {
         height: 34
         radius: Theme.radiusMd
         readonly property bool sel: root.activeSection === section
-        color: sel ? Theme.accentAlpha(0.12)
-            : (_hover.hovered ? Theme.withAlpha(Theme.textColor, 0.05) : "transparent")
+        color: sel ? Qt.alpha(Theme.accentColor, 0.12)
+            : (_hover.hovered ? Qt.alpha(Theme.textColor, 0.05) : "transparent")
 
         Rectangle {
             visible: navBtn.sel

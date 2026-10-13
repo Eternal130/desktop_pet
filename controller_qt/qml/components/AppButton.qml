@@ -26,15 +26,15 @@ Rectangle {
             return _hover.hovered && enabled ? Theme.accentHoverColor : Theme.accentColor
         if (_subtle)
             return _hover.hovered && enabled
-                ? Theme.withAlpha(Theme.textColor, Theme.dark ? 0.10 : 0.07)
-                : Theme.withAlpha(Theme.textColor, Theme.dark ? 0.06 : 0.03)
+                ? Qt.alpha(Theme.textColor, 0.09)
+                : Qt.alpha(Theme.textColor, 0.045)
         if (_danger)
             return _hover.hovered && enabled ? Theme.errorBgColor : "transparent"
         return _hover.hovered && enabled ? Theme.hoverColor : Theme.surfaceColor
     }
     border.width: _primary || _subtle ? 0 : 1
-    border.color: _danger ? Theme.withAlpha(Theme.errorColor, 0.4)
-                          : Theme.dark ? "#ffffff2e" : "#00000038"
+    border.color: _danger ? Qt.alpha(Theme.errorColor, 0.4)
+                          : Qt.alpha(Theme.textColor, 0.18)
 
     Text {
         id: _label

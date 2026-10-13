@@ -23,7 +23,7 @@ Rectangle {
     radius: Theme.radiusMd
     color: "transparent"
     border.width: 1
-    border.color: Theme.dark ? "#ffffff38" : "#00000038"
+    border.color: Qt.alpha(Theme.textColor, 0.20)
 
     Row {
         id: _row
@@ -34,7 +34,7 @@ Rectangle {
                 readonly property bool sel: root.currentValue === root.valueAt(index)
                 width: _segLabel.implicitWidth + 28
                 height: root.height - 2
-                color: sel ? Theme.accentAlpha(0.14) : "transparent"
+                color: sel ? Qt.alpha(Theme.accentColor, 0.14) : "transparent"
                 radius: Theme.radiusMd - 1
                 Text {
                     id: _segLabel

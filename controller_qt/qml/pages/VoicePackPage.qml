@@ -129,7 +129,7 @@ Rectangle {
                                     radius: Theme.radiusMd
                                     readonly property bool sel:
                                         root.selectedPack === index
-                                    color: sel ? Theme.accentAlpha(0.10)
+                                    color: sel ? Qt.alpha(Theme.accentColor, 0.10)
                                                : "transparent"
                                     border.width: sel ? 1 : 0
                                     border.color: Theme.accentColor

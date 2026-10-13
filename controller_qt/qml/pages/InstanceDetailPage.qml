@@ -209,7 +209,7 @@ Rectangle {
                             id: avatarButton
                             width: 36; height: 36
                             radius: 18
-                            color: Theme.accentAlpha(0.14)
+                            color: Qt.alpha(Theme.accentColor, 0.14)
                             border.width: 1
                             border.color: Theme.borderColor
                             anchors.verticalCenter: parent.verticalCenter
@@ -253,7 +253,7 @@ Rectangle {
                             width: modelPillText.implicitWidth + 20
                             height: 22
                             radius: 11
-                            color: Theme.accentAlpha(0.1)
+                            color: Qt.alpha(Theme.accentColor, 0.1)
                             anchors.verticalCenter: parent.verticalCenter
                             Text {
                                 id: modelPillText

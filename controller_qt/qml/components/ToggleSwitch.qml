@@ -15,7 +15,7 @@ Rectangle {
     height: 20
     radius: 10
     color: checked ? Theme.accentColor
-                   : Theme.withAlpha(Theme.textColor, 0.35)
+                   : Qt.alpha(Theme.textColor, 0.35)
 
     Rectangle {
         id: knob

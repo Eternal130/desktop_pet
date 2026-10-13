@@ -168,7 +168,7 @@ Rectangle {
                         radius: Theme.radiusLg
                         color: Theme.surfaceColor
                         border.width: 1
-                        border.color: Theme.dark ? "#ffffff14" : Theme.hairlineColor
+                        border.color: Theme.hairlineColor
 
                         Column {
                             anchors.fill: parent
@@ -336,7 +336,7 @@ Rectangle {
         width: toastText.implicitWidth + 32
         height: 34
         radius: Theme.radiusMd
-        color: Theme.dark ? "#2b2b2b" : "#ffffff"
+        color: Theme.surfaceColor
         border.width: 1
         border.color: Theme.borderColor
         Text {

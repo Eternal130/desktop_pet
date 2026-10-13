@@ -12,8 +12,8 @@ Rectangle {
     height: 26
     width: label.implicitWidth + 24
     radius: height / 2
-    color: checked ? Theme.accentAlpha(0.14)
-                   : Theme.withAlpha(Theme.textColor, 0.05)
+    color: checked ? Qt.alpha(Theme.accentColor, 0.14)
+                   : Qt.alpha(Theme.textColor, 0.05)
 
     Text {
         id: label

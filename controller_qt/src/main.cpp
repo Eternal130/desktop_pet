@@ -5,8 +5,11 @@
 #include <QApplication>
 #include <QDir>
 #include <QLibraryInfo>
+#include <QPalette>
 #include <QQmlApplicationEngine>
 #include <QCoreApplication>
+#include <QStyleFactory>
+#include <QStyleHints>
 #include <QTimer>
 
 #include <chrono>
@@ -91,6 +94,48 @@ int main(int argc, char* argv[])
     // QtWidgets is already linked for QSystemTrayIcon (T13), so this costs
     // nothing extra.
     QApplication app(argc, argv);
+
+    // QA/dev seam: PET_COLORSCHEME=dark|light overrides the system color
+    // scheme at runtime (QStyleHints::setColorScheme, Qt 6.8+). The palette-
+    // driven Theme (SystemPalette + Qt.styleHints.colorScheme) and the
+    // FluentWinUI3 style both follow this, so screenshot QA can capture the
+    // dark variant deterministically on any desktop. Absent env = native
+    // behavior; there is NO in-app theme toggle anymore.
+    //
+    // Linux xcb caveat: the generic platform theme ignores colorScheme when
+    // building the DEFAULT application palette (only theme plugins like
+    // xdgdesktopportal/gtk3 honor it). Switching the (unused-for-drawing)
+    // widget style to Fusion makes its standardPalette follow the scheme, so
+    // QGuiApplication::palette — and with it SystemPalette — flips too.
+    if (const QByteArray scheme = qgetenv("PET_COLORSCHEME");
+        scheme == QByteArrayLiteral("dark") ||
+        scheme == QByteArrayLiteral("light")) {
+        const bool wantDark = scheme == QByteArrayLiteral("dark");
+        QGuiApplication::styleHints()->setColorScheme(
+            wantDark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+        app.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+        if (wantDark) {
+            // xcb-generic never hands Qt a dark default palette (only real
+            // theme plugins do), so simulate what a dark desktop theme would
+            // deliver: an explicit dark QPalette. Fusion-dark-like values.
+            QPalette dark;
+            dark.setColor(QPalette::Window, QColor(0x2b2b2b));
+            dark.setColor(QPalette::WindowText, QColor(0xffffff));
+            dark.setColor(QPalette::Base, QColor(0x1f1f1f));
+            dark.setColor(QPalette::AlternateBase, QColor(0x2a2a2a));
+            dark.setColor(QPalette::Text, QColor(0xdcdcdc));
+            dark.setColor(QPalette::PlaceholderText, QColor(0xa0a0a0));
+            dark.setColor(QPalette::Button, QColor(0x333333));
+            dark.setColor(QPalette::ButtonText, QColor(0xffffff));
+            dark.setColor(QPalette::Highlight, QColor(0x4cc2ff));
+            dark.setColor(QPalette::HighlightedText, QColor(0x0b0b0b));
+            dark.setColor(QPalette::ToolTipBase, QColor(0x3a3a3a));
+            dark.setColor(QPalette::ToolTipText, QColor(0xffffff));
+            dark.setColor(QPalette::Mid, QColor(0x555555));
+            dark.setColor(QPalette::Link, QColor(0x4cc2ff));
+            QGuiApplication::setPalette(dark);
+        }
+    }
 
     // Boot logging BEFORE any LOG_* call (both calls non-fatal on failure —
     // console-only degradation, see Logging.hpp). Migration runs BEFORE

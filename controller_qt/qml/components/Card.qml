@@ -17,7 +17,7 @@ Rectangle {
     radius: Theme.radiusLg
     color: Theme.surfaceColor
     border.width: 1
-    border.color: Theme.dark ? "#ffffff14" : Theme.hairlineColor
+    border.color: Theme.hairlineColor
 
     implicitHeight: _col.implicitHeight + 2 * padding
 

@@ -113,7 +113,7 @@ Window {
             return
         root.exitDone = true
         windowStateSaver.saveWindowState(root.x, root.y, root.width,
-                                         root.height, Theme.currentTheme)
+                                         root.height, panelConfig.theme)
         trayManager.shutdown()
         Qt.quit()
     }
@@ -133,7 +133,7 @@ Window {
 
     onClosing: function(close) {
         windowStateSaver.saveWindowState(root.x, root.y, root.width,
-                                         root.height, Theme.currentTheme)
+                                         root.height, panelConfig.theme)
         if (panelConfig.closeAction === "minimize") {
             root.hide()
             close.accepted = false
@@ -154,18 +154,13 @@ Window {
         return n
     }
 
-    // ── Canvas gradient (design body: 135deg 3-stop, sits under everything;
-    // content pages stay transparent so cards float on it) ────────────────
+    // ── Canvas base (solid palette window color; chrome distinguishes
+    // itself by hairlines instead of translucent overlays) ────────────────
     Rectangle {
         id: canvasLayer
         z: 0
         anchors.fill: parent
-        gradient: Gradient {
-            orientation: Gradient.Horizontal
-            GradientStop { position: 0.0; color: Theme.bgGradA }
-            GradientStop { position: 0.5; color: Theme.bgGradB }
-            GradientStop { position: 1.0; color: Theme.bgGradC }
-        }
+        color: Theme.bgColor
     }
 
     // ── Window resize edges (frameless windows lose the system border;
@@ -231,7 +226,7 @@ Window {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        color: Theme.titleBarOverlay
+        color: "transparent"
 
         Rectangle {
             anchors.bottom: parent.bottom
@@ -323,7 +318,7 @@ Window {
         anchors.top: titleBar.bottom
         anchors.bottom: parent.bottom
         width: 256
-        color: Theme.navOverlay
+        color: "transparent"
 
         property string activeKey: "welcome"
         property string searchFilter: ""
@@ -336,25 +331,25 @@ Window {
             color: Theme.hairlineColor
         }
 
-        // search box (design .nav-search: visible Fluent field stroke).
-        // Two-layer trick: outer = stroke color, inner (inset 1px) = a
-        // near-pane opaque fill. A transparent inner let the focused
-        // accent fill the whole box (blue-background bug) and made the
-        // 1px ring too faint at high DPI.
+        // search box (Fluent field: visible stroke + bottom emphasis line).
+        // Two-layer trick: outer = stroke color, inner (inset 1px) = the
+        // field fill. A transparent inner let the focused accent fill the
+        // whole box (blue-background bug) and made the 1px ring too faint
+        // at high DPI.
         Rectangle {
             id: searchBox
             x: 10; y: 12
             width: parent.width - 20
             height: 32
             radius: Theme.radiusMd
-            color: searchInput.activeFocus ? Theme.accentColor
-                : (Theme.dark ? "#ffffff" : "#5c5c5c")
+            color: searchInput.activeFocus
+                   ? Theme.accentColor : Theme.borderColor
 
             Rectangle {
                 anchors.fill: parent
                 anchors.margins: 1
                 radius: Theme.radiusMd - 1
-                color: Theme.dark ? "#262626" : "#fafafa"
+                color: Theme.surfaceColor
 
                 Rectangle {
                     // Fluent field: heavier bottom edge inside the stroke
@@ -362,7 +357,7 @@ Window {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: 1
-                    color: Theme.dark ? "#ffffff59" : "#00000059"
+                    color: Qt.alpha(Theme.textColor, 0.25)
                 }
 
                 Text {
@@ -543,7 +538,7 @@ Window {
                         radius: 15
                         visible: assetManager.logoUrl.length === 0
                         gradient: Gradient {
-                            GradientStop { position: 0; color: "#8b8bf0" }
+                            GradientStop { position: 0; color: Qt.lighter(Theme.accentColor, 1.3) }
                             GradientStop { position: 1; color: Theme.accentColor }
                         }
                     }
@@ -551,7 +546,7 @@ Window {
                         anchors.fill: parent
                         radius: 15
                         visible: assetManager.logoUrl.length > 0
-                        color: Theme.dark ? "#2a2a2a" : "#eaeaea"
+                        color: Theme.offBgColor
                         border.width: 1
                         border.color: Theme.borderColor
                     }
@@ -734,7 +729,9 @@ Window {
 
     Component.onCompleted: {
         console.log("COLD_START_MS=" + (Date.now() - coldStartT0Ms))
-        Theme.setTheme(initialTheme)
+        // Theme colors are system-palette driven now; the persisted panel
+        // theme string (panelConfig.theme) is no longer consumed by QML —
+        // kept for SDK/persistence compatibility only.
     }
 
     // ── Inline components ───────────────────────────────────────────────
@@ -807,7 +804,7 @@ Window {
             radius: 1
             border.width: 1
             border.color: glyph._c
-            color: Theme.dark ? "#2b2b2b" : "#ffffff"
+            color: Theme.bgColor
         }
         Rectangle {
             visible: glyph.kind === "restore"
@@ -848,8 +845,8 @@ Window {
         width: 46
         height: 44
         color: _hover.hovered
-               ? (isClose ? Theme.closeHoverColor
-                          : Theme.withAlpha(Theme.textColor, 0.07))
+               ? (isClose ? Theme.errorColor
+                          : Qt.alpha(Theme.textColor, 0.07))
                : "transparent"
 
         TitleBarGlyph {
@@ -895,8 +892,8 @@ Window {
             width: parent.width - 16
             height: parent.height - 4
             radius: Theme.radiusMd
-            color: item.active ? Theme.accentAlpha(0.12)
-                : (_hover.hovered ? Theme.withAlpha(Theme.textColor, 0.05)
+            color: item.active ? Qt.alpha(Theme.accentColor, 0.12)
+                : (_hover.hovered ? Qt.alpha(Theme.textColor, 0.05)
                                   : "transparent")
             Rectangle {
                 visible: item.active
@@ -933,7 +930,7 @@ Window {
                     id: badgeTextItem
                     anchors.centerIn: parent
                     text: item.badgeText
-                    color: "#ffffff"
+                    color: Theme.accentTextColor
                     font.pixelSize: 10
                     font.weight: Font.DemiBold
                 }
@@ -962,7 +959,7 @@ Window {
             width: parent.width - 16
             height: parent.height - 4
             radius: Theme.radiusMd
-            color: _hover.hovered ? Theme.withAlpha(Theme.textColor, 0.05)
+            color: _hover.hovered ? Qt.alpha(Theme.textColor, 0.05)
                                   : "transparent"
             Row {
                 x: 12; y: (parent.height - height) / 2

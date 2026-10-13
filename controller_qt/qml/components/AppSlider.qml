@@ -28,7 +28,7 @@ Rectangle {
         width: parent.width
         height: 4
         radius: 2
-        color: Theme.withAlpha(Theme.textColor, 0.12)
+        color: Qt.alpha(Theme.textColor, 0.12)
     }
     Rectangle {
         // filled portion

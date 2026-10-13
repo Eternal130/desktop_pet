@@ -640,6 +640,18 @@ set_target_properties(desktop-pet-controller-qt PROPERTIES
     WIN32_EXECUTABLE ON
 )
 
+# Quick Controls style selection (FluentWinUI3, Qt 6.8+): the configuration
+# must live at the resource ROOT (":/qtquickcontrols2.conf" — the location
+# QQuickControlsConfiguration reads at startup). Deliberately attached to the
+# EXECUTABLE target, not to pet_panel_core's qt_add_qml_module: QTP0001 NEW
+# (see qt_policy above) places QML-module resources under ':/qt/qml/<URI>/',
+# where Qt never looks for the conf. Env-var pinning (QT_QUICK_CONTROLS_STYLE)
+# would override this file — main.cpp deliberately sets none.
+qt_add_resources(desktop-pet-controller-qt "quickcontrols2conf"
+    PREFIX "/"
+    FILES qtquickcontrols2.conf
+)
+
 target_link_libraries(desktop-pet-controller-qt PRIVATE
     pet_panel_core
     # P2c: the QML module's backing target is pet_panel_core, so the

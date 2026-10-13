@@ -1,8 +1,12 @@
 import QtQuick
-import QtQuick.Controls.Basic
+import QtQuick.Controls
 import DesktopPet
 
-// AppComboBox — bordered Fluent combo (design mock model/preset selector).
+// AppComboBox — combo following the app Quick Controls style (FluentWinUI3
+// via qtquickcontrols2.conf; was pinned to Basic until the style switch).
+// background/contentItem/indicator/delegate/popup are all overridden here, so
+// the visible result stays Theme-driven; only Fluent's behavior internals
+// (hover/press animations, palette plumbing) come from the stock style.
 // Exposes currentIndex / currentText / find() + activated(int) like ComboBox.
 ComboBox {
     id: root

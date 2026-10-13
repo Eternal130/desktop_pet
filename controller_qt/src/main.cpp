@@ -3,6 +3,8 @@
 // tree), PanelUiBoot (M3, UI bridges + the 17 context properties),
 // AppFontGuard (M4, CJK tofu guard). main() is sequencing only.
 #include <QApplication>
+#include <QDir>
+#include <QLibraryInfo>
 #include <QQmlApplicationEngine>
 #include <QCoreApplication>
 #include <QTimer>
@@ -20,14 +22,39 @@
 
 int main(int argc, char* argv[])
 {
-    // Use the Basic QuickControls style: the default native (Windows) style
-    // forbids customizing Control background/contentItem, which (a) breaks
-    // Theme-bound CheckBox/ComboBox colors and (b) crashes the renderer when
-    // QtCharts' ChartView loads under a ComboBox with a custom background.
-    // Basic imposes no palette of its own, so our Theme singleton owns all
-    // visuals. Must be set before QGuiApplication construction.
-    // Ref: https://doc.qt.io/qt-6/qtquickcontrols2-styles.html
-    qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+    // Quick Controls style: FluentWinUI3 (Qt 6.8+), selected through the embedded
+    // qtquickcontrols2.conf ([Controls] Style=FluentWinUI3, attached to this
+    // exe's resources at the root prefix in CMakeLists.txt). Do NOT set
+    // QT_QUICK_CONTROLS_STYLE unconditionally here — the environment variable
+    // would override the conf file.
+    // History: this used to qputenv "Basic" because the default native (Windows)
+    // style forbids customizing Control background/contentItem and crashed
+    // QtCharts' ChartView under a ComboBox with a custom background. FluentWinUI3
+    // is a fully QML-implemented style that ALLOWS those customizations, so the
+    // app's Theme-bound overrides (AppComboBox/AppScrollBar + page popups) keep
+    // working.
+    //
+    // FluentWinUI3 availability guard: a Qt build without the FluentWinUI3 QML
+    // style module (Ubuntu/Debian archives omit it; a trimmed windeployqt
+    // output could too) does NOT gracefully fall back — Main.qml fails outright
+    // with "module QtQuick.Controls.FluentWinUI3 is not installed" (white
+    // screen; verified on the system Qt 6.10). Probe the QML imports dir
+    // before the application object exists and, on a miss, pin Basic through
+    // the env var (which takes precedence over the embedded conf). An env
+    // value pointing at some other valid style is respected as-is.
+    {
+        const QString fluentModuleDir =
+            QLibraryInfo::path(QLibraryInfo::QmlImportsPath) +
+            QStringLiteral("/QtQuick/Controls/FluentWinUI3");
+        if (!QDir(fluentModuleDir).exists()) {
+            const QByteArray requested = qgetenv("QT_QUICK_CONTROLS_STYLE");
+            if (requested.isEmpty() || requested.compare(
+                    QByteArrayLiteral("FluentWinUI3"),
+                    Qt::CaseInsensitive) == 0) {
+                qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+            }
+        }
+    }
 
     // Hidden exit-QA hook (B.2 v2), deliberately absent from any help text:
     // --self-quit <ms> runs the FULL normal startup (engine load, window

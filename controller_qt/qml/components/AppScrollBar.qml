@@ -1,8 +1,10 @@
 import QtQuick
-import QtQuick.Controls.Basic
+import QtQuick.Controls
 import DesktopPet
 
 // AppScrollBar — minimal Fluent-style scrollbar for Flickable/ListView.
+// Follows the app Quick Controls style (was pinned to Basic); the contentItem
+// + background overrides below keep the visual identical under FluentWinUI3.
 ScrollBar {
     implicitWidth: 8
     contentItem: Rectangle {

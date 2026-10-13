@@ -35,8 +35,9 @@ namespace pet { class IEventApi; }
 class PanelConfigController : public QObject
 {
     Q_OBJECT
-    // B2 guard: closeAction is "exit" or "minimize" (NOT "hide_to_tray" —
-    // that was the legacy Java value; PanelConfig.hpp:48 uses "minimize").
+    // B2 guard: closeAction is "exit", "minimize" or "ask" (NOT
+    // "hide_to_tray" — that was the legacy Java value; PanelConfig.hpp
+    // uses "minimize").
     Q_PROPERTY(QString closeAction     READ closeAction     WRITE setCloseAction     NOTIFY closeActionChanged)
     Q_PROPERTY(bool     confirmOnExit  READ confirmOnExit  WRITE setConfirmOnExit  NOTIFY confirmOnExitChanged)
     Q_PROPERTY(bool     startMinimized READ startMinimized WRITE setStartMinimized NOTIFY startMinimizedChanged)

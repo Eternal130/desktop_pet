@@ -43,7 +43,7 @@ struct PanelConfig {
     // ── startup / exit behavior ──────────────────────────────────────────────
     bool autoLaunchSystem = false;   // system-level auto-start
     bool startMinimized = false;     // launch minimized to tray
-    QString closeAction = QStringLiteral("exit");    // "exit" | "minimize"
+    QString closeAction = QStringLiteral("exit");    // "exit" | "minimize" | "ask"
     bool confirmOnExit = false;      // prompt before quitting
 
     // ── notification bubble stream (气泡信息流) ───────────────────────────────

@@ -78,20 +78,21 @@ bool PanelConfigController::updateField(std::function<void(PanelConfig&)> mutato
 // injected pet::ISettingsApi (the same load-modify-save path plugins
 // with the settings_write grant use). Validation moved WITH the write:
 // the API answers InvalidArgument for illegal values (empty model name,
-// non-exit/minimize closeAction) and the controller keeps its cache + a
+// non-exit/minimize/ask closeAction) and the controller keeps its cache + a
 // WARN, exactly like the old inline guards. Null API (tests / degraded
 // wiring) takes the legacy direct path below — byte-identical behavior.
 
 void PanelConfigController::setCloseAction(const QString& action)
 {
     if (m_closeAction == action) return;
-    // B2 guard: only accept "exit" or "minimize". Any other value is
+    // B2 guard: only accept "exit", "minimize" or "ask". Any other value is
     // rejected (defensive — QML SegmentedControl only produces legal
     // values, but a corrupt panel.json or a future caller could pass
     // anything).
-    if (action != QLatin1String("exit") && action != QLatin1String("minimize")) {
+    if (action != QLatin1String("exit") && action != QLatin1String("minimize")
+        && action != QLatin1String("ask")) {
         LOG_WARN("PanelConfigController::setCloseAction: rejecting invalid value "
-                 "'{}' (only \"exit\"/\"minimize\" allowed)",
+                 "'{}' (only \"exit\"/\"minimize\"/\"ask\" allowed)",
                  action.toStdString());
         return;
     }

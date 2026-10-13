@@ -755,10 +755,11 @@ bool SettingsApiImpl::updateField(const std::function<void(PanelConfig&)>& mutat
 
 pet::PluginError SettingsApiImpl::setCloseAction(const QString& action)
 {
-    // Same B2 guard as the panel's own path: exactly "exit" | "minimize".
-    if (action != QLatin1String("exit") && action != QLatin1String("minimize")) {
+    // Same B2 guard as the panel's own path: exactly "exit" | "minimize" | "ask".
+    if (action != QLatin1String("exit") && action != QLatin1String("minimize")
+        && action != QLatin1String("ask")) {
         LOG_WARN("[plugin-api] settingsApi().setCloseAction('{}') — illegal "
-                 "value (only \"exit\"/\"minimize\"), ERR_INVALID_ARGUMENT",
+                 "value (only \"exit\"/\"minimize\"/\"ask\"), ERR_INVALID_ARGUMENT",
                  action.toStdString());
         return pet::PluginError::InvalidArgument;
     }

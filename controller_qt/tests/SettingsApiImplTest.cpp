@@ -56,6 +56,7 @@ class SettingsApiImplTest : public QObject
 private slots:
     void testRoundTripPersistsAllFourFields();
     void testCloseActionRejectsIllegalValues();
+    void testCloseActionAcceptsAsk();
     void testDefaultModelNameRejectsEmpty();
     void testAutoLaunchIsNotInTheInterface();
     void testSharedDatabaseBackend();
@@ -115,7 +116,7 @@ void SettingsApiImplTest::testCloseActionRejectsIllegalValues()
     core::SettingsApiImpl api(base.path(), nullptr);
 
     const QStringList illegal{
-        QString(), QStringLiteral("hide_to_tray"), QStringLiteral("ask"),
+        QString(), QStringLiteral("hide_to_tray"),
         QStringLiteral("EXIT"), QStringLiteral("exit ")};
     for (const QString& bad : illegal) {
         QCOMPARE(api.setCloseAction(bad), pet::PluginError::InvalidArgument);
@@ -123,6 +124,18 @@ void SettingsApiImplTest::testCloseActionRejectsIllegalValues()
     // Nothing was persisted — the store still holds the default.
     const PanelConfig cfg = PanelStateManager(base.path()).load();
     QCOMPARE(cfg.closeAction, QStringLiteral("exit"));
+}
+
+void SettingsApiImplTest::testCloseActionAcceptsAsk()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    core::SettingsApiImpl api(base.path(), nullptr);
+
+    // "ask" is a legal third value (SettingsPage 每次询问 — confirm dialog).
+    QCOMPARE(api.setCloseAction(QStringLiteral("ask")), pet::PluginError::Ok);
+    const PanelConfig cfg = PanelStateManager(base.path()).load();
+    QCOMPARE(cfg.closeAction, QStringLiteral("ask"));
 }
 
 void SettingsApiImplTest::testDefaultModelNameRejectsEmpty()

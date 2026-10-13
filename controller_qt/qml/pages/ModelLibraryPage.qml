@@ -341,7 +341,7 @@ Rectangle {
                     Card {
                         width: parent.width
                         title: qsTr("模型库")
-                        hint: qsTr("ModelScanner · 目录含 <名称>.model3.json 即收录")
+                        hint: qsTr("目录含 <名称>.model3.json 即收录")
 
                         Column {
                             width: parent.width

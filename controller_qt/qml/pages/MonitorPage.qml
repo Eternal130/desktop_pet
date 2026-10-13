@@ -225,7 +225,13 @@ Rectangle {
             // ── Crash-recovery card ────────────────────────────────────
             Card {
                 width: parent.width
-                title: qsTr("崩溃恢复状态 · RestartController")
+                // restartAttempts() is the live RestartController counter
+                // (Q_INVOKABLE read, same source as the body line below);
+                // only a real non-zero count gets the "N 次" wording.
+                title: instance && instance.restartAttempts() > 0
+                    ? qsTr("崩溃后已自动重启 %1 次").arg(
+                          instance.restartAttempts())
+                    : qsTr("崩溃后自动重启")
 
                 StatusPill {
                     status: instance && instance.connected ? "running" : "stopped"
@@ -242,7 +248,7 @@ Rectangle {
                            ? qsTr("重启尝试 %1/5 · 指数退避 2s→30s").arg(
                                  instance.restartAttempts())
                            : "") +
-                          qsTr(" · layout_state 事件正常同步")
+                          qsTr(" · 窗口位置同步正常")
                 }
             }
         }

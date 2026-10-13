@@ -7,7 +7,19 @@ Rectangle {
     id: root
 
     property string status: "stopped"
-    property string label: ""       // override text; defaults to `status`
+    property string label: ""       // override text; defaults to mapped `status`
+
+    // Built-in Chinese mapping for the known statuses; unknown statuses
+    // still fall back to the raw string. One change covers every call
+    // site — explicit `label` overrides keep winning.
+    readonly property string _mappedLabel: {
+        if (status === "running")    return qsTr("运行中")
+        if (status === "connecting") return qsTr("连接中")
+        if (status === "pending")    return qsTr("启动中")
+        if (status === "error")      return qsTr("异常")
+        if (status === "stopped")    return qsTr("已停止")
+        return status
+    }
 
     readonly property color _c: {
         if (status === "running")                            return Theme.successColor
@@ -32,7 +44,7 @@ Rectangle {
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: root.label.length > 0 ? root.label : root.status
+            text: root.label.length > 0 ? root.label : root._mappedLabel
             color: root._c
             font.pixelSize: 11
             font.capitalization: Font.AllUppercase

@@ -72,7 +72,7 @@ Rectangle {
                 }
             }
             Text {
-                text: qsTr("发现于 meta.mko · 手写 protobuf 解析（无 libprotobuf 依赖）" +
+                text: qsTr("通过语音包内的 meta.mko 清单识别" +
                            " · 挂载后行为引擎优先处理命中与待机")
                 color: _mutedColor
                 font.pixelSize: 13
@@ -115,7 +115,6 @@ Rectangle {
                     Card {
                         width: parent.width
                         title: qsTr("语音包库")
-                        hint: qsTr("VoicePackScanner")
 
                         Column {
                             width: parent.width

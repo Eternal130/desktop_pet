@@ -11,6 +11,7 @@ Rectangle {
     property string positiveText: qsTr("确定")
     property string negativeText: qsTr("取消")
     property bool showNegative: true
+    property bool danger: false   // positive button renders as "danger"
 
     signal positiveClicked()
     signal negativeClicked()
@@ -62,7 +63,7 @@ Rectangle {
                 spacing: 10
                 layoutDirection: Qt.RightToLeft
                 AppButton {
-                    style: "primary"
+                    style: root.danger ? "danger" : "primary"
                     text: root.positiveText
                     onClicked: {
                         root.positiveClicked()

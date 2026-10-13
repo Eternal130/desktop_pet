@@ -38,6 +38,13 @@ Window {
     function selectInstance(row, uuid) {
         root.currentInstanceUuid = uuid
         root.currentInstance = instanceManager.instanceAt(row)
+        // Instance→instance navigation: Loader keeps the old page when
+        // sourceComponent is unchanged, so sliders/switches would keep
+        // the previous instance's state. Clear first to force destroy +
+        // rebuild; switchPage re-assigns the component right after and
+        // controls reset naturally.
+        if (pageLoader.sourceComponent === instanceDetailPageComp)
+            pageLoader.sourceComponent = undefined
         switchPage("instance")
     }
 
@@ -626,8 +633,27 @@ Window {
     // ── Dialogs ─────────────────────────────────────────────────────────
     AppDialog {
         id: deleteConfirmDialog
+        danger: true
         title: qsTr("删除实例")
-        message: qsTr("删除该实例？此操作不可撤销。")
+        // Roster READ (legal per the boundary discipline): resolve the
+        // instance label from pendingUuid so the warning names the exact
+        // instance. At open time the row always still exists (the actual
+        // delete happens in onPositiveClicked / two-phase stop); the
+        // nameless fallback only guards a vanished row.
+        message: {
+            let name = ""
+            for (let i = 0; i < instanceManager.rowCount(); ++i) {
+                const s = instanceManager.instanceAt(i)
+                if (s && s.uuid === deleteConfirmDialog.pendingUuid) {
+                    name = s.label
+                    break
+                }
+            }
+            return name.length > 0
+                ? qsTr("删除实例「%1」？该实例的配置将被移除，此操作不可撤销。")
+                      .arg(name)
+                : qsTr("删除该实例？该实例的配置将被移除，此操作不可撤销。")
+        }
         positiveText: qsTr("删除")
         onPositiveClicked: {
             const gone = pendingUuid

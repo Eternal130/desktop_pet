@@ -266,6 +266,12 @@ Rectangle {
                         }
                     }
 
+                    // Fixed slots (UX fix): lifecycle actions keep stable
+                    // positions — start/stop share ONE slot (text + style
+                    // swap only, no visible toggling that used to shift
+                    // the row), restart stays put and just disables when
+                    // not running, and delete is isolated to the far
+                    // right behind a 16px gap.
                     Row {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
@@ -277,6 +283,27 @@ Rectangle {
                             onClicked: createDialog.open()
                         }
                         AppButton {
+                            style: instance && instance.status === "running"
+                                   ? "subtle" : "primary"
+                            text: instance && instance.status === "running"
+                                  ? qsTr("⏹ 停止") : qsTr("▶ 启动")
+                            anchors.verticalCenter: parent.verticalCenter
+                            // S5: writes go through the shared-API bridge
+                            // (reads keep the live session object).
+                            onClicked: if (instance)
+                                instance && instance.status === "running"
+                                    ? instanceControl.stop(instance.uuid)
+                                    : instanceControl.start(instance.uuid)
+                        }
+                        AppButton {
+                            text: qsTr("↻ 重启")
+                            enabled: instance && instance.status === "running"
+                            anchors.verticalCenter: parent.verticalCenter
+                            onClicked: if (instance)
+                                instanceControl.restart(instance.uuid)
+                        }
+                        Item { width: 16; height: 1 }
+                        AppButton {
                             style: "danger"
                             text: qsTr("🗑 删除")
                             anchors.verticalCenter: parent.verticalCenter
@@ -285,30 +312,6 @@ Rectangle {
                             // matched rowForUuid — delete silently no-op'd.
                             onClicked: if (instance)
                                 instanceManager.requestDelete(instance.uuid)
-                        }
-                        AppButton {
-                            text: qsTr("↻ 重启")
-                            visible: instance && instance.status === "running"
-                            anchors.verticalCenter: parent.verticalCenter
-                            // S5: writes go through the shared-API bridge
-                            // (reads keep the live session object).
-                            onClicked: if (instance)
-                                instanceControl.restart(instance.uuid)
-                        }
-                        AppButton {
-                            text: qsTr("⏹ 停止")
-                            visible: instance && instance.status === "running"
-                            anchors.verticalCenter: parent.verticalCenter
-                            onClicked: if (instance)
-                                instanceControl.stop(instance.uuid)
-                        }
-                        AppButton {
-                            style: "primary"
-                            text: qsTr("▶ 启动")
-                            visible: !(instance && instance.status === "running")
-                            anchors.verticalCenter: parent.verticalCenter
-                            onClicked: if (instance)
-                                instanceControl.start(instance.uuid)
                         }
                     }
                 }
@@ -330,7 +333,7 @@ Rectangle {
                     Card {
                         width: parent.width
                         title: qsTr("舞台 · 模型与动作")
-                        hint: qsTr("模型切换即时生效 (load_model) · 渲染后端重启实例后生效")
+                        hint: qsTr("模型切换即时生效 · 渲染后端重启实例后生效")
 
                         Row {
                             width: parent.width
@@ -517,7 +520,7 @@ Rectangle {
                         }
                         Text {
                             visible: root.stageTab === 2
-                            text: qsTr("命中区域来自 set_hit_areas 缓存，点击可试触 (play_motion)")
+                            text: qsTr("命中区域已缓存，点击可试触")
                             color: root._faintColor
                             font.pixelSize: 11
                         }
@@ -613,7 +616,7 @@ Rectangle {
                         ParamRow {
                             width: parent.width
                             labelText: qsTr("待机动作间隔")
-                            descText: qsTr("Scheduler 空闲轮询")
+                            descText: qsTr("自动播放空闲动作")
                             Text {
                                 text: instance
                                     ? (instance.idleIntervalSeconds() + " s")
@@ -625,7 +628,7 @@ Rectangle {
                         ParamRow {
                             width: parent.width
                             labelText: qsTr("拖拽模式")
-                            descText: qsTr("drag_persist 已启用")
+                            descText: qsTr("拖动宠物即可移动，位置自动保存")
                             Text {
                                 text: instance ? instance.dragMode() : "direct"
                                 color: root._mutedColor

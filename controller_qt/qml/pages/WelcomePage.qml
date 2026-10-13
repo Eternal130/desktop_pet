@@ -194,10 +194,14 @@ Rectangle {
                     spacing: 8
                     AppButton {
                         style: "subtle"
-                        text: qsTr("⤓ 导入配置")
+                        text: qsTr("📂 打开语音包目录")
                         anchors.verticalCenter: parent.verticalCenter
-                        onClicked: Qt.openUrlExternally(
-                            "file:///" + voicePacks.voicePackDir())
+                        // Same C++ entry as VoicePackPage's header button
+                        // (mkpath + QDesktopServices + fromLocalFile).
+                        // String-concatenating "file:///" + absolute path
+                        // yields four slashes on Linux → invalid URL →
+                        // silent no-op.
+                        onClicked: voicePacks.openVoicePackDir()
                     }
                     AppButton {
                         style: "primary"

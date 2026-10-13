@@ -364,6 +364,14 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(${APP_NAME} ${X11_LIBRARIES})
 endif()
 
+# Release-only link-time symbol strip (package slimming) — twin of the note
+# in controller_qt/CMakeLists.txt. ONE call covers both shipped binaries:
+# the Vulkan variant is this same target with OUTPUT_NAME switched (USE_VULKAN
+# is a compile-time switch, never two targets at once).
+if(MINGW OR (UNIX AND NOT APPLE))
+    target_link_options(${APP_NAME} PRIVATE "$<$<CONFIG:Release>:-s>")
+endif()
+
 # === Post-build: copy resources, shaders, and DLL ===
 if(USE_VULKAN)
     add_custom_command(

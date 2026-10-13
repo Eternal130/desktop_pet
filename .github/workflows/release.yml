@@ -3,7 +3,11 @@
 #
 # Artifacts per release:
 #   Windows: DesktopPet-Setup-<tag-no-v>.exe (Inno Setup) + portable zip
-#   Linux:   DesktopPet-<tag>-x86_64.AppImage + portable tar.gz
+#            + DesktopPet-Update-<tag>-windows-x64.zip (slim overwrite-update:
+#              build/bin minus fonts/ + Resources/Models/ — for users who
+#              already installed a full release; those first-install payloads
+#              are ~61MB and never change between releases)
+#   Linux:   DesktopPet-<tag>-x86_64.AppImage + portable tar.gz (both full)
 #
 # Coexists with ci.yml by design: ci handles push/PR, this handles tags.
 # The Qt-install / env-resolution / bootstrap step blocks intentionally
@@ -136,6 +140,39 @@ jobs:
           if [ "$zip_size" -lt 1000000 ]; then
             echo "portable zip is only ${zip_size} bytes — staging failed?" >&2
             ls -laR stage | head -20 >&2
+            exit 1
+          fi
+          ls -la dist/
+
+      - name: Update zip (build/bin minus fonts/models, overwrite-update)
+        run: |
+          # Slim update package for users who already installed a FULL
+          # release: everything from build/bin EXCEPT fonts/ (~37MB, 4 CJK
+          # fonts) and Resources/Models/ (~24MB, 8 sample models) — the
+          # update is an unzip-over-{localappdata}\DesktopPet overwrite, and
+          # those first-install payloads are already on the user's disk.
+          # Same tar-pipe staging + 7z + size-floor self-check as above.
+          mkdir -p dist updstage
+          (cd build/bin && tar cf - \
+              --exclude=renderer_tests.exe \
+              --exclude=desktop-pet-controller-qt-poc.exe \
+              --exclude='*.pdb' --exclude='*.lib' \
+              --exclude=./fonts --exclude=./Resources/Models \
+              .) | (cd updstage && tar xf -)
+          # Guard against staging failures landing in the Release: a broken
+          # tar pipe archives ~nothing, while the real payload (Qt runtime +
+          # both renderers + shaders, after the windeployqt pruning) is
+          # comfortably above 20MB compressed. fonts/models omission is
+          # verified below by content checks, not by this size floor.
+          if [ -d updstage/fonts ] || [ -d updstage/Resources/Models ]; then
+            echo "update zip staging unexpectedly contains fonts/ or Resources/Models/ — exclude failed" >&2
+            exit 1
+          fi
+          (cd updstage && 7z a "../dist/DesktopPet-Update-$TAG-windows-x64.zip" ./*)
+          upd_size=$(wc -c < "dist/DesktopPet-Update-$TAG-windows-x64.zip")
+          if [ "$upd_size" -lt 20000000 ]; then
+            echo "update zip is only ${upd_size} bytes — staging failed?" >&2
+            ls -laR updstage | head -20 >&2
             exit 1
           fi
           ls -la dist/

@@ -90,12 +90,21 @@ function(pet_deploy_qt_test target)
         "$<TARGET_FILE:${target}>")
 endfunction()
 
-# App flavor — exact replica of the retired orchestrator's post-build
-# invocation for the main exe: full deployment with --qmldir pointing at the QML
-# sources so the QML plugin DLLs ship next to the standalone panel.
+# App flavor — release-grade deployment of the main exe: --qmldir over the
+# QML sources so the QML plugin DLLs ship next to the standalone panel, plus
+# two deliberate omissions (installer slimming, both zero-risk):
+#   --no-translations  Qt's own .qm translation files (~7MB) — the panel UI
+#                      ships its own Simplified Chinese strings and never
+#                      switches to Qt's built-in translations.
+#   --no-opengl-sw     opengl32sw.dll (Mesa software GL, ~20MB) — Qt Quick
+#                      defaults to the D3D11 RHI on Windows (WARP is the
+#                      software fallback there, not Mesa GL); the renderer
+#                      exe does not use Qt at all (GLFW + opengl32 direct).
 function(pet_deploy_qt_app target)
     _pet_deploy_qt_impl("${target}"
         "Running windeployqt for ${target}"
         --qmldir "${PROJECT_SOURCE_DIR}/qml"
+        --no-translations
+        --no-opengl-sw
         "$<TARGET_FILE:${target}>")
 endfunction()

@@ -662,6 +662,16 @@ target_link_libraries(desktop-pet-controller-qt PRIVATE
 # table (no --modules flag needed).
 pet_deploy_qt_app(desktop-pet-controller-qt)
 
+# Release-only link-time symbol strip (package slimming): MinGW/GCC exes keep
+# a full symbol table by default (~17MB Windows / ~10MB Linux for this exe).
+# '-s' makes the linker drop it. Release builds carry no -g info anyway and
+# crash triage goes through logs, not symbols, so nothing is lost. The
+# generator expression keeps Debug/RelWithDebInfo (and test binaries, which
+# never use this target) untouched.
+if(MINGW OR (UNIX AND NOT APPLE))
+    target_link_options(desktop-pet-controller-qt PRIVATE "$<$<CONFIG:Release>:-s>")
+endif()
+
 # CJK font deployment (tofu guard, pairs with installDefaultFontWithCjk() in
 # src/main.cpp): the font SINGLE SOURCE OF TRUTH lives in
 # renderer/resources/fonts (OFL-licensed). The controller deploys its own copy

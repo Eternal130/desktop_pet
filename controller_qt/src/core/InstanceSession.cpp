@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QQmlEngine>
 #include <QRandomGenerator>
 #include <QtGlobal>
 
@@ -86,6 +87,16 @@ InstanceSession::InstanceSession(InstanceConfig config, WsServer& server,
     , m_mbeAdapter(this)
     , m_ihAdapter(this)
 {
+    // Ownership pin (P0 use-after-free fix): InstanceManager::instanceAt()
+    // exposes this session to QML. Sessions are parentless QObject* at that
+    // boundary, so the QML engine would grant JavaScriptOwnership and GC
+    // could deleteLater() the session while InstanceManager::m_sessions still
+    // holds the pointer (ASAN-confirmed heap-use-after-free via
+    // launchAutoStartInstances → autoStartEnabled). The manager owns the
+    // session lifetime exclusively — pin CppOwnership so JS GC never
+    // collects it. Verified: crash disappears with this pin (wave-2 QA).
+    QQmlEngine::setObjectOwnership(this, QQmlEngine::CppOwnership);
+
     // Derive a stable positive int from the config UUID. The WsServer token
     // registry (QMap<int, QString>) keys on an int instance_id; InstanceConfig
     // holds only a string UUID, so a deterministic hash gives a stable key that

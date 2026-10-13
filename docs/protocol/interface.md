@@ -421,7 +421,7 @@
 |:---|:---|:---:|:---|:---|
 | `expression_id` | string | ✓ | `""` | 表情 ID（如 `"default"`，来源于 `.model3.json` 的 Expressions 定义） |
 
-> `expression_id` 不存在时**静默忽略**。
+> `expression_id` 不存在时**静默忽略**；应用成功时上报 [`expression_applied`](./events.md#16-expression_applied--表情应用成功回执) 事件（`expression_id` 原样回传）。
 
 ---
 
@@ -752,6 +752,7 @@ WS 连接建立后渲染器**主动发送**，通知控制面板可以下发指�
 | `gpu_name` | string? | GPU 适配器名称（如 `"NVIDIA GeForce RTX 3060"`）。不可用时 `null` |
 | `vram_used_bytes` | int64? | 已用显存，字节数。Windows 经 DXGI per-process 采集；不可用时 `null` |
 | `vram_total_bytes` | int64? | 显存总量，字节数。不可用时 `null` |
+| `fps` | float | 渲染主循环实测帧率（EMA 平滑 ≈1s 窗口，1 位小数）。始终可用（首帧前理论值为 `-1` 哨兵） |
 | `timestamp_ms` | int64 | 渲染器侧采集时间戳（Unix 毫秒）。**始终可用** |
 
 **平台差异**：

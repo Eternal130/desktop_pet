@@ -526,7 +526,20 @@ CubismMotionQueueEntryHandle LAppModel::StartMotion(const csmChar* group, csmInt
     {
         LAppPal::PrintLogLn("[APP]start motion: [%s_%d]", group, no);
     }
-    return  _motionManager->StartMotionPriority(motion, autoDelete, priority);
+    const CubismMotionQueueEntryHandle handle = _motionManager->StartMotionPriority(motion, autoDelete, priority);
+    // Track for motion_progress snapshots (events.md §17): identity mirrors
+    // the motion_started payload (group/index exactly as commanded). Failure
+    // paths above return early and deliberately keep the previous tracking —
+    // the old motion keeps playing when the priority guard rejects.
+    if (handle != InvalidMotionQueueEntryHandleValue)
+    {
+        _progressMotion.handle = handle;
+        _progressMotion.isPathVariant = false;
+        _progressMotion.group = group ? group : "";
+        _progressMotion.index = no;
+        _progressMotion.path.clear();
+    }
+    return handle;
 }
 
 CubismMotionQueueEntryHandle LAppModel::StartMotionWithCustomData(const csmChar* group, csmInt32 no, csmInt32 priority, ACubismMotion::FinishedMotionCallback onFinishedMotionHandler, void* customData)
@@ -650,7 +663,7 @@ std::vector<std::string> LAppModel::GetHitAreaNames() const
     return names;
 }
 
-void LAppModel::SetExpression(const csmChar* expressionID)
+bool LAppModel::SetExpression(const csmChar* expressionID)
 {
     ACubismMotion* motion = _expressions[expressionID];
     if (_debugMode)
@@ -661,10 +674,12 @@ void LAppModel::SetExpression(const csmChar* expressionID)
     if (motion != NULL)
     {
         _expressionManager->StartMotion(motion, false);
+        return true;
     }
     else
     {
         if (_debugMode) LAppPal::PrintLogLn("[APP]expression[%s] is null ", expressionID);
+        return false;
     }
 }
 
@@ -843,8 +858,59 @@ bool LAppModel::StartMotionFromFile(const std::string& filePath, int priority,
     motion->SetFinishedMotionHandler(OnExtMotionFinishedStatic);
     motion->SetFinishedMotionCustomData(ctx);
 
-    _motionManager->StartMotionPriority(motion, true, priority);
+    const CubismMotionQueueEntryHandle handle = _motionManager->StartMotionPriority(motion, true, priority);
+    // Track for motion_progress snapshots (events.md §17). Path variant has
+    // no group/index, so the identity mirrors the motion_finished path
+    // variant convention ({"motion_path": ...}) instead of fabricating one.
+    if (handle != InvalidMotionQueueEntryHandleValue)
+    {
+        _progressMotion.handle = handle;
+        _progressMotion.isPathVariant = true;
+        _progressMotion.group.clear();
+        _progressMotion.index = -1;
+        _progressMotion.path = filePath;
+    }
     return true;
+}
+
+LAppModel::MotionProgressSnapshot LAppModel::GetMotionProgress()
+{
+    MotionProgressSnapshot snap;
+    if (_progressMotion.handle == nullptr)
+    {
+        return snap; // nothing protocol-started since model load
+    }
+
+    CubismMotionQueueEntry* entry = _motionManager->GetCubismMotionQueueEntry(_progressMotion.handle);
+    // Entry lookup misses once the motion finished/was erased (incl.
+    // StopAllMotions) — that IS the end-of-motion stop contract.
+    if (entry == NULL || !entry->IsStarted() || entry->IsFinished())
+    {
+        return snap;
+    }
+
+    snap.active = true;
+    snap.isPathVariant = _progressMotion.isPathVariant;
+    snap.group = _progressMotion.group;
+    snap.index = _progressMotion.index;
+    snap.path = _progressMotion.path;
+
+    // Progress purely from the entry's own timeline: GetStateTime() is the
+    // motion manager clock at the last UpdateMotion (set via SetState in
+    // ACubismMotion::UpdateFadeWeight) — the same domain GetStartTime()/
+    // GetEndTime() live in (endTime = startTime + Duration from
+    // AdjustEndTime; looping motions keep endTime = -1 → omit progress).
+    const csmFloat32 start = entry->GetStartTime();
+    const csmFloat32 end = entry->GetEndTime();
+    const csmFloat32 now = entry->GetStateTime();
+    const csmFloat32 span = end - start;
+    if (end > 0.0f && span > 0.0f)
+    {
+        snap.hasProgress = true;
+        const csmFloat32 raw = (now - start) / span;
+        snap.progress = (raw < 0.0f) ? 0.0f : (raw > 1.0f) ? 1.0f : raw;
+    }
+    return snap;
 }
 
 void LAppModel::StartLipSyncFromFile(const std::string& path) {

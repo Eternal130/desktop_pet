@@ -14,7 +14,7 @@ using Monitor::GpuMetrics;
 using Monitor::ProcessStats;
 using Monitor::buildStatsPayload;
 
-// The 7 wire keys defined by the protocol spec under docs/protocol/ — adding
+// The 8 wire keys defined by the protocol spec under docs/protocol/ — adding
 // or removing any of these is a breaking protocol change. This test is the
 // byte-for-byte gate referenced in plan T3 acceptance criteria.
 static const std::set<std::string> kExpectedKeys = {
@@ -24,6 +24,7 @@ static const std::set<std::string> kExpectedKeys = {
     "gpu_name",
     "vram_used_bytes",
     "vram_total_bytes",
+    "fps",
     "timestamp_ms",
 };
 
@@ -47,7 +48,7 @@ TEST(StatsPayloadTest, FullyPopulatedPayloadHasContractKeysAndValues) {
     gm.vramTotalBytes        = 8589934592ULL;
     gm.gpuName               = "Test GPU";
 
-    const json payload = buildStatsPayload(ps, &gm);
+    const json payload = buildStatsPayload(ps, &gm, 59.96);
 
     expectExactKeySet(payload);
     EXPECT_DOUBLE_EQ(payload["cpu_percent"].get<double>(), 42.5);
@@ -56,6 +57,8 @@ TEST(StatsPayloadTest, FullyPopulatedPayloadHasContractKeysAndValues) {
     EXPECT_EQ(payload["gpu_name"].get<std::string>(), "Test GPU");
     EXPECT_EQ(payload["vram_used_bytes"].get<uint64_t>(), 536870912ULL);
     EXPECT_EQ(payload["vram_total_bytes"].get<uint64_t>(), 8589934592ULL);
+    // fps is rounded to one decimal (59.96 → 60.0).
+    EXPECT_DOUBLE_EQ(payload["fps"].get<double>(), 60.0);
     EXPECT_GT(payload["timestamp_ms"].get<int64_t>(), 0);
 }
 
@@ -67,13 +70,14 @@ TEST(StatsPayloadTest, EmptyGpuMetricsRenderNullableFieldsAsJsonNull) {
     GpuMetrics gm; // all optionals nullopt, gpuName empty
     gm.gpuName = "Stub";
 
-    const json payload = buildStatsPayload(ps, &gm);
+    const json payload = buildStatsPayload(ps, &gm, 60.0);
 
     expectExactKeySet(payload);
     EXPECT_TRUE(payload["gpu_percent"].is_null());
     EXPECT_EQ(payload["gpu_name"].get<std::string>(), "Stub");
     EXPECT_TRUE(payload["vram_used_bytes"].is_null());
     EXPECT_TRUE(payload["vram_total_bytes"].is_null());
+    EXPECT_DOUBLE_EQ(payload["fps"].get<double>(), 60.0);
 }
 
 TEST(StatsPayloadTest, NullGpuMonitorProducesAllNullGpuFields) {
@@ -81,7 +85,7 @@ TEST(StatsPayloadTest, NullGpuMonitorProducesAllNullGpuFields) {
     ps.cpuPercent = 0.0;
     ps.rssBytes   = 0ULL;
 
-    const json payload = buildStatsPayload(ps, nullptr);
+    const json payload = buildStatsPayload(ps, nullptr, 30.0);
 
     expectExactKeySet(payload);
     EXPECT_TRUE(payload["gpu_percent"].is_null());
@@ -89,12 +93,22 @@ TEST(StatsPayloadTest, NullGpuMonitorProducesAllNullGpuFields) {
     EXPECT_TRUE(payload["vram_used_bytes"].is_null());
     EXPECT_TRUE(payload["vram_total_bytes"].is_null());
     EXPECT_DOUBLE_EQ(payload["cpu_percent"].get<double>(), 0.0);
+    EXPECT_DOUBLE_EQ(payload["fps"].get<double>(), 30.0);
+}
+
+TEST(StatsPayloadTest, FpsSentinelPassesThroughUnrounded) {
+    ProcessStats ps{1.0, 1ULL};
+    // FpsCounter emits -1 before its first valid sample; the payload keeps
+    // the sentinel untouched (panel-side "unavailable" convention).
+    const json payload = buildStatsPayload(ps, nullptr, -1.0);
+    expectExactKeySet(payload);
+    EXPECT_DOUBLE_EQ(payload["fps"].get<double>(), -1.0);
 }
 
 TEST(StatsPayloadTest, TimestampAdvancesAcrossSamples) {
     ProcessStats ps{1.0, 1ULL};
-    const json first  = buildStatsPayload(ps, nullptr);
-    const json second = buildStatsPayload(ps, nullptr);
+    const json first  = buildStatsPayload(ps, nullptr, 60.0);
+    const json second = buildStatsPayload(ps, nullptr, 60.0);
     EXPECT_GE(second["timestamp_ms"].get<int64_t>(),
               first["timestamp_ms"].get<int64_t>());
 }

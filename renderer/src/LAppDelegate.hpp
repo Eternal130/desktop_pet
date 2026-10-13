@@ -12,6 +12,8 @@
 #include "LAppAllocator_Common.hpp"
 #include "platform/WindowManager.hpp"
 #include "graphics/IGraphicsBackend.hpp"
+#include "MotionProgressThrottle.hpp"
+#include "monitor/FpsCounter.hpp"
 
 class LAppView;
 class LAppTextureManager;
@@ -60,6 +62,10 @@ public:
     float GetMouseX() const { return _mouseX; }
     float GetMouseY() const { return _mouseY; }
 
+    /// Smoothed measured frame rate (EMA, ~1s window) for the get_stats /
+    /// stats_state `fps` field. -1 until the first frame (FpsCounter sentinel).
+    double GetMeasuredFps() const { return _fpsCounter.fps(); }
+
 private:
     bool IsHitModel(Csm::csmFloat32 x, Csm::csmFloat32 y) const;
 
@@ -69,6 +75,7 @@ private:
     void InitializeCubism();
     void InitializeNetwork();
     void PollNetworkMessages();
+    void PollMotionProgress();
 
     LAppAllocator_Common _cubismAllocator;
     Csm::CubismFramework::Option _cubismOption;
@@ -115,6 +122,13 @@ private:
     bool _hasStartupSize;
 
     AudioManager* _audioManager;
+
+    // motion_progress event pacing (events.md §17): pure throttle, fed once
+    // per frame from Run() — never degrades to per-frame emission.
+    MotionProgressThrottle _motionProgressThrottle;
+    // Measured frame rate fed from Run() (same delta the Cubism update
+    // consumes); read by the get_stats handler on this same main thread.
+    Monitor::FpsCounter _fpsCounter;
 };
 
 class EventHandler

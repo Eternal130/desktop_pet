@@ -96,6 +96,33 @@ public:
                                      float fadeIn, float fadeOut, Network::EventEmitter* emitter);
 
     /**
+     * @brief   再生中モーションの進捗スナップショット（motion_progress WS イベント用）
+     *
+     *          直近にプロトコル経由（play_motion / play_motion_ext）で開始した
+     *          モーションが「再生中」であるか、その識別子と進捗を返す。
+     *          進捗は CubismMotionQueueEntry 自身のタイムラインから計算する：
+     *          GetStateTime()（最終 UpdateMotion 時刻）と GetStartTime()/GetEndTime()
+     *          （AdjustEndTime が start + Duration を設定。ループモーションは -1）
+     *          は同一の motion manager クロック域にあり、枠外の時計を要しない。
+     *
+     * @return  スナップショット。active=false は「追跡中の再生なし」＝
+     *          呼び出し側は何も送信しない（アイドル時ゼロ発火）。
+     *          hasProgress=false は duration 不明（ループ／開始直前）で
+     *          progress フィールドを省略すべきことを意味する（偽装値禁止）。
+     */
+    struct MotionProgressSnapshot {
+        bool active = false;          ///< tracked motion is playing right now
+        bool isPathVariant = false;   ///< play_motion_ext identity (motion_path) vs play_motion (group/index)
+        std::string group;            ///< group variant: motion group ("" for path variant)
+        int index = -1;               ///< group variant: group index (-1 for path variant)
+        std::string path;             ///< path variant: motion file path ("" for group variant)
+        bool hasProgress = false;     ///< false → duration unknown: omit progress
+        float progress = 0.0f;        ///< [0,1], valid only when hasProgress
+    };
+    MotionProgressSnapshot GetMotionProgress();
+
+
+    /**
      * @brief   ランダムに選ばれたモーションの再生を開始する。
      *
      * @param[in]   group                       モーショングループ名
@@ -110,8 +137,10 @@ public:
      * @brief   引数で指定した表情モーションをセットする
      *
      * @param   expressionID    表情モーションのID
+     * @return                  表情が見つかり表情マネージャーへ送出された場合はtrue。
+     *                          IDが存在しない場合（従来の静黙無視）はfalse
      */
-    void SetExpression(const Csm::csmChar* expressionID);
+    bool SetExpression(const Csm::csmChar* expressionID);
 
     /**
      * @brief   ランダムに選ばれた表情モーションをセットする
@@ -236,6 +265,20 @@ public:
     void StopLipSyncData();
 
 private:
+
+    // Identity of the most recent protocol-started motion, consumed by
+    // GetMotionProgress() for the motion_progress event (events.md §17).
+    // Set on every successful StartMotion / StartMotionFromFile; the handle
+    // goes stale (= lookup misses) the moment the entry finishes or is
+    // erased from the queue, which is exactly the "stop on motion end"
+    // contract — motion_finished already covers the end itself.
+    struct MotionProgressId {
+        Csm::CubismMotionQueueEntryHandle handle = nullptr;
+        bool isPathVariant = false;
+        std::string group;
+        int index = -1;
+        std::string path;
+    } _progressMotion;
 
     float _userOffsetX = 0.0f;
     float _userOffsetY = 0.0f;

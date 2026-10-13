@@ -118,7 +118,7 @@
 |:---|:---|:---:|:---|:---|
 | `expression_id` | string | ✓ | `""` | 表情 ID（如 `"default"`，来源于 `.model3.json` 的 Expressions 定义） |
 
-> **`expression_id` 的有效值**：取决于当前加载的模型，详见 [Events — `model_loaded`](./events.md#2-model_loaded--模型加载完成) 中的"模型能力发现"说明。若 `expression_id` 不存在，静默忽略。
+> **`expression_id` 的有效值**：取决于当前加载的模型，详见 [Events — `model_loaded`](./events.md#2-model_loaded--模型加载完成) 中的"模型能力发现"说明。若 `expression_id` 不存在，静默忽略。**应用成功**时上报 [`expression_applied`](./events.md#16-expression_applied--表情应用成功回执) 事件（`expression_id` 原样回传）；不存在时静默忽略——不产生事件，也无错误码，调用方以"未收到回执"判定未应用。
 
 ---
 
@@ -331,7 +331,7 @@ Phase 3 指令分两批在 `renderer/src/network/CommandHandlers.cpp` 中注册�
 
 **渲染器处理流程**：
 1. 在主渲染线程采集进程 CPU/RSS（`ProcessStatsCollector`）与 GPU 利用率/显存（`IGpuMonitor`）。handler 经 `LAppDelegate::Run` 的 `PollNetworkMessages` → `drainMessages` 派发，**主线程执行**，不从 WebSocket 回调线程调用任何系统采集 API（PDH/DXGI/psapi，项目铁律）。
-2. 构造 payload（字段见 [Events — `stats_state`](./events.md#11-stats_state--资源占用快照)）。GPU 监视器未初始化（如 Linux Stub）时 4 个 GPU 相关字段（`gpu_percent`、`gpu_name`、`vram_used_bytes`、`vram_total_bytes`）置为 `null`；已初始化但单项采集失败时对应字段置 `null`。CPU/RSS/时间戳始终可用。
+2. 构造 payload（字段见 [Events — `stats_state`](./events.md#11-stats_state--资源占用快照)）。GPU 监视器未初始化（如 Linux Stub）时 4 个 GPU 相关字段（`gpu_percent`、`gpu_name`、`vram_used_bytes`、`vram_total_bytes`）置为 `null`；已初始化但单项采集失败时对应字段置 `null`。CPU/RSS/**实测帧率 `fps`**/时间戳始终可用——`fps` 为渲染主循环 EMA 平滑后的实测帧率（≈1s 平滑窗口，1 位小数；由 `LAppDelegate::Run` 逐帧喂入，handler 同为主线程读取，与 `set_fps` 的目标帧率语义不同）。
 3. 发送 `stats_state` 事件（`sendResponse(createEvent("stats_state", payload))`）。
 
 > **不发送 Response**：handler 不调用 `createResponse`，仅 emit 事件。控制面板应在 `MessageDispatcher` 注册 `stats_state` 事件 handler 接收数据，**不应**为 `get_stats` 挂 pending request 等待 Response（10 秒超时后会落空）。

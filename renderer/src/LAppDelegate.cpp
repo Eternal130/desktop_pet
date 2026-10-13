@@ -243,6 +243,10 @@ void LAppDelegate::Run()
         // 時間更新
         LAppPal::UpdateTime();
 
+        // Feed the EMA frame-rate estimator backing the get_stats `fps`
+        // field (stats_state) — same clock delta the Cubism update consumes.
+        _fpsCounter.onFrame(LAppPal::GetDeltaTime());
+
         // Global cursor eye tracking — query the global cursor position to track beyond GLFW window bounds
         if (!_isDragging)
         {
@@ -343,6 +347,14 @@ void LAppDelegate::Run()
         if (_audioManager) {
             _audioManager->PollFinished();
         }
+
+        // Motion progress poll (events.md §17), same main-thread home as
+        // PollFinished: per-frame check, throttled to at most one
+        // motion_progress snapshot per 500ms while a motion plays; idle
+        // frames cost one queue lookup and emit nothing. The end of a motion
+        // stays motion_finished's job — the poller goes silent as soon as
+        // the tracked entry reports finished/erased.
+        PollMotionProgress();
 
         PollNetworkMessages();
 
@@ -850,4 +862,49 @@ void LAppDelegate::PollNetworkMessages()
 void LAppDelegate::ShowWindowIfHidden()
 {
     _windowManager->ShowWindow();
+}
+
+void LAppDelegate::PollMotionProgress()
+{
+    // Main-thread per-frame poll (Run loop). Read-only query against the
+    // tracked motion entry; the throttle owns the ≤1-per-500ms cadence.
+    LAppModel::MotionProgressSnapshot snap;
+    LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
+    if (manager->GetModelNum() > 0)
+    {
+        if (LAppModel* model = manager->GetModel(0))
+        {
+            snap = model->GetMotionProgress();
+        }
+    }
+
+    if (!_motionProgressThrottle.poll(snap.active, MotionProgressThrottle::Clock::now()))
+    {
+        return; // idle, or inside the 500ms window: zero emission
+    }
+
+    nlohmann::json payload;
+    if (snap.isPathVariant)
+    {
+        // play_motion_ext identity — mirrors the motion_finished path variant
+        // ({"motion_path"}); no group/index exists to report.
+        payload["motion_path"] = snap.path;
+    }
+    else
+    {
+        // play_motion identity — identical keys to motion_started.
+        payload["group"] = snap.group;
+        payload["index"] = snap.index;
+    }
+    if (snap.hasProgress)
+    {
+        payload["progress"] = snap.progress; // [0,1]
+    }
+    // else: duration unknown (looping motion / not yet resolved) — the
+    // progress field is omitted rather than fabricated (events.md §17).
+
+    if (_eventEmitter && _eventEmitter->isActive())
+    {
+        _eventEmitter->emit("motion_progress", payload);
+    }
 }

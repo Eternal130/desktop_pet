@@ -406,6 +406,9 @@ if(BUILD_TESTS)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/MessageHandlerTest.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/EventEmitterTest.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/AudioManagerTest.cpp
+      # Pure cadence/estimation helpers behind motion_progress + stats fps
+      # (header-only classes, no Framework/GL deps).
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/MotionProgressTest.cpp
       # LAppPal sink stub: AudioManager.cpp logs through LAppPal::PrintLogLn,
       # but the real LAppPal.cpp pulls the Cubism Framework runtime.
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/LAppPalStub.cpp

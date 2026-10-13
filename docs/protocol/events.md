@@ -235,7 +235,7 @@ Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit(
 | `audio_ended` | ❌ 未实现 | 早期设计草案；S8 实现时按控制面板事件目录定名为 `audio_finished`（已实现，见 §15），本名称废弃 |
 | `audio_finished` | ✅ 已实现 | S8 事件总线新增，见 [§15](#15-audio_finished--音频自然播放结束) |
 
-> **事件总览**：当前渲染器实际发出的事件共 14 个——`ready`、`model_loaded`、`model_load_failed`、`motion_started`、`motion_finished`（两种 payload 变体）、`hit`、`drag_start`、`drag_end`、`audio_finished`（自然播放结束）、`layout_changed`、`window_resized`、`layout_state`（`get_layout` 命令的响应事件）、`stats_state`（`get_stats` 命令的响应事件）、`error`。
+> **事件总览**：当前渲染器实际发出的事件共 16 个——`ready`、`model_loaded`、`model_load_failed`、`motion_started`、`motion_finished`（两种 payload 变体）、`motion_progress`（500ms 节流进度快照，见 [§17](#17-motion_progress--动作播放进度快照节流)）、`hit`、`drag_start`、`drag_end`、`audio_finished`（自然播放结束）、`expression_applied`（`set_expression` 应用成功回执）、`layout_changed`、`window_resized`、`layout_state`（`get_layout` 命令的响应事件）、`stats_state`（`get_stats` 命令的响应事件）、`error`。
 
 ---
 
@@ -253,6 +253,7 @@ Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit(
 | `gpu_name` | string\|null | GPU 适配器名称（如 `"NVIDIA GeForce RTX 3060"`，Windows 取自 `DXGI_ADAPTER_DESC.Description`）。GPU 监视器未初始化时为 `null`；Linux Stub 初始化失败时同样为 `null` |
 | `vram_used_bytes` | number\|null | 已用显存，字节数。Windows 经 DXGI `IDXGIAdapter3::QueryVideoMemoryInfo` 的 `CurrentUsage`（per-process）采集；Linux Stub 或采集失败时为 `null`。⚠️ **Vulkan 变体数值依赖 WDDM 驱动报告**，`vkAllocateMemory` 的分配能否被 DXGI 计入是驱动相关的，可能偏低或为 0（已知限制，非回归） |
 | `vram_total_bytes` | number\|null | 显存总量，字节数（`DXGI_ADAPTER_DESC.DedicatedVideoMemory`）。同上可空 |
+| `fps` | number | 渲染主循环**实测帧率**（EMA 平滑，有效平滑窗口 ≈1s，保留 1 位小数）。逐帧由 `LAppDelegate::Run` 以 `LAppPal::GetDeltaTime()` 喂入 `FpsCounter`；与 `set_fps` 的**目标**帧率不同，此为真实渲染节奏。**始终可用**（理论上首帧前为 `-1` 哨兵——与控制面板监控侧"−1=不可用"惯例对齐；实践中 `get_stats` 必然晚于首帧到达） |
 | `timestamp_ms` | number | 渲染器侧采集时间戳（Unix 毫秒）。**始终可用** |
 
 **示例**（Windows，全字段）：
@@ -268,6 +269,7 @@ Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit(
     "gpu_name": "NVIDIA GeForce RTX 3060",
     "vram_used_bytes": 104857600,
     "vram_total_bytes": 8589934592,
+    "fps": 60.0,
     "timestamp_ms": 1719990000000
   },
   "timestamp": ...
@@ -287,6 +289,7 @@ Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit(
     "gpu_name": null,
     "vram_used_bytes": null,
     "vram_total_bytes": null,
+    "fps": 58.3,
     "timestamp_ms": 1719990000000
   },
   "timestamp": ...
@@ -419,3 +422,89 @@ Phase 3 **无新增独立事件**，已通过源码核实（`EventEmitter::emit(
 **控制面板预期行为**：事件目录 `pet.instance.audio_finished`。可用于语音播报结束后的联动时序（如推进行为队列、关闭配套台词气泡、触发后续动作）。信封 `instance_id` 路由与既有事件一致（经 WS 连接本身区分实例，不在 payload 内）。
 
 > **线程纪律**：完成检测刻意不使用 miniaudio 的音频线程回调——`AudioManager::PollFinished()` 在渲染主循环中逐帧执行，`audio_finished` 的 WebSocket 发射始终在主渲染线程（与 `get_stats` 的采集线程约束同源，音频线程禁直接网络调用）。
+
+---
+
+## 16. `expression_applied` — 表情应用成功回执
+
+[`set_expression`](./commands.md#4-set_expression--设置表情) 命令**应用成功**后渲染器发送，回执被应用的表情 ID。此前 `set_expression` 只受理不回执——控制面板（及插件）无法得知表情是否真的应用了；本事件补齐渲染器侧回执。
+
+**触发语义（仅成功回执）**：
+
+| 分支 | 是否上报 | 说明 |
+|:---|:---:|:---|
+| 表情存在并已应用 | ✅ 上报 | `expression_id` 在当前模型的表情表（`.model3.json` 的 `FileReferences.Expressions`）中找到并已送入表情管理器，ID 原样回传 |
+| 未加载模型 | ❌ 不上报 | 保持既有静默语义，不制造半途事件 |
+| `expression_id` 不存在（含空串） | ❌ 不上报 | 沿用 [Commands §4](./commands.md#4-set_expression--设置表情) 的"静默忽略"契约（该命令无 Response、无错误码），调用方以"未收到回执"判定未应用 |
+
+**Payload**：
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `expression_id` | string | 应用成功的表情 ID（与 `set_expression` 命令载荷中的 `expression_id` 键一致，原样回传） |
+
+**示例**：
+
+```json
+{
+  "type": "event", "action": "expression_applied",
+  "id": "...", "payload": { "expression_id": "default" },
+  "timestamp": ...
+}
+```
+
+**控制面板预期行为**：桥接到事件总线目录（面板侧任务）。可用于"表情是否真的生效"确认（如行为脚本等待回执后再推进时序、插件在表情未生效时回退）。信封 `instance_id` 路由与既有事件一致（经 WS 连接本身区分实例，不在 payload 内）。
+
+> **`id` 不用于 request-response 匹配**：与 `stats_state`/`layout_state` 同理，`expression_applied` 是事件而非 Response，其 `id` 由渲染器新建（`createEvent` 生成），不复用 `set_expression` 的 `id`（该命令本身无 Response 契约）。
+
+> **线程纪律**：事件在 `set_expression` 命令处理路径上同步发射——命令经 `PollNetworkMessages` 在渲染主线程派发（与 `motion_started` 同路径），不涉及 WebSocket 回调线程，亦无音频线程参与。
+
+---
+
+## 17. `motion_progress` — 动作播放进度快照（节流）
+
+一个动作播放期间，渲染器主循环发出的**进度快照**事件，供面板侧按进度做联动反应（如进度条、按进度阈值触发配套行为）。**节流契约：同一动作播放期间每 500ms 至多发射一次**——绝不可退化为逐帧发射；动作结束即停（结束本身由既有 [`motion_finished`](#5-motion_finished--动作结束) 上报，本事件不重复）。
+
+**触发语义（仅播放中）**：
+
+| 分支 | 是否上报 | 说明 |
+|:---|:---:|:---|
+| 协议起始的动作播放中（`play_motion` / `play_motion_ext`） | ✅ 每 500ms 至多一次 | 首个快照在动作开始播放约 500ms 后到达（t=0 已由 `motion_started` 括起；`play_motion_ext` 无 `motion_started`，首个快照同样在开始后约 500ms） |
+| 无动作播放（空闲 / 动作已结束） | ❌ 不上报 | 主循环逐帧检查但零发射；动作结束的判定即停止发射（结束另有 `motion_finished`） |
+| 动作时长 < 500ms | ❌ 无进度快照 | 整个播放期内落不进任何 500ms 窗口，仅 `motion_started`/`motion_finished` 括起 |
+| 被新动作抢占 | 跟随新动作 | 之后的快照携带新动作的标识；两次快照间隔仍 ≥ 500ms（节流以发射时刻计，不按动作计） |
+
+**Payload**（两种变体，与 `motion_finished` §5/§10 的双变体惯例一致）：
+
+`play_motion` 变体（`group`/`index` 与 `motion_started` 一致）：
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `group` | string | 动作组名称（与 `motion_started`/`motion_finished` 的 `group` 同源同值） |
+| `index` | int | 动作组内索引（同上） |
+| `progress` | number | **可选**。播放进度 `0.0`-`1.0`。数据来源为 Cubism `CubismMotionQueueEntry` 自身时间线（`GetStateTime()` 与 `GetStartTime()`/`GetEndTime()` 同域，后者由 `AdjustEndTime` 以 motion3.json 的 `Duration` 设定）。**时长不可得时省略本字段**——循环动作（`GetEndTime() == -1`）或时长尚未解析时不造假值，快照仅携带标识字段 |
+
+`play_motion_ext` 变体（path 变体按 `motion_finished` §10 的归一惯例，无 group/index 可报）：
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `motion_path` | string | 动作文件路径（与 `play_motion_ext` 命令载荷 / `motion_finished` path 变体的 `motion_path` 同源同值） |
+| `progress` | number | 同上，可选、可省略 |
+
+**示例**：
+
+```json
+{
+  "type": "event", "action": "motion_progress",
+  "id": "...", "payload": { "group": "TapHead", "index": 0, "progress": 0.42 },
+  "timestamp": ...
+}
+```
+
+**控制面板预期行为**：桥接到事件总线目录（面板侧任务）。可用于进度条 UI、按进度阈值触发联动（如 `progress ≥ 0.5` 时推送台词气泡）。消费方应容忍 `progress` 缺失（时长未知的动作只有标识字段）与短动作完全无快照的情况。信封 `instance_id` 路由与既有事件一致（经 WS 连接本身区分实例，不在 payload 内）。
+
+> **节流实现**：`LAppDelegate::Run` 每帧调用 `PollMotionProgress()`（与音频 `PollFinished` 同处主循环），`MotionProgressThrottle`（纯函数级单测覆盖）持有"每 500ms 至多一次"的窗口状态——空闲时窗口随时间滑动，新动作获得完整 500ms 首窗；60fps 轮询 3 秒恰好 6 次发射（`MotionProgressThrottleTest` 钉死该不变量）。
+
+> **`id` 不用于 request-response 匹配**：与 `stats_state`/`expression_applied` 同理，`id` 由渲染器新建（`createEvent` 生成）。
+
+> **线程纪律**：进度检查挂在渲染主循环（`LAppDelegate::Run`），逐帧查询 Cubism motion manager 的队列条目（纯 CPU 读取，无 GL 调用），WebSocket 发射始终在主渲染线程——与 `audio_finished` 的 `PollFinished` 先例同源。

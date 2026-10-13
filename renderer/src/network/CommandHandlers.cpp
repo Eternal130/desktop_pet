@@ -200,12 +200,22 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         }
     });
 
-    handler.registerCommand("set_expression", [](const Envelope& cmd, auto sendResponse) {
+    handler.registerCommand("set_expression", [delegate](const Envelope& cmd, auto sendResponse) {
         std::string expressionId = cmd.payload.value("expression_id", "");
         LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
         if (manager->GetModelNum() > 0) {
             LAppModel* model = manager->GetModel(0);
-            if (model) model->SetExpression(expressionId.c_str());
+            // Application receipt (expression_applied): emitted only when the
+            // expression actually existed and was handed to the expression
+            // manager — the id is echoed verbatim. Unknown id / no model stay
+            // silent per commands.md §4 ("静默忽略"); failure is observable
+            // only by the receipt's absence, never via a half-way event.
+            if (model && model->SetExpression(expressionId.c_str())) {
+                auto* emitter = delegate->GetEventEmitter();
+                if (emitter) {
+                    emitter->emit("expression_applied", {{"expression_id", expressionId}});
+                }
+            }
         }
     });
 
@@ -396,7 +406,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
         glfwSetWindowShouldClose(delegate->GetWindow(), GLFW_TRUE);
     });
 
-    handler.registerCommand(ACTION_GET_STATS, [](const Envelope& cmd, auto sendResponse) {
+    handler.registerCommand(ACTION_GET_STATS, [delegate](const Envelope& cmd, auto sendResponse) {
         // Runs on the main render thread (dispatched from PollNetworkMessages
         // in LAppDelegate::Run after drainMessages), so PDH/DXGI/psapi calls
         // are safe here — never from the WebSocket callback thread.
@@ -412,7 +422,9 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
             gpuPtr = &gpuMetrics;
         }
 
-        nlohmann::json payload = Monitor::buildStatsPayload(ps, gpuPtr);
+        // fps: EMA-smoothed measured frame rate fed per-frame by
+        // LAppDelegate::Run (same main thread as this handler — plain read).
+        nlohmann::json payload = Monitor::buildStatsPayload(ps, gpuPtr, delegate->GetMeasuredFps());
         sendResponse(createEvent(EVENT_STATS_STATE, payload));
     });
 }

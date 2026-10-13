@@ -1,6 +1,7 @@
 #include "monitor/StatsPayload.hpp"
 
 #include <chrono>
+#include <cmath>
 
 namespace Monitor {
 
@@ -13,7 +14,7 @@ int64_t nowMs() {
 
 } // namespace
 
-nlohmann::json buildStatsPayload(ProcessStats ps, const GpuMetrics* gpu) {
+nlohmann::json buildStatsPayload(ProcessStats ps, const GpuMetrics* gpu, double fps) {
     nlohmann::json payload;
     payload["cpu_percent"] = ps.cpuPercent;
     payload["rss_bytes"]    = ps.rssBytes;
@@ -35,6 +36,12 @@ nlohmann::json buildStatsPayload(ProcessStats ps, const GpuMetrics* gpu) {
         payload["vram_used_bytes"]  = nullptr;
         payload["vram_total_bytes"] = nullptr;
     }
+
+    // Measured frame rate (EMA over ~1s, fed by LAppDelegate::Run). One
+    // decimal; -1 sentinel (no sample yet) passes through untouched.
+    payload["fps"] = (fps >= 0.0)
+        ? nlohmann::json(std::round(fps * 10.0) / 10.0)
+        : nlohmann::json(-1.0);
 
     payload["timestamp_ms"] = nowMs();
     return payload;

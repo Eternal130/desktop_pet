@@ -62,6 +62,9 @@ public:
     { ++calls; lastUuid = uuid; lastPackId = packId; return answer; }
     pet::PluginError unmountVoicePack(const QString& uuid) override
     { ++calls; lastUuid = uuid; return answer; }
+    pet::PluginError setGraphicsBackend(const QString& uuid,
+                                        const QString& backend) override
+    { ++calls; lastUuid = uuid; lastPackId = backend; return answer; }
 };
 
 // Programmable fake lifecycle API (same shape as RosterApiModelTest's).

@@ -11,7 +11,7 @@ import DesktopPet
 // card (motion chips with trial-play, read-only expressions, read-only
 // hit areas + jump-to-instance). Right: per-instance model AppComboBox
 // (Segmented cannot hold 8 options; matches the stage-card combo) +
-// new-instance default model.
+// new-instance default model and render backend.
 //
 // Failure path (mock state ③): before switching, the row records the
 // previous model. A modelLoadFailureRevision bump carrying a non-empty
@@ -88,6 +88,18 @@ Rectangle {
             .arg(groupCount)
             .arg(exprCount > 0 ? qsTr("%1 个表情").arg(exprCount) : qsTr("无表情"))
             .arg(hitCount > 0 ? qsTr("%1 个命中区域").arg(hitCount) : qsTr("无命中区域"))
+    }
+
+    // Graphics-backend mapping: combo labels are display proper nouns;
+    // committed values are the lowercase contract strings ("opengl" /
+    // "vulkan"). Case-folded lookup so either casing resolves.
+    readonly property var _backendLabels: ["OpenGL", "Vulkan"]
+    readonly property var _backendValues: ["opengl", "vulkan"]
+
+    function _backendIndexOf(value) {
+        const i = root._backendValues.indexOf(
+            String(value || "").toLowerCase())
+        return i >= 0 ? i : 0
     }
 
     function notifyModelLoadFailed(instanceLabel, failedModel, restoredModel, error) {
@@ -619,8 +631,8 @@ Rectangle {
 
                     Card {
                         width: parent.width
-                        title: qsTr("新实例默认模型")
-                        hint: qsTr("保存于面板配置 · 创建实例对话框按此预选")
+                        title: qsTr("新实例默认配置")
+                        hint: qsTr("保存于面板配置 · 创建新实例时应用")
 
                         SettingRow {
                             width: parent.width
@@ -639,6 +651,24 @@ Rectangle {
                                 onActivated: (i) => {
                                     panelConfig.defaultModelName =
                                         defaultModelCombo.currentText
+                                }
+                            }
+                        }
+
+                        SettingRow {
+                            width: parent.width
+                            title: qsTr("默认渲染后端")
+                            desc: qsTr("新建实例时应用；已创建实例不受影响，可在实例页更改")
+
+                            AppComboBox {
+                                id: defaultBackendCombo
+                                width: 168
+                                model: root._backendLabels
+                                currentIndex: root._backendIndexOf(
+                                    panelConfig.defaultGraphicsBackend)
+                                onActivated: (i) => {
+                                    panelConfig.defaultGraphicsBackend =
+                                        root._backendValues[i]
                                 }
                             }
                         }

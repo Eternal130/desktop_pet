@@ -84,6 +84,14 @@ int InstanceControlBridge::unmountVoicePack(const QString& uuid)
     return static_cast<int>(m_tuningApi->unmountVoicePack(uuid));
 }
 
+int InstanceControlBridge::setGraphicsBackend(const QString& uuid,
+                                              const QString& backend)
+{
+    if (m_tuningApi == nullptr)
+        return static_cast<int>(pet::PluginError::Generic);
+    return static_cast<int>(m_tuningApi->setGraphicsBackend(uuid, backend));
+}
+
 // ── Lifecycle forwards ──────────────────────────────────────────────────────
 
 int InstanceControlBridge::start(const QString& uuid)

@@ -1,7 +1,7 @@
 // SettingsApiImplTest (S6, v1.3) — the real pet::ISettingsApi over the
 // SAME PanelStateManager persistence path the panel's settings page uses.
 // Locks:
-//   1. testRoundTripPersistsAllFourFields: each typed setter writes the
+//   1. testRoundTripPersistsAllFiveFields: each typed setter writes the
 //      panel_config store; a fresh PanelStateManager load reflects the new
 //      value AND the untouched fields survive every write (load-modify-save
 //      discipline).
@@ -54,15 +54,16 @@ class SettingsApiImplTest : public QObject
     Q_OBJECT
 
 private slots:
-    void testRoundTripPersistsAllFourFields();
+    void testRoundTripPersistsAllFiveFields();
     void testCloseActionRejectsIllegalValues();
     void testCloseActionAcceptsAsk();
     void testDefaultModelNameRejectsEmpty();
+    void testDefaultGraphicsBackendValidation();
     void testAutoLaunchIsNotInTheInterface();
     void testSharedDatabaseBackend();
 };
 
-void SettingsApiImplTest::testRoundTripPersistsAllFourFields()
+void SettingsApiImplTest::testRoundTripPersistsAllFiveFields()
 {
     QTemporaryDir base;
     QVERIFY(base.isValid());
@@ -74,12 +75,15 @@ void SettingsApiImplTest::testRoundTripPersistsAllFourFields()
     QCOMPARE(api.setStartMinimized(true), pet::PluginError::Ok);
     QCOMPARE(api.setDefaultModelName(QStringLiteral("Haru")),
              pet::PluginError::Ok);
+    QCOMPARE(api.setDefaultGraphicsBackend(QStringLiteral("vulkan")),
+             pet::PluginError::Ok);
 
     const PanelConfig cfg = PanelStateManager(base.path()).load();
     QCOMPARE(cfg.closeAction, QStringLiteral("minimize"));
     QVERIFY(cfg.confirmOnExit);
     QVERIFY(cfg.startMinimized);
     QCOMPARE(cfg.defaultModelName, QStringLiteral("Haru"));
+    QCOMPARE(cfg.defaultGraphicsBackend, QStringLiteral("vulkan"));
 
     // Back to the other legal values — every field round-trips.
     QCOMPARE(api.setCloseAction(QStringLiteral("exit")), pet::PluginError::Ok);
@@ -87,11 +91,14 @@ void SettingsApiImplTest::testRoundTripPersistsAllFourFields()
     QCOMPARE(api.setStartMinimized(false), pet::PluginError::Ok);
     QCOMPARE(api.setDefaultModelName(QStringLiteral("Hiyori")),
              pet::PluginError::Ok);
+    QCOMPARE(api.setDefaultGraphicsBackend(QStringLiteral("OPENGL")),
+             pet::PluginError::Ok); // case-insensitive → normalized lowercase
     const PanelConfig cfg2 = PanelStateManager(base.path()).load();
     QCOMPARE(cfg2.closeAction, QStringLiteral("exit"));
     QVERIFY(!cfg2.confirmOnExit);
     QVERIFY(!cfg2.startMinimized);
     QCOMPARE(cfg2.defaultModelName, QStringLiteral("Hiyori"));
+    QCOMPARE(cfg2.defaultGraphicsBackend, QStringLiteral("opengl"));
 
     // Load-modify-save: fields the API does NOT own (theme, geometry,
     // autoLaunchSystem, ...) survive a plugin write.
@@ -149,6 +156,30 @@ void SettingsApiImplTest::testDefaultModelNameRejectsEmpty()
              pet::PluginError::InvalidArgument);
     // Rejected write — the stored value is untouched.
     QCOMPARE(PanelStateManager(base.path()).load().defaultModelName, before);
+}
+
+void SettingsApiImplTest::testDefaultGraphicsBackendValidation()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    core::SettingsApiImpl api(base.path(), nullptr);
+
+    // Anything but opengl/vulkan (case-insensitive) → InvalidArgument.
+    const QStringList illegal{QString(), QStringLiteral("dx12"),
+                              QStringLiteral("VULKAN "), QStringLiteral("metal")};
+    for (const QString& bad : illegal) {
+        QCOMPARE(api.setDefaultGraphicsBackend(bad),
+                 pet::PluginError::InvalidArgument);
+    }
+    // Nothing was persisted — the store still holds the default.
+    QCOMPARE(PanelStateManager(base.path()).load().defaultGraphicsBackend,
+             QStringLiteral("opengl"));
+
+    // Case-insensitive accept: normalized to lowercase on the way in.
+    QCOMPARE(api.setDefaultGraphicsBackend(QStringLiteral("VuLkAn")),
+             pet::PluginError::Ok);
+    QCOMPARE(PanelStateManager(base.path()).load().defaultGraphicsBackend,
+             QStringLiteral("vulkan"));
 }
 
 void SettingsApiImplTest::testAutoLaunchIsNotInTheInterface()

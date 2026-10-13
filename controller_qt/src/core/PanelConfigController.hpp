@@ -47,6 +47,10 @@ class PanelConfigController : public QObject
     // the model-library UI's concern (it offers the scanned list); an
     // unknown name simply fails at renderer launch with model_load_failed.
     Q_PROPERTY(QString defaultModelName READ defaultModelName WRITE setDefaultModelName NOTIFY defaultModelNameChanged)
+    // v1.10: graphics-backend default for new instances ("opengl" |
+    // "vulkan"; the panel's default-backend selector). Enum-style
+    // vocabulary — the setter rejects anything else with a WARN.
+    Q_PROPERTY(QString defaultGraphicsBackend READ defaultGraphicsBackend WRITE setDefaultGraphicsBackend NOTIFY defaultGraphicsBackendChanged)
     // S6 (v1.3): host-global plugin write kill-switch (the SAME
     // plugin_write_enabled kv row PanelApplication's provider reads live
     // on every queryApi). Host-shell setting — deliberately NOT routed
@@ -97,6 +101,7 @@ public:
     bool    startMinimized() const  { return m_startMinimized; }
     bool    autoLaunchSystem() const { return m_autoLaunchSystem; }
     QString defaultModelName() const { return m_defaultModelName; }
+    QString defaultGraphicsBackend() const { return m_defaultGraphicsBackend; }
     bool    pluginWriteEnabled() const { return m_pluginWriteEnabled; }
 
     // ── WRITE accessors (mutate cache + persist atomically + emit NOTIFY) ─
@@ -109,6 +114,7 @@ public:
     void setStartMinimized(bool enabled);
     void setAutoLaunchSystem(bool enabled);
     void setDefaultModelName(const QString& name);
+    void setDefaultGraphicsBackend(const QString& backend);
     // Writes the DEDICATED plugin_write_enabled kv row ("1"/"0") — the
     // exact row PanelApplication's live provider reads, so flipping this
     // revokes plugin write access without a restart. No-op (no write, no
@@ -122,6 +128,7 @@ signals:
     void startMinimizedChanged();
     void autoLaunchSystemChanged();
     void defaultModelNameChanged();
+    void defaultGraphicsBackendChanged();
     void pluginWriteEnabledChanged();
 
 private:
@@ -151,5 +158,6 @@ private:
     bool    m_startMinimized = false;
     bool    m_autoLaunchSystem = false;
     QString m_defaultModelName;
+    QString m_defaultGraphicsBackend;
     bool    m_pluginWriteEnabled = true; // kv plugin_write_enabled mirror
 };

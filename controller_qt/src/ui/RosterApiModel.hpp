@@ -90,7 +90,8 @@ public:
     Q_INVOKABLE int createInstance(const QString& label,
                                    const QString& avatar = QStringLiteral("🐱"),
                                    const QString& modelName = QString(),
-                                   bool autoStart = false);
+                                   bool autoStart = false,
+                                   const QString& graphicsBackend = QString());
     Q_INVOKABLE int deleteInstance(const QString& uuid);
 
 signals:

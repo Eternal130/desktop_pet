@@ -5,6 +5,10 @@
 //   1. testSettersForward: setOpacity/setVolume/setMuted/setFps forward to
 //      the session (observable via the Q_PROPERTY NOTIFYs + config persist)
 //      and return Ok.
+//   1b. testGraphicsBackendWrite (v1.10): setGraphicsBackend valid
+//      round-trip (NOTIFY + persisted InstanceConfig.graphics_backend),
+//      case-insensitive normalization, illegal values → InvalidArgument,
+//      same-value idempotence.
 //   2. testTriggersForward: playMotion/setExpression/triggerHitArea are
 //      accepted (Ok); empty group/expression/area → InvalidArgument.
 //   3. testUnknownUuidNotFound: every op on a uuid not in the roster →
@@ -130,6 +134,7 @@ class TuningApiImplTest : public QObject
 
 private slots:
     void testSettersForward();
+    void testGraphicsBackendWrite();
     void testTriggersForward();
     void testUnknownUuidNotFound();
     void testPendingDeleteIsBusy();
@@ -185,6 +190,61 @@ void TuningApiImplTest::testSettersForward()
     QCOMPARE(session->config().opacity, 0.55);
     QCOMPARE(session->config().targetFps, 45);
     QVERIFY(session->config().muted);
+}
+
+// ── 1b. v1.10 graphics-backend selector (offline-only write) ────────────────
+
+void TuningApiImplTest::testGraphicsBackendWrite()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& cfg) {
+                            PanelStateManager(base.path()).save(cfg);
+                        });
+    core::TuningApiImpl api(&mgr, nullptr);
+
+    const QString uuid = mgr.createInstance(QStringLiteral("Gfx"));
+    QVERIFY(!uuid.isEmpty());
+    InstanceSession* session = mgr.instanceAt(0);
+    QVERIFY(session != nullptr);
+    QCOMPARE(session->graphicsBackend(), QStringLiteral("opengl")); // default
+
+    // opengl → vulkan round-trip: Ok, NOTIFY fires once, live property
+    // flips, and the choice PERSISTS (InstanceConfig.graphics_backend —
+    // the whole point of the offline-only selector).
+    QSignalSpy gfxSpy(session, &InstanceSession::graphicsBackendChanged);
+    QCOMPARE(api.setGraphicsBackend(uuid, QStringLiteral("vulkan")),
+             pet::PluginError::Ok);
+    QCOMPARE(gfxSpy.count(), 1);
+    QCOMPARE(session->graphicsBackend(), QStringLiteral("vulkan"));
+    const auto loaded = InstanceConfigManager(base.path()).load(uuid);
+    QVERIFY(loaded.has_value());
+    QCOMPARE(loaded->graphicsBackend, QStringLiteral("vulkan"));
+
+    // Same-value write is absorbed by the session (no second NOTIFY);
+    // the API still reports Ok (accepted, idempotent).
+    QCOMPARE(api.setGraphicsBackend(uuid, QStringLiteral("vulkan")),
+             pet::PluginError::Ok);
+    QCOMPARE(gfxSpy.count(), 1);
+
+    // Case-insensitive: "OPENGL" normalizes to lowercase and flips back.
+    QCOMPARE(api.setGraphicsBackend(uuid, QStringLiteral("OPENGL")),
+             pet::PluginError::Ok);
+    QCOMPARE(session->graphicsBackend(), QStringLiteral("opengl"));
+    QCOMPARE(gfxSpy.count(), 2);
+
+    // Illegal vocabulary → InvalidArgument, nothing changes.
+    const QStringList illegal{QString(), QStringLiteral("dx12"),
+                              QStringLiteral("directx")};
+    for (const QString& bad : illegal) {
+        QCOMPARE(api.setGraphicsBackend(uuid, bad),
+                 pet::PluginError::InvalidArgument);
+    }
+    QCOMPARE(session->graphicsBackend(), QStringLiteral("opengl"));
+    QCOMPARE(gfxSpy.count(), 2);
 }
 
 // ── 2. motion/expression/hit triggers ───────────────────────────────────────
@@ -248,6 +308,8 @@ void TuningApiImplTest::testUnknownUuidNotFound()
     QCOMPARE(api.mountVoicePack(gone, QStringLiteral("pack")),
              pet::PluginError::NotFound);
     QCOMPARE(api.unmountVoicePack(gone), pet::PluginError::NotFound);
+    QCOMPARE(api.setGraphicsBackend(gone, QStringLiteral("vulkan")),
+             pet::PluginError::NotFound);
 
     // Degraded wiring: null InstanceManager → NotFound everywhere (never
     // a crash).
@@ -291,6 +353,8 @@ void TuningApiImplTest::testPendingDeleteIsBusy()
     QCOMPARE(api.mountVoicePack(uuid, QStringLiteral("pack")),
              pet::PluginError::Busy);
     QCOMPARE(api.unmountVoicePack(uuid), pet::PluginError::Busy);
+    QCOMPARE(api.setGraphicsBackend(uuid, QStringLiteral("vulkan")),
+             pet::PluginError::Busy);
 }
 
 // ── 5. mount packId resolution ──────────────────────────────────────────────

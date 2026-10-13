@@ -80,8 +80,14 @@ namespace pet {
 // plus auto_launch_system joining the pet.panel.settings_changed field
 // set (emitted from the host-direct PanelConfigController path).
 // kAllEventIds 23 → 26. No existing signature changed.
+// v1.10 (2026-10-13): minor bumped for the additive graphics-backend
+// selector expansion — the ITuningApi tail append setGraphicsBackend
+// (10th tuning op, OFFLINE-only persist), the ISettingsApi tail append
+// setDefaultGraphicsBackend (5th whitelisted write), and the
+// InstanceSpec.graphicsBackend tail member (create() backend override).
+// No existing signature changed; InstanceSpec grew at the TAIL only.
 constexpr int kApiMajor = 1;
-constexpr int kApiMinor = 9;
+constexpr int kApiMinor = 10;
 
 // ── Capability vocabulary (manifest "capabilities" entries; §B.4) ───────────
 // The exact, case-sensitive strings the host parses from plugin manifests
@@ -158,12 +164,20 @@ struct InstanceInfo {
 // InvalidArgument), avatar/modelName empty = the InstanceConfig defaults,
 // autoStart persists the start-with-panel flag (the instance is NOT launched
 // synchronously — the flag applies on the next panel start, exactly like the
-// detail page's auto-start toggle).
+// detail page's auto-start toggle). v1.10 tail append: graphicsBackend
+// overrides the per-instance renderer backend ("opengl" | "vulkan",
+// case-insensitive, normalized to lowercase by the host; anything else →
+// InvalidArgument — no silent coercion). Empty = the InstanceConfig default
+// ("opengl").
 struct InstanceSpec {
     QString label;           // required non-empty
     QString avatar;          // empty = default ("🐱")
     QString modelName;       // empty = default ("Hiyori")
     bool autoStart = false;  // persist InstanceConfig.autoStart
+    // v1.10 TAIL APPEND: "opengl" | "vulkan"; empty = default ("opengl").
+    // MUST stay the last member: stage-2 freezes struct layout, and
+    // tail-append is the only additive change allowed post-freeze.
+    QString graphicsBackend;
 };
 
 // IInstanceObserver::instanceStateChanged() payload (v1.2, S2): full

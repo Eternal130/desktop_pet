@@ -56,6 +56,13 @@ struct PanelConfig {
     // renderer's Resources/Models/ — "Hiyori" is the always-bundled sample.
     QString defaultModelName = QStringLiteral("Hiyori");
 
+    // ── graphics backend (渲染后端, v1.10) ───────────────────────────────────
+    // The renderer backend new instances get by default (applied when
+    // creating instances with no explicit backend). Exactly "opengl" or
+    // "vulkan" — the ISettingsApi/PanelConfigController setters validate
+    // case-insensitively and normalize to lowercase.
+    QString defaultGraphicsBackend = QStringLiteral("opengl");
+
     // Member-wise equality — used by round-trip identity tests (QJsonObject,
     // QString, and QStringList all compare by content, so ordering of
     // instanceIds matters but JSON key ordering does not).
@@ -74,13 +81,14 @@ struct PanelConfig {
             && confirmOnExit == other.confirmOnExit
             && notificationsEnabled == other.notificationsEnabled
             && notificationDurationMs == other.notificationDurationMs
-            && defaultModelName == other.defaultModelName;
+            && defaultModelName == other.defaultModelName
+            && defaultGraphicsBackend == other.defaultGraphicsBackend;
     }
 };
 
 // Serialize a PanelConfig to a QJsonObject with snake_case keys
 // (configuration.md §5). Every field is written; instance_ids becomes a
-// JSON array of strings. The result always has exactly 15 keys (one per field).
+// JSON array of strings. The result always has exactly 16 keys (one per field).
 QJsonObject panelConfigToJson(const PanelConfig& cfg);
 
 // Deserialize a QJsonObject into a PanelConfig. Missing fields are merged from

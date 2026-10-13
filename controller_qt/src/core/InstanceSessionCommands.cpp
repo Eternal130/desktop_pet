@@ -148,6 +148,27 @@ void InstanceSession::setAutoStart(bool enabled)
     }
 }
 
+void InstanceSession::setGraphicsBackend(const QString& backend)
+{
+    // v1.10 offline-only selector (loadModel's offline-half discipline):
+    // same-value no-op; otherwise assign + persist ALWAYS (start() resolves
+    // the renderer EXECUTABLE from m_config.graphicsBackend — without the
+    // persist the choice would silently revert on the next launch) and
+    // flip the NOTIFY. NO command is sent: a backend switch needs a
+    // different renderer binary, so it takes effect on the next start().
+    if (m_config.graphicsBackend == backend)
+        return;
+    LOG_INFO("InstanceSession[{}]: graphicsBackend \"{}\" -> \"{}\"",
+             m_instanceId, m_config.graphicsBackend.toStdString(),
+             backend.toStdString());
+    m_config.graphicsBackend = backend;
+    if (!m_configManager.save(m_config)) {
+        LOG_ERROR("InstanceSession[{}]: failed to persist graphicsBackend=\"{}\"",
+                  m_instanceId, backend.toStdString());
+    }
+    emit graphicsBackendChanged();
+}
+
 // ── Voice-pack mount (todo 21) ───────────────────────────────────────────
 
 bool InstanceSession::mountVoicePack(const QString& packPath)

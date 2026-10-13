@@ -436,10 +436,10 @@ cmake/toolchain-mingw-renderer.cmake（renderer，系统 MinGW，路径经环境
   （活读）+ `IInstanceObserver` 实例级观察。
 - **S3**: 侧边栏花名册读写改走共享 `InstanceApiImpl`/`RosterApiModel`（同一 vtable）。
 - **S4**: stop/delete 路径事件化，移除 GUI 嵌套事件循环（行为冻结面）。
-- **S5 (v1.3)**: `ITuningApi`（9 个调参操作）+ `IModelApi`（只读，单一扫描缓存）+
+- **S5 (v1.3)**: `ITuningApi`（10 个调参操作——v1.3 落地 9 个，v1.10 尾追 setGraphicsBackend 增至 10）+ `IModelApi`（只读，单一扫描缓存）+
   详情页 13 处写调用换绑 `InstanceControlBridge`；InstanceSession 增补
   `mountedVoicePackChanged` 最小 NOTIFY 缝。
-- **S6 (v1.3)**: `ISettingsApi`（4 个白名单写）+ `IVoicePackApi` 尾追
+- **S6 (v1.3)**: `ISettingsApi`（5 个白名单写——v1.3 落地 4 个，v1.10 尾追 setDefaultGraphicsBackend 增至 5）+ `IVoicePackApi` 尾追
   `IPackListObserver`；PanelConfigController/VoicePackController 内部转调注入 API。
 - **宿主 dogfooding 覆盖面（S7 收口后）**: 侧边栏读写（RosterApiModel）、详情页全部
   写（InstanceControlBridge: 13 处）、创建流三处（WelcomePage/InstanceDetailPage/

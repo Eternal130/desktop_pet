@@ -75,8 +75,10 @@ fi
 # ORDINARY violations (no allowlist entries; the pattern table keeps
 # covering them so a future regression bites immediately). Extracted
 # from the InstanceControlBridge / InstanceDetailPage rebinding set
-# (S5-S7, extended v1.8).
-QML_UNIQUE='[.](createInstance|deleteInstance|loadModel|playMotion|setExpression|triggerHitArea|mountVoicePack|unmountVoicePack|setOpacity|setVolume|setMuted|setFps|setAutoStart|resetLayout|getLayout)[[:space:]]*\('
+# (S5-S7, extended v1.8; setGraphicsBackend added v1.10 — offline-only
+# graphics-backend selector write, same QML_UNIQUE treatment, no
+# Q_PROPERTY WRITE so QML_PW stays out of scope).
+QML_UNIQUE='[.](createInstance|deleteInstance|loadModel|playMotion|setExpression|triggerHitArea|mountVoicePack|unmountVoicePack|setOpacity|setVolume|setMuted|setFps|setAutoStart|resetLayout|getLayout|setGraphicsBackend)[[:space:]]*\('
 QML_SSR='(^|[^[:alnum:]_])(instance|_inst|inst|s)[.](start|stop|restart)[[:space:]]*\('
 # QML-PW (audit follow-up): imperative property assignment on the four
 # WRITE-bearing InstanceSession Q_PROPERTYs (opacity/volume/targetFps/

@@ -57,6 +57,11 @@ public:
     Q_INVOKABLE int triggerHitArea(const QString& uuid, const QString& areaId);
     Q_INVOKABLE int mountVoicePack(const QString& uuid, const QString& packId);
     Q_INVOKABLE int unmountVoicePack(const QString& uuid);
+    // v1.10: offline-only renderer-backend selector (persist + applies on
+    // next instance start; read back via the live session's
+    // graphicsBackend property).
+    Q_INVOKABLE int setGraphicsBackend(const QString& uuid,
+                                       const QString& backend);
 
     // ── Lifecycle writes (pet::IInstanceControlApi forwards) ─────────────
     // start/stop/restart/loadModel — the page's remaining lifecycle

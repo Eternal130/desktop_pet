@@ -116,6 +116,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
   "notifications_enabled": true,
   "notification_duration_ms": 20000,
   "default_model_name": "Hiyori",
+  "default_graphics_backend": "opengl",
   "instances": [
     "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "f0e1d2c3-b4a5-6789-0fed-cba987654321"
@@ -133,6 +134,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 | `notifications_enabled` | bool | true | 是否启用通知流（气泡信息流）气泡显示。参见 [通知流设计](./notification-stream.md) |
 | `notification_duration_ms` | int | 20000 | 气泡默认自动消失时长（毫秒） |
 | `default_model_name` | string | "Hiyori" | 新建实例的默认模型（模型库设置项）。取值须为渲染器 `Resources/Models/` 下的目录名；`PanelConfigController` 通过原子读-改-写持久化该字段，创建实例时 `createInstance(label, avatar, modelName)` 传空则回落到此默认值 |
+| `default_graphics_backend` | string | "opengl" | 新建实例的默认渲染后端（v1.10）。合法值恰为 `"opengl"` / `"vulkan"`（setter 大小写不敏感、归一为小写持久化）；创建实例时未显式指定后端则回落到此默认值 |
 | `instances` | string[] | [] | 宠物实例配置 ID 列表（UUID），顺序即为显示顺序 |
 
 **旧版迁移**：若存在 `panel-state.json`（旧格式），`PanelStateManager` 自动迁移——将旧实例数据拆分为独立 `instances/{uuid}.json`，备份旧文件为 `.bak`。

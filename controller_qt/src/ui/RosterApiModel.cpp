@@ -77,7 +77,8 @@ void RosterApiModel::reloadFromApi()
 // ── S2 write bridge ─────────────────────────────────────────────────────────
 
 int RosterApiModel::createInstance(const QString& label, const QString& avatar,
-                                   const QString& modelName, bool autoStart)
+                                   const QString& modelName, bool autoStart,
+                                   const QString& graphicsBackend)
 {
     // Thin forward into the shared write API — the roster update comes
     // back through the rosterChanged reset (rowsInserted → fanout), so
@@ -90,6 +91,7 @@ int RosterApiModel::createInstance(const QString& label, const QString& avatar,
     spec.avatar = avatar;
     spec.modelName = modelName;
     spec.autoStart = autoStart;
+    spec.graphicsBackend = graphicsBackend; // v1.10 (empty = default)
     return static_cast<int>(m_controlApi->create(spec, /*outUuid=*/nullptr));
 }
 

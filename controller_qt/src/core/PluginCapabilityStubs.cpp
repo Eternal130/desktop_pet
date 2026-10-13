@@ -187,6 +187,17 @@ pet::PluginError TuningApiStub::unmountVoicePack(const QString& uuid)
     return pet::PluginError::Capability;
 }
 
+pet::PluginError TuningApiStub::setGraphicsBackend(const QString& uuid,
+                                                   const QString& backend)
+{
+    Q_UNUSED(backend);
+    LOG_WARN("[plugin-api] tuningApi().setGraphicsBackend('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "(§B.4 / plugin_write_enabled) — ERR_CAPABILITY",
+             uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
 // ── SettingsApiStub (S6: loud failure, zero silent behavior) ───────────────
 
 pet::PluginError SettingsApiStub::setCloseAction(const QString& action)
@@ -221,6 +232,15 @@ pet::PluginError SettingsApiStub::setDefaultModelName(const QString& name)
     LOG_WARN("[plugin-api] settingsApi().setDefaultModelName('{}') without "
              "the 'settings_write' capability or with plugin writes "
              "disabled — ERR_CAPABILITY", name.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError SettingsApiStub::setDefaultGraphicsBackend(const QString& backend)
+{
+    LOG_WARN("[plugin-api] settingsApi().setDefaultGraphicsBackend('{}') "
+             "without the 'settings_write' capability or with plugin "
+             "writes disabled (§B.4 / plugin_write_enabled) — "
+             "ERR_CAPABILITY", backend.toStdString());
     return pet::PluginError::Capability;
 }
 

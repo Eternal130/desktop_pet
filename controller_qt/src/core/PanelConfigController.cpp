@@ -35,6 +35,7 @@ void PanelConfigController::loadFromDisk()
     m_startMinimized = cfg.startMinimized;
     m_autoLaunchSystem = cfg.autoLaunchSystem;
     m_defaultModelName = cfg.defaultModelName;
+    m_defaultGraphicsBackend = cfg.defaultGraphicsBackend;
     // S6: seed the kill-switch mirror from the SAME kv row the
     // PanelApplication provider reads (absent/"1" = enabled). Falls back
     // to enabled when no db is mounted.
@@ -44,10 +45,11 @@ void PanelConfigController::loadFromDisk()
         : true;
     LOG_DEBUG("PanelConfigController loaded: closeAction=\"{}\" confirmOnExit={} "
               "startMinimized={} autoLaunchSystem={} defaultModelName=\"{}\" "
-              "pluginWriteEnabled={}",
+              "defaultGraphicsBackend=\"{}\" pluginWriteEnabled={}",
               m_closeAction.toStdString(), m_confirmOnExit,
               m_startMinimized, m_autoLaunchSystem,
-              m_defaultModelName.toStdString(), m_pluginWriteEnabled);
+              m_defaultModelName.toStdString(),
+              m_defaultGraphicsBackend.toStdString(), m_pluginWriteEnabled);
 }
 
 bool PanelConfigController::updateField(std::function<void(PanelConfig&)> mutator)
@@ -184,6 +186,39 @@ void PanelConfigController::setDefaultModelName(const QString& name)
     emit defaultModelNameChanged();
     LOG_INFO("PanelConfig: defaultModelName \"{}\" -> \"{}\"",
              old.toStdString(), name.toStdString());
+}
+
+void PanelConfigController::setDefaultGraphicsBackend(const QString& backend)
+{
+    // v1.10: enum-style vocabulary guard (the setCloseAction discipline,
+    // case-insensitive + normalized to lowercase so the cache and the
+    // persisted value always hold the canonical spelling).
+    const QString normalized = backend.toLower();
+    if (m_defaultGraphicsBackend == normalized) return;
+    if (normalized != QLatin1String("opengl")
+        && normalized != QLatin1String("vulkan")) {
+        LOG_WARN("PanelConfigController::setDefaultGraphicsBackend: rejecting "
+                 "invalid value '{}' (only \"opengl\"/\"vulkan\" allowed)",
+                 backend.toStdString());
+        return;
+    }
+    if (m_settingsApi != nullptr) {
+        if (m_settingsApi->setDefaultGraphicsBackend(normalized)
+                != pet::PluginError::Ok) {
+            LOG_WARN("PanelConfigController: settingsApi "
+                     "setDefaultGraphicsBackend failed");
+            return;
+        }
+    } else if (!updateField([normalized](PanelConfig& cfg) {
+                   cfg.defaultGraphicsBackend = normalized;
+               })) {
+        return;
+    }
+    const QString old = m_defaultGraphicsBackend;
+    m_defaultGraphicsBackend = normalized;
+    emit defaultGraphicsBackendChanged();
+    LOG_INFO("PanelConfig: defaultGraphicsBackend \"{}\" -> \"{}\"",
+             old.toStdString(), normalized.toStdString());
 }
 
 void PanelConfigController::setPluginWriteEnabled(bool enabled)

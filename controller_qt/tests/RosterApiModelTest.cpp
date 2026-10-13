@@ -278,6 +278,16 @@ void RosterApiModelTest::testCreateForwardsToControlApi()
     QVERIFY(control.lastSpec.modelName.isEmpty());
     QVERIFY(!control.lastSpec.autoStart);
 
+    // v1.10: the trailing graphicsBackend parameter forwards into the
+    // spec (empty default keeps older call sites identical).
+    QCOMPARE(model.createInstance(QStringLiteral("Gfx"), QStringLiteral("🐱"),
+                                  QString(), false, QStringLiteral("vulkan")),
+             static_cast<int>(pet::PluginError::Ok));
+    QCOMPARE(control.lastSpec.graphicsBackend, QStringLiteral("vulkan"));
+    QCOMPARE(model.createInstance(QStringLiteral("NoGfx")),
+             static_cast<int>(pet::PluginError::Ok));
+    QVERIFY(control.lastSpec.graphicsBackend.isEmpty());
+
     // Error-code passthrough (e.g. InvalidArgument from an empty label).
     control.createResult = pet::PluginError::InvalidArgument;
     QCOMPARE(model.createInstance(QStringLiteral("x")),

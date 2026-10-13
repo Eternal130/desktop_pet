@@ -33,8 +33,9 @@
 
 namespace pet {
 
-// apiId + per-family version for queryApi(). Version 1 = the four
-// whitelisted setters below. minVersion > this → queryApi returns
+// apiId + per-family version for queryApi(). Version 1 = the five
+// whitelisted setters below (v1.10 tail-appended setDefaultGraphicsBackend
+// onto the same version). minVersion > this → queryApi returns
 // nullptr ("feature absent", never an error).
 inline constexpr char kSettingsApiId[] = "pet.settings";
 inline constexpr int kSettingsApiVersion = 1;
@@ -57,6 +58,14 @@ public:
     // Resources/Models). Empty name → InvalidArgument (empty means "use
     // the default" at the call sites, it cannot BE the stored value).
     virtual PluginError setDefaultModelName(const QString& name) = 0;
+
+    // v1.10: the graphics backend new instances get by default. Legal
+    // values are exactly "opengl" and "vulkan" (case-insensitive — the
+    // host normalizes to lowercase); anything else, including empty,
+    // returns InvalidArgument (no silent coercion — unlike
+    // setDefaultModelName there is no "empty means default" call-site
+    // convention here, the two legal values ARE the whole vocabulary).
+    virtual PluginError setDefaultGraphicsBackend(const QString& backend) = 0;
 };
 
 } // namespace pet

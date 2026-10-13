@@ -45,9 +45,10 @@ namespace {
 // Number of fields / serialized keys. Every ground-truth source (blueprint
 // §5.2, the Java record, this struct's own definition) agrees on 12 core
 // fields; the notification-bubble stream adds 2 (notifications_enabled,
-// notification_duration_ms) and the model library adds 1 (default_model_name)
-// → 15.
-constexpr int kFieldCount = 15;
+// notification_duration_ms), the model library adds 1 (default_model_name)
+// and the graphics-backend selector adds 1 (default_graphics_backend,
+// v1.10) → 16.
+constexpr int kFieldCount = 16;
 
 // Build a config where EVERY field carries a distinctive, non-default value.
 // Used by the round-trip test so a single missed field surfaces immediately.
@@ -71,6 +72,7 @@ PanelConfig makeFullyPopulated()
     c.notificationsEnabled = false;
     c.notificationDurationMs = 35000;
     c.defaultModelName = QStringLiteral("Haru");
+    c.defaultGraphicsBackend = QStringLiteral("vulkan");
     return c;
 }
 
@@ -88,6 +90,7 @@ private slots:
     void testGarbageJsonReturnsDefaults();
     void testKeyCount();
     void testDefaultModelNameControllerRoundTrip();
+    void testDefaultGraphicsBackendControllerRoundTrip();
     void testPluginWriteEnabledKvRoundTrip();
 };
 
@@ -136,6 +139,7 @@ void PanelConfigTest::testEmptyObjectReturnsDefaults()
     QCOMPARE(cfg.notificationsEnabled, true);
     QCOMPARE(cfg.notificationDurationMs, 20000);
     QCOMPARE(cfg.defaultModelName, QStringLiteral("Hiyori"));
+    QCOMPARE(cfg.defaultGraphicsBackend, QStringLiteral("opengl"));
 }
 
 void PanelConfigTest::testInstanceIdsArrayToStringList()
@@ -256,6 +260,12 @@ void PanelConfigTest::testGarbageJsonReturnsDefaults()
     wrongModel.insert(QStringLiteral("default_model_name"), 12345);
     QCOMPARE(panelConfigFromJson(wrongModel).defaultModelName,
              QStringLiteral("Hiyori"));
+    // default_graphics_backend as a non-string (number) → default
+    // "opengl" (same per-field tolerance).
+    QJsonObject wrongBackend;
+    wrongBackend.insert(QStringLiteral("default_graphics_backend"), 12345);
+    QCOMPARE(panelConfigFromJson(wrongBackend).defaultGraphicsBackend,
+             QStringLiteral("opengl"));
 
     // Given: instance_ids as a non-array (number). Must fall back to empty.
     QJsonObject idsWrong;
@@ -272,8 +282,9 @@ void PanelConfigTest::testKeyCount()
     const QJsonObject json = panelConfigToJson(cfg);
     // Then: exactly one JSON key per field. blueprint §5.2, the Java record,
     // and the struct definition each define 12 core fields, plus the 2
-    // notification-stream fields added by the bubble-stream phase and the 1
-    // model-library field (default_model_name) → 15 keys.
+    // notification-stream fields added by the bubble-stream phase, the 1
+    // model-library field (default_model_name) and the 1 graphics-backend
+    // field (default_graphics_backend, v1.10) → 16 keys.
     QCOMPARE(json.size(), kFieldCount);
 }
 
@@ -319,6 +330,62 @@ void PanelConfigTest::testDefaultModelNameControllerRoundTrip()
     writer.setStartMinimized(true);
     PanelConfigController survivor(dir.path());
     QCOMPARE(survivor.defaultModelName(), QStringLiteral("Mao"));
+    QCOMPARE(survivor.startMinimized(), true);
+}
+
+// v1.10 渲染后端选择器: the PanelConfigController bridge's
+// defaultGraphicsBackend property mirrors the defaultModelName contract —
+// read the persisted value at construction, write through the atomic
+// load-modify-save on set (forwarded through the shared pet::ISettingsApi
+// when injected; null-API tests take the direct path), reject illegal
+// vocabulary with the cache untouched, and survive a controller
+// re-construction.
+void PanelConfigTest::testDefaultGraphicsBackendControllerRoundTrip()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    // Fresh dir → controller seeds the PanelConfig default.
+    PanelConfigController fresh(dir.path());
+    QCOMPARE(fresh.defaultGraphicsBackend(), QStringLiteral("opengl"));
+
+    // Write through the property setter → NOTIFY fires, cache updates.
+    QSignalSpy changedSpy(&fresh,
+                          &PanelConfigController::defaultGraphicsBackendChanged);
+    QVERIFY(changedSpy.isValid());
+    fresh.setDefaultGraphicsBackend(QStringLiteral("vulkan"));
+    QCOMPARE(fresh.defaultGraphicsBackend(), QStringLiteral("vulkan"));
+    QCOMPARE(changedSpy.count(), 1);
+
+    // Same-value write is a no-op (no spurious NOTIFY).
+    fresh.setDefaultGraphicsBackend(QStringLiteral("vulkan"));
+    QCOMPARE(changedSpy.count(), 1);
+
+    // Case-insensitive: "OPENGL" normalizes + flips back (canonical
+    // lowercase in both cache and store).
+    fresh.setDefaultGraphicsBackend(QStringLiteral("OPENGL"));
+    QCOMPARE(fresh.defaultGraphicsBackend(), QStringLiteral("opengl"));
+    QCOMPARE(changedSpy.count(), 2);
+
+    // Illegal vocabulary is rejected (defensive — QML segmented controls
+    // only produce legal values, but a corrupt panel.json or a future
+    // caller could pass anything); the current value survives.
+    fresh.setDefaultGraphicsBackend(QStringLiteral("dx12"));
+    QCOMPARE(fresh.defaultGraphicsBackend(), QStringLiteral("opengl"));
+    QCOMPARE(changedSpy.count(), 2);
+
+    // Persisted: a second controller over the same dir reads the written
+    // value (proves the load-modify-save hit disk, not just the cache).
+    fresh.setDefaultGraphicsBackend(QStringLiteral("vulkan"));
+    QCOMPARE(changedSpy.count(), 3);
+    PanelConfigController reloaded(dir.path());
+    QCOMPARE(reloaded.defaultGraphicsBackend(), QStringLiteral("vulkan"));
+
+    // And the OTHER PanelConfig fields survived the write.
+    PanelConfigController writer(dir.path());
+    writer.setStartMinimized(true);
+    PanelConfigController survivor(dir.path());
+    QCOMPARE(survivor.defaultGraphicsBackend(), QStringLiteral("vulkan"));
     QCOMPARE(survivor.startMinimized(), true);
 }
 

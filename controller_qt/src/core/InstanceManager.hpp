@@ -107,9 +107,15 @@ public:
     // default ("Hiyori") — the model-library page passes the user's choice
     // from the create dialog. Empty keeps the default (callers that predate
     // the parameter keep compiling + behaving identically).
+    //
+    // graphicsBackend (v1.10): same optional-override shape — non-empty
+    // overrides the InstanceConfig default ("opengl"). Callers are
+    // expected to pass an already-normalized lowercase value (the API
+    // layer validates the vocabulary; empty keeps the default).
     Q_INVOKABLE QString createInstance(const QString& label,
                                        const QString& avatar = QStringLiteral("🐱"),
-                                       const QString& modelName = QString());
+                                       const QString& modelName = QString(),
+                                       const QString& graphicsBackend = QString());
 
     // Delete-protection pattern (blueprint §4.2): requestDelete emits
     // deleteConfirmed(uuid); the UI (todo 7 Sidebar) wires that to a confirm

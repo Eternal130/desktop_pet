@@ -360,10 +360,25 @@ pet::PluginError InstanceControlApiImpl::create(const pet::InstanceSpec& spec,
                  "— ERR_INVALID_ARGUMENT");
         return pet::PluginError::InvalidArgument;
     }
+    // v1.10: graphics-backend vocabulary guard BEFORE any row is minted
+    // (an illegal value never creates a uuid). Non-empty values are
+    // normalized to lowercase; empty keeps the InstanceConfig default.
+    QString graphicsBackend;
+    if (!spec.graphicsBackend.isEmpty()) {
+        graphicsBackend = spec.graphicsBackend.toLower();
+        if (graphicsBackend != QLatin1String("opengl")
+            && graphicsBackend != QLatin1String("vulkan")) {
+            LOG_WARN("[plugin-api] instanceControlApi().create() with illegal "
+                     "graphicsBackend \"{}\" (only \"opengl\"/\"vulkan\") — "
+                     "ERR_INVALID_ARGUMENT",
+                     spec.graphicsBackend.toStdString());
+            return pet::PluginError::InvalidArgument;
+        }
+    }
     // Same creation path as the panel's own Add flow (persist → row →
     // savePanel). Empty return = persist failure.
     const QString uuid = m_instanceManager->createInstance(
-        spec.label, spec.avatar, spec.modelName);
+        spec.label, spec.avatar, spec.modelName, graphicsBackend);
     if (uuid.isEmpty()) {
         LOG_ERROR("[plugin-api] instanceControlApi().create('{}') — persist "
                   "failed, no row added", spec.label.toStdString());
@@ -657,6 +672,31 @@ pet::PluginError TuningApiImpl::unmountVoicePack(const QString& uuid)
     return pet::PluginError::Ok;
 }
 
+pet::PluginError TuningApiImpl::setGraphicsBackend(const QString& uuid,
+                                                   const QString& backend)
+{
+    // v1.10: validate + normalize BEFORE locating (an illegal vocabulary
+    // value is a malformed argument regardless of roster state — same
+    // ordering as playMotion's empty-group guard).
+    const QString normalized = backend.toLower();
+    if (normalized != QLatin1String("opengl")
+        && normalized != QLatin1String("vulkan")) {
+        LOG_WARN("[plugin-api] tuningApi().setGraphicsBackend('{}', '{}') — "
+                 "illegal value (only \"opengl\"/\"vulkan\"), "
+                 "ERR_INVALID_ARGUMENT",
+                 uuid.toStdString(), backend.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    // OFFLINE-only selector: the session persists the choice (applies on
+    // next start); a running renderer keeps its backend until restarted.
+    s->setGraphicsBackend(normalized);
+    return pet::PluginError::Ok;
+}
+
 // ── ModelApiImpl (S5, v1.3) ─────────────────────────────────────────────────
 
 ModelApiImpl::ModelApiImpl(QObject* parent)
@@ -802,6 +842,29 @@ pet::PluginError SettingsApiImpl::setDefaultModelName(const QString& name)
     }
     if (updateField([name](PanelConfig& cfg) { cfg.defaultModelName = name; })) {
         publishSettingsChanged(QStringLiteral("default_model_name"), name);
+        return pet::PluginError::Ok;
+    }
+    return pet::PluginError::Generic;
+}
+
+pet::PluginError SettingsApiImpl::setDefaultGraphicsBackend(const QString& backend)
+{
+    // v1.10: exactly "opengl" | "vulkan", case-insensitive (normalized to
+    // lowercase) — the setCloseAction guard discipline applied to the
+    // two-value backend vocabulary.
+    const QString normalized = backend.toLower();
+    if (normalized != QLatin1String("opengl")
+        && normalized != QLatin1String("vulkan")) {
+        LOG_WARN("[plugin-api] settingsApi().setDefaultGraphicsBackend('{}') "
+                 "— illegal value (only \"opengl\"/\"vulkan\"), "
+                 "ERR_INVALID_ARGUMENT", backend.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    if (updateField([normalized](PanelConfig& cfg) {
+            cfg.defaultGraphicsBackend = normalized;
+        })) {
+        publishSettingsChanged(QStringLiteral("default_graphics_backend"),
+                               normalized);
         return pet::PluginError::Ok;
     }
     return pet::PluginError::Generic;

@@ -180,6 +180,10 @@ public:
     {
         return pet::PluginError::Ok;
     }
+    pet::PluginError setGraphicsBackend(const QString&, const QString&) override
+    {
+        return pet::PluginError::Ok;
+    }
 };
 
 // North-star-2 decorator over the REAL InstanceApiImpl: a harness session

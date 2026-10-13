@@ -6,6 +6,8 @@
 #   1. the gate passes on the current tree (precondition);
 #   2. a violation probe file injected into qml/pages/ makes the gate
 #      FAIL (exit 1) — the gate really detects direct core writes (QML-U);
+#   2a. the v1.10 setGraphicsBackend probe injected into qml/pages/
+#      makes the gate FAIL (QML-U, pattern-table maintenance rule);
 #   2b. an imperative session-property assignment probe injected into
 #      qml/pages/ makes the gate FAIL (QML-PW family, audit follow-up);
 #   3. a src/ui probe calling the session write surface directly makes
@@ -24,10 +26,11 @@ set -uo pipefail
 ROOT="${1:-$(cd "$(dirname "$0")/../.." && pwd)}"
 GATE="$ROOT/scripts/api_boundary_gate.sh"
 PROBE_QML="$ROOT/qml/pages/zz_gate_selftest_probe.qml"
+PROBE_GFX="$ROOT/qml/pages/zz_gate_selftest_probe_gfx.qml"
 PROBE_PW="$ROOT/qml/pages/zz_gate_selftest_probe_pw.qml"
 PROBE_UI="$ROOT/src/ui/zz_gate_selftest_probe.cpp"
 
-cleanup() { rm -f "$PROBE_QML" "$PROBE_PW" "$PROBE_UI"; }
+cleanup() { rm -f "$PROBE_QML" "$PROBE_GFX" "$PROBE_PW" "$PROBE_UI"; }
 trap cleanup EXIT
 cleanup # stale probe from a killed earlier run must not poison step 1
 
@@ -49,6 +52,21 @@ if bash "$GATE" "$ROOT" > /dev/null 2>&1; then
     fail "gate did NOT flag the injected violation (s.loadModel in qml/pages/)"
 fi
 rm -f "$PROBE_QML"
+
+# 2a. injected violation must turn the gate red (QML-U: v1.10
+# setGraphicsBackend — the graphics-backend selector write Q_INVOKABLE;
+# pattern-table maintenance-rule probe, mirrors the loadModel probe).
+cat > "$PROBE_GFX" <<'EOF'
+// self-test probe: a QML page calling the v1.10 graphics-backend
+// session write directly. The gate MUST flag this.
+Rectangle {
+    function probe(s) { s.setGraphicsBackend("vulkan") }
+}
+EOF
+if bash "$GATE" "$ROOT" > /dev/null 2>&1; then
+    fail "gate did NOT flag the injected violation (s.setGraphicsBackend in qml/pages/)"
+fi
+rm -f "$PROBE_GFX"
 
 # 2b. injected violation must turn the gate red (QML-PW: imperative
 # property assignment — WRITE-bearing Q_PROPERTY bypasses the method
@@ -80,5 +98,5 @@ rm -f "$PROBE_UI"
 # 4. cleanup restores green.
 bash "$GATE" "$ROOT" >/dev/null || fail "gate stays red after probe cleanup"
 
-echo "api_boundary_gate_selftest: gate bites (clean → QML-U red → QML-PW red → UI-SES red → clean)"
+echo "api_boundary_gate_selftest: gate bites (clean → QML-U red → QML-U-gfx red → QML-PW red → UI-SES red → clean)"
 exit 0

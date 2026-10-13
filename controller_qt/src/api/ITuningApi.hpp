@@ -39,8 +39,9 @@
 
 namespace pet {
 
-// apiId + per-family version for queryApi(). Version 1 = the nine tuning
-// ops below. minVersion > this → queryApi returns nullptr ("feature
+// apiId + per-family version for queryApi(). Version 1 = the ten tuning
+// ops below (v1.10 tail-appended setGraphicsBackend onto the same
+// version). minVersion > this → queryApi returns nullptr ("feature
 // absent", never an error).
 inline constexpr char kTuningApiId[] = "pet.instance_tuning";
 inline constexpr int kTuningApiVersion = 1;
@@ -86,6 +87,16 @@ public:
     // Unmount the instance's voice pack (hit handling falls back to the
     // default handler) and persist the empty choice.
     virtual PluginError unmountVoicePack(const QString& uuid) = 0;
+
+    // v1.10: graphics-backend selector ("opengl" | "vulkan",
+    // case-insensitive — the host normalizes to lowercase; anything else
+    // → InvalidArgument, no silent coercion). OFFLINE-ONLY: persists the
+    // instance config (InstanceConfig.graphicsBackend) and takes effect
+    // on the NEXT instance start — start() resolves a DIFFERENT renderer
+    // executable per backend, so there is deliberately no live renderer
+    // command (a running renderer keeps its backend until restarted).
+    virtual PluginError setGraphicsBackend(const QString& uuid,
+                                           const QString& backend) = 0;
 };
 
 } // namespace pet

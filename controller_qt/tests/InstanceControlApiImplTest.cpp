@@ -5,7 +5,8 @@
 //   1. testCreate: create → Ok + outUuid; roster visible through the shared
 //      InstanceApiImpl (instances()); label/avatar/modelName honored;
 //      autoStart persists the start-with-panel flag; empty label →
-//      InvalidArgument.
+//      InvalidArgument. v1.10: graphicsBackend honored (empty = default,
+//      "VULKAN" case-normalized at the API layer).
 //   2. testRemove: stopped instance removed immediately (roster + config
 //      file); unknown uuid → NotFound; the observer family receives
 //      rosterChanged on both create and remove.
@@ -170,19 +171,47 @@ void InstanceControlApiImplTest::testCreate()
     QVERIFY(loaded->autoStart);
     QCOMPARE(loaded->modelName, QStringLiteral("Haru"));
 
+    // v1.10: graphicsBackend = "VULKAN" → normalized lowercase "vulkan"
+    // in the persisted config + the live session property.
+    pet::InstanceSpec gfxSpec;
+    gfxSpec.label = QStringLiteral("VulkanPet");
+    gfxSpec.graphicsBackend = QStringLiteral("VULKAN");
+    QString gfxUuid;
+    QCOMPARE(api.create(gfxSpec, &gfxUuid), pet::PluginError::Ok);
+    QVERIFY(!gfxUuid.isEmpty());
+    const auto gfxLoaded = InstanceConfigManager(base.path()).load(gfxUuid);
+    QVERIFY(gfxLoaded.has_value());
+    QCOMPARE(gfxLoaded->graphicsBackend, QStringLiteral("vulkan"));
+
+    // Empty graphicsBackend → the InstanceConfig default ("opengl").
+    pet::InstanceSpec spec2;
+    spec2.label = QStringLiteral("Second");
+    QString secondUuid;
+    QCOMPARE(api.create(spec2, &secondUuid), pet::PluginError::Ok);
+    const auto secondLoaded =
+        InstanceConfigManager(base.path()).load(secondUuid);
+    QVERIFY(secondLoaded.has_value());
+    QCOMPARE(secondLoaded->graphicsBackend, QStringLiteral("opengl"));
+
+    // Illegal vocabulary → InvalidArgument, nothing added.
+    pet::InstanceSpec badBackend;
+    badBackend.label = QStringLiteral("BadBackend");
+    badBackend.graphicsBackend = QStringLiteral("dx12");
+    QCOMPARE(api.create(badBackend, nullptr), pet::PluginError::InvalidArgument);
+
     // Empty label → InvalidArgument, nothing added.
     pet::InstanceSpec bad;
     bad.label = QString();
     QString uuid2 = QStringLiteral("sentinel");
     QCOMPARE(api.create(bad, &uuid2), pet::PluginError::InvalidArgument);
     QCOMPARE(uuid2, QString());
-    QCOMPARE(mgr.rowCount(), 1);
+    QCOMPARE(mgr.rowCount(), 3);
 
     // outUuid is optional (null tolerated).
-    pet::InstanceSpec spec2;
-    spec2.label = QStringLiteral("Second");
-    QCOMPARE(api.create(spec2, nullptr), pet::PluginError::Ok);
-    QCOMPARE(mgr.rowCount(), 2);
+    pet::InstanceSpec spec3;
+    spec3.label = QStringLiteral("Third");
+    QCOMPARE(api.create(spec3, nullptr), pet::PluginError::Ok);
+    QCOMPARE(mgr.rowCount(), 4);
 }
 
 // ── 2. remove ───────────────────────────────────────────────────────────────

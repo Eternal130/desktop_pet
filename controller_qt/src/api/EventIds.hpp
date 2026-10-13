@@ -268,12 +268,13 @@ inline constexpr QLatin1StringView kEventInstanceWindowResized =
 //    pet.panel.* domain; these are PANEL-LEVEL events: instanceUuid = ""
 //    in the Event header) ───────────────────────────────────────────────────
 
-// Source: HOST POINT — SettingsApiImpl's four typed setters, each AFTER a
+// Source: HOST POINT — SettingsApiImpl's typed setters, each AFTER a
 // successful panel_config persist (post-commit). Panel-level. NOT
 // cancellable. Payload:
 //   | field | string       | snake_case field name: close_action /
 //   |       |              | confirm_on_exit / start_minimized /
-//   |       |              | default_model_name                       |
+//   |       |              | default_model_name /
+//   |       |              | default_graphics_backend (v1.10)          |
 //   | value | string|bool  | the persisted value (typed as written)    |
 // v1.9: auto_launch_system joins the field set — PanelConfigController's
 // host-direct setAutoLaunchSystem success path emits the same shape (the

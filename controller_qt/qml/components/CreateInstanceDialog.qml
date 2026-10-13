@@ -180,12 +180,17 @@ Rectangle {
                         // S5: creation goes through the rosterModel write
                         // bridge (shared IInstanceControlApi; int error
                         // code, 0 = Ok).
+                        // 4th parameter: the panel default graphics
+                        // backend (panelConfig.defaultGraphicsBackend,
+                        // "opengl"/"vulkan") — silent pass-through; this
+                        // dialog intentionally has no backend selector.
                         const model = _modelCombo.currentIndex >= 0
                                       ? _modelCombo.currentText : ""
                         const err = rosterModel.createInstance(
                             _nameInput.text.trim(),
                             root._selectedAvatar,
-                            model)
+                            model,
+                            panelConfig.defaultGraphicsBackend)
                         root.close()
                         if (err === 0) {
                             const row = instanceManager.rowCount() - 1

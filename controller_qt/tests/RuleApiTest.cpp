@@ -180,6 +180,10 @@ public:
     {
         return pet::PluginError::Ok;
     }
+    pet::PluginError setGraphicsBackend(const QString&, const QString&) override
+    {
+        return pet::PluginError::Ok;
+    }
 };
 
 // Slot-7 decorator over the REAL TuningApiImpl: records the gated
@@ -239,6 +243,11 @@ public:
     pet::PluginError unmountVoicePack(const QString& uuid) override
     {
         return m_inner->unmountVoicePack(uuid);
+    }
+    pet::PluginError setGraphicsBackend(const QString& uuid,
+                                        const QString& backend) override
+    {
+        return m_inner->setGraphicsBackend(uuid, backend);
     }
 
 private:

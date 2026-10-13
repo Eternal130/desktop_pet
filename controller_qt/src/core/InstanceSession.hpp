@@ -100,6 +100,11 @@ class InstanceSession : public QObject {
     Q_PROPERTY(QString avatar      READ avatar      CONSTANT)
     Q_PROPERTY(QString uuid        READ uuid        CONSTANT)
     Q_PROPERTY(QString modelName   READ modelName   NOTIFY modelNameChanged)
+    // v1.10: renderer backend selector ("opengl" | "vulkan"). READ-only
+    // Q_PROPERTY (no WRITE) — host writes go through the shared
+    // pet::ITuningApi (InstanceControlBridge), keeping the api-boundary
+    // gate's QML_PW family out of scope.
+    Q_PROPERTY(QString graphicsBackend READ graphicsBackend NOTIFY graphicsBackendChanged)
     Q_PROPERTY(QString status      READ status      NOTIFY statusChanged)
     Q_PROPERTY(bool     connected  READ connected   NOTIFY connectedChanged)
     Q_PROPERTY(bool     modelLoaded READ modelLoaded NOTIFY modelLoadedChanged)
@@ -138,6 +143,8 @@ public:
     QString avatar() const;
     QString uuid() const;
     QString modelName() const;
+    // v1.10: InstanceConfig.graphicsBackend mirror ("opengl" | "vulkan").
+    QString graphicsBackend() const;
     QString status() const;
     bool    connected() const;
     bool    modelLoaded() const;
@@ -323,6 +330,13 @@ public slots:
     Q_INVOKABLE bool autoStartEnabled() const;    // start-with-panel flag
     Q_INVOKABLE void setAutoStart(bool enabled);  // persist + no command (renderer not up yet at toggle time)
 
+    // v1.10: renderer graphics-backend selector. Same offline-only shape
+    // as setAutoStart — persist + NO command (a different backend is a
+    // DIFFERENT renderer executable, resolved by start(); a running
+    // renderer keeps its backend until restarted). Validation lives at
+    // the API layer (TuningApiImpl); the session applies verbatim.
+    Q_INVOKABLE void setGraphicsBackend(const QString& backend);
+
     // ── Phase-5 Wave 8 todo 18 (monitor UI helper) ───────────────────────────
     // Returns the per-session MonitorDataModel as a QObject* so QML can bind
     // its Q_INVOKABLE accessors (latestRendererCpuPercent / isStaleNow /
@@ -338,6 +352,9 @@ signals:
     void connectedChanged();
     void modelLoadedChanged();
     void modelNameChanged();
+    // v1.10: graphicsBackend flip (offline-only selector; emitted only
+    // when the value actually changes).
+    void graphicsBackendChanged();
     void opacityChanged();
     void targetFpsChanged();
     void volumeChanged();

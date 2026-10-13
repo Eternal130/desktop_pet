@@ -407,19 +407,19 @@ idle 源优先级为 **包 > 模型 > 无**：挂载含 "idle" 组的语音包�
 
 载荷为 WS 载荷的逐字拷贝（`makeWindowResizedPayload` 直通）。
 
-### 6.19 `pet.panel.settings_changed`（kEventPanelSettingsChanged，v1.7；v1.9 扩字段）
+### 6.19 `pet.panel.settings_changed`（kEventPanelSettingsChanged，v1.7；v1.9/v1.10 扩字段）
 
 | 项 | 值 |
 |---|---|
 | 可取消 | 否 |
-| 来源 | **宿主点**——`SettingsApiImpl` 四个类型化 setter，各自**成功持久化之后**（post-commit；面板设置页与插件写同走这一条路，S6 起单点）+ **v1.9 起** `PanelConfigController::setAutoLaunchSystem` 的宿主直连成功路径（见下） |
+| 来源 | **宿主点**——`SettingsApiImpl` 类型化 setter（v1.3 起 4 个，v1.10 起 5 个），各自**成功持久化之后**（post-commit；面板设置页与插件写同走这一条路，S6 起单点）+ **v1.9 起** `PanelConfigController::setAutoLaunchSystem` 的宿主直连成功路径（见下） |
 | 频率 | 每次成功面板设置写一发 |
 | 面板级 | **是**（`instanceUuid = ""`——`pet.panel` 域首次启用，设计预留域） |
 
 | 字段 | 类型 | 语义 | 哨兵 |
 |---|---|---|---|
-| `field` | string | snake_case 字段名：`close_action` / `confirm_on_exit` / `start_minimized` / `default_model_name` / `auto_launch_system`（v1.9 起） | — |
-| `value` | string\|bool | 持久化的值（按写入时的类型） | — |
+| `field` | string | snake_case 字段名：`close_action` / `confirm_on_exit` / `start_minimized` / `default_model_name` / `default_graphics_backend`（v1.10 起）/ `auto_launch_system`（v1.9 起） | — |
+| `value` | string\|bool | 持久化的值（按写入时的类型；`default_graphics_backend` 恒为归一小写后的 `"opengl"`/`"vulkan"`） | — |
 
 **autoLaunchSystem 的双路径说明（v1.9 改口）**: 写入本身仍刻意走
 ISettingsApi 之外的宿主直连路径（OS 级自启动 = 宿主壳能力，见

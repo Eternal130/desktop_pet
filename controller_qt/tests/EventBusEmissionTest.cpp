@@ -1431,16 +1431,20 @@ void EventBusEmissionTest::testSettingsChangedEmission()
     QCOMPARE(api.setStartMinimized(false), pet::PluginError::Ok);
     QCOMPARE(api.setDefaultModelName(QStringLiteral("Hiyori")),
              pet::PluginError::Ok);
+    QCOMPARE(api.setDefaultGraphicsBackend(QStringLiteral("vulkan")),
+             pet::PluginError::Ok);
 
     // Rejected writes emit nothing.
     QCOMPARE(api.setCloseAction(QStringLiteral("bogus")),
              pet::PluginError::InvalidArgument);
     QCOMPARE(api.setDefaultModelName(QString()),
              pet::PluginError::InvalidArgument);
+    QCOMPARE(api.setDefaultGraphicsBackend(QStringLiteral("dx12")),
+             pet::PluginError::InvalidArgument);
 
     const QString changed = pet::kEventPanelSettingsChanged.toString();
-    QCOMPARE(publisher.countOf(changed), 4);
-    QCOMPARE(publisher.events.size(), 4); // no other channel fired
+    QCOMPARE(publisher.countOf(changed), 5);
+    QCOMPARE(publisher.events.size(), 5); // no other channel fired
     for (const pet::Event& e : publisher.events) {
         QCOMPARE(e.eventId, changed);
         QCOMPARE(e.instanceUuid, QString()); // PANEL-LEVEL
@@ -1473,6 +1477,12 @@ void EventBusEmissionTest::testSettingsChangedEmission()
     QCOMPARE(publisher.events.at(3).payload.value(QStringLiteral("value"))
                  .toString(),
              QStringLiteral("Hiyori"));
+    QCOMPARE(publisher.events.at(4).payload.value(QStringLiteral("field"))
+                 .toString(),
+             QStringLiteral("default_graphics_backend"));
+    QCOMPARE(publisher.events.at(4).payload.value(QStringLiteral("value"))
+                 .toString(),
+             QStringLiteral("vulkan"));
 }
 
 // ── 16. v1.7 (S9): pet.panel.plugin_loaded / plugin_unloaded ────────────────

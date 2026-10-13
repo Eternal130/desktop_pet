@@ -90,6 +90,7 @@ QJsonObject panelConfigToJson(const PanelConfig& cfg)
     obj.insert(QStringLiteral("notifications_enabled"), cfg.notificationsEnabled);
     obj.insert(QStringLiteral("notification_duration_ms"), cfg.notificationDurationMs);
     obj.insert(QStringLiteral("default_model_name"), cfg.defaultModelName);
+    obj.insert(QStringLiteral("default_graphics_backend"), cfg.defaultGraphicsBackend);
     return obj;
 }
 
@@ -116,6 +117,8 @@ PanelConfig panelConfigFromJson(const QJsonObject& json)
     cfg.notificationsEnabled = readBool(json, QLatin1String("notifications_enabled"), cfg.notificationsEnabled);
     cfg.notificationDurationMs = readInt(json, QLatin1String("notification_duration_ms"), cfg.notificationDurationMs);
     cfg.defaultModelName = readString(json, QLatin1String("default_model_name"), cfg.defaultModelName);
+    cfg.defaultGraphicsBackend = readString(json, QLatin1String("default_graphics_backend"),
+                                            cfg.defaultGraphicsBackend);
 
     return cfg;
 }

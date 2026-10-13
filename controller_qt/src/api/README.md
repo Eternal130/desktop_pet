@@ -2,20 +2,20 @@
 
 第一方插件 SDK 接口头集合（P4 落地，P6a 冻结点前允许演进，冻结后变更走版本化）。
 设计合同: `docs/refactor/plugin-architecture-and-cmake-migration.md` §A/§B.3。
-**当前版本: API 1.9**（2026-10-13，见文末「版本历史」）。
+**当前版本: API 1.10**（2026-10-13，见文末「版本历史」）。
 
 ## 组成
 
 | 头文件 | 内容 |
 |---|---|
-| `PluginTypes.hpp` | POD/Qt 值类型（InstanceInfo / PackInfo / DownloadRequest / InstallSpec / PageDescriptor / v1.2: InstanceSpec / InstanceRuntime / v1.3: ModelSummary / **v1.4: MonitorSample / MonitorSubscription** / **v1.8: LayoutInfo + MonitorSample.rendererFps 尾部追加**）+ PluginError / PluginLogLevel / 宿主 API 版本常量 + 能力词表常量（v1.1: `kCapabilityNetwork` / `kCapabilityVoicepacksInstall` / `kCapabilityInstanceLifecycle` / `kCapabilityInstanceTuning` / `kCapabilitySettingsWrite`，拼写与 manifest 解析逐字一致） |
+| `PluginTypes.hpp` | POD/Qt 值类型（InstanceInfo / PackInfo / DownloadRequest / InstallSpec / PageDescriptor / v1.2: InstanceSpec / InstanceRuntime / v1.3: ModelSummary / **v1.4: MonitorSample / MonitorSubscription** / **v1.8: LayoutInfo + MonitorSample.rendererFps 尾部追加** / **v1.10: InstanceSpec.graphicsBackend 尾部追加**）+ PluginError / PluginLogLevel / 宿主 API 版本常量 + 能力词表常量（v1.1: `kCapabilityNetwork` / `kCapabilityVoicepacksInstall` / `kCapabilityInstanceLifecycle` / `kCapabilityInstanceTuning` / `kCapabilitySettingsWrite`，拼写与 manifest 解析逐字一致） |
 | `IPanelPlugin.hpp` | 插件唯一入口：`initialize(IPluginContext&)` / `shutdown()`；iid `org.desktop-pet.PanelPlugin/1.0` |
 | `IPluginContext.hpp` | 宿主服务面：instanceApi / voicePackApi / uiApi / downloadApi / pluginConfigDir / log + **v1.1 尾部追加 `queryApi`（阶段 2 后新接口族的唯一暴露通道）**；内含 `IExtApi` 标记接口 |
 | `IInstanceApi.hpp` | 只读实例花名册 + `IRosterObserver` 纯虚订阅（**禁 std::function**）。只读 = 接口形状保持（v1.0 vtable 布局不动）；「插件永不写实例」的只读**承诺**已被 2026-09-21 决策推翻，写能力走 S2 `IInstanceControlApi`（`queryApi` 暴露，`instance_lifecycle`/`instance_tuning` 能力门控）。v1.2 追加 `IInstanceObserver` + `subscribeInstances`/`unsubscribeInstances` 尾追（实例级状态观察） |
 | `IInstanceControlApi.hpp` | **v1.2 (S2)** 实例生命周期写族: create / remove / start / stop / restart / loadModel。继承 `IExtApi` 经 `queryApi` 获取；`instance_lifecycle` 能力 + 宿主 `plugin_write_enabled` 开关门控，未授权为 stub；同步返回=受理，结果经 `IInstanceObserver` |
-| `ITuningApi.hpp` | **v1.3 (S5)** 实例调参写族: setOpacity / setVolume / setMuted / setFps / playMotion / setExpression / triggerHitArea / mountVoicePack / unmountVoicePack。继承 `IExtApi` 经 `queryApi` 获取；`instance_tuning` 能力 + 宿主开关门控；mount 的 packId 是**目录名**（宿主解析为绝对路径，未知包→NotFound） |
+| `ITuningApi.hpp` | **v1.3 (S5)** 实例调参写族: setOpacity / setVolume / setMuted / setFps / playMotion / setExpression / triggerHitArea / mountVoicePack / unmountVoicePack / **v1.10: setGraphicsBackend**（渲染后端选择器，"opengl"/"vulkan" 大小写不敏感、离线持久化、下次启动生效）。继承 `IExtApi` 经 `queryApi` 获取；`instance_tuning` 能力 + 宿主开关门控；mount 的 packId 是**目录名**（宿主解析为绝对路径，未知包→NotFound） |
 | `IModelApi.hpp` | **v1.3 (S5)** 模型库只读族: availableModels / refreshScan / modelInfo（ModelSummary）。经 `queryApi` 获取；**只读不门控**（不受能力与写开关约束），未接线→nullptr |
-| `ISettingsApi.hpp` | **v1.3 (S6)** 面板设置写族（类型化方法，禁 QJsonObject 逃生舱）: setCloseAction / setConfirmOnExit / setStartMinimized / setDefaultModelName。`settings_write` 能力 + 宿主开关门控；**刻意不含 autoLaunchSystem**（宿主外壳能力不进插件 API） |
+| `ISettingsApi.hpp` | **v1.3 (S6)** 面板设置写族（类型化方法，禁 QJsonObject 逃生舱）: setCloseAction / setConfirmOnExit / setStartMinimized / setDefaultModelName / **v1.10: setDefaultGraphicsBackend**（新建实例默认渲染后端，"opengl"/"vulkan" 大小写不敏感归一小写）。`settings_write` 能力 + 宿主开关门控；**刻意不含 autoLaunchSystem**（宿主外壳能力不进插件 API） |
 | `IMonitorApi.hpp` | **v1.4 (S7)** 资源监控只读族: history（60 样本环形全量，POD 投影 -1 哨兵）+ subscribe/unsubscribe（IMonitorObserver 逐样本推送，每订阅者独立 minIntervalMs 合并节流）。经 `queryApi` 获取；**只读不门控**，未接线→nullptr；宿主自己的 MonitorPage 保留活对象绑定（架构边界），本族面向插件消费者 |
 | `IEventApi.hpp` | **v1.5 (S8a)** 事件总线族: Event/EventPriority/IEventListener + subscribe/unsubscribe/publish（**同步分发**——publish 返回时整链已跑完、cancelled 已终值）。经 `queryApi` 获取；**无能力门控、不受写开关**（通知通道而非宿主状态写），未接线→nullptr；插件拿到的是 per-context 代理（发布强制 `plugin.<ownId>.*` 前缀 + publisherId 盖戳，防伪造）；重入深度上限 8（超限 Busy）；宿主通道 ID 词表 + 载荷字段表冻结在 `EventIds.hpp`（目录即契约：字段只加不删不改名，可选值用 -1/"" 哨兵，事件 ID 永不改名移除）；**v1.7 (S9) 目录扩至 21 通道**（+6 `pet.instance.*`、+3 `pet.panel.*` 面板级首启；`kAllEventIds` 完整性数组 + 守卫测试根治「常量加了、词表漏配」缺口）；**v1.8 目录扩至 23 通道**（+`pet.instance.expression_applied` / `pet.instance.motion_progress` 渲染器事件桥接）；**v1.9 目录扩至 26 通道**（+`pet.panel.window_state` / `pet.panel.tray_activated` 面板级窗口/托盘可观察性 + `pet.instance.focus_changed`〔WS `window_focus` 桥接〕，autoLaunchSystem 翻转并入 `settings_changed` 字段集） |
 | `IRuleApi.hpp` | **v1.6 (S8f)** 规则注册族: registerRule/unregisterRule（规则 JSON schema 见 `docs/rules.md`）。经 `queryApi` 获取；**注册是惰性动作——无能力词、queryApi 时不查写开关**，owner 门控在**动作发射时活查**（插件规则的 play_motion/set_expression 现查 owner 的 `instance_tuning` 能力 + `plugin_write_enabled`，滞留规则面无法超越其授权存活；notify_bubble/play_pack_audio/publish_event 按设计不门控）；插件拿到的是 per-context 代理（存储 id 强制 `plugin.<ownId>.` 前缀 + `RuleScope::Plugin` 盖戳，只能注册/注销/替换自己的）；schema 校验失败→InvalidArgument（原因经 context log）引擎不变；未接线→nullptr；规则不持久化（随注册存活，卸载清扫兜底） |
@@ -108,7 +108,7 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 "翻转即吊销"需 per-call 门控代理（见"阶段路线"的阶段 2 候选）。只读族（`pet.model`、
 `pet.monitor`、voicePackApi、instanceApi）不受其约束。
 
-族 × 能力 × 开关总表（v1.9 全景，queryApi 通道八族）:
+族 × 能力 × 开关总表（v1.10 全景，queryApi 通道八族——v1.10 零新族，仅既有族加法扩员）:
 
 | apiId | 接口 | 能力门控 | 写开关 | 未接线时 |
 |---|---|---|---|---|
@@ -174,6 +174,44 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
 `qrc:/` URL（§B.6）。
 
 ## 版本历史
+
+### v1.10（2026-10-13，kApiMajor=1 / kApiMinor=10）— 渲染后端选择器与面板默认后端
+
+全部为**加法**变更（两个既有写族的尾部追加 + InstanceSpec 尾部成员 + 事件字段集
+扩员 + 宿主写面接线），零既有签名/顺序改动；`IPluginContext` 尾追特权未使用。
+
+1. **`kApiMinor` 9 → 10**。
+2. **`ITuningApi` 第 10 个调参操作 `setGraphicsBackend(uuid, backend)`**（族版本
+   不变，尾部追加）: 渲染后端选择器，合法值恰为 `"opengl"` / `"vulkan"`
+   （大小写不敏感，宿主归一为小写；其它值含空串 → InvalidArgument，无静默纠偏）。
+   **离线-only**: 持久化 `InstanceConfig.graphics_backend`、下次实例启动生效
+   （不同后端 = 不同渲染器可执行文件，刻意不发在线命令——运行中的渲染器维持
+   其后端直至重启）。NotFound/Busy 照 locateAlive 先例。
+3. **`ISettingsApi` 第 5 个白名单写 `setDefaultGraphicsBackend(backend)`**（族
+   版本不变，尾部追加）: 新建实例的默认渲染后端（`PanelConfig.
+   default_graphics_backend`，缺省 `"opengl"`）。同一验证词表（"opengl"/"vulkan"
+   大小写不敏感归一小写，否则 InvalidArgument）；成功持久化后发射
+   `pet.panel.settings_changed` `{field: "default_graphics_backend", value}`
+   （v1.7 通道字段集 add-only 扩员，零新事件 ID）。
+4. **`InstanceSpec.graphicsBackend` 尾部追加**（create() 的后端覆盖）: 空串 =
+   InstanceConfig 缺省（"opengl"）；非空须合法（大小写不敏感归一小写），否则
+   create 在**铸造 uuid 之前**返回 InvalidArgument。
+5. **宿主接线**: InstanceSession 增 READ-only `graphicsBackend` Q_PROPERTY +
+   `setGraphicsBackend` Q_INVOKABLE（离线持久化 setter，照 loadModel 离线半边
+   纪律: 同值 no-op、恒持久化、发 NOTIFY、零命令）+ `graphicsBackendChanged`;
+   TuningApiImpl/SettingsApiImpl 真实现 + TuningApiStub/SettingsApiStub 各补
+   Capability 桩; InstanceManager::createInstance 尾追可选 `graphicsBackend` 参数;
+   InstanceControlBridge 增 `setGraphicsBackend`（int 错误码，照 setFps 镜像）;
+   RosterApiModel.createInstance 尾追默认空串第 5 参（旧 QML 调用点不变）;
+   PanelConfigController 增 `defaultGraphicsBackend` Q_PROPERTY（settingsApi 转发
+   + 词表守卫 + 空值回退直写路径）; `api_boundary_gate.sh` QML_UNIQUE 模式表补
+   `setGraphicsBackend` + 自咬探针（模式表维护规约）。
+6. **测试**: TuningApiImplTest 增 testGraphicsBackendWrite（round-trip/归一/
+   非法/NotFound/Busy/同值）; SettingsApiImplTest round-trip 改五字段 +
+   testDefaultGraphicsBackendValidation; EventBusEmissionTest settings_changed
+   断言 4 → 5 发; PanelConfigTest 键数 15 → 16 + 控制器桥 round-trip;
+   PluginQueryApiTest 桩 Capability × 2; InstanceControlApiImplTest create
+   三分支（VULKAN 归一/空=缺省/非法拒绝）; RosterApiModelTest 第 5 参透传。
 
 ### v1.9（2026-10-13，kApiMajor=1 / kApiMinor=9）— 边界事件补全（窗口/托盘/焦点 + autoLaunch 纳入，目录 23 → 26）
 
@@ -412,7 +450,8 @@ POD），零既有签名/顺序改动。`IPluginContext` 的 v1.1 一次性尾�
 2. **`ModelSummary` POD**（`PluginTypes.hpp`）: IModelApi 的行类型（name +
    motionGroups / expressions / hitAreas）。
 3. **`ITuningApi`**（新头，apiId `pet.instance_tuning`，族版本 1）: 九个实例调参操作
-   （透明度/音量/静音/帧率/playMotion/setExpression/triggerHitArea/mount/unmount）。
+   （透明度/音量/静音/帧率/playMotion/setExpression/triggerHitArea/mount/unmount；
+   v1.10 尾追 setGraphicsBackend 增至十个）。
    同步返回=受理（Ok/NotFound/InvalidArgument/Busy），值变化经
    `IInstanceObserver.instanceStateChanged` 观察；pending-delete 期间全部 Busy。
    mount 的 packId 为**目录名**，宿主按自身扫描反解为绝对路径，未知→NotFound
@@ -422,7 +461,8 @@ POD），零既有签名/顺序改动。`IPluginContext` 的 v1.1 一次性尾�
    →nullptr。数据源是宿主单一模型扫描缓存（与模型库页面同一份）。
 5. **`ISettingsApi`**（新头，apiId `pet.settings`，族版本 1）: 四个类型化白名单写
    （setCloseAction 合法值 exit|minimize、setConfirmOnExit、setStartMinimized、
-   setDefaultModelName）。**刻意不含 autoLaunchSystem**（OS 级自启动=宿主外壳能力，
+   setDefaultModelName；v1.10 尾追 setDefaultGraphicsBackend 增至五个）。
+   **刻意不含 autoLaunchSystem**（OS 级自启动=宿主外壳能力，
    架构决策）与 plugin_write_enabled 本身（插件可翻的开关不是开关）。
 6. **`IVoicePackApi` 尾追 `IPackListObserver`** + `subscribePackList`/
    `unsubscribePackList`: 包列表变化观察（粗粒度 packListChanged），挂载/卸载写路径

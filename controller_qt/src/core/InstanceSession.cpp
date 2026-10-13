@@ -221,6 +221,7 @@ QString InstanceSession::avatar() const {
 }
 QString InstanceSession::uuid() const       { return m_config.id; }
 QString InstanceSession::modelName() const   { return m_config.modelName; }
+QString InstanceSession::graphicsBackend() const { return m_config.graphicsBackend; }
 QString InstanceSession::status() const      { return m_status; }
 bool    InstanceSession::connected() const   { return m_connected; }
 bool    InstanceSession::modelLoaded() const { return m_modelLoaded; }

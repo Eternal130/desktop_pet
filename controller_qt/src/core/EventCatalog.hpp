@@ -131,13 +131,13 @@ QJsonObject makePackPayload(const QString& packId);
 
 // pet.panel.settings_changed — {field, value}. `field` is the snake_case
 // PanelConfig field name (close_action / confirm_on_exit / start_minimized /
-// default_model_name / auto_launch_system — the last joined in v1.9 via
-// PanelConfigController's host-direct path, see below); `value` carries the
-// persisted value typed as written (string or bool — QJsonValue keeps the
-// type). v1.9: autoLaunchSystem now EMITS from its host-direct setter's
-// success path (the write itself still deliberately stays outside
-// ISettingsApi — OS-level autostart is a host-shell capability; only the
-// bus observability was added).
+// default_model_name / default_graphics_backend (v1.10) / auto_launch_system
+// — the last joined in v1.9 via PanelConfigController's host-direct path,
+// see below); `value` carries the persisted value typed as written (string
+// or bool — QJsonValue keeps the type). v1.9: autoLaunchSystem now EMITS
+// from its host-direct setter's success path (the write itself still
+// deliberately stays outside ISettingsApi — OS-level autostart is a
+// host-shell capability; only the bus observability was added).
 QJsonObject makeSettingsChangedPayload(const QString& field,
                                        const QJsonValue& value);
 

@@ -416,6 +416,9 @@ void PluginQueryApiTest::testV13FamilyGatingMatrix()
                  pet::PluginError::Capability);
         QCOMPARE(tuning->unmountVoicePack(QStringLiteral("x")),
                  pet::PluginError::Capability);
+        QCOMPARE(tuning->setGraphicsBackend(QStringLiteral("x"),
+                                            QStringLiteral("vulkan")),
+                 pet::PluginError::Capability);
         writeSwitch = true;
     }
     // NOT granted → stub.
@@ -493,6 +496,8 @@ void PluginQueryApiTest::testV13FamilyGatingMatrix()
         QVERIFY(settings != dynamic_cast<pet::ISettingsApi*>(
                     static_cast<pet::IExtApi*>(&sharedSettings)));
         QCOMPARE(settings->setCloseAction(QStringLiteral("exit")),
+                 pet::PluginError::Capability);
+        QCOMPARE(settings->setDefaultGraphicsBackend(QStringLiteral("vulkan")),
                  pet::PluginError::Capability);
         QCOMPARE(ctx->queryApi(pet::kSettingsApiId, pet::kSettingsApiVersion + 1),
                  nullptr);

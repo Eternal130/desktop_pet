@@ -88,7 +88,8 @@ QHash<int, QByteArray> InstanceManager::roleNames() const
 
 QString InstanceManager::createInstance(const QString& label,
                                         const QString& avatar,
-                                        const QString& modelName)
+                                        const QString& modelName,
+                                        const QString& graphicsBackend)
 {
     // defaultInstanceConfig mints a fresh UUID as the persistence primary key.
     InstanceConfig cfg = defaultInstanceConfig();
@@ -99,6 +100,10 @@ QString InstanceManager::createInstance(const QString& label,
     // Empty → the default stays ("Hiyori" — matches the pre-parameter behavior).
     if (!modelName.isEmpty())
         cfg.modelName = modelName;
+    // v1.10 graphics-backend selection: non-empty overrides the
+    // InstanceConfig default ("opengl"); empty keeps it.
+    if (!graphicsBackend.isEmpty())
+        cfg.graphicsBackend = graphicsBackend;
 
     if (!m_configManager.save(cfg)) {
         LOG_ERROR("InstanceManager::createInstance: failed to persist \"{}\"; aborting row insert",

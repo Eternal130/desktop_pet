@@ -158,6 +158,8 @@ public:
     pet::PluginError mountVoicePack(const QString& uuid,
                                     const QString& packId) override;
     pet::PluginError unmountVoicePack(const QString& uuid) override;
+    pet::PluginError setGraphicsBackend(const QString& uuid,
+                                        const QString& backend) override;
 
 private:
     // Shared prelude: NotFound for unknown uuids, Busy while a delete is
@@ -244,6 +246,7 @@ public:
     pet::PluginError setConfirmOnExit(bool enabled) override;
     pet::PluginError setStartMinimized(bool enabled) override;
     pet::PluginError setDefaultModelName(const QString& name) override;
+    pet::PluginError setDefaultGraphicsBackend(const QString& backend) override;
 
 private:
     // Load-modify-save over the panel_config store (same discipline as

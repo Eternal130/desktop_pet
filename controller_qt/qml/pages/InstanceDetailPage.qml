@@ -330,7 +330,7 @@ Rectangle {
                     Card {
                         width: parent.width
                         title: qsTr("舞台 · 模型与动作")
-                        hint: qsTr("模型切换即时生效 (load_model)")
+                        hint: qsTr("模型切换即时生效 (load_model) · 渲染后端重启实例后生效")
 
                         Row {
                             width: parent.width
@@ -357,6 +357,67 @@ Rectangle {
                                      && instance && instance.availableModels().length === 0
                             text: qsTr("未找到模型 — 请检查渲染器旁的 Resources/Models/")
                             color: root._faintColor
+                            font.pixelSize: 11
+                        }
+
+                        // Graphics-backend row: picks which renderer
+                        // executable this instance launches ("opengl" /
+                        // "vulkan"). The two backends are separate
+                        // executables, so a change applies on restart and
+                        // never hot-swaps (the ↻ 重启 button is in the
+                        // header bar above).
+                        Row {
+                            width: parent.width
+                            spacing: 8
+
+                            Text {
+                                text: qsTr("渲染后端")
+                                color: Theme.textColor
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                            AppComboBox {
+                                id: backendCombo
+                                width: 168
+                                model: root._backendLabels
+                                onActivated: (i) => {
+                                    if (!instance) return
+                                    const value = root._backendValueAt(i)
+                                    if (value.length === 0) return
+                                    // Write goes through the shared-API
+                                    // bridge like every other write on
+                                    // this page. activated() fires on
+                                    // user picks only — the programmatic
+                                    // currentIndex writes in
+                                    // _syncCombos() never re-enter here.
+                                    const err =
+                                        instanceControl.setGraphicsBackend(
+                                            instance.uuid, value)
+                                    if (err === 0) {
+                                        backendError.text = ""
+                                    } else {
+                                        backendError.text =
+                                            qsTr("设置失败（错误码 %1），后端未更改").arg(err)
+                                        // Bounce back to the live value.
+                                        backendCombo.currentIndex =
+                                            root._backendIndex(
+                                                instance.graphicsBackend)
+                                    }
+                                }
+                            }
+                            Text {
+                                text: qsTr("重启实例后生效")
+                                color: root._faintColor
+                                font.pixelSize: 11
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                        }
+                        Text {
+                            id: backendError
+                            visible: text.length > 0
+                            text: ""
+                            color: root._errorColor
                             font.pixelSize: 11
                         }
 
@@ -792,10 +853,37 @@ Rectangle {
     }
     Component.onCompleted: root._syncCombos()
 
+    // ── Graphics-backend combo mapping ────────────────────────────────
+    // Display labels are fixed proper nouns; committed values are the
+    // lowercase contract strings ("opengl" / "vulkan").
+    readonly property var _backendLabels: ["OpenGL", "Vulkan"]
+    readonly property var _backendValues: ["opengl", "vulkan"]
+
+    // Case-insensitive backend string → combo index (empty/unknown
+    // resolves to 0 = OpenGL, the default backend).
+    function _backendIndex(backend) {
+        const i = root._backendValues.indexOf(
+            String(backend || "").toLowerCase())
+        return i >= 0 ? i : 0
+    }
+
+    // Combo index → lowercase contract value ("" when out of range).
+    function _backendValueAt(i) {
+        return (i >= 0 && i < root._backendValues.length)
+            ? root._backendValues[i] : ""
+    }
+
     function _syncCombos() {
         if (!instance) return
         const i = modelCombo.find(instance.modelName)
         modelCombo.currentIndex = i >= 0 ? i : -1
+        // Backend follows the live value (case-insensitive per the
+        // contract; C++ owns the lowercase spelling). A programmatic
+        // currentIndex assignment never emits activated(), so no
+        // write re-enters from this sync.
+        backendCombo.currentIndex = root._backendIndex(
+            instance.graphicsBackend)
+        backendError.text = ""
     }
 
     // ── Inline components ──────────────────────────────────────────────

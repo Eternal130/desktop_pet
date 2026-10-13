@@ -36,11 +36,37 @@
 
 #include "system/TrayManager.hpp"
 
+#include "api/EventIds.hpp"
+#include "api/IEventApi.hpp"
+
 #include <QGuiApplication>
 #include <QObject>
 #include <QSignalSpy>
 #include <QSystemTrayIcon>
 #include <QTest>
+
+namespace {
+
+// Recording publisher (the EventBusEmissionTest fake shape): captures
+// every publish; the tray emission sites are publish-only so
+// subscribe/unsubscribe stay unused.
+class RecordingPublisher : public pet::IEventApi
+{
+public:
+    QList<pet::Event> events;
+
+    pet::PluginError subscribe(const QString&, pet::IEventListener*,
+                               pet::EventPriority) override
+    { return pet::PluginError::Ok; }
+    void unsubscribe(const QString&, pet::IEventListener*) override {}
+    pet::PluginError publish(pet::Event& event) override
+    {
+        events.append(event);
+        return pet::PluginError::Ok;
+    }
+};
+
+} // namespace
 
 class TrayManagerTest : public QObject
 {
@@ -52,6 +78,8 @@ private slots:
     void testActivatedDoubleClickEmitsVisibilityToggled();
     void testActivatedContextEmitsRequestContextMenu();
     void testActivatedTriggerIgnored();
+    // v1.9: pet.panel.tray_activated bus emission at the signal sites.
+    void testTrayActivatedEmission();
 };
 
 // ===========================================================================
@@ -173,6 +201,57 @@ void TrayManagerTest::testActivatedTriggerIgnored()
     QCOMPARE_EQ(visSpy.count(), 0);
     QCOMPARE_EQ(setSpy.count(), 0);
     QCOMPARE_EQ(quitSpy.count(), 0);
+}
+
+// ===========================================================================
+// v1.9 — pet.panel.tray_activated emission at every interaction site.
+// ===========================================================================
+
+void TrayManagerTest::testTrayActivatedEmission()
+{
+    RecordingPublisher publisher;
+    TrayManager tm;
+    tm.setEventPublisher(&publisher);
+
+    const QString activated = pet::kEventPanelTrayActivated.toString();
+
+    // The three QML Menu activators (also the uniform path the QML
+    // Connections block observes).
+    tm.activateToggleVisibility();
+    tm.activateSettings();
+    tm.activateQuit();
+
+    // The two tray-gesture routes through onActivated — the slot is pure
+    // routing (no m_tray dereference), so it exercises the production
+    // path even on platforms without a tray.
+    tm.onActivated(QSystemTrayIcon::DoubleClick);
+    tm.onActivated(QSystemTrayIcon::Context);
+    // Ignored reasons stay ignored — no signal, no publish.
+    tm.onActivated(QSystemTrayIcon::Trigger);
+    tm.onActivated(QSystemTrayIcon::MiddleClick);
+    tm.onActivated(QSystemTrayIcon::Unknown);
+
+    QCOMPARE_EQ(publisher.events.size(), 5);
+
+    const char* expected[] = { "toggle_visibility", "settings", "quit",
+                               "toggle_visibility", "context_menu" };
+    for (int i = 0; i < 5; ++i) {
+        const pet::Event& e = publisher.events.at(i);
+        QCOMPARE_EQ(e.eventId, activated);
+        QCOMPARE_EQ(e.payload.value(QStringLiteral("action")).toString(),
+                    QString::fromLatin1(expected[i]));
+        QCOMPARE_EQ(e.instanceUuid, QString()); // PANEL-LEVEL
+        QCOMPARE_EQ(e.publisherId, QString(pet::kEventPublisherHost));
+        QVERIFY(!e.cancellable);
+        QCOMPARE_EQ(e.payload.size(), 1); // single key — nothing added
+    }
+
+    // Null publisher (pre-v1.9 / degraded wiring): the activators still
+    // emit their Qt signals and never crash.
+    TrayManager silent;
+    QSignalSpy spy(&silent, &TrayManager::quitRequested);
+    silent.activateQuit();
+    QCOMPARE_EQ(spy.count(), 1);
 }
 
 // Custom main — QGuiApplication is required by QSystemTrayIcon +

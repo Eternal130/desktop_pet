@@ -3,6 +3,8 @@
 #include <QObject>
 #include <QSystemTrayIcon>
 
+namespace pet { class IEventApi; }
+
 // TrayManager (Wave 7 todo 13) — QSystemTrayIcon wrapper.
 //
 // Blueprint §4.1.6 spec:
@@ -78,22 +80,53 @@ public:
     // signals fire from the C++ activated() handler (DoubleClick →
     // visibilityToggled) and from the QML Menu items. Trivial inline impls
     // so they are visible to moc + inlinable.
+    // v1.9: each ALSO publishes pet.panel.tray_activated AFTER the signal
+    // (post-commit; null publisher = pre-v1.9 behavior, publishTrayActivated
+    // guards).
 
     // "显示/隐藏" menu item — toggles window visibility (Main.qml hides /
     // shows + raises the window).
-    Q_INVOKABLE void activateToggleVisibility() { emit visibilityToggled(); }
+    Q_INVOKABLE void activateToggleVisibility()
+    {
+        emit visibilityToggled();
+        publishTrayActivated(QStringLiteral("toggle_visibility"));
+    }
 
     // "设置" menu item — Main.qml navigates to SettingsPage + shows window.
-    Q_INVOKABLE void activateSettings() { emit showSettings(); }
+    Q_INVOKABLE void activateSettings()
+    {
+        emit showSettings();
+        publishTrayActivated(QStringLiteral("settings"));
+    }
 
     // "退出" menu item — Main.qml calls Qt.quit() (graceful shutdown, which
     // flushes logs via Logging::shutdown in main.cpp's post-exec() path).
-    Q_INVOKABLE void activateQuit() { emit quitRequested(); }
+    Q_INVOKABLE void activateQuit()
+    {
+        emit quitRequested();
+        publishTrayActivated(QStringLiteral("quit"));
+    }
 
     // Logo sync (AssetManager) — replace the tray icon with the PNG at
     // `path`. No-op (WARN) when no tray is available or the file is not a
     // loadable image. Never throws.
     Q_INVOKABLE void setIconPixmap(const QString& path);
+
+    // v1.9 event-publisher seam (the SettingsApiImpl::setEventPublisher
+    // precedent, wired by PanelUiBoot onto the shared event API): every
+    // interaction signal below additionally publishes
+    // pet.panel.tray_activated {action} right AFTER the Qt signal fires
+    // (post-commit). Interface pointer (NOT the concrete impl) so tests
+    // inject fakes; plain C++ setter, deliberately NOT a Q_INVOKABLE /
+    // Q_PROPERTY WRITE (the api-boundary gate's pattern table stays
+    // untouched). Null (the default) = publish nothing (pre-v1.9
+    // behavior). Action mapping (signal → payload):
+    //   visibilityToggled  → "toggle_visibility"
+    //   showSettings       → "settings"
+    //   quitRequested      → "quit"
+    //   requestContextMenu → "context_menu"
+    void setEventPublisher(pet::IEventApi* publisher)
+    { m_eventPublisher = publisher; }
 
 signals:
     // Right-click on the tray icon (ActivationReason::Context). Main.qml's
@@ -125,6 +158,11 @@ public slots:
     void onActivated(QSystemTrayIcon::ActivationReason reason);
 
 private:
+    // v1.9: publish pet.panel.tray_activated {action} as a PANEL-LEVEL
+    // host event (instanceUuid ""). No-op without an injected publisher.
+    // Payload via the EventCatalog builder (keys never hand-written).
+    void publishTrayActivated(const QString& action);
+
     // Loads the tray icon: tries `:/icons/tray-icon.png` first, falls back
     // to a generated 32×32 blue-circle pixmap. The fallback matches the
     // Java reference's createTrayImage() default (RGB 74,144,217). Always
@@ -133,4 +171,5 @@ private:
 
     QSystemTrayIcon* m_tray = nullptr;
     bool m_available = false;
+    pet::IEventApi* m_eventPublisher = nullptr; // v1.9, not owned
 };

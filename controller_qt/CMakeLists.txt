@@ -222,6 +222,12 @@ qt_add_library(pet_panel_core STATIC
     # property in main.cpp. The .hpp is listed so AUTOMOC processes Q_OBJECT.
     src/core/PanelConfigController.cpp
     src/core/PanelConfigController.hpp
+    # v1.9: pet.panel.window_state emission point — observes the engine
+    # root window (attached from PanelUiBoot's objectCreated handler) and
+    # publishes the panel-level bus event on every visibility transition.
+    # The .hpp is listed so AUTOMOC processes Q_OBJECT.
+    src/core/PanelWindowObserver.cpp
+    src/core/PanelWindowObserver.hpp
     # Phase 5 Wave 7 todo 14: OS auto-launch manager (Windows reg.exe via
     # QProcess / Linux ~/.config/autostart/desktop-pet.desktop / macOS no-op).
     # Port of Java util/AutoLaunchManager.java. Injectable suppliers (app-path,

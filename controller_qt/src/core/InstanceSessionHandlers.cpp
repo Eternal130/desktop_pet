@@ -585,6 +585,27 @@ void InstanceSession::handleMotionProgressEvent(const Envelope& env)
     }
 }
 
+void InstanceSession::handleFocusChangedEvent(const Envelope& env)
+{
+    // events.md §18: window_focus fires when the pet window gains or
+    // loses OS-level keyboard focus (GLFW focus callback; focused=true =
+    // gained). The expression_applied publish-only override pattern:
+    // this override (registered in start(), after registerDefaults)
+    // reproduces the default's DEBUG log line verbatim (zero log change)
+    // and additionally fans the event onto the bus with the VERBATIM WS
+    // payload keys (focused — the makeFocusChangedPayload single-key
+    // echo). Pure telemetry: nothing on the panel side keys off pet
+    // window focus today; plugins / rules observe instead of polling.
+    LOG_DEBUG("event action='window_focus' payload={}",
+              QString::fromUtf8(QJsonDocument(env.payload).toJson(
+                                    QJsonDocument::Compact))
+                  .toStdString());
+    publishHostEvent(
+        pet::kEventInstanceFocusChanged, /*cancellable=*/false,
+        core::makeFocusChangedPayload(
+            env.payload.value(QStringLiteral("focused")).toBool()));
+}
+
 void InstanceSession::handleErrorEvent(const Envelope& env)
 {
     // events.md §9: the renderer reports a runtime error. The

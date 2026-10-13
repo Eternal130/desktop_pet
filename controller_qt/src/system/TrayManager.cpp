@@ -7,6 +7,10 @@
 #include <spdlog/spdlog.h>
 #include "logging/Logging.hpp"
 
+#include "api/EventIds.hpp"
+#include "api/IEventApi.hpp"
+#include "core/EventCatalog.hpp"
+
 #include <QFile>
 #include <QGuiApplication>
 #include <QIcon>
@@ -102,10 +106,12 @@ void TrayManager::onActivated(QSystemTrayIcon::ActivationReason reason)
     case QSystemTrayIcon::Context:
         // Right-click — the QML Menu pops via onRequestContextMenu.
         emit requestContextMenu();
+        publishTrayActivated(QStringLiteral("context_menu"));
         break;
     case QSystemTrayIcon::DoubleClick:
         // Double-click — toggle the main window visibility.
         emit visibilityToggled();
+        publishTrayActivated(QStringLiteral("toggle_visibility"));
         break;
     case QSystemTrayIcon::Trigger:
         // Single left-click — the Java reference ignores this (only
@@ -122,6 +128,23 @@ void TrayManager::onActivated(QSystemTrayIcon::ActivationReason reason)
         // Unknown reason (some platforms emit this on focus changes). Ignore.
         break;
     }
+}
+
+void TrayManager::publishTrayActivated(const QString& action)
+{
+    // v1.9: pet.panel.tray_activated — the observability twin of the four
+    // interaction signals (the signals stay the QML wiring channel; the
+    // bus event is for plugins / rules). PANEL-LEVEL: instanceUuid stays
+    // "". Payload via the EventCatalog builder (keys never hand-written).
+    if (m_eventPublisher == nullptr)
+        return; // tests / degraded wiring — pre-v1.9 behavior
+    pet::Event evt;
+    evt.eventId = QString(pet::kEventPanelTrayActivated);
+    evt.instanceUuid = QString(); // panel-level
+    evt.publisherId = QString(pet::kEventPublisherHost);
+    evt.cancellable = false;
+    evt.payload = core::makeTrayActivatedPayload(action);
+    m_eventPublisher->publish(evt); // synchronous; errors are bus-level
 }
 
 void TrayManager::setIconPixmap(const QString& path)

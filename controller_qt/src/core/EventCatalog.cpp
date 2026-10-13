@@ -80,6 +80,14 @@ QJsonObject makeExpressionAppliedPayload(const QString& expressionId)
     return payload;
 }
 
+QJsonObject makeFocusChangedPayload(bool focused)
+{
+    // events.md §18: one key, verbatim — the GLFW focus-callback half.
+    QJsonObject payload;
+    payload.insert(QStringLiteral("focused"), focused);
+    return payload;
+}
+
 QJsonObject makeMotionProgressPayload(const QString& group, int index,
                                       bool hasProgress, double progress)
 {
@@ -213,6 +221,21 @@ QJsonObject makePluginLifecyclePayload(const QString& pluginId)
 {
     QJsonObject payload;
     payload.insert(QStringLiteral("plugin_id"), pluginId);
+    return payload;
+}
+
+QJsonObject makeWindowStatePayload(const QString& state, bool visible)
+{
+    QJsonObject payload;
+    payload.insert(QStringLiteral("state"), state);
+    payload.insert(QStringLiteral("visible"), visible);
+    return payload;
+}
+
+QJsonObject makeTrayActivatedPayload(const QString& action)
+{
+    QJsonObject payload;
+    payload.insert(QStringLiteral("action"), action);
     return payload;
 }
 

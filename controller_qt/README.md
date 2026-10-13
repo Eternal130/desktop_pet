@@ -142,13 +142,13 @@ Storage follows the platform conventions via `QStandardPaths` (app name
 ## Testing
 
 ```bash
-ctest --test-dir build/controller_qt            # run all 64 QTest/gate binaries
+ctest --test-dir build/controller_qt            # run all 66 QTest/gate binaries
 ctest --test-dir build/controller_qt -j8        # parallel
 ctest --test-dir build/controller_qt -L REQUIRES_RENDERER   # integration tier only
 ctest --test-dir build/controller_qt -E 'REQUIRES_RENDERER' # unit tier only
 ```
 
-**64 QTest/gate binaries** under `tests/` cover every module: network (Envelope,
+**66 QTest/gate binaries** under `tests/` cover every module: network (Envelope,
 WsServer, MessageDispatcher, Handshake, PendingRequests, EventRegistry,
 ThreadMarshal, ProtocolFactory, WsServerMulti), core (InstanceSession,
 InstanceManager, Scheduler, InteractionHandler, RestartController,
@@ -159,12 +159,13 @@ ResourceStatsCollector), config (InstanceConfig, PanelConfig,
 InstanceConfigManager, PanelStateManager, ConfigDir, Robustness, PathResolve),
 infrastructure (Logging, PoCIntegration, ProcessManager, StartupSalvo,
 ProtocolFixtures), bubble stream (NotificationStreamModel,
-NotificationStreamController), plugin SDK v1.2-v1.7 families
+NotificationStreamController), plugin SDK v1.2-v1.9 families
 (PluginRegistry, PluginHost, PluginManager, PluginPageModel, DownloadService,
 InstallPipeline, RosterApiModel, InstanceControlApiImpl, PluginQueryApi,
 TuningApiImpl, ModelApiImpl, SettingsApiImpl, InstanceControlBridge,
 MonitorApiImpl, EventBus/EventApiProxy/EventBusEmission, RuleEngine/
-RuleEngineService/RuleApi) + the API boundary gate (`ApiBoundaryGateTest`,
+RuleEngineService/RuleApi, LayoutApiImpl, PanelWindowObserver) + the API
+boundary gate (`ApiBoundaryGateTest`,
 `ApiBoundaryGateSelfTest` — bash-driven, see `scripts/api_boundary_gate.sh`).
 
 Each test exe links `Qt6::Test` and gets its own `windeployqt` post-build step
@@ -337,11 +338,14 @@ PATH order:
   self-bite `ApiBoundaryGateSelfTest`); allowlist entries are file+line
   level with reviewed justifications. See `src/api/README.md` for the
   family × capability × switch matrix.
-- **Event bus + rule engine (S8+, SDK v1.5-v1.7)**: a Forge-style in-process
+- **Event bus + rule engine (S8+, SDK v1.5-v1.9)**: a Forge-style in-process
   event bus (`core/EventBus`, `pet.events` family — synchronous dispatch,
   priority ladder, cancellable hit/idle_tick) mirrors host emission points
   as `pet.instance.*`/`pet.model.*`/`pet.pack.*`/`pet.panel.*` channels
-  (21-channel catalog with the `kAllEventIds` completeness guard:
+  (26-channel catalog with the `kAllEventIds` completeness guard —
+  v1.9 adds `pet.panel.window_state`/`pet.panel.tray_activated` panel
+  observability + the WS `window_focus` bridge `pet.instance.focus_changed`,
+  and folds the autoLaunchSystem flip into `settings_changed`:
   `src/api/EventIds.hpp`, payload keys owned by `core/EventCatalog`
   builders — see `docs/bus-events.md`); the declarative rule engine
   (`core/RuleEngine` + `RuleEngineService`, `pet.rules` registration family)
@@ -358,7 +362,7 @@ controller_qt/
 ├── README.md                   # this file
 ├── scripts/                    # api_boundary_gate.sh (API boundary gate — ctest-enforced)
 ├── src/
-│   ├── api/                    # Plugin SDK v1.7 headers (11 interface families; see src/api/README.md)
+│   ├── api/                    # Plugin SDK v1.9 headers (11 interface families; see src/api/README.md)
 │   ├── app/                    # PanelApplication composition root + PanelUiBoot + ScreenshotRunner
 │   ├── main.cpp                # QGuiApplication + QQmlApplicationEngine entry
 │   ├── network/                # Envelope, Protocol (25 commands), WsServer, MessageDispatcher,
@@ -381,7 +385,7 @@ controller_qt/
 │   ├── components/           # StatusPill, SettingRow, SectionCard, Chip
 │   └── pages/                # WelcomePage, InstanceDetailPage, MonitorPage,
 │                             #   VoicePackPage, ModelLibraryPage, SettingsPage
-└── tests/                      # 64 QTest/gate binaries (see Testing section)
+└── tests/                      # 66 QTest/gate binaries (see Testing section)
 ```
 
 ---

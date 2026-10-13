@@ -10,6 +10,7 @@ class NotificationStreamController;
 namespace core {
 class PluginManager;
 class PluginPageModel;
+class PanelWindowObserver;
 }
 
 // PanelUiBoot — the UI-bridge subtree carved out of main() (P3/M3,
@@ -69,6 +70,9 @@ private:
     class VoicePackController* m_voicePackController;
     class ModelController* m_modelController;
     class RosterApiModel* m_rosterApiModel;
+    // v1.9: pet.panel.window_state emission point (attaches to the engine
+    // root window in the objectCreated handler below).
+    core::PanelWindowObserver* m_panelWindowObserver = nullptr;
     // S5 (v1.3): detail-page write bridge (ctx prop "instanceControl").
     class InstanceControlBridge* m_instanceControlBridge = nullptr;
     // P4 plugin bridges (constructed after the original bridges, before

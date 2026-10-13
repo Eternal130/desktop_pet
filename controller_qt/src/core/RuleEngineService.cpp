@@ -103,6 +103,8 @@ RuleEngine::KnownEventTable RuleEngineService::makeKnownEventTable()
     // can never recur silently.
     // v1.8: expression_applied + motion_progress join (23 total) — both
     // pure telemetry, non-cancellable.
+    // v1.9: focus_changed + window_state + tray_activated join (26
+    // total) — all pure telemetry/observability, non-cancellable.
     RuleEngine::KnownEventTable table;
     table.insert(QString(pet::kEventInstanceHit), true);
     table.insert(QString(pet::kEventInstanceIdleTick), true);
@@ -112,6 +114,7 @@ RuleEngine::KnownEventTable RuleEngineService::makeKnownEventTable()
     table.insert(QString(pet::kEventInstanceAudioFinished), false);
     table.insert(QString(pet::kEventInstanceExpressionApplied), false);
     table.insert(QString(pet::kEventInstanceMotionProgress), false);
+    table.insert(QString(pet::kEventInstanceFocusChanged), false);
     table.insert(QString(pet::kEventDragStarted), false);
     table.insert(QString(pet::kEventDragEnded), false);
     table.insert(QString(pet::kEventModelLoaded), false);
@@ -129,6 +132,9 @@ RuleEngine::KnownEventTable RuleEngineService::makeKnownEventTable()
     table.insert(QString(pet::kEventPanelSettingsChanged), false);
     table.insert(QString(pet::kEventPanelPluginLoaded), false);
     table.insert(QString(pet::kEventPanelPluginUnloaded), false);
+    // v1.9 additions — window/tray observability, non-cancellable.
+    table.insert(QString(pet::kEventPanelWindowState), false);
+    table.insert(QString(pet::kEventPanelTrayActivated), false);
     return table;
 }
 

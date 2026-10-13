@@ -67,6 +67,11 @@ QJsonObject makeMotionProgressPayload(const QString& group, int index,
 QJsonObject makeMotionProgressPayload(const QString& motionPath,
                                       bool hasProgress, double progress);
 
+// pet.instance.focus_changed — {focused} (events.md §18 verbatim — the
+// GLFW window-focus callback half; single-key echo in the
+// makeExpressionAppliedPayload shape).
+QJsonObject makeFocusChangedPayload(bool focused);
+
 // pet.instance.drag_started — {x, y}.
 QJsonObject makeDragStartedPayload(double x, double y);
 
@@ -126,16 +131,30 @@ QJsonObject makePackPayload(const QString& packId);
 
 // pet.panel.settings_changed — {field, value}. `field` is the snake_case
 // PanelConfig field name (close_action / confirm_on_exit / start_minimized /
-// default_model_name); `value` carries the persisted value typed as
-// written (string or bool — QJsonValue keeps the type). autoLaunchSystem
-// deliberately does NOT emit: it walks the host-direct AutoLaunchManager
-// path outside ISettingsApi, and this channel mirrors the ISettingsApi
-// write surface only.
+// default_model_name / auto_launch_system — the last joined in v1.9 via
+// PanelConfigController's host-direct path, see below); `value` carries the
+// persisted value typed as written (string or bool — QJsonValue keeps the
+// type). v1.9: autoLaunchSystem now EMITS from its host-direct setter's
+// success path (the write itself still deliberately stays outside
+// ISettingsApi — OS-level autostart is a host-shell capability; only the
+// bus observability was added).
 QJsonObject makeSettingsChangedPayload(const QString& field,
                                        const QJsonValue& value);
 
 // pet.panel.plugin_loaded / pet.panel.plugin_unloaded — {plugin_id} (the
 // manifest id, reverse-domain).
 QJsonObject makePluginLifecyclePayload(const QString& pluginId);
+
+// ── Panel domain, v1.9 additions (window/tray observability) ────────────────
+
+// pet.panel.window_state — {state, visible}. `state` is the projected
+// QQuickWindow::Visibility name ("normal"/"minimized"/"hidden"/"maximized"
+// — see api/EventIds.hpp for the defensive-fallback table); `visible` is
+// window->isVisible() sampled at signal time.
+QJsonObject makeWindowStatePayload(const QString& state, bool visible);
+
+// pet.panel.tray_activated — {action} (snake_case action identifier:
+// toggle_visibility / settings / quit / context_menu).
+QJsonObject makeTrayActivatedPayload(const QString& action);
 
 } // namespace core

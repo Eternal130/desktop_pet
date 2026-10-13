@@ -3,7 +3,7 @@
 > 位置: 总线核心 `controller_qt/src/core/EventBus.hpp/.cpp`、载荷 builder
 > `core/EventCatalog.hpp/.cpp`、契约头 `src/api/EventIds.hpp`（通道词表）+
 > `src/api/IEventApi.hpp`（族接口，SDK v1.5 / S8a；v1.7 目录补全至 21 通道；
-> v1.8 桥接 2 条渲染器事件至 23 通道）。
+> v1.8 桥接 2 条渲染器事件至 23 通道；v1.9 补 3 条边界事件至 26 通道）。
 > 相关文档: 规则引擎 `docs/rules.md`（总线 Low 层的最大消费者）、
 > 插件 SDK 总览 `controller_qt/src/api/README.md` §pet.events、
 > WS 事件词表 `docs/protocol/events.md`。
@@ -87,7 +87,7 @@ stable）。宿主侧的既定阶梯（与 `docs/rules.md` §7 同一真相）:
 
 - 只有发布时声明 `cancellable = true` 的通道采纳取消——当前词表中**仅
   `pet.instance.hit` 与 `pet.instance.idle_tick`** 两个（指定的 pre-action
-  门，S8b 起被消费；其余 19 条通道恒为 `false`，见 §6 各节）。
+  门，S8b 起被消费；其余 24 条通道恒为 `false`，见 §6 各节）。
 - 任何优先级的监听器在可取消事件上写 `event.cancelled = true` 都被采纳——
   总线核心不按优先级限制取消权。标志**贯穿整链**（同一 `Event&` 引用下传）:
   后序监听器能看到先序监听器的决定，也能改写它；`publish` 返回时的**终值**
@@ -132,15 +132,16 @@ stable）。宿主侧的既定阶梯（与 `docs/rules.md` §7 同一真相）:
   残留订阅（非零 WARN——清扫是安全网不是契约）。监听器生命周期**永远归插件**，
   宿主只调不删。
 
-## 6. 事件目录（23 条宿主通道，v1.8 词表）
+## 6. 事件目录（26 条宿主通道，v1.9 词表）
 
-四域划分: `pet.instance.*`（16）/ `pet.model.*`（2）/ `pet.pack.*`（2）/
-`pet.panel.*`（3，v1.7 首次启用的面板级域）。`pet.instance.*` / `pet.model.*` /
-`pet.pack.*` 为**实例级**通道——实例身份由 Event 头的 `instanceUuid` 携带，载荷从不
-重复它；`pet.panel.*` 为**面板级**通道（`instanceUuid = ""`，无单宠身份）。
-载荷镜像 WS 事件的通道，字段表与 `docs/protocol/events.md` 逐字对齐；宿主
-增补字段单独标注。**完整性守卫**: `EventIds.hpp` 的 `kAllEventIds` 数组枚举全部
-23 个 id，规则引擎的 `makeKnownEventTable` 键集必须与之逐 id 相等
+四域划分: `pet.instance.*`（17）/ `pet.model.*`（2）/ `pet.pack.*`（2）/
+`pet.panel.*`（5，v1.7 首次启用的面板级域，v1.9 扩至 5 条）。`pet.instance.*` /
+`pet.model.*` / `pet.pack.*` 为**实例级**通道——实例身份由 Event 头的
+`instanceUuid` 携带，载荷从不重复它；`pet.panel.*` 为**面板级**通道
+（`instanceUuid = ""`，无单宠身份）。载荷镜像 WS 事件的通道，字段表与
+`docs/protocol/events.md` 逐字对齐；宿主增补字段单独标注。**完整性守卫**:
+`EventIds.hpp` 的 `kAllEventIds` 数组枚举全部 26 个 id，规则引擎的
+`makeKnownEventTable` 键集必须与之逐 id 相等
 （`EventBusEmissionTest::testKnownEventTableCoversCatalog` 断言——漏配即测试红）。
 
 ### 6.1 `pet.instance.ready`（kEventInstanceReady）
@@ -402,22 +403,28 @@ stable）。宿主侧的既定阶梯（与 `docs/rules.md` §7 同一真相）:
 
 载荷为 WS 载荷的逐字拷贝（`makeWindowResizedPayload` 直通）。
 
-### 6.19 `pet.panel.settings_changed`（kEventPanelSettingsChanged，v1.7）
+### 6.19 `pet.panel.settings_changed`（kEventPanelSettingsChanged，v1.7；v1.9 扩字段）
 
 | 项 | 值 |
 |---|---|
 | 可取消 | 否 |
-| 来源 | **宿主点**——`SettingsApiImpl` 四个类型化 setter，各自**成功持久化之后**（post-commit；面板设置页与插件写同走这一条路，S6 起单点） |
+| 来源 | **宿主点**——`SettingsApiImpl` 四个类型化 setter，各自**成功持久化之后**（post-commit；面板设置页与插件写同走这一条路，S6 起单点）+ **v1.9 起** `PanelConfigController::setAutoLaunchSystem` 的宿主直连成功路径（见下） |
 | 频率 | 每次成功面板设置写一发 |
 | 面板级 | **是**（`instanceUuid = ""`——`pet.panel` 域首次启用，设计预留域） |
 
 | 字段 | 类型 | 语义 | 哨兵 |
 |---|---|---|---|
-| `field` | string | snake_case 字段名：`close_action` / `confirm_on_exit` / `start_minimized` / `default_model_name` | — |
+| `field` | string | snake_case 字段名：`close_action` / `confirm_on_exit` / `start_minimized` / `default_model_name` / `auto_launch_system`（v1.9 起） | — |
 | `value` | string\|bool | 持久化的值（按写入时的类型） | — |
 
-`autoLaunchSystem` **刻意不发**：它走 ISettingsApi 之外的宿主直连路径
-（AutoLaunchManager），本通道只镜像 ISettingsApi 写面（见 §9）。
+**autoLaunchSystem 的双路径说明（v1.9 改口）**: 写入本身仍刻意走
+ISettingsApi 之外的宿主直连路径（OS 级自启动 = 宿主壳能力，见
+`ISettingsApi.hpp`），但**发射已纳入**——`PanelConfigController` 注入共享
+publisher（`setEventPublisher` seam），`setAutoLaunchSystem` 在持久化成功后
+（AutoLaunchManager 的 enable/disable 动作由 QML 开关在属性写入前一刻驱动，
+天然先于发射完成）以同形载荷发布 `field: "auto_launch_system"`。失败回滚与
+同值 no-op 均不发。v1.7-v1.8 时代「autoLaunch 刻意不发」的裁决就此修订
+（§9 修订记录）。
 
 ### 6.20 `pet.panel.plugin_loaded`（kEventPanelPluginLoaded，v1.7）
 
@@ -487,6 +494,70 @@ publish-only override（`audio_finished` 模式）+ **高频特意零额外处�
 状态、不动调度器。消费方应容忍 `progress` 缺失与短动作完全无快照。v1.7 时代"动作进度
 是高频流不进总线"的裁决由此修订: 渲染器侧 500ms 节流把它变成了离散通知（最坏 2 Hz），
 重入上限 8 不再可能被合法序列打穿。
+
+### 6.24 `pet.panel.window_state`（kEventPanelWindowState，v1.9）
+
+| 项 | 值 |
+|---|---|
+| 可取消 | 否 |
+| 来源 | **宿主点**——`core::PanelWindowObserver`（PanelUiBoot 在引擎 `objectCreated` 时挂接到主窗口）观察 `QWindow::visibilityChanged`，**变化落地后**发布（post-commit——该信号本身是事后通知） |
+| 频率 | 每次面板主窗口可见性/状态变迁一发 |
+| 面板级 | **是**（`instanceUuid = ""`） |
+
+| 字段 | 类型 | 语义 | 哨兵 |
+|---|---|---|---|
+| `state` | string | 窗口状态投影（映射表见下） | — |
+| `visible` | bool | 信号时刻的 `window->isVisible()` 原样采样 | — |
+
+`QWindow::Visibility` → `state` 映射表（`PanelWindowObserver::stateForVisibility`
+单点拥有）:
+
+| 枚举值 | state | 语义 |
+|---|---|---|
+| `Windowed` | `normal` | 常规显示 |
+| `Maximized` | `maximized` | 最大化（标题栏 maximize 按钮） |
+| `Minimized` | `minimized` | 最小化到任务栏 |
+| `Hidden` | `hidden` | **隐藏到托盘语义**——Main.qml 的 `closeAction === "minimize"` 分支与 `toggleVisibility()` 都调 `root.hide()`，即落到此值 |
+| `FullScreen` | `maximized` | 防御性兜底（本 UI 无全屏路径，就近归类） |
+| `AutomaticVisibility` | `normal` | 防御性兜底（嵌入式专属值，桌面面板不可达） |
+
+### 6.25 `pet.panel.tray_activated`（kEventPanelTrayActivated，v1.9）
+
+| 项 | 值 |
+|---|---|
+| 可取消 | 否 |
+| 来源 | **宿主点**——`TrayManager` 既有 4 个交互信号，各自**信号发出之后**发布（post-commit；发射点在 TrayManager 信号位上，托盘手势与 QML 菜单项两种触发同路扇出） |
+| 频率 | 每次托盘交互一发 |
+| 面板级 | **是**（`instanceUuid = ""`） |
+
+| 字段 | 类型 | 语义 | 哨兵 |
+|---|---|---|---|
+| `action` | string | snake_case 动作标识（映射表见下） | — |
+
+TrayManager 信号 → `action` 映射表（发射点在 `TrayManager.cpp` 各信号位）:
+
+| 信号 | action | 触发路径 |
+|---|---|---|
+| `visibilityToggled` | `toggle_visibility` | 托盘双击 / 菜单「显示/隐藏」 |
+| `showSettings` | `settings` | 菜单「设置」 |
+| `quitRequested` | `quit` | 菜单「退出」 |
+| `requestContextMenu` | `context_menu` | 托盘右键（弹出 QML 菜单） |
+
+### 6.26 `pet.instance.focus_changed`（kEventInstanceFocusChanged，v1.9）
+
+| 项 | 值 |
+|---|---|
+| 可取消 | 否（纯遥测——宠物窗口焦点无面板侧行为） |
+| 来源 | WS `window_focus`（`events.md` §18——渲染器宠物窗口获得/失去 OS 级键盘焦点，GLFW `glfwSetWindowFocusCallback` 触发；`focused` = true 获得 / false 失去） |
+| 频率 | 每次焦点翻转一发 |
+
+| 字段 | 类型 | 语义 | 哨兵 |
+|---|---|---|---|
+| `focused` | bool | `true` = 窗口获得焦点；`false` = 失去焦点 | — |
+
+publish-only override（`expression_applied` 模式）: 复现 EventRegistry 默认
+DEBUG 日志 + `makeFocusChangedPayload` 单键回显，逐字镜像 WS 载荷。插件/规则
+可对宠物窗口焦点做反应而无需轮询。
 
 ## 7. 「一域一通道」原则
 
@@ -570,6 +641,14 @@ const pet::PluginError err = m_eventApi->publish(evt);
 > 最坏 2 Hz 的离散通知，`motion_progress` 已收录为 §6.23；后者维持不收录（监控流已
 > 承载）。另，v1.7 记录的「布局命令面 API 缺口（getLayout/resetLayout）」已由 v1.8
 > 的 `pet.layout` 族补齐（`ILayoutApi`），该记录债销案。
+>
+> **v1.9 修订（本轮按用户裁决纳入）**: v1.7-v1.8 时代以「宿主直连路径、非
+> ISettingsApi 写面」为由排除的 **autoLaunchSystem 翻转**已纳入
+> `pet.panel.settings_changed` 字段集（§6.19——写入仍走宿主直连，仅发射并入总线）；
+> 同版把先前从未立案的**面板窗口状态**（§6.24）与**托盘交互**（§6.25）两个候选
+> 立项收录（面板级可观察性，离散通知语义），并桥接渲染器 WS `window_focus`
+> （§6.26）。三组边界候选自此全部退役——「未收录」表仅剩上面两行（帧率走监控流、
+> layout_state 是查询回执），维持不变。
 
 ## 10. 版本与演进规则
 
@@ -583,6 +662,12 @@ const pet::PluginError err = m_eventApi->publish(evt);
   `kAllEventIds` 23 条 + `makeKnownEventTable` 同步——词表 21 → 23。
   同版: `MonitorSample.rendererFps` 尾部追加（fps 走监控流不走事件）、
   `pet.layout` 布局族落地（§9 的记录债销案）。
+- **v1.9 边界事件补全**: 3 条新通道（`pet.panel.window_state` +
+  `pet.panel.tray_activated` 面板级窗口/托盘可观察性 + `pet.instance.focus_changed`
+  即 WS `window_focus`〔events.md §18〕的桥接）+ **autoLaunchSystem 翻转并入
+  `pet.panel.settings_changed` 字段集**（宿主直连写路径不变，仅补发射——
+  §6.19/§9 修订记录）+ `kAllEventIds` 26 条 + `makeKnownEventTable` 同步
+  ——词表 23 → 26。
 - **只加法**: 新通道 / 新载荷字段只能追加；字段永不删改名、事件 ID 永不改名
   移除；可选值一律哨兵（-1 / ""）。**唯一成文例外**: 镜像 WS 载荷的
   verbatim 透传 builder 里，线协议自身的可选缺键（`motion_progress` 的

@@ -142,6 +142,16 @@ inline constexpr QLatin1StringView kEventInstanceExpressionApplied =
 inline constexpr QLatin1StringView kEventInstanceMotionProgress =
     QLatin1StringView("pet.instance.motion_progress");
 
+// Source: WS `window_focus` (docs/protocol/events.md §18 — the pet window
+// gained/lost OS-level keyboard focus; GLFW focus callback). The
+// expression_applied publish-only override pattern (v1.9): the override
+// reproduces the EventRegistry default's DEBUG log verbatim + fans the
+// VERBATIM WS payload onto the bus. Pure telemetry. NOT cancellable.
+// Payload (verbatim WS payload copy):
+//   | focused | bool | true = window gained focus; false = lost |
+inline constexpr QLatin1StringView kEventInstanceFocusChanged =
+    QLatin1StringView("pet.instance.focus_changed");
+
 // Source: WS `drag_start`. Payload:
 //   | x | double | drag-start mouse X (window client coordinates) |
 //   | y | double | drag-start mouse Y                             |
@@ -265,8 +275,10 @@ inline constexpr QLatin1StringView kEventInstanceWindowResized =
 //   |       |              | confirm_on_exit / start_minimized /
 //   |       |              | default_model_name                       |
 //   | value | string|bool  | the persisted value (typed as written)    |
-// (autoLaunchSystem deliberately does NOT emit — it walks the host-direct
-// path outside ISettingsApi; see EventCatalog.cpp / docs/bus-events.md.)
+// v1.9: auto_launch_system joins the field set — PanelConfigController's
+// host-direct setAutoLaunchSystem success path emits the same shape (the
+// write still deliberately walks the direct path OUTSIDE ISettingsApi;
+// only the emission was added. See EventCatalog.cpp / docs/bus-events.md.)
 inline constexpr QLatin1StringView kEventPanelSettingsChanged =
     QLatin1StringView("pet.panel.settings_changed");
 
@@ -282,14 +294,41 @@ inline constexpr QLatin1StringView kEventPanelPluginLoaded =
 inline constexpr QLatin1StringView kEventPanelPluginUnloaded =
     QLatin1StringView("pet.panel.plugin_unloaded");
 
-// ── Completeness array (v1.7; 23 ids since v1.8) ────────────────────────────
+// ── Panel-domain channels, v1.9 additions (window/tray observability) ────────
+
+// Source: HOST POINT — the QQmlApplicationEngine root window's visibility
+// transitions (core::PanelWindowObserver, wired by PanelUiBoot on
+// objectCreated). Fires post-commit (QQuickWindow::visibilityChanged is an
+// after-the-change notification). Panel-level. NOT cancellable. Payload:
+//   | state   | string | "normal" (Windowed) / "minimized" / "hidden"
+//   |         |        | (hide-to-tray semantics — root.hide()) /
+//   |         |        | "maximized"; defensive fallbacks for the two
+//   |         |        | enum values this UI can never produce:
+//   |         |        | FullScreen→"maximized", AutomaticVisibility→
+//   |         |        | "normal"                                          |
+//   | visible | bool   | window->isVisible() sampled at signal time     |
+inline constexpr QLatin1StringView kEventPanelWindowState =
+    QLatin1StringView("pet.panel.window_state");
+
+// Source: HOST POINT — TrayManager's four interaction signals, each
+// published right after the Qt signal fires (post-commit). The SAME
+// actions fire from tray-icon gestures (onActivated routing) and the QML
+// tray Menu items (the activate*() Q_INVOKABLEs) — uniform, like the
+// signals themselves. Panel-level. NOT cancellable. Payload:
+//   | action | string | "toggle_visibility" (visibilityToggled) /
+//   |        |        | "settings" (showSettings) / "quit" (quitRequested) /
+//   |        |        | "context_menu" (requestContextMenu)              |
+inline constexpr QLatin1StringView kEventPanelTrayActivated =
+    QLatin1StringView("pet.panel.tray_activated");
+
+// ── Completeness array (v1.7; 26 ids since v1.9) ────────────────────────────
 // EVERY host event id, in catalog order. makeKnownEventTable (the rule
 // engine's cancel_default static-WARN table) and the completeness-guard
 // test both check against THIS array — an audio_finished-style gap
 // (constant added, table entry forgotten) turns the test red.
 // 新增事件必须同步本数组 (adding an event without extending this array
 // fails EventBusEmissionTest::testKnownEventTableCoversCatalog).
-inline constexpr std::array<QLatin1StringView, 23> kAllEventIds = {
+inline constexpr std::array<QLatin1StringView, 26> kAllEventIds = {
     kEventInstanceReady,
     kEventInstanceHit,
     kEventInstanceMotionStarted,
@@ -298,6 +337,7 @@ inline constexpr std::array<QLatin1StringView, 23> kAllEventIds = {
     kEventInstanceAudioFinished,
     kEventInstanceExpressionApplied,
     kEventInstanceMotionProgress,
+    kEventInstanceFocusChanged,
     kEventDragStarted,
     kEventDragEnded,
     kEventInstanceError,
@@ -313,6 +353,8 @@ inline constexpr std::array<QLatin1StringView, 23> kAllEventIds = {
     kEventPanelSettingsChanged,
     kEventPanelPluginLoaded,
     kEventPanelPluginUnloaded,
+    kEventPanelWindowState,
+    kEventPanelTrayActivated,
 };
 
 } // namespace pet

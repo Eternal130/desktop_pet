@@ -513,6 +513,15 @@ private:
     // cannot keep up simply do not subscribe.
     void handleMotionProgressEvent(const Envelope& env);
 
+    // window_focus (docs/protocol/events.md §18 — the pet window
+    // gained/lost OS-level keyboard focus; GLFW focus callback) →
+    // publish-only override in the expression_applied shape: reproduces
+    // the default's DEBUG log verbatim + fans the VERBATIM WS payload
+    // onto the bus as pet.instance.focus_changed (non-cancellable
+    // telemetry). No local behavior — focus is pure observability
+    // (plugins may react to pet-window focus without polling).
+    void handleFocusChangedEvent(const Envelope& env);
+
     // error (docs/protocol/events.md §9 — renderer runtime error report) →
     // publish-only override in the audio_finished shape: reproduces the
     // EventRegistry default's INFO log verbatim (zero log change) and fans

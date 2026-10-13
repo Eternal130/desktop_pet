@@ -20,6 +20,7 @@
 #include "core/InstanceSession.hpp"
 #include "core/DownloadService.hpp"
 #include "core/PanelConfigController.hpp"
+#include "core/PanelWindowObserver.hpp"
 #include "core/PluginContextImpl.hpp" // complete core::InstanceApiImpl (pet::IInstanceApi upcast)
 #include "core/PluginHost.hpp"
 #include "core/RuleEngineService.hpp" // S8e: complete type for the bubble-sink injection below
@@ -89,6 +90,12 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     // the mount-point note above.
     m_trayManager = new TrayManager(this);
 
+    // v1.9: every tray interaction signal additionally publishes the
+    // panel-level pet.panel.tray_activated bus event (post-commit, inside
+    // TrayManager at each signal site — the emission shares the signal
+    // routing, so tray gestures and QML menu clicks fan out uniformly).
+    m_trayManager->setEventPublisher(m_app.eventApi());
+
     // Wave 7 todo 14/15 — OS auto-launch (registry/.desktop) + the QML bridge
     // for PanelConfig's 4 behavior fields. AutoLaunchManager
     // is zero-config (production ctor wires real suppliers); its
@@ -106,6 +113,26 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     // (autoLaunchSystem + pluginWriteEnabled stay on direct host paths —
     // architecture decision, see ISettingsApi.hpp.)
     m_panelConfigController->setSettingsApi(m_app.settingsApi());
+    // v1.9: the host-direct autoLaunchSystem flip publishes the SAME
+    // pet.panel.settings_changed channel the ISettingsApi writes emit on
+    // (post-commit; the SettingsApiImpl::setEventPublisher precedent —
+    // the one documented autoLaunch observability gap closes here).
+    m_panelConfigController->setEventPublisher(m_app.eventApi());
+
+    // v1.9: pet.panel.window_state emission. The root window does not
+    // exist yet (loadFromModule runs after this boot) — attach in the
+    // engine's objectCreated handler. Lifetime: heap child of this
+    // PanelUiBoot (mount-point note); the observed QQuickWindow is the
+    // engine's own root (never owned here, disconnected if re-observed).
+    m_panelWindowObserver = new core::PanelWindowObserver(this);
+    m_panelWindowObserver->setEventPublisher(m_app.eventApi());
+    QObject::connect(
+        &m_engine, &QQmlApplicationEngine::objectCreated, this,
+        [this](QObject* object, const QUrl& url) {
+            Q_UNUSED(url);
+            if (auto* window = qobject_cast<QQuickWindow*>(object))
+                m_panelWindowObserver->observe(window);
+        });
 
     // AssetManager (image library + logo/instance-icon refs). Shares the
     // DatabaseManager; exposed as the "assetManager" context property for

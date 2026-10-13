@@ -73,8 +73,15 @@ namespace pet {
 // event-catalog channels (pet.instance.expression_applied /
 // pet.instance.motion_progress — see api/EventIds.hpp). No existing
 // signature changed; MonitorSample grew at the TAIL only.
+// v1.9 (2026-10-13): minor bumped for the additive event-catalog
+// expansion — 3 new host channels (pet.panel.window_state +
+// pet.panel.tray_activated panel-level observability, and the WS
+// window_focus bridge pet.instance.focus_changed per events.md §18)
+// plus auto_launch_system joining the pet.panel.settings_changed field
+// set (emitted from the host-direct PanelConfigController path).
+// kAllEventIds 23 → 26. No existing signature changed.
 constexpr int kApiMajor = 1;
-constexpr int kApiMinor = 8;
+constexpr int kApiMinor = 9;
 
 // ── Capability vocabulary (manifest "capabilities" entries; §B.4) ───────────
 // The exact, case-sensitive strings the host parses from plugin manifests

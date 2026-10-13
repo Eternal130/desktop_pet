@@ -1,5 +1,8 @@
 #include "core/PanelConfigController.hpp"
 
+#include "api/EventIds.hpp"
+#include "api/IEventApi.hpp"
+#include "core/EventCatalog.hpp"
 #include "core/PanelConfig.hpp"
 #include "core/PanelStateManager.hpp"
 
@@ -141,6 +144,11 @@ void PanelConfigController::setAutoLaunchSystem(bool enabled)
     // the DIRECT host path — OS-level autostart is a host-shell
     // capability (registry / .desktop mutation) and is intentionally NOT
     // part of pet::ISettingsApi (see its header). Never forwarded.
+    // v1.9: the WRITE path is unchanged; a successful persist now ALSO
+    // publishes pet.panel.settings_changed (post-commit — the QML toggle
+    // drives AutoLaunchManager::enable()/disable() immediately BEFORE
+    // this property write, so the emission lands after both the OS action
+    // and the panel_config persist).
     if (m_autoLaunchSystem == enabled) return;
     m_autoLaunchSystem = enabled;
     if (!updateField([enabled](PanelConfig& cfg) { cfg.autoLaunchSystem = enabled; })) {
@@ -149,6 +157,7 @@ void PanelConfigController::setAutoLaunchSystem(bool enabled)
     }
     emit autoLaunchSystemChanged();
     LOG_INFO("PanelConfig: autoLaunchSystem -> {}", enabled);
+    publishSettingsChanged(QStringLiteral("auto_launch_system"), enabled);
 }
 
 void PanelConfigController::setDefaultModelName(const QString& name)
@@ -194,4 +203,25 @@ void PanelConfigController::setPluginWriteEnabled(bool enabled)
     m_pluginWriteEnabled = enabled;
     emit pluginWriteEnabledChanged();
     LOG_INFO("PanelConfig: pluginWriteEnabled -> {}", enabled);
+}
+
+void PanelConfigController::publishSettingsChanged(const QString& field,
+                                                    const QJsonValue& value)
+{
+    // v1.9: the host-direct autoLaunchSystem twin of
+    // SettingsApiImpl::publishSettingsChanged — pet.panel.settings_changed
+    // joins the SAME channel the ISettingsApi writes publish on
+    // (PANEL-LEVEL: instanceUuid stays ""; pre-v1.9 the autoLaunch flip
+    // was the one documented gap, see docs/bus-events.md §9's revision
+    // record). Payload via the EventCatalog builder (keys never
+    // hand-written at emission sites).
+    if (m_eventPublisher == nullptr)
+        return; // tests / degraded wiring — pre-v1.9 behavior
+    pet::Event evt;
+    evt.eventId = QString(pet::kEventPanelSettingsChanged);
+    evt.instanceUuid = QString(); // panel-level
+    evt.publisherId = QString(pet::kEventPublisherHost);
+    evt.cancellable = false;
+    evt.payload = core::makeSettingsChangedPayload(field, value);
+    m_eventPublisher->publish(evt); // synchronous; errors are bus-level
 }

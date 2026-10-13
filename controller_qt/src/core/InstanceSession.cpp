@@ -525,6 +525,16 @@ void InstanceSession::start()
             handleMotionProgressEvent(env);
         });
 
+    // v1.9: window_focus (docs/protocol/events.md §18 — the pet window
+    // gained/lost OS-level keyboard focus). Same publish-only override
+    // shape as expression_applied: the body (Handlers TU) reproduces the
+    // kPhase6Events default's DEBUG log verbatim + fans the VERBATIM WS
+    // payload onto the bus. Pure telemetry.
+    m_dispatcher.registerEventHandler(
+        QStringLiteral("window_focus"), [this](const Envelope& env) {
+            handleFocusChangedEvent(env);
+        });
+
     // Launch the renderer. The renderer connects back to 127.0.0.1:kWsPort with
     // ?instance_id=<id>&token=<token>; WsServer's 3-gate handshake validates it.
     m_processManager.startRenderer(

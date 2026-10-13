@@ -811,10 +811,10 @@ void SettingsApiImpl::publishSettingsChanged(const QString& field,
 {
     // v1.7 (S9): pet.panel.settings_changed — the FIRST host use of the
     // reserved pet.panel.* domain. PANEL-LEVEL: instanceUuid stays "" (no
-    // per-pet identity applies). autoLaunchSystem deliberately never
-    // emits here: it walks the host-direct AutoLaunchManager path
-    // outside ISettingsApi, and this channel mirrors the ISettingsApi
-    // write surface only (see docs/bus-events.md 「未收录事件与理由」).
+    // per-pet identity applies). autoLaunchSystem never emits HERE
+    // (structurally — it has no ISettingsApi surface); since v1.9 its
+    // host-direct PanelConfigController path publishes the same channel
+    // itself (see docs/bus-events.md §6.19).
     if (m_eventPublisher == nullptr)
         return; // tests / degraded wiring — pre-v1.7 behavior
     pet::Event evt;

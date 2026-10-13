@@ -48,6 +48,12 @@
 //       expression_applied (§16 receipt, verbatim {expression_id})
 //       motion_progress (§17 both variants, progress omission mirrored
 //         verbatim — group {group,index,progress} + path {motion_path})
+//   - v1.9 boundary-event slots:
+//       autoLaunch settings_changed (the HOST-DIRECT
+//         PanelConfigController path emits the same channel
+//         ISettingsApi writes do — success emits, same-value + persist
+//         failure do not)
+//       focus_changed (§18 bridge, verbatim {focused} both values)
 //
 // QTEST_MAIN — the fake-renderer slots launch a QProcess + pump the
 // event loop (QTest::qWait). The fake renderer is the POSIX sleeper
@@ -65,6 +71,7 @@
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
 #include "core/PanelConfig.hpp"
+#include "core/PanelConfigController.hpp"
 #include "core/PanelStateManager.hpp"
 #include "core/PluginContextImpl.hpp"
 #include "core/PluginHost.hpp"
@@ -478,6 +485,9 @@ private slots:
     void testPluginLifecycleEmissions();
     void testExpressionAppliedEmission();
     void testMotionProgressEmission();
+    // ── v1.9: boundary events (autoLaunch / focus bridge) ───────────────
+    void testAutoLaunchSettingsChangedEmission();
+    void testFocusChangedEmission();
     void testKnownEventTableCoversCatalog();
 
 private:
@@ -1660,6 +1670,146 @@ void EventBusEmissionTest::testMotionProgressEmission()
     QVERIFY(!pathEvt->cancellable);
 
     // Pure pass-through telemetry: no commands sent.
+    QCOMPARE(commandSpy.count(), 0);
+
+    stopSession(session);
+#endif
+}
+
+// ── 16d. v1.9: autoLaunch settings_changed (the host-direct path) ────────────
+// PanelConfigController::setAutoLaunchSystem — the ONE settings field
+// that deliberately walks the direct host path outside ISettingsApi —
+// now emits the SAME pet.panel.settings_changed channel after a
+// successful persist (post-commit): {field: "auto_launch_system",
+// value: <bool>}, panel-level, non-cancellable. Same-value no-ops and
+// persist failures publish NOTHING.
+void EventBusEmissionTest::testAutoLaunchSettingsChangedEmission()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+
+    RecordingPublisher publisher;
+    PanelConfigController ctrl(base.path());
+    ctrl.setEventPublisher(&publisher);
+
+    const QString changed = pet::kEventPanelSettingsChanged.toString();
+
+    // Success path: flip off → on → off; each flip persists + publishes.
+    QSignalSpy notifySpy(&ctrl, &PanelConfigController::autoLaunchSystemChanged);
+    ctrl.setAutoLaunchSystem(true);
+    QCOMPARE(notifySpy.count(), 1); // NOTIFY intact (QML binding unaffected)
+    QCOMPARE(publisher.countOf(changed), 1);
+    QCOMPARE(ctrl.autoLaunchSystem(), true);
+    const pet::Event* evt = publisher.first(changed);
+    QVERIFY(evt != nullptr);
+    QCOMPARE(evt->payload.value(QStringLiteral("field")).toString(),
+             QStringLiteral("auto_launch_system"));
+    QVERIFY(evt->payload.value(QStringLiteral("value")).isBool());
+    QCOMPARE(evt->payload.value(QStringLiteral("value")).toBool(), true);
+    QCOMPARE(evt->instanceUuid, QString()); // PANEL-LEVEL
+    QCOMPARE(evt->publisherId, QString(pet::kEventPublisherHost));
+    QVERIFY(!evt->cancellable);
+
+    ctrl.setAutoLaunchSystem(false);
+    QCOMPARE(publisher.countOf(changed), 2);
+    const pet::Event* falseEvt = nullptr;
+    for (const pet::Event& e : publisher.events)
+        if (e.eventId == changed
+            && e.payload.value(QStringLiteral("value")).isBool()
+            && !e.payload.value(QStringLiteral("value")).toBool())
+            falseEvt = &e;
+    QVERIFY(falseEvt != nullptr);
+    QCOMPARE(falseEvt->payload.value(QStringLiteral("field")).toString(),
+             QStringLiteral("auto_launch_system"));
+
+    // Same-value no-op: no write, no NOTIFY, no publish.
+    ctrl.setAutoLaunchSystem(false);
+    QCOMPARE(notifySpy.count(), 2);
+    QCOMPARE(publisher.countOf(changed), 2);
+
+    // Persist failure publishes nothing: a configDir whose parent is a
+    // regular FILE cannot be created → PanelStateManager save fails →
+    // the setter rolls back + returns before the publish.
+    QFile blocker(base.path() + QStringLiteral("/blocker"));
+    QVERIFY(blocker.open(QIODevice::WriteOnly));
+    blocker.close();
+    PanelConfigController broken(base.path() + QStringLiteral("/blocker/x"));
+    broken.setEventPublisher(&publisher);
+    broken.setAutoLaunchSystem(true);
+    QCOMPARE(broken.autoLaunchSystem(), false); // rolled back
+    QCOMPARE(publisher.countOf(changed), 2);    // nothing new emitted
+}
+
+// ── 16e. v1.9: focus_changed publish-only override ──────────────────────────
+// events.md §18 — the pet window gained/lost OS-level keyboard focus.
+// The override publishes pet.instance.focus_changed with the VERBATIM
+// {focused} payload (both values), non-cancellable, host-stamped; zero
+// command side effects.
+void EventBusEmissionTest::testFocusChangedEmission()
+{
+#ifndef Q_OS_UNIX
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    QString rendererDir;
+    QVERIFY2(makeFakeRendererDir(base.path(), &rendererDir),
+             "failed to build the fake renderer dir");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+    RecordingListener recorder;
+    QCOMPARE(eventApi.subscribe(pet::kEventInstanceFocusChanged.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+
+    InstanceSession* session =
+        makeSession(base, server, pending, &eventApi, rendererDir);
+    session->start();
+    QVERIFY2(session->isProcessRunning(),
+             "fake renderer process failed to launch");
+
+    QSignalSpy commandSpy(session, &InstanceSession::commandSent);
+
+    const QJsonObject gainedPayload{
+        { QStringLiteral("focused"), true }
+    };
+    session->onMessage(
+        makeEvent(QStringLiteral("window_focus"), gainedPayload));
+    const QJsonObject lostPayload{
+        { QStringLiteral("focused"), false }
+    };
+    session->onMessage(
+        makeEvent(QStringLiteral("window_focus"), lostPayload));
+
+    QCOMPARE(recorder.countOf(pet::kEventInstanceFocusChanged.toString()), 2);
+    const pet::Event* gained =
+        recorder.first(pet::kEventInstanceFocusChanged.toString());
+    QVERIFY(gained != nullptr);
+    QCOMPARE(gained->payload, gainedPayload); // VERBATIM focused echo
+    QCOMPARE(gained->payload.size(), 1);      // single key — nothing added
+    QCOMPARE(gained->instanceUuid, session->uuid());
+    QCOMPARE(gained->publisherId, QString(pet::kEventPublisherHost));
+    QVERIFY(!gained->cancellable); // pure telemetry — never cancellable
+
+    const pet::Event* lost = nullptr;
+    for (const pet::Event& e : recorder.events) {
+        if (e.eventId == pet::kEventInstanceFocusChanged.toString()
+            && e.payload.value(QStringLiteral("focused")).isBool()
+            && !e.payload.value(QStringLiteral("focused")).toBool()) {
+            lost = &e;
+            break;
+        }
+    }
+    QVERIFY(lost != nullptr);
+    QCOMPARE(lost->payload, lostPayload); // VERBATIM, both halves pass through
+    QCOMPARE(lost->instanceUuid, session->uuid());
+
+    // Pure telemetry: no commands sent.
     QCOMPARE(commandSpy.count(), 0);
 
     stopSession(session);

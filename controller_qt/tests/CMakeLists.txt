@@ -1272,3 +1272,21 @@ target_link_libraries(LayoutApiImplTest PRIVATE pet_panel_core Qt6::Test)
 pet_deploy_qt_test(LayoutApiImplTest)
 
 add_test(NAME LayoutApiImplTest COMMAND LayoutApiImplTest)
+
+# ── v1.9 boundary-event tests ─────────────────────────────────────────────────
+
+# PanelWindowObserverTest (v1.9): the pet.panel.window_state emission
+# point over a REAL QWindow on the offscreen QPA platform (forced in the
+# custom main — the TrayManagerTest QGuiApplication precedent). Three
+# slots: the full visibility→state mapping table (incl. the two
+# defensive fallbacks for enum values this UI can never produce),
+# show()/hide() transitions publishing panel-level {state, visible}
+# (hidden = the hide-to-tray semantics of root.hide()), and degraded
+# wiring (null publisher / null detach / re-observe switching, never a
+# crash). Custom main — QWindow::show() needs QGuiApplication.
+qt_add_executable(PanelWindowObserverTest PanelWindowObserverTest.cpp)
+target_link_libraries(PanelWindowObserverTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(PanelWindowObserverTest)
+
+add_test(NAME PanelWindowObserverTest COMMAND PanelWindowObserverTest)

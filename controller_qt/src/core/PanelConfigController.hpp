@@ -10,6 +10,7 @@
 
 struct PanelConfig;
 namespace pet { class ISettingsApi; }
+namespace pet { class IEventApi; }
 
 // PanelConfigController (Wave 7 todo 15) — the QML bridge for the 4
 // startup/exit-behavior fields of PanelConfig that SettingsPage.qml edits:
@@ -74,6 +75,21 @@ public:
     // surface unchanged.
     void setSettingsApi(pet::ISettingsApi* api) { m_settingsApi = api; }
 
+    // v1.9 event-publisher seam (the SettingsApiImpl::setEventPublisher
+    // precedent): after a SUCCESSFUL host-direct autoLaunchSystem write
+    // (persist completed — the AutoLaunchManager action itself is driven
+    // by the QML toggle immediately BEFORE the property write), the
+    // controller publishes pet.panel.settings_changed
+    // {field:"auto_launch_system", value:<bool>} onto the injected bus
+    // (PANEL-LEVEL — instanceUuid ""). Interface pointer (NOT the
+    // concrete impl) so tests inject fakes; plain C++ setter,
+    // deliberately NOT a Q_INVOKABLE / Q_PROPERTY WRITE (the
+    // api-boundary gate's pattern table stays untouched — the
+    // InstanceSession::setEventPublisher / setDialogueSink discipline).
+    // Null (the default) = publish nothing (pre-v1.9 behavior).
+    void setEventPublisher(pet::IEventApi* publisher)
+    { m_eventPublisher = publisher; }
+
     // ── READ accessors (backed by m_cache, loaded once in ctor) ───────────
     QString closeAction() const     { return m_closeAction; }
     bool    confirmOnExit() const   { return m_confirmOnExit; }
@@ -119,9 +135,16 @@ private:
     // Used by every setter so the other 8 fields always survive the write.
     bool updateField(std::function<void(PanelConfig&)> mutator);
 
+    // v1.9: publish pet.panel.settings_changed {field, value} as a
+    // PANEL-LEVEL host event (the SettingsApiImpl::publishSettingsChanged
+    // twin for the host-direct autoLaunchSystem path). No-op without an
+    // injected publisher. Payload keys come from the EventCatalog builder.
+    void publishSettingsChanged(const QString& field, const QJsonValue& value);
+
     QString m_configDir;
     DatabaseManager* m_db = nullptr;
     pet::ISettingsApi* m_settingsApi = nullptr; // S6 shared write path, not owned
+    pet::IEventApi* m_eventPublisher = nullptr; // v1.9, not owned
     QString m_closeAction;
     bool    m_confirmOnExit = false;
     bool    m_startMinimized = false;

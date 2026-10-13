@@ -2,7 +2,7 @@
 
 第一方插件 SDK 接口头集合（P4 落地，P6a 冻结点前允许演进，冻结后变更走版本化）。
 设计合同: `docs/refactor/plugin-architecture-and-cmake-migration.md` §A/§B.3。
-**当前版本: API 1.8**（2026-10-13，见文末「版本历史」）。
+**当前版本: API 1.9**（2026-10-13，见文末「版本历史」）。
 
 ## 组成
 
@@ -17,7 +17,7 @@
 | `IModelApi.hpp` | **v1.3 (S5)** 模型库只读族: availableModels / refreshScan / modelInfo（ModelSummary）。经 `queryApi` 获取；**只读不门控**（不受能力与写开关约束），未接线→nullptr |
 | `ISettingsApi.hpp` | **v1.3 (S6)** 面板设置写族（类型化方法，禁 QJsonObject 逃生舱）: setCloseAction / setConfirmOnExit / setStartMinimized / setDefaultModelName。`settings_write` 能力 + 宿主开关门控；**刻意不含 autoLaunchSystem**（宿主外壳能力不进插件 API） |
 | `IMonitorApi.hpp` | **v1.4 (S7)** 资源监控只读族: history（60 样本环形全量，POD 投影 -1 哨兵）+ subscribe/unsubscribe（IMonitorObserver 逐样本推送，每订阅者独立 minIntervalMs 合并节流）。经 `queryApi` 获取；**只读不门控**，未接线→nullptr；宿主自己的 MonitorPage 保留活对象绑定（架构边界），本族面向插件消费者 |
-| `IEventApi.hpp` | **v1.5 (S8a)** 事件总线族: Event/EventPriority/IEventListener + subscribe/unsubscribe/publish（**同步分发**——publish 返回时整链已跑完、cancelled 已终值）。经 `queryApi` 获取；**无能力门控、不受写开关**（通知通道而非宿主状态写），未接线→nullptr；插件拿到的是 per-context 代理（发布强制 `plugin.<ownId>.*` 前缀 + publisherId 盖戳，防伪造）；重入深度上限 8（超限 Busy）；宿主通道 ID 词表 + 载荷字段表冻结在 `EventIds.hpp`（目录即契约：字段只加不删不改名，可选值用 -1/"" 哨兵，事件 ID 永不改名移除）；**v1.7 (S9) 目录扩至 21 通道**（+6 `pet.instance.*`、+3 `pet.panel.*` 面板级首启；`kAllEventIds` 完整性数组 + 守卫测试根治「常量加了、词表漏配」缺口）；**v1.8 目录扩至 23 通道**（+`pet.instance.expression_applied` / `pet.instance.motion_progress` 渲染器事件桥接） |
+| `IEventApi.hpp` | **v1.5 (S8a)** 事件总线族: Event/EventPriority/IEventListener + subscribe/unsubscribe/publish（**同步分发**——publish 返回时整链已跑完、cancelled 已终值）。经 `queryApi` 获取；**无能力门控、不受写开关**（通知通道而非宿主状态写），未接线→nullptr；插件拿到的是 per-context 代理（发布强制 `plugin.<ownId>.*` 前缀 + publisherId 盖戳，防伪造）；重入深度上限 8（超限 Busy）；宿主通道 ID 词表 + 载荷字段表冻结在 `EventIds.hpp`（目录即契约：字段只加不删不改名，可选值用 -1/"" 哨兵，事件 ID 永不改名移除）；**v1.7 (S9) 目录扩至 21 通道**（+6 `pet.instance.*`、+3 `pet.panel.*` 面板级首启；`kAllEventIds` 完整性数组 + 守卫测试根治「常量加了、词表漏配」缺口）；**v1.8 目录扩至 23 通道**（+`pet.instance.expression_applied` / `pet.instance.motion_progress` 渲染器事件桥接）；**v1.9 目录扩至 26 通道**（+`pet.panel.window_state` / `pet.panel.tray_activated` 面板级窗口/托盘可观察性 + `pet.instance.focus_changed`〔WS `window_focus` 桥接〕，autoLaunchSystem 翻转并入 `settings_changed` 字段集） |
 | `IRuleApi.hpp` | **v1.6 (S8f)** 规则注册族: registerRule/unregisterRule（规则 JSON schema 见 `docs/rules.md`）。经 `queryApi` 获取；**注册是惰性动作——无能力词、queryApi 时不查写开关**，owner 门控在**动作发射时活查**（插件规则的 play_motion/set_expression 现查 owner 的 `instance_tuning` 能力 + `plugin_write_enabled`，滞留规则面无法超越其授权存活；notify_bubble/play_pack_audio/publish_event 按设计不门控）；插件拿到的是 per-context 代理（存储 id 强制 `plugin.<ownId>.` 前缀 + `RuleScope::Plugin` 盖戳，只能注册/注销/替换自己的）；schema 校验失败→InvalidArgument（原因经 context log）引擎不变；未接线→nullptr；规则不持久化（随注册存活，卸载清扫兜底） |
 | `ILayoutApi.hpp` | **v1.8** 布局族: getLayout（**配置快照**读——InstanceConfig 窗口几何 + 布局缩放投影为 `LayoutInfo`，非实时；实时经 `pet.instance.layout_changed`/`window_resized` 事件观察）+ resetLayout / setAutoStart（受理语义，转调既有 InstanceSession 面）。`instance_tuning` 能力 + 宿主开关门控（照 `pet.instance_tuning` 写族矩阵），未授权/未接线→stub；宿主详情页的自动启动开关与重置布局按钮已换绑到本族（门禁允许清单对应条目随之删除） |
 | `IVoicePackApi.hpp` | 语音包发现（listPacks / refreshScan / installPath）+ **v1.3 追加 `IPackListObserver` + subscribePackList/unsubscribePackList**（包列表变化观察；挂载写走 ITuningApi） |
@@ -108,7 +108,7 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 "翻转即吊销"需 per-call 门控代理（见"阶段路线"的阶段 2 候选）。只读族（`pet.model`、
 `pet.monitor`、voicePackApi、instanceApi）不受其约束。
 
-族 × 能力 × 开关总表（v1.8 全景，queryApi 通道八族）:
+族 × 能力 × 开关总表（v1.9 全景，queryApi 通道八族）:
 
 | apiId | 接口 | 能力门控 | 写开关 | 未接线时 |
 |---|---|---|---|---|
@@ -174,6 +174,45 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
 `qrc:/` URL（§B.6）。
 
 ## 版本历史
+
+### v1.9（2026-10-13，kApiMajor=1 / kApiMinor=9）— 边界事件补全（窗口/托盘/焦点 + autoLaunch 纳入，目录 23 → 26）
+
+全部为**加法**变更（3 条新事件通道 + 既有通道字段集扩员 + 发射点旁路追加），零既有
+签名/顺序改动；`IPluginContext` 尾追特权未使用。
+
+1. **`kApiMinor` 8 → 9**。
+2. **三组新边界事件**（`docs/bus-events.md` §6.24-§6.26 字段表）:
+   - **`pet.panel.window_state`** `{state, visible}`——面板主窗口可见性/状态变迁
+     （面板级）。事件源 = `core::PanelWindowObserver`（新文件，PanelUiBoot 在引擎
+     `objectCreated` 时挂接 root window 的 `QWindow::visibilityChanged`——post-commit
+     单点）。state 映射: Windowed→`normal` / Maximized→`maximized` / Minimized→
+     `minimized` / **Hidden→`hidden`（隐藏到托盘语义，closeAction "minimize" 分支与
+     托盘 toggle 都走 `root.hide()`）**；FullScreen/`AutomaticVisibility` 为防御性
+     兜底（本 UI 不可达）。cancellable=false。
+   - **`pet.panel.tray_activated`** `{action}`——托盘交互（面板级）。事件源 =
+     TrayManager 既有 4 信号位（发射点在 TrayManager 内部——托盘手势与 QML 菜单项
+     同路扇出，改动最小且直接可测）。映射: `visibilityToggled`→`toggle_visibility`、
+     `showSettings`→`settings`、`quitRequested`→`quit`、`requestContextMenu`→
+     `context_menu`。cancellable=false。
+   - **`pet.instance.focus_changed`** `{focused}`（verbatim）——渲染器 WS
+     `window_focus`（events.md §18）桥接。EventRegistry `kPhase6Events` 注册默认
+     DEBUG 日志 + InstanceSession publish-only override（`expression_applied` 模式，
+     复现默认日志）。cancellable=false。
+3. **autoLaunchSystem 翻转纳入 `pet.panel.settings_changed`**（v1.9 改口，零新
+   ID）: `PanelConfigController` 照 `SettingsApiImpl` 先例加 `setEventPublisher`
+   纯 C++ seam（非 Q_INVOKABLE/WRITE——门禁零维护），`setAutoLaunchSystem` 成功
+   路径（持久化之后；AutoLaunchManager 动作由 QML 在属性写入前驱动）发射
+   `{field: "auto_launch_system", value: <bool>}`。写路径本身仍刻意不经
+   ISettingsApi（宿主壳能力裁决不变）；失败回滚与同值 no-op 不发。
+4. **目录同步**: `kAllEventIds` 23 → 26、`makeKnownEventTable` 同步（守卫测试
+   `testKnownEventTableCoversCatalog` 双向强制 26 条）、EventCatalog 增
+   `makeWindowStatePayload` / `makeTrayActivatedPayload` /
+   `makeFocusChangedPayload` 三个 builder（键名单点）。
+5. **测试**: `EventBusEmissionTest` 增 autoLaunch（成功发/失败不发/同值不发）+
+   focus_changed verbatim 双值透传两槽；`TrayManagerTest` 增
+   `testTrayActivatedEmission`（4 action + 忽略路径 + null publisher）；新
+   `PanelWindowObserverTest`（全枚举映射表 + offscreen QWindow 真发射 + 降级
+   装配）。基线 65 → 66 全绿，门禁 clean。
 
 ### v1.8（2026-10-13，kApiMajor=1 / kApiMinor=8）— 布局族 + 渲染器事件桥接 + fps 进监控快照
 

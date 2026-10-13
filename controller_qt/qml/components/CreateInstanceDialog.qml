@@ -36,6 +36,13 @@ Rectangle {
     }
 
     function open() {
+        // P1-8 (true modal): same guarded window re-parent as AppDialog —
+        // this dialog predates AppDialog and stays a hand-rolled card, but
+        // the scrim behavior is kept in lockstep so nav clicks can't drop
+        // a pending create. No-op when already parented at window level.
+        const w = root.Window.window
+        if (w && root.parent !== w.contentItem)
+            root.parent = w.contentItem
         _nameInput.text = qsTr("宠物 %1").arg(instanceManager.rowCount() + 1)
         _selectedAvatar = "🐱"
         // Model combo: fresh options each open, preselected to the global
@@ -54,7 +61,7 @@ Rectangle {
 
     visible: false
     anchors.fill: parent
-    color: Qt.rgba(0, 0, 0, 0.35)
+    color: Theme.scrimColor
     z: 100
 
     MouseArea { anchors.fill: parent; onClicked: {} }
@@ -155,6 +162,7 @@ Rectangle {
                 // -1 shows the placeholder until open() preselects the
                 // global default; picking here overrides it per-instance.
                 currentIndex: -1
+                placeholderText: qsTr("选择模型…")
             }
             Text {
                 text: _modelCombo.currentIndex >= 0

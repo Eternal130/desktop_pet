@@ -35,6 +35,16 @@ Rectangle {
         onClicked: createDialog.open()
     }
 
+    // P1-7: model-switch failure notice (AppDialog is plain-text, so the
+    // renderer error line is folded into the message).
+    AppDialog {
+        id: modelFailDialog
+        title: qsTr("模型切换失败")
+        showNegative: false
+        positiveText: qsTr("知道了")
+        message: ""
+    }
+
     CreateInstanceDialog {
         id: createDialog
         onAccepted: (name, avatar) => {
@@ -287,6 +297,10 @@ Rectangle {
                                    ? "subtle" : "primary"
                             text: instance && instance.status === "running"
                                   ? qsTr("⏹ 停止") : qsTr("▶ 启动")
+                            // P2-12: debounce — no lifecycle spam while a
+                            // start/stop transition is in flight.
+                            enabled: instance && instance.status !== "pending"
+                                     && instance.status !== "connecting"
                             anchors.verticalCenter: parent.verticalCenter
                             // S5: writes go through the shared-API bridge
                             // (reads keep the live session object).
@@ -297,7 +311,10 @@ Rectangle {
                         }
                         AppButton {
                             text: qsTr("↻ 重启")
+                            // P2-12: running guard + transition debounce.
                             enabled: instance && instance.status === "running"
+                                     && instance.status !== "pending"
+                                     && instance.status !== "connecting"
                             anchors.verticalCenter: parent.verticalCenter
                             onClicked: if (instance)
                                 instanceControl.restart(instance.uuid)
@@ -317,15 +334,61 @@ Rectangle {
                 }
             }
 
-            // ══════════════ Two-column zone ════════════════════════════
-            Row {
+            // ── Start-failure banner (P1-1) ───────────────────────────
+            // Same InfoBar structure as MonitorPage's stale-warning bar,
+            // error-flavored: an error instance must be un-missable with a
+            // one-click retry. InstanceSession exposes no start-failure
+            // reason Q_PROPERTY (only lastModelLoadError, which is
+            // model-switch scoped), so the banner states the fact —
+            // nothing invented.
+            Rectangle {
+                width: parent.width
+                height: 36
+                visible: instance && instance.status === "error"
+                radius: Theme.radiusMd
+                color: Theme.errorBgColor
+                border.color: Qt.alpha(Theme.errorColor, 0.3)
+                border.width: 1
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - 120
+                    elide: Text.ElideRight
+                    text: qsTr("⚠ 启动失败 — 渲染进程未能启动或异常退出，可点击「重试」")
+                    color: root._errorColor
+                    font.pixelSize: 12
+                }
+                AppButton {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    style: "subtle"
+                    text: qsTr("重试")
+                    implicitHeight: 24
+                    fontSize: 12
+                    // S5: write goes through the shared-API bridge.
+                    onClicked: if (instance)
+                        instanceControl.start(instance.uuid)
+                }
+            }
+
+            // ══════════════ Two-column zone (P1-6 Flow) ═══════════════
+            // Flow replaces the old Row: wide mode lays the two columns
+            // side by side (60/40); narrow mode (<900px) wraps the right
+            // column below the left one at full width instead of hiding
+            // it. The left width is floor'd so the wide-mode pair sums to
+            // exactly the Flow width (no float wrap-flapping).
+            Flow {
                 width: parent.width
                 spacing: Theme.spaceGroup
 
                 // ── LEFT column ───────────────────────────────────────
                 Column {
+                    id: leftColumn
                     width: root._wide
-                        ? (parent.width - Theme.spaceGroup) * 0.6
+                        ? Math.floor((parent.width - Theme.spaceGroup) * 0.6)
                         : parent.width
                     spacing: Theme.spaceGroup
 
@@ -338,21 +401,21 @@ Rectangle {
                         Row {
                             width: parent.width
                             spacing: 8
+                            // P1-7: the combo commits on pick — instant
+                            // apply is the established semantic, the
+                            // redundant "应用" button is gone. The
+                            // pre-switch model is recorded here as the
+                            // failure bounce-back target (see the
+                            // onModelLoadFailed Connections below).
                             AppComboBox {
                                 id: modelCombo
-                                width: parent.width - 90
+                                width: parent.width
                                 model: instance ? instance.availableModels() : []
-                                onActivated: if (instance && currentText)
+                                onActivated: if (instance && currentText) {
+                                    root._prevModel = instance.modelName
                                     instanceControl.loadModel(
                                         instance.uuid, currentText)
-                            }
-                            AppButton {
-                                style: "primary"
-                                text: qsTr("应用")
-                                width: 78
-                                onClicked: if (instance && modelCombo.currentText)
-                                    instanceControl.loadModel(
-                                        instance.uuid, modelCombo.currentText)
+                                }
                             }
                         }
                         Text {
@@ -534,8 +597,11 @@ Rectangle {
                         ParamSlider {
                             width: parent.width
                             labelText: qsTr("窗口不透明度")
-                            descText: qsTr("0.10 – 1.00")
-                            valueText: (instance ? instance.opacity : 1.0).toFixed(2)
+                            descText: qsTr("10% – 100%")
+                            // P2-7: percent display — internal 0.1–1.0 value
+                            // and the write path are unchanged.
+                            valueText: Math.round(
+                                (instance ? instance.opacity : 1.0) * 100) + "%"
                             from: 0.1; to: 1.0; stepSize: 0.05
                             bindValue: instance ? instance.opacity : 1.0
                             onMoved: (val) => {
@@ -560,7 +626,10 @@ Rectangle {
                                     }
                                 }
                                 Text {
-                                    text: (instance ? instance.volume : 1.0).toFixed(2)
+                                    // P2-7: percent display — internal 0–1
+                                    // value and the write path are unchanged.
+                                    text: Math.round(
+                                        (instance ? instance.volume : 1.0) * 100) + "%"
                                     color: Theme.accentColor
                                     font.pixelSize: 12
                                     font.weight: Font.DemiBold
@@ -650,35 +719,15 @@ Rectangle {
                 }
 
                 // ── RIGHT column ───────────────────────────────────────
+                // P1-6: no longer hidden when narrow — the Flow wraps it
+                // below the left column at full width. Card order is the
+                // narrow-stack order 布局 → 语音包 → 对话气泡 (wide mode
+                // follows the same order down the column).
                 Column {
-                    visible: root._wide
                     width: root._wide
-                        ? (parent.width - Theme.spaceGroup) * 0.4
+                        ? parent.width - leftColumn.width - Theme.spaceGroup
                         : parent.width
                     spacing: Theme.spaceGroup
-
-                    Card {
-                        width: parent.width
-                        title: qsTr("对话气泡")
-
-                        Text {
-                            width: parent.width
-                            wrapMode: Text.WordWrap
-                            color: root._mutedColor
-                            font.pixelSize: 12
-                            text: qsTr("台词气泡由语音包行为触发（点击宠物触发动作时显示）。")
-                        }
-
-                        Row {
-                            spacing: 8
-                            AppButton {
-                                style: "subtle"
-                                text: qsTr("发送测试气泡")
-                                implicitHeight: 26; fontSize: 12
-                                onClicked: notificationStream.testBubble()
-                            }
-                        }
-                    }
 
                     Card {
                         width: parent.width
@@ -722,6 +771,29 @@ Rectangle {
                                        "完整管理已移至「语音包」页面。")
                         }
                     }
+
+                    Card {
+                        width: parent.width
+                        title: qsTr("对话气泡")
+
+                        Text {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            color: root._mutedColor
+                            font.pixelSize: 12
+                            text: qsTr("台词气泡由语音包行为触发（点击宠物触发动作时显示）。")
+                        }
+
+                        Row {
+                            spacing: 8
+                            AppButton {
+                                style: "subtle"
+                                text: qsTr("发送测试气泡")
+                                implicitHeight: 26; fontSize: 12
+                                onClicked: notificationStream.testBubble()
+                            }
+                        }
+                    }
                 }
             }
 
@@ -729,7 +801,8 @@ Rectangle {
             Card {
                 id: logCard
                 width: parent.width
-                property bool expanded: true
+                // P2-15: collapsed by default (no persistence).
+                property bool expanded: false
 
                 Item {
                     width: parent.width
@@ -833,6 +906,10 @@ Rectangle {
 
     property int stageTab: 0
 
+    // P1-7: model name before the last combo-initiated switch — the
+    // failure bounce-back target ("" before any switch from this page).
+    property string _prevModel: ""
+
     ListModel { id: logModel }
 
     Connections {
@@ -845,6 +922,33 @@ Rectangle {
             })
             while (logModel.count > 50)
                 logModel.remove(0)
+        }
+    }
+
+    // P1-7: model-switch failure feedback. C++ keeps the FAILED name in
+    // modelName (it only clears modelLoaded — see handleModelLoadFailed
+    // Event), so the bounce-back is display-side: re-point the combo at
+    // the recorded pre-switch model, same pattern as the model library's
+    // per-row rollback.
+    Connections {
+        target: root.instance
+        ignoreUnknownSignals: true
+        function onModelLoadFailed(error) {
+            if (!instance) return
+            if (root._prevModel.length > 0) {
+                const i = modelCombo.find(root._prevModel)
+                if (i >= 0) modelCombo.currentIndex = i
+                modelFailDialog.message = qsTr(
+                    "切换模型到「%1」失败，下拉已弹回「%2」。\n%3")
+                    .arg(instance.modelName).arg(root._prevModel).arg(error)
+            } else {
+                // Failure not initiated from this combo (e.g. a pack
+                // action) — no bounce target, just the notice.
+                modelFailDialog.message = qsTr(
+                    "加载模型「%1」失败。\n%2")
+                    .arg(instance.modelName).arg(error)
+            }
+            modelFailDialog.open()
         }
     }
 
@@ -896,7 +1000,10 @@ Rectangle {
         property int tab: 0
         width: tabLabel.implicitWidth + 28
         height: 32
-        color: "transparent"
+        // P2-11: hover feedback — subtle wash while hovered, fully
+        // transparent otherwise (selection stays the accent underline).
+        color: tabMouse.hovered
+               ? Qt.alpha(Theme.textColor, 0.06) : "transparent"
         radius: Theme.radiusMd
 
         Rectangle {
@@ -917,6 +1024,7 @@ Rectangle {
             font.weight: root.stageTab === tab.tab ? Font.DemiBold : Font.Normal
         }
         MouseArea {
+            id: tabMouse
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor

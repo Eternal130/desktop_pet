@@ -102,4 +102,12 @@ QtObject {
     readonly property int fontBody: 13
     readonly property int fontSubhead: 15
     readonly property int fontTitle: 24
+
+    // ── Overlay scrim (appended 2026-10-13, P2-14 token convergence) ──────
+    // Modal-dialog scrim over the window: fixed dark wash on BOTH schemes
+    // (a scrim must dim content regardless of light/dark UI) — same
+    // "tuned constant" family as the log-console colors above. Replaces the
+    // Qt.rgba(0,0,0,0.35) literals formerly hardcoded at the AppDialog and
+    // CreateInstanceDialog scrim Rectangles.
+    readonly property color scrimColor: Qt.rgba(0, 0, 0, 0.35)
 }

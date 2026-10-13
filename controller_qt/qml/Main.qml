@@ -161,6 +161,37 @@ Window {
         return n
     }
 
+    // ── P2-16 batch lifecycle ──────────────────────────────────────────
+    // Contract functions for the WelcomePage header buttons (lane A calls
+    // these with an existence guard). Roster READ goes through
+    // instanceManager (legal per the boundary discipline); every WRITE
+    // goes through the instanceControl bridge — the same shared
+    // pet::IInstanceControlApi path the detail page's start/stop buttons
+    // use. start skips running/pending/connecting (error keeps retry
+    // eligibility); stop skips anything that is not running. Both status
+    // flips are synchronous (stop → stopped, start → pending), so the
+    // single-pass loop never double-triggers an instance.
+    function startAllInstances() {
+        for (let i = 0; i < instanceManager.rowCount(); ++i) {
+            const s = instanceManager.instanceAt(i)
+            if (!s)
+                continue
+            if (s.status === "running" || s.status === "pending"
+                    || s.status === "connecting")
+                continue
+            instanceControl.start(s.uuid)
+        }
+    }
+
+    function stopAllInstances() {
+        for (let i = 0; i < instanceManager.rowCount(); ++i) {
+            const s = instanceManager.instanceAt(i)
+            if (!s || s.status !== "running")
+                continue
+            instanceControl.stop(s.uuid)
+        }
+    }
+
     // ── Canvas base (solid palette window color; chrome distinguishes
     // itself by hairlines instead of translucent overlays) ────────────────
     Rectangle {
@@ -371,7 +402,9 @@ Window {
                     visible: searchInput.text.length === 0
                     x: 10
                     y: (parent.height - height) / 2
-                    text: qsTr("🔍 搜索页面、实例、语音包…")
+                    // P2-5: honest copy — the box only filters nav labels
+                    // (pages + instance names), it does not search content.
+                    text: qsTr("🔍 筛选导航…")
                     color: Theme.text3Color
                     font.pixelSize: 12
                 }
@@ -379,12 +412,41 @@ Window {
                     id: searchInput
                     anchors.fill: parent
                     anchors.leftMargin: 10
-                    anchors.rightMargin: 10
+                    // room for the ✕ clear button while a filter is active
+                    anchors.rightMargin: searchInput.text.length > 0 ? 30 : 10
                     verticalAlignment: TextInput.AlignVCenter
                     color: Theme.textColor
                     font.pixelSize: 12
                     clip: true
                     onTextChanged: navPane.searchFilter = text.toLowerCase()
+                }
+                // P2-5: clear button — visible only with a non-empty
+                // filter; clearing restores the full navigation list.
+                Item {
+                    id: searchClearBtn
+                    visible: searchInput.text.length > 0
+                    anchors.right: parent.right
+                    anchors.rightMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 20
+                    height: 20
+                    Text {
+                        anchors.centerIn: parent
+                        text: "✕"
+                        color: _clearMa.containsMouse ? Theme.textColor
+                                                      : Theme.text3Color
+                        font.pixelSize: 11
+                    }
+                    MouseArea {
+                        id: _clearMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            searchInput.clear()
+                            searchInput.forceActiveFocus()
+                        }
+                    }
                 }
             }
         }
@@ -726,6 +788,12 @@ Window {
         Action {
             text: qsTr("设置")
             onTriggered: trayManager.activateSettings()
+        }
+        // P2-16: batch stop from the tray (start-all stays a WelcomePage
+        // header button — tray is quick-glance territory).
+        Action {
+            text: qsTr("停止全部")
+            onTriggered: root.stopAllInstances()
         }
         Action {
             text: qsTr("退出")

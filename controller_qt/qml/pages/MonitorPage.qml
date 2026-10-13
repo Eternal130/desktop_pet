@@ -97,39 +97,26 @@ Rectangle {
                     font.pixelSize: 24
                     font.weight: Font.DemiBold
                 }
-                Row {
+                // P2-6/P2-3: was a horizontal chip strip at a fixed
+                // leftMargin — with many instances it ran into the
+                // right-anchored StatusPill. One combo listing the roster
+                // (read-only) drives the same _selectInstance logic; its
+                // width is capped and shrinks before it can reach the pill.
+                AppComboBox {
+                    id: instanceCombo
                     anchors.left: parent.left
                     anchors.leftMargin: 130
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 4
+                    width: Math.max(140, Math.min(240,
+                        parent.width - 130 - statusPill.width - 32))
                     visible: instanceManager.rowCount() > 1
-                    Repeater {
-                        model: instanceManager
-                        delegate: Rectangle {
-                            readonly property bool sel: root.selectedRow === index
-                            width: instLabel.implicitWidth + 24
-                            height: 28
-                            radius: Theme.radiusMd
-                            color: sel ? Qt.alpha(Theme.accentColor, 0.14) : "transparent"
-                            border.width: 1
-                            border.color: sel ? Theme.accentColor : Theme.borderColor
-                            Text {
-                                id: instLabel
-                                anchors.centerIn: parent
-                                text: label
-                                color: parent.sel ? Theme.accentColor : Theme.text2Color
-                                font.pixelSize: 12
-                                font.weight: parent.sel ? Font.DemiBold : Font.Normal
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root._selectInstance(index)
-                            }
-                        }
-                    }
+                    textRole: "label"
+                    model: instanceManager
+                    currentIndex: root.selectedRow
+                    onActivated: (i) => root._selectInstance(i)
                 }
                 StatusPill {
+                    id: statusPill
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     status: instance ? instance.status : "stopped"

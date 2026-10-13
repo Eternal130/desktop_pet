@@ -246,40 +246,56 @@ Rectangle {
                             Repeater {
                                 model: instanceManager
                                 delegate: SettingRow {
+                                    id: mountRow
+                                    // Capture the row uuid OUTSIDE the combo
+                                    // scope: ComboBox declares its own `model`
+                                    // property, which would shadow the
+                                    // Repeater row's `model.uuid` inside
+                                    // AppComboBox bindings/handlers.
+                                    readonly property string instUuid: model.uuid
                                     width: parent.width
                                     title: label
                                     desc: voicePacks.mountsRevision >= 0
                                         ? (qsTr("当前：") + (
-                                            voicePacks.instanceVoicePack(model.uuid).length > 0
+                                            voicePacks.instanceVoicePack(mountRow.instUuid).length > 0
                                             ? voicePacks.packDisplayNameFor(
-                                                  voicePacks.instanceVoicePack(model.uuid))
+                                                  voicePacks.instanceVoicePack(mountRow.instUuid))
                                             : qsTr("无")))
                                         : ""
-                                    Segmented {
-                                        options: {
+                                    // P1-5: was a per-row Segmented — overflowed
+                                    // horizontally once packs outnumbered the
+                                    // row width (right options clipped), and
+                                    // matched selections by DISPLAY NAME, so
+                                    // duplicate display names mounted the wrong
+                                    // pack. Index-addressed combo instead:
+                                    // index 0 = 无 (unmount), index i > 0 mounts
+                                    // packPath(i - 1); the current selection is
+                                    // recomputed by PATH equality
+                                    // (instanceVoicePack vs packPath).
+                                    // Display names are labels only, never keys.
+                                    AppComboBox {
+                                        width: 168
+                                        model: {
                                             const opts = [qsTr("无")]
                                             for (let i = 0; i < voicePacks.packCount; ++i)
                                                 opts.push(voicePacks.packDisplayName(i))
                                             return opts
                                         }
-                                        currentValue: {
+                                        currentIndex: {
                                             voicePacks.mountsRevision
-                                            const mounted = voicePacks.instanceVoicePack(model.uuid)
-                                            if (mounted.length === 0) return qsTr("无")
-                                            for (let i = 0; i < voicePacks.packCount; ++i)
-                                                if (voicePacks.packPath(i) === mounted)
-                                                    return voicePacks.packDisplayName(i)
-                                            return qsTr("无")
+                                            const mounted = voicePacks.instanceVoicePack(
+                                                mountRow.instUuid)
+                                            if (mounted.length === 0)
+                                                return 0
+                                            for (let j = 0; j < voicePacks.packCount; ++j)
+                                                if (voicePacks.packPath(j) === mounted)
+                                                    return j + 1
+                                            return 0
                                         }
-                                        onSelected: (v) => {
-                                            if (v === qsTr("无")) {
-                                                voicePacks.setInstanceVoicePack(model.uuid, "")
-                                                return
-                                            }
-                                            for (let i = 0; i < voicePacks.packCount; ++i)
-                                                if (voicePacks.packDisplayName(i) === v)
-                                                    voicePacks.setInstanceVoicePack(
-                                                        model.uuid, voicePacks.packPath(i))
+                                        onActivated: (i) => {
+                                            voicePacks.setInstanceVoicePack(
+                                                mountRow.instUuid,
+                                                i === 0 ? "" : voicePacks.packPath(i - 1))
                                         }
                                     }
                                 }

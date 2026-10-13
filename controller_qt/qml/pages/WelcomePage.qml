@@ -194,6 +194,27 @@ Rectangle {
                     spacing: 8
                     AppButton {
                         style: "subtle"
+                        text: qsTr("全部启动")
+                        anchors.verticalCenter: parent.verticalCenter
+                        // P2-16 batch ops — contract functions live in
+                        // Main.qml (roster read + per-uuid instanceControl
+                        // writes); guard keeps the page usable standalone.
+                        onClicked: {
+                            const w = Window.window
+                            if (w && w.startAllInstances) w.startAllInstances()
+                        }
+                    }
+                    AppButton {
+                        style: "subtle"
+                        text: qsTr("全部停止")
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: {
+                            const w = Window.window
+                            if (w && w.stopAllInstances) w.stopAllInstances()
+                        }
+                    }
+                    AppButton {
+                        style: "subtle"
                         text: qsTr("📂 打开语音包目录")
                         anchors.verticalCenter: parent.verticalCenter
                         // Same C++ entry as VoicePackPage's header button
@@ -340,14 +361,27 @@ Rectangle {
                                     anchors.verticalCenter: parent.verticalCenter
 
                                     Row {
+                                        id: nameRow
+                                        width: parent.width
                                         spacing: 8
                                         Text {
+                                            // P2-8: long names elide instead
+                                            // of pushing the StatusPill out
+                                            // of the card.
                                             text: label
                                             color: Theme.textColor
                                             font.pixelSize: 14
                                             font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                            width: Math.min(
+                                                implicitWidth,
+                                                nameRow.width - namePill.width
+                                                    - nameRow.spacing)
                                         }
-                                        StatusPill { status: model.status }
+                                        StatusPill {
+                                            id: namePill
+                                            status: model.status
+                                        }
                                     }
                                     Text {
                                         width: parent.width
@@ -375,8 +409,20 @@ Rectangle {
                                         spacing: 8
                                         AppButton {
                                             style: "subtle"
+                                            // P1-1: a failed start is
+                                            // visible on the card itself —
+                                            // the button becomes the retry
+                                            // entry (still calls start).
                                             text: model.status === "running"
-                                                  ? qsTr("⏸ 停止") : qsTr("▶ 启动")
+                                                  ? qsTr("⏸ 停止")
+                                                  : (model.status === "error"
+                                                     ? qsTr("启动失败，点击重试")
+                                                     : qsTr("▶ 启动"))
+                                            // P2-12: debounce — no lifecycle
+                                            // spam while a transition is in
+                                            // flight.
+                                            enabled: model.status !== "pending"
+                                                     && model.status !== "connecting"
                                             implicitHeight: 26
                                             fontSize: 12
                                             onClicked: {
@@ -396,7 +442,11 @@ Rectangle {
                                             text: qsTr("↻ 重启")
                                             implicitHeight: 26
                                             fontSize: 12
+                                            // P2-12: running guard +
+                                            // transition debounce.
                                             enabled: model.status === "running"
+                                                     && model.status !== "pending"
+                                                     && model.status !== "connecting"
                                             onClicked: if (_inst)
                                                 instanceControl.restart(_inst.uuid)
                                         }

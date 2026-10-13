@@ -3,6 +3,22 @@ import DesktopPet
 
 // AppDialog — design-mock floating confirmation dialog with scrim.
 // open()/close(); positiveClicked / negativeClicked signals.
+//
+// P1-8 (true modal): appModal (default true) — open() re-parents the
+// dialog to the WINDOW's contentItem so the scrim + card cover the whole
+// window (titlebar + nav included); nav clicks can no longer silently
+// drop a pending confirmation, and z:100 also sits above the resize
+// edges (z 50). The re-parent is guarded, so dialogs already declared at
+// window level (Main.qml's delete/exit confirms are contentItem children)
+// take the no-op path — no double nesting. appModal: false keeps the
+// legacy page-local scrim. `anchors.fill: parent` re-evaluates after the
+// re-parent, so no extra coordinate plumbing is needed.
+//
+// P2-10 (keyboard): open() focuses the dialog root; Esc triggers the
+// negative action (plain close when showNegative hides the button —
+// hidden buttons must not "click"), Enter/Return trigger the positive
+// one. AppDialog content is plain text (no input items), so root-level
+// Keys can never shadow typing in a text field.
 Rectangle {
     id: root
 
@@ -11,18 +27,41 @@ Rectangle {
     property string positiveText: qsTr("确定")
     property string negativeText: qsTr("取消")
     property bool showNegative: true
-    property bool danger: false   // positive button renders as "danger"
+    property bool danger: false      // positive button renders as "danger"
+    property bool appModal: true     // P1-8: window-level scrim (see header)
 
     signal positiveClicked()
     signal negativeClicked()
 
-    function open()  { root.visible = true }
+    function open() {
+        if (appModal) {
+            const w = root.Window.window
+            if (w && root.parent !== w.contentItem)
+                root.parent = w.contentItem
+        }
+        root.visible = true
+        root.forceActiveFocus()
+    }
     function close() { root.visible = false }
 
     visible: false
     anchors.fill: parent
-    color: Qt.rgba(0, 0, 0, 0.35)
+    color: Theme.scrimColor
     z: 100
+
+    Keys.onEscapePressed: {
+        if (root.showNegative)
+            root.negativeClicked()
+        root.close()
+    }
+    Keys.onReturnPressed: {
+        root.positiveClicked()
+        root.close()
+    }
+    Keys.onEnterPressed: {
+        root.positiveClicked()
+        root.close()
+    }
 
     // scrim first (declared before the card = below it in stacking order;
     // a trailing MouseArea here used to sit ON TOP of the card and swallow

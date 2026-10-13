@@ -15,6 +15,11 @@ ComboBox {
     // bordered control post palette-migration
     property color borderColor: Theme.borderColor
 
+    // P2-13: gray placeholder shown while currentIndex === -1 (QQC2
+    // ComboBox has no placeholderText of its own). Same tone as every
+    // other field placeholder (search box uses Theme.text3Color).
+    property string placeholderText: ""
+
     implicitHeight: 32
     font.pixelSize: 13
 
@@ -29,8 +34,10 @@ ComboBox {
     contentItem: Text {
         leftPadding: 10
         rightPadding: 26
-        text: root.displayText
-        color: Theme.textColor
+        readonly property bool _showingPlaceholder:
+            root.currentIndex === -1 && root.placeholderText.length > 0
+        text: _showingPlaceholder ? root.placeholderText : root.displayText
+        color: _showingPlaceholder ? Theme.text3Color : Theme.textColor
         font: root.font
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
@@ -46,7 +53,9 @@ ComboBox {
         id: dlg
         required property var model
         required property int index
-        width: root.width
+        // P2-13: the popup has 6px padding on each side — full-width
+        // delegates had their right edge clipped under the padding.
+        width: root.width - 12
         height: 32
         readonly property string label: {
             if (typeof dlg.model === "string") return dlg.model

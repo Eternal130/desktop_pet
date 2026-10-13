@@ -34,7 +34,11 @@ Rectangle {
                 readonly property bool sel: root.currentValue === root.valueAt(index)
                 width: _segLabel.implicitWidth + 28
                 height: root.height - 2
-                color: sel ? Qt.alpha(Theme.accentColor, 0.14) : "transparent"
+                // P2-11: unselected segments get a hover wash; selected
+                // style (accent tint + underline) is untouched.
+                color: sel ? Qt.alpha(Theme.accentColor, 0.14)
+                    : (_segHover.containsMouse ? Qt.alpha(Theme.textColor, 0.06)
+                                               : "transparent")
                 radius: Theme.radiusMd - 1
                 Text {
                     id: _segLabel
@@ -55,6 +59,7 @@ Rectangle {
                     color: Theme.accentColor
                 }
                 MouseArea {
+                    id: _segHover
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor

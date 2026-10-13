@@ -233,7 +233,9 @@ Rectangle {
                                     }
                                     AppButton {
                                         style: "danger"
-                                        text: qsTr("🗑")
+                                        // P2-10: was a bare 🗑 glyph with no
+                                        // label or tooltip — unreadable.
+                                        text: qsTr("🗑 删除")
                                         implicitHeight: 26; fontSize: 12
                                         onClicked: {
                                             if (card.modelData.inUse) {

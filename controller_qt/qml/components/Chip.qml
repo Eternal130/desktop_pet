@@ -2,6 +2,9 @@ import QtQuick
 import DesktopPet
 
 // Chip — pill-shaped tag for motions / expressions / behavior mappings.
+// P2-11: unchecked chips are ghost pills (transparent at rest) with a
+// text-alpha hover wash; the checked accent tint/underline-free style is
+// unchanged.
 Rectangle {
     id: root
 
@@ -13,7 +16,8 @@ Rectangle {
     width: label.implicitWidth + 24
     radius: height / 2
     color: checked ? Qt.alpha(Theme.accentColor, 0.14)
-                   : Qt.alpha(Theme.textColor, 0.05)
+                   : (_chipHover.containsMouse ? Qt.alpha(Theme.textColor, 0.06)
+                                               : "transparent")
 
     Text {
         id: label
@@ -25,6 +29,7 @@ Rectangle {
     }
 
     MouseArea {
+        id: _chipHover
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor

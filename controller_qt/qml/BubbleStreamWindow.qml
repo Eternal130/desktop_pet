@@ -10,8 +10,18 @@ import DesktopPet
 // QtQuick only — no FluentUI imports (must not pull FluWindow chrome into
 // an always-on-top overlay). Visible only while bubbles exist AND the
 // stream is enabled.
+//
+// transientParent MUST stay null: declared as an object child of Main, this
+// Window would otherwise auto-inherit Main as its transient parent, and Qt
+// hides transient children when their parent is hidden or minimized — which
+// killed the bubble stream whenever the panel was minimized or tray-hidden.
+// An explicit assignment disables that auto-magic (QQuickWindowQmlImpl::
+// updateTransientParent bails out when the property was set explicitly;
+// verified empirically on Qt 6.10).
 Window {
     id: streamRoot
+
+    transientParent: null
 
     width: 340
     height: Math.min(contentColumn.implicitHeight + 16, 480)

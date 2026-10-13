@@ -727,6 +727,9 @@ Window {
     // ── Notification bubble stream (气泡信息流) ─────────────────────────
     // Window-in-Window: a Window declared as a child of the Main Window
     // creates its own native always-on-top overlay sharing the engine.
+    // It is deliberately NOT transient to Main (BubbleStreamWindow sets
+    // transientParent: null) so bubbles keep showing while the panel is
+    // minimized or hidden in the tray.
     BubbleStreamWindow { }
 
     Component.onCompleted: {

@@ -42,7 +42,7 @@
 |:---|:---|:---|
 | `NotificationStreamModel` | `controller_qt/src/ui/NotificationStreamModel.hpp` | 活跃气泡列表模型；`push` 前插、cap 6 淘汰最旧、`expireNow` 过期清理（1s tick）、`dismiss(row)` |
 | `NotificationStreamController` | `controller_qt/src/ui/NotificationStreamController.hpp` | QML 桥（ctx 属性 `notificationStream`）；`push`/`dismiss`/`testBubble` |
-| `BubbleStreamWindow.qml` | `controller_qt/qml/BubbleStreamWindow.qml` | 独立气泡窗口（`Main.qml` 内声明为子 Window，共享引擎） |
+| `BubbleStreamWindow.qml` | `controller_qt/qml/BubbleStreamWindow.qml` | 独立气泡窗口（`Main.qml` 内声明为子 Window，共享引擎；`transientParent` 显式置 `null`，不随主窗口隐藏） |
 | `BubbleCard.qml` | `controller_qt/qml/components/BubbleCard.qml` | 气泡卡片：头像 + 名字 + 1~2 行文本，点击关闭，入场动画 |
 
 ### 窗口标志
@@ -50,10 +50,15 @@
 ```qml
 flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
      | Qt.Tool | Qt.WindowDoesNotAcceptFocus
+transientParent: null
 transparent: true
 ```
 
 - `Qt.Tool`：不进任务栏；`Qt.WindowDoesNotAcceptFocus`：气泡出现不抢焦点（桌宠关键交互）。
+- `transientParent: null`（**承重，勿删**）：`Window` 声明在 `Main.qml` 内时 Qt 会自动把
+  Main 设为其 transient parent，而主窗口 `hide()`/最小化时 Qt 会级联隐藏 transient 子窗口
+  ——曾导致「面板最小化/收进托盘时气泡整体消失」。显式赋值 `null` 可禁用该自动绑定
+  （`QQuickWindowQmlImpl::updateTransientParent` 对显式赋值过的窗口直接跳过；Qt 6.10 实测确认）。
 - 定位：主屏可用区右上角（右边距/上边距 24px），`visible` 绑定 `count > 0 && enabled`。
 
 ## 三、与语音包的联动（唯一台词来源）

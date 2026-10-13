@@ -203,11 +203,25 @@ PanelApplication::PanelApplication(QObject* parent)
     m_modelApi = new core::ModelApiImpl(this);
     m_settingsApi = new core::SettingsApiImpl(ConfigDir::configDir(), this);
     m_settingsApi->setDatabase(m_databaseManager);
+    // v1.7 (S9): the shared settings impl publishes
+    // pet.panel.settings_changed onto the shared bus after every
+    // successful persist (the same setEventPublisher discipline the
+    // sessions use; m_eventApi was registered before this tree's
+    // services, so it outlives the settings impl).
+    m_settingsApi->setEventPublisher(m_eventApi);
     m_voicePackApi = new core::VoicePackApiImpl(/*refresh=*/{}, this);
     // S7 (v1.4): shared monitor read family — wraps the sessions'
     // MonitorDataModel rings (registered after m_voicePackApi → dies
     // before it, registration-reverse).
     m_monitorApi = new core::MonitorApiImpl(m_instanceManager, this);
+
+    // ── Shared layout family (v1.8) ────────────────────────────────────
+    // ONE LayoutApiImpl for the whole panel: config-snapshot getLayout +
+    // the resetLayout / setAutoStart forwards over the same
+    // InstanceSession surfaces the detail page used to call directly
+    // (host UI and plugins go through the same vtable). Registered
+    // after m_monitorApi → dies before it (registration-reverse).
+    m_layoutApi = new core::LayoutApiImpl(m_instanceManager, this);
 
     // ── Rule-engine host service (S8e) ────────────────────────────────────
     // The RuleEngine core's bus/db wiring. Constructed after every API it
@@ -305,6 +319,7 @@ PanelApplication::PanelApplication(QObject* parent)
     m_pluginHost->setSettingsApi(m_settingsApi);
     m_pluginHost->setVoicePackApi(m_voicePackApi);
     m_pluginHost->setMonitorApi(m_monitorApi); // S7 (v1.4)
+    m_pluginHost->setLayoutApi(m_layoutApi);   // v1.8
     m_pluginHost->setEventApi(m_eventApi);     // S8a (v1.5)
     m_pluginHost->setRuleApi(m_ruleApi);       // S8f (v1.6)
     // S2: the host-global plugin_write_enabled kill-switch (panel_config
@@ -380,6 +395,11 @@ core::VoicePackApiImpl* PanelApplication::voicePackApi()
 core::MonitorApiImpl* PanelApplication::monitorApi()
 {
     return m_monitorApi;
+}
+
+core::LayoutApiImpl* PanelApplication::layoutApi()
+{
+    return m_layoutApi;
 }
 
 core::EventBus* PanelApplication::eventBus()

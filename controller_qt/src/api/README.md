@@ -2,13 +2,13 @@
 
 第一方插件 SDK 接口头集合（P4 落地，P6a 冻结点前允许演进，冻结后变更走版本化）。
 设计合同: `docs/refactor/plugin-architecture-and-cmake-migration.md` §A/§B.3。
-**当前版本: API 1.6**（2026-10-12，见文末「版本历史」）。
+**当前版本: API 1.8**（2026-10-13，见文末「版本历史」）。
 
 ## 组成
 
 | 头文件 | 内容 |
 |---|---|
-| `PluginTypes.hpp` | POD/Qt 值类型（InstanceInfo / PackInfo / DownloadRequest / InstallSpec / PageDescriptor / v1.2: InstanceSpec / InstanceRuntime / v1.3: ModelSummary / **v1.4: MonitorSample / MonitorSubscription**）+ PluginError / PluginLogLevel / 宿主 API 版本常量 + 能力词表常量（v1.1: `kCapabilityNetwork` / `kCapabilityVoicepacksInstall` / `kCapabilityInstanceLifecycle` / `kCapabilityInstanceTuning` / `kCapabilitySettingsWrite`，拼写与 manifest 解析逐字一致） |
+| `PluginTypes.hpp` | POD/Qt 值类型（InstanceInfo / PackInfo / DownloadRequest / InstallSpec / PageDescriptor / v1.2: InstanceSpec / InstanceRuntime / v1.3: ModelSummary / **v1.4: MonitorSample / MonitorSubscription** / **v1.8: LayoutInfo + MonitorSample.rendererFps 尾部追加**）+ PluginError / PluginLogLevel / 宿主 API 版本常量 + 能力词表常量（v1.1: `kCapabilityNetwork` / `kCapabilityVoicepacksInstall` / `kCapabilityInstanceLifecycle` / `kCapabilityInstanceTuning` / `kCapabilitySettingsWrite`，拼写与 manifest 解析逐字一致） |
 | `IPanelPlugin.hpp` | 插件唯一入口：`initialize(IPluginContext&)` / `shutdown()`；iid `org.desktop-pet.PanelPlugin/1.0` |
 | `IPluginContext.hpp` | 宿主服务面：instanceApi / voicePackApi / uiApi / downloadApi / pluginConfigDir / log + **v1.1 尾部追加 `queryApi`（阶段 2 后新接口族的唯一暴露通道）**；内含 `IExtApi` 标记接口 |
 | `IInstanceApi.hpp` | 只读实例花名册 + `IRosterObserver` 纯虚订阅（**禁 std::function**）。只读 = 接口形状保持（v1.0 vtable 布局不动）；「插件永不写实例」的只读**承诺**已被 2026-09-21 决策推翻，写能力走 S2 `IInstanceControlApi`（`queryApi` 暴露，`instance_lifecycle`/`instance_tuning` 能力门控）。v1.2 追加 `IInstanceObserver` + `subscribeInstances`/`unsubscribeInstances` 尾追（实例级状态观察） |
@@ -17,8 +17,9 @@
 | `IModelApi.hpp` | **v1.3 (S5)** 模型库只读族: availableModels / refreshScan / modelInfo（ModelSummary）。经 `queryApi` 获取；**只读不门控**（不受能力与写开关约束），未接线→nullptr |
 | `ISettingsApi.hpp` | **v1.3 (S6)** 面板设置写族（类型化方法，禁 QJsonObject 逃生舱）: setCloseAction / setConfirmOnExit / setStartMinimized / setDefaultModelName。`settings_write` 能力 + 宿主开关门控；**刻意不含 autoLaunchSystem**（宿主外壳能力不进插件 API） |
 | `IMonitorApi.hpp` | **v1.4 (S7)** 资源监控只读族: history（60 样本环形全量，POD 投影 -1 哨兵）+ subscribe/unsubscribe（IMonitorObserver 逐样本推送，每订阅者独立 minIntervalMs 合并节流）。经 `queryApi` 获取；**只读不门控**，未接线→nullptr；宿主自己的 MonitorPage 保留活对象绑定（架构边界），本族面向插件消费者 |
-| `IEventApi.hpp` | **v1.5 (S8a)** 事件总线族: Event/EventPriority/IEventListener + subscribe/unsubscribe/publish（**同步分发**——publish 返回时整链已跑完、cancelled 已终值）。经 `queryApi` 获取；**无能力门控、不受写开关**（通知通道而非宿主状态写），未接线→nullptr；插件拿到的是 per-context 代理（发布强制 `plugin.<ownId>.*` 前缀 + publisherId 盖戳，防伪造）；重入深度上限 8（超限 Busy）；宿主通道 ID 词表 + 载荷字段表冻结在 `EventIds.hpp`（目录即契约：字段只加不删不改名，可选值用 -1/"" 哨兵，事件 ID 永不改名移除） |
+| `IEventApi.hpp` | **v1.5 (S8a)** 事件总线族: Event/EventPriority/IEventListener + subscribe/unsubscribe/publish（**同步分发**——publish 返回时整链已跑完、cancelled 已终值）。经 `queryApi` 获取；**无能力门控、不受写开关**（通知通道而非宿主状态写），未接线→nullptr；插件拿到的是 per-context 代理（发布强制 `plugin.<ownId>.*` 前缀 + publisherId 盖戳，防伪造）；重入深度上限 8（超限 Busy）；宿主通道 ID 词表 + 载荷字段表冻结在 `EventIds.hpp`（目录即契约：字段只加不删不改名，可选值用 -1/"" 哨兵，事件 ID 永不改名移除）；**v1.7 (S9) 目录扩至 21 通道**（+6 `pet.instance.*`、+3 `pet.panel.*` 面板级首启；`kAllEventIds` 完整性数组 + 守卫测试根治「常量加了、词表漏配」缺口）；**v1.8 目录扩至 23 通道**（+`pet.instance.expression_applied` / `pet.instance.motion_progress` 渲染器事件桥接） |
 | `IRuleApi.hpp` | **v1.6 (S8f)** 规则注册族: registerRule/unregisterRule（规则 JSON schema 见 `docs/rules.md`）。经 `queryApi` 获取；**注册是惰性动作——无能力词、queryApi 时不查写开关**，owner 门控在**动作发射时活查**（插件规则的 play_motion/set_expression 现查 owner 的 `instance_tuning` 能力 + `plugin_write_enabled`，滞留规则面无法超越其授权存活；notify_bubble/play_pack_audio/publish_event 按设计不门控）；插件拿到的是 per-context 代理（存储 id 强制 `plugin.<ownId>.` 前缀 + `RuleScope::Plugin` 盖戳，只能注册/注销/替换自己的）；schema 校验失败→InvalidArgument（原因经 context log）引擎不变；未接线→nullptr；规则不持久化（随注册存活，卸载清扫兜底） |
+| `ILayoutApi.hpp` | **v1.8** 布局族: getLayout（**配置快照**读——InstanceConfig 窗口几何 + 布局缩放投影为 `LayoutInfo`，非实时；实时经 `pet.instance.layout_changed`/`window_resized` 事件观察）+ resetLayout / setAutoStart（受理语义，转调既有 InstanceSession 面）。`instance_tuning` 能力 + 宿主开关门控（照 `pet.instance_tuning` 写族矩阵），未授权/未接线→stub；宿主详情页的自动启动开关与重置布局按钮已换绑到本族（门禁允许清单对应条目随之删除） |
 | `IVoicePackApi.hpp` | 语音包发现（listPacks / refreshScan / installPath）+ **v1.3 追加 `IPackListObserver` + subscribePackList/unsubscribePackList**（包列表变化观察；挂载写走 ITuningApi） |
 | `IDownloadApi.hpp` | 宿主下载咽喉点（start / cancel / installArchive + DownloadListener 纯虚回调）；manifest 未授 `network` capability 时为 stub（§B.4） |
 | `IUiApi.hpp` | 页面注册 + 气泡通知；**无 unregisterPage/页面生命周期（刻意 YAGNI，防 P6a 重议）** |
@@ -107,7 +108,7 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 "翻转即吊销"需 per-call 门控代理（见"阶段路线"的阶段 2 候选）。只读族（`pet.model`、
 `pet.monitor`、voicePackApi、instanceApi）不受其约束。
 
-族 × 能力 × 开关总表（v1.6 全景，queryApi 通道七族）:
+族 × 能力 × 开关总表（v1.8 全景，queryApi 通道八族）:
 
 | apiId | 接口 | 能力门控 | 写开关 | 未接线时 |
 |---|---|---|---|---|
@@ -118,6 +119,7 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 | `pet.monitor` | IMonitorApi | 无（只读） | 不受控 | nullptr |
 | `pet.events` | IEventApi | 无（通知通道） | 不受控 | nullptr |
 | `pet.rules` | IRuleApi | 无（注册惰性） | 不受控（发射时活查） | nullptr |
+| `pet.layout` | ILayoutApi | `instance_tuning` | 受控 | capability stub |
 
 `pet.rules` 的门控列语义与其它写族不同（S8f 设计裁决）: 注册/查询时不门控——门控发生在
 **动作发射时**，规则引擎对插件规则的 play_motion/set_expression 每次发射现查 owner 的
@@ -172,6 +174,78 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
 `qrc:/` URL（§B.6）。
 
 ## 版本历史
+
+### v1.8（2026-10-13，kApiMajor=1 / kApiMinor=8）— 布局族 + 渲染器事件桥接 + fps 进监控快照
+
+全部为**加法**变更（一个经 queryApi 暴露的新布局族 + MonitorSample 尾部追加 + 两条渲染器事件的
+面板侧桥接 + 宿主写换绑收口），零既有签名/顺序改动；`IPluginContext` 尾追特权未使用。
+
+1. **`kApiMinor` 7 → 8**。
+2. **`ILayoutApi`**（新头，apiId `pet.layout`，族版本 1）+ **`LayoutInfo` POD**: getLayout 语义 =
+   **配置快照**（InstanceConfig 持久化半边投影: x=windowX / y=windowY / width=windowWidth /
+   height=windowHeight / scale=layoutScale〔set_layout 域，非 modelScale〕；实时变化经
+   `pet.instance.layout_changed`/`window_resized` 总线事件观察）+ resetLayout / setAutoStart
+   受理语义（转调既有 InstanceSession 面，NotFound/Busy 照 TuningApiImpl 先例）。门控矩阵照
+   `pet.instance_tuning` 写族（`instance_tuning` 能力 × `plugin_write_enabled` 活读 × 注入；
+   未授权/未接线 → `LayoutApiStub` 全方法 Capability）。宿主装配: LayoutApiImpl 共享单例
+   （PanelApplication 服务树）+ PluginHost `setLayoutApi` 注入口/per-host 回退 + queryApi 路由。
+3. **`MonitorSample.rendererFps` 尾部追加**: 渲染器 `stats_state` 的 `fps` 键（EMA 实测帧率，
+   events.md §14）经 `RendererStats.fps`（恒为 double，-1 哨兵）投影进 MonitorSample **尾部**
+   （-1 = 键缺失/无效/首帧前哨兵直传——结构体尾部追加纪律，冻结后仅允许的加法形状）。
+4. **两事件桥接**（渲染器已发、面板收）: `kEventInstanceExpressionApplied`（`{expression_id}`，
+   events.md §16 逐字——set_expression 成功回执）+ `kEventInstanceMotionProgress`（双变体
+   `{group,index,progress?}` / `{motion_path,progress?}`，events.md §17 逐字——500ms 渲染器侧
+   节流；`progress` 可选，循环/未解析时省略）。均 cancellable=false、publish-only override
+   （audio_finished 模式——复现默认 DEBUG 日志 + EventCatalog builder 透传，motion_progress
+   高频特意零额外处理）。`kAllEventIds` 21 → 23，`makeKnownEventTable` 同步（守卫测试强制）。
+5. **宿主 dogfooding + 门禁允许清单清理**: `InstanceControlBridge` 增 setAutoStart /
+   resetLayout（int 错误码）+ getLayout（QVariantMap `{ok,x,y,width,height,scale}` /
+   `{ok:false,error}`），构造注入共享 `pet::ILayoutApi`；InstanceDetailPage 的
+   `instance.setAutoStart(`/`instance.resetLayout(` 换绑到 `instanceControl`（读绑定不动）；
+   `api_boundary_gate.sh` 允许清单删除对应 2 条（stopAll 与 VoicePackController 测试回退条目
+   保留），布局直调自此为普通违规。
+
+### v1.7（2026-10-13，kApiMajor=1 / kApiMinor=7）— S9 事件总线目录补全（9 新通道 + kAllEventIds 完整性守卫 + pet.panel 域启用）
+
+全部为**加法**变更（事件目录扩展 + 发射点旁路追加），零既有签名/顺序改动；
+`IPluginContext` 尾追特权未使用。
+
+1. **`kApiMinor` 6 → 7**。
+2. **`EventIds.hpp` 目录扩至 21 条通道**: 新增 6 条 `pet.instance.*`
+   （`kEventInstanceError`/`kEventInstanceDialogue`/
+   `kEventInstanceRestartScheduled`/`kEventInstanceGaveUp`/
+   `kEventInstanceLayoutChanged`/`kEventInstanceWindowResized`）+
+   3 条 `pet.panel.*`（`kEventPanelSettingsChanged`/`kEventPanelPluginLoaded`/
+   `kEventPanelPluginUnloaded`——**pet.panel 面板级域首次启用**，
+   `instanceUuid = ""`，v1.5 设计预留域）。全部 `cancellable=false`。
+3. **`kAllEventIds` 完整性数组**: `EventIds.hpp` 新增 constexpr 数组枚举全部
+   21 个 id（注释铁律「新增事件必须同步本数组」）；`makeKnownEventTable`
+   补齐到 21 条全量并改为 public static（纯工厂）；完整性守卫测试
+   （`EventBusEmissionTest::testKnownEventTableCoversCatalog`）断言表键集 ==
+   数组全集（逐 id 比对，双向 + 去重检查）——`audio_finished` 式
+   「常量加了、表漏配」缺口从此测试即红（该缺口曾使 `cancel_default`
+   规则对合法事件误 WARN）。
+4. **发射点**（全部 EventCatalog builder 组装、发射点禁手写键名）:
+   - `pet.instance.error`: WS `error` 桥接，publish-only override 复现
+     EventRegistry 默认 INFO 日志（`audio_finished` 模式），载荷 §9 逐字；
+   - `pet.instance.dialogue`: 会话内 MBE 对话 sink 流入处（uuid+文本+时长
+     共存的最早单点），载荷 `{text, duration_ms}`；双通道分工——气泡流仍为
+     显示通道，本事件为可观察性通道；
+   - `pet.instance.restart_scheduled`/`gave_up`: RestartController retry/
+     gaveUp 接线处（`InstanceSession` 构造），载荷 `{attempt, delay_ms}`/
+     `{attempts}`（RestartController 新增 `lastArmedDelayMs()` 只读访问子）；
+   - `pet.instance.layout_changed`/`window_resized`: 既有持久化 handler 的
+     post-commit 追加发射，载荷 §12/§13 逐字（畸形载荷早退不发）；
+   - `pet.panel.settings_changed`: `SettingsApiImpl` 四个类型化 setter 成功
+     持久化后（`setEventPublisher` 注入 seam，PanelApplication/PluginHost
+     回退对均接线），载荷 `{field, value}`；`autoLaunchSystem` 走宿主直路径
+     **刻意不发**；
+   - `pet.panel.plugin_loaded`/`plugin_unloaded`: `PluginHost::
+     initializeAll` 每插件 Started 后 / `shutdownAll` 每插件清扫完成后，
+     载荷 `{plugin_id}`。
+5. **文档**: `docs/bus-events.md` 9 个新事件各成节 + 通道总数 12 → 21 +
+   新增「未收录事件与理由」节（动作进度/实际帧率高频流、`layout_state`
+   查询回执、布局命令面 API 缺口→S7 记录债/lifecycle v2 候选）。
 
 ### v1.6（2026-10-12，kApiMajor=1 / kApiMinor=6）— S8f 规则引擎插件注册通道 + owner 动作门控
 

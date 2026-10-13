@@ -224,6 +224,37 @@ pet::PluginError SettingsApiStub::setDefaultModelName(const QString& name)
     return pet::PluginError::Capability;
 }
 
+// ── LayoutApiStub (v1.8: loud failure, zero silent behavior) ────────────────
+
+pet::PluginError LayoutApiStub::getLayout(const QString& uuid,
+                                          pet::LayoutInfo* out)
+{
+    if (out != nullptr)
+        *out = pet::LayoutInfo{}; // zero-initialized, never half-written
+    LOG_WARN("[plugin-api] layoutApi().getLayout('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "(§B.4 / plugin_write_enabled) — ERR_CAPABILITY",
+             uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError LayoutApiStub::resetLayout(const QString& uuid)
+{
+    LOG_WARN("[plugin-api] layoutApi().resetLayout('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
+pet::PluginError LayoutApiStub::setAutoStart(const QString& uuid, bool enabled)
+{
+    Q_UNUSED(enabled);
+    LOG_WARN("[plugin-api] layoutApi().setAutoStart('{}') without the "
+             "'instance_tuning' capability or with plugin writes disabled "
+             "— ERR_CAPABILITY", uuid.toStdString());
+    return pet::PluginError::Capability;
+}
+
 // ── VoicePackApiImpl (read-only real view; install path is P5) ─────────────
 
 VoicePackApiImpl::VoicePackApiImpl(std::function<void()> refresh, QObject* parent)

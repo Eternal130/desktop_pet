@@ -19,6 +19,7 @@ class EventBus;
 class EventApiImpl;
 class InstanceApiImpl;
 class InstanceControlApiImpl;
+class LayoutApiImpl;
 class ModelApiImpl;
 class MonitorApiImpl;
 class RuleApiImpl;
@@ -117,6 +118,16 @@ public:
     // boundary). Same lifetime discipline as tuningApi().
     core::MonitorApiImpl* monitorApi();
 
+    // v1.8: THE shared pet::ILayoutApi implementation — config-snapshot
+    // layout reads (getLayout) + the resetLayout / setAutoStart writes.
+    // Served to plugins through PluginHost → queryApi("pet.layout")
+    // (instance_tuning + write-switch gated at the context) and to the
+    // panel's own InstanceControlBridge layout Q_INVOKABLEs (NOT gated
+    // — the host UI is the host; the pre-v1.8 direct session calls were
+    // rebound onto it in the same change). Same lifetime discipline as
+    // tuningApi().
+    core::LayoutApiImpl* layoutApi();
+
     // S8a (v1.5): THE shared event bus + its pet::IEventApi face. The
     // bus carries the panel's bypass event publishes (InstanceSession's
     // WS-event handlers, the idle scheduler tick, pack mount/unmount —
@@ -205,6 +216,7 @@ private:
     core::SettingsApiImpl* m_settingsApi = nullptr;
     core::VoicePackApiImpl* m_voicePackApi = nullptr;
     core::MonitorApiImpl* m_monitorApi = nullptr; // S7 (v1.4)
+    core::LayoutApiImpl* m_layoutApi = nullptr;   // v1.8
     // S8e: rule-engine host service (see ruleEngineService()); registered
     // after m_monitorApi → destroyed before it (registration-reverse).
     core::RuleEngineService* m_ruleEngineService = nullptr;

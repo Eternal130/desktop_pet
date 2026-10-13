@@ -31,12 +31,18 @@ const QString kActiveEvents[] = {
 // S8b: audio_finished joins the default set (events.md §15 — the 14th
 // protocol event, natural audio-playback end; the session's publish-only
 // override replaces this default at start()).
+// v1.8: expression_applied + motion_progress join the same set (events.md
+// §16/§17 — the set_expression success receipt + the 500ms-throttled
+// motion progress snapshot; the session's publish-only overrides replace
+// these defaults at start()).
 const QString kPhase6Events[] = {
     QStringLiteral("hit"),
     QStringLiteral("motion_started"),
     QStringLiteral("motion_finished"),
     QStringLiteral("drag_start"),
     QStringLiteral("audio_finished"),
+    QStringLiteral("expression_applied"),
+    QStringLiteral("motion_progress"),
 };
 
 // Compact JSON for one-line logging. Empty payload serializes as "{}".

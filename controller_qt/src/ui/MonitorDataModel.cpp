@@ -66,6 +66,17 @@ RendererStats RendererStats::fromJson(const QJsonObject& p)
             r.vramTotalBytes = v.toInteger();
     }
 
+    // v1.8: measured frame rate (EMA, one decimal). An always-a-number
+    // key on the wire (the renderer passes its own -1 pre-first-frame
+    // sentinel through); a missing / null / non-double key degrades to
+    // the same -1 sentinel so MonitorSample.rendererFps never needs an
+    // absent-key story.
+    {
+        const QJsonValue v = p.value(QStringLiteral("fps"));
+        if (v.isDouble())
+            r.fps = v.toDouble();
+    }
+
     const QJsonValue ts = p.value(QStringLiteral("timestamp_ms"));
     if (ts.isDouble())
         r.timestampMs = ts.toInteger();

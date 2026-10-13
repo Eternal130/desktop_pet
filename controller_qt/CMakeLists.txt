@@ -112,6 +112,9 @@ target_sources(pet_panel_api INTERFACE
     # v1.6 (S8f): rules-registration family (registerRule/unregisterRule;
     # the rule JSON schema is documented in docs/rules.md).
     src/api/IRuleApi.hpp
+    # v1.8: layout family (config-snapshot getLayout + resetLayout /
+    # setAutoStart over the LayoutInfo POD).
+    src/api/ILayoutApi.hpp
 )
 # ABI discipline (§B.3, src/api/README.md): pure-virtual declarations, Qt
 # value types + POD only. Qt value types need Qt6::Core's include path —

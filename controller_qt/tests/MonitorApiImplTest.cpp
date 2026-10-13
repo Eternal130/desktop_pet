@@ -151,6 +151,9 @@ void MonitorApiImplTest::testHistoryProjectionAndSentinels()
         QCOMPARE(latest.rendererGpu, -1.0);  // nullopt → sentinel
         QCOMPARE(latest.rendererVramUsedBytes, -1.0);
         QCOMPARE(latest.rendererVramTotalBytes, -1.0);
+        // v1.8: rendererFps — rendererSample() carries no fps → the -1
+        // "not reported" sentinel (missing-key path).
+        QCOMPARE(latest.rendererFps, -1.0);
     }
 
     // Full Windows-shape renderer sample: GPU/VRAM present → projected.
@@ -169,9 +172,37 @@ void MonitorApiImplTest::testHistoryProjectionAndSentinels()
         QCOMPARE(latest.rendererGpu, 42.0);
         QCOMPARE(latest.rendererVramUsedBytes, 5.0 * 1024 * 1024 * 1024);
         QCOMPARE(latest.rendererVramTotalBytes, 8.0 * 1024 * 1024 * 1024);
+        // v1.8: an explicitly-set fps projects verbatim; a defaulted
+        // RendererStats (the full fixture above did not set fps) still
+        // carries the -1 sentinel.
+        QCOMPARE(latest.rendererFps, -1.0);
         // Oldest → newest ordering.
         QVERIFY(h.at(0).capturedAtMs <= h.at(1).capturedAtMs);
         QVERIFY(h.at(1).capturedAtMs <= h.at(2).capturedAtMs);
+    }
+
+    // v1.8: a renderer sample WITH a measured fps → projected verbatim
+    // (the stats_state `fps` key path — MonitorSample's tail-appended
+    // half).
+    RendererStats withFps;
+    withFps.cpuPercent = 21.0;
+    withFps.rssBytes = 3100;
+    withFps.fps = 58.3; // EMA-measured, one decimal
+    withFps.timestampMs = 10;
+    model->mergeRenderer(withFps);
+    {
+        const QVector<pet::MonitorSample> h = api.history(uuid);
+        QCOMPARE(h.size(), 4);
+        const pet::MonitorSample& latest = h.at(3);
+        QCOMPARE(latest.rendererFps, 58.3);
+        // The renderer's own pre-first-frame sentinel passes through
+        // untouched (a -1 VALUE is indistinguishable from "absent" —
+        // same meaning).
+        RendererStats sentinelFps = withFps;
+        sentinelFps.fps = -1.0;
+        model->mergeRenderer(sentinelFps);
+        const QVector<pet::MonitorSample> h2 = api.history(uuid);
+        QCOMPARE(h2.at(4).rendererFps, -1.0);
     }
 }
 

@@ -23,6 +23,7 @@
 #include "api/IEventApi.hpp"
 #include "api/IInstanceApi.hpp"
 #include "api/IInstanceControlApi.hpp"
+#include "api/ILayoutApi.hpp"
 #include "api/IModelApi.hpp"
 #include "api/IMonitorApi.hpp"
 #include "api/IPluginContext.hpp"
@@ -228,6 +229,17 @@ public:
     SettingsApiImpl(const QString& configDir, QObject* parent = nullptr);
     void setDatabase(DatabaseManager* db) { m_db = db; }
 
+    // v1.7 (S9) event-publisher seam: the shared pet::IEventApi every
+    // successful settings write publishes pet.panel.settings_changed
+    // onto (PANEL-LEVEL — instanceUuid ""). Interface pointer (NOT the
+    // concrete impl) so tests inject fakes; plain C++ setter,
+    // deliberately NOT a Q_INVOKABLE / Q_PROPERTY WRITE (the
+    // api-boundary gate's pattern table stays untouched — the
+    // InstanceSession::setEventPublisher / setDialogueSink discipline).
+    // Null (the default) = publish nothing (pre-v1.7 behavior).
+    void setEventPublisher(pet::IEventApi* publisher)
+    { m_eventPublisher = publisher; }
+
     pet::PluginError setCloseAction(const QString& action) override;
     pet::PluginError setConfirmOnExit(bool enabled) override;
     pet::PluginError setStartMinimized(bool enabled) override;
@@ -237,9 +249,13 @@ private:
     // Load-modify-save over the panel_config store (same discipline as
     // PanelConfigController::updateField). Returns true on save success.
     bool updateField(const std::function<void(PanelConfig&)>& mutator);
+    // v1.7 (S9): publish pet.panel.settings_changed {field, value} as a
+    // PANEL-LEVEL host event. No-op without an injected publisher.
+    void publishSettingsChanged(const QString& field, const QJsonValue& value);
 
     QString m_configDir;
     DatabaseManager* m_db = nullptr; // shared backend, not owned
+    pet::IEventApi* m_eventPublisher = nullptr; // v1.7, not owned
 };
 
 // S7 (v1.4): real resource-monitor read API — the pet::IMonitorApi
@@ -295,6 +311,43 @@ private:
 
     InstanceManager* m_instanceManager = nullptr; // not owned (service tree)
     QVector<Subscription> m_subscriptions;
+};
+
+// v1.8: real layout family — the pet::ILayoutApi behind
+// queryApi(kLayoutApiId). Constructed ONCE in the PanelApplication
+// service tree (same sharing pattern as TuningApiImpl) and injected
+// into every plugin context (via PluginHost) AND into the panel's own
+// InstanceControlBridge layout writes — host UI and plugins go through
+// the same vtable. getLayout projects the session's PERSISTED
+// InstanceConfig layout halves (config snapshot, NOT live renderer
+// state — live changes ride the pet.instance.layout_changed /
+// window_resized bus events); resetLayout / setAutoStart forward to the
+// existing InstanceSession surfaces (the same methods the detail page
+// drove directly pre-v1.8). GUI thread, non-blocking,
+// "accepted"-semantics; it only CALLS the existing surfaces.
+class LayoutApiImpl : public QObject, public pet::ILayoutApi
+{
+    Q_OBJECT
+public:
+    // instanceManager must outlive this object (service tree guarantees
+    // it; null is tolerated → every op returns NotFound, degraded wiring).
+    LayoutApiImpl(InstanceManager* instanceManager, QObject* parent);
+
+    pet::PluginError getLayout(const QString& uuid,
+                               pet::LayoutInfo* out) override;
+    pet::PluginError resetLayout(const QString& uuid) override;
+    pet::PluginError setAutoStart(const QString& uuid, bool enabled) override;
+
+private:
+    // Shared prelude (the TuningApiImpl::locateAlive discipline):
+    // NotFound for unknown uuids, Busy while a delete is pending.
+    pet::PluginError locateAlive(const QString& uuid,
+                                 InstanceSession** out) const;
+    // Linear scan over the manager's PUBLIC roster surface (same access
+    // QML uses; sidebar-sized N).
+    InstanceSession* sessionForUuid(const QString& uuid) const;
+
+    InstanceManager* m_instanceManager; // not owned (service tree)
 };
 
 // Real download API (P5): forwards to the host DownloadService when the
@@ -574,6 +627,13 @@ public:
     // own context log. Null (the default) → queryApi answers nullptr
     // ("feature absent"); injected → the proxy.
     void setRuleApi(RuleApiImpl* ruleApi);
+    // ── v1.8 shared-implementation injection ───────────────────────────
+    // The SHARED LayoutApiImpl served through queryApi("pet.layout")
+    // when the plugin's manifest grants "instance_tuning" AND the write
+    // switch is on (the write-family matrix). Null (the default) keeps
+    // the capability stub semantics (the frozen-ctor-signature
+    // discipline of the v1.3/v1.4 setters).
+    void setLayoutApi(pet::ILayoutApi* layoutApi) { m_layoutApi = layoutApi; }
 
 private:
     QString m_pluginId;
@@ -616,6 +676,12 @@ private:
     // (owner-prefix stamping); null → nullptr ("feature absent").
     RuleApiImpl* m_sharedRuleApi = nullptr;
     std::unique_ptr<RuleApiProxy> m_ruleProxy;
+    // v1.8: shared layout-family implementation (service tree / host
+    // fallback), not owned; null → capability stub (the write-family
+    // matrix — pet.layout is instance_tuning + write-switch gated, the
+    // same routing as pet.instance_tuning).
+    pet::ILayoutApi* m_layoutApi = nullptr;
+    LayoutApiStub m_layoutStub;
 };
 
 } // namespace core

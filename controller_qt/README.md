@@ -159,7 +159,7 @@ ResourceStatsCollector), config (InstanceConfig, PanelConfig,
 InstanceConfigManager, PanelStateManager, ConfigDir, Robustness, PathResolve),
 infrastructure (Logging, PoCIntegration, ProcessManager, StartupSalvo,
 ProtocolFixtures), bubble stream (NotificationStreamModel,
-NotificationStreamController), plugin SDK v1.2-v1.6 families
+NotificationStreamController), plugin SDK v1.2-v1.7 families
 (PluginRegistry, PluginHost, PluginManager, PluginPageModel, DownloadService,
 InstallPipeline, RosterApiModel, InstanceControlApiImpl, PluginQueryApi,
 TuningApiImpl, ModelApiImpl, SettingsApiImpl, InstanceControlBridge,
@@ -337,10 +337,11 @@ PATH order:
   self-bite `ApiBoundaryGateSelfTest`); allowlist entries are file+line
   level with reviewed justifications. See `src/api/README.md` for the
   family × capability × switch matrix.
-- **Event bus + rule engine (S8, SDK v1.5/v1.6)**: a Forge-style in-process
+- **Event bus + rule engine (S8+, SDK v1.5-v1.7)**: a Forge-style in-process
   event bus (`core/EventBus`, `pet.events` family — synchronous dispatch,
   priority ladder, cancellable hit/idle_tick) mirrors host emission points
-  as `pet.instance.*`/`pet.model.*`/`pet.pack.*` channels (catalog:
+  as `pet.instance.*`/`pet.model.*`/`pet.pack.*`/`pet.panel.*` channels
+  (21-channel catalog with the `kAllEventIds` completeness guard:
   `src/api/EventIds.hpp`, payload keys owned by `core/EventCatalog`
   builders — see `docs/bus-events.md`); the declarative rule engine
   (`core/RuleEngine` + `RuleEngineService`, `pet.rules` registration family)
@@ -357,7 +358,7 @@ controller_qt/
 ├── README.md                   # this file
 ├── scripts/                    # api_boundary_gate.sh (API boundary gate — ctest-enforced)
 ├── src/
-│   ├── api/                    # Plugin SDK v1.6 headers (11 interface families; see src/api/README.md)
+│   ├── api/                    # Plugin SDK v1.7 headers (11 interface families; see src/api/README.md)
 │   ├── app/                    # PanelApplication composition root + PanelUiBoot + ScreenshotRunner
 │   ├── main.cpp                # QGuiApplication + QQmlApplicationEngine entry
 │   ├── network/                # Envelope, Protocol (25 commands), WsServer, MessageDispatcher,

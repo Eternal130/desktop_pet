@@ -229,6 +229,8 @@ void MonitorDataModelTest::testRendererStatsFromJson()
     QVERIFY(r.vramTotalBytes.has_value());
     QCOMPARE(*r.vramTotalBytes, 8589934592LL);
     QCOMPARE(r.timestampMs, 1719990000000LL);
+    // v1.8: no fps key on this legacy payload → the -1 sentinel.
+    QCOMPARE(r.fps, -1.0);
 
     // Missing keys → defaults (no throw).
     QJsonObject empty;
@@ -237,6 +239,20 @@ void MonitorDataModelTest::testRendererStatsFromJson()
     QCOMPARE(r2.rssBytes, 0);
     QVERIFY(!r2.gpuPercent.has_value());
     QVERIFY(!r2.vramUsedBytes.has_value());
+    QCOMPARE(r2.fps, -1.0); // v1.8: absent key → sentinel, never fabricated
+
+    // v1.8: the stats_state `fps` key (EMA-measured frame rate,
+    // events.md §14) parses verbatim — value, sentinel and
+    // wrong-type/wrong-shape paths.
+    QJsonObject withFps = full;
+    withFps.insert("fps", 60.0);
+    QCOMPARE(RendererStats::fromJson(withFps).fps, 60.0);
+    QJsonObject sentinelFps = full;
+    sentinelFps.insert("fps", -1.0); // renderer pre-first-frame sentinel
+    QCOMPARE(RendererStats::fromJson(sentinelFps).fps, -1.0);
+    QJsonObject stringFps = full;
+    stringFps.insert("fps", QStringLiteral("60")); // wrong type → ignored
+    QCOMPARE(RendererStats::fromJson(stringFps).fps, -1.0);
 
     // Partial Windows payload (GPU present, VRAM total missing).
     QJsonObject partial;

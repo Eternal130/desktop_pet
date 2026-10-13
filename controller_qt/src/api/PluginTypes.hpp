@@ -61,8 +61,20 @@ namespace pet {
 // is deliberately lazy (no capability word); the owner gate fires at
 // action-emission time inside the host's rule engine. No existing
 // signature changed.
+// v1.7 (2026-10-13, S9): minor bumped for the additive event-catalog
+// completion — 9 new host channels (6 pet.instance.* + the first 3
+// pet.panel.* panel-level channels) + the kAllEventIds completeness
+// array in api/EventIds.hpp. No existing signature changed.
+// v1.8 (2026-10-13): minor bumped for the additive expansion — the new
+// layout family ILayoutApi (queryApi "pet.layout": getLayout /
+// resetLayout / setAutoStart over the LayoutInfo POD below), the
+// MonitorSample.rendererFps tail append (the renderer's EMA-measured
+// frame rate via stats_state's fps key, -1 sentinel), and two new
+// event-catalog channels (pet.instance.expression_applied /
+// pet.instance.motion_progress — see api/EventIds.hpp). No existing
+// signature changed; MonitorSample grew at the TAIL only.
 constexpr int kApiMajor = 1;
-constexpr int kApiMinor = 6;
+constexpr int kApiMinor = 8;
 
 // ── Capability vocabulary (manifest "capabilities" entries; §B.4) ───────────
 // The exact, case-sensitive strings the host parses from plugin manifests
@@ -166,6 +178,29 @@ struct InstanceRuntime {
     int restartAttempts = 0;
 };
 
+// ILayoutApi::getLayout() out-POD (v1.8). Persisted LAYOUT snapshot of
+// one pet instance — the same halves InstanceConfig carries, projected
+// to doubles:
+//   - x / y          window top-left (screen pixels; InstanceConfig
+//                    windowX/windowY, persisted on drag_end /
+//                    window_resized)
+//   - width / height window client size (pixels; windowWidth /
+//                    windowHeight, persisted on window_resized)
+//   - scale          the MODEL LAYOUT scale inside the window
+//                    (InstanceConfig.layoutScale — the reset_layout /
+//                    set_layout domain, persisted on layout_changed),
+//                    NOT the legacy modelScale boot field
+// The snapshot is the CONFIG state, not live renderer state: mid-drag
+// runtime changes are observable via the pet.instance.layout_changed /
+// pet.instance.window_resized bus events (see ILayoutApi.hpp).
+struct LayoutInfo {
+    double x = 0.0;
+    double y = 0.0;
+    double width = 0.0;
+    double height = 0.0;
+    double scale = 1.0;
+};
+
 // IVoicePackApi::listPacks() row.
 struct PackInfo {
     QString id;          // directory name under Resources/VoicePacks
@@ -211,6 +246,14 @@ struct MonitorSample {
     double rendererVramUsedBytes = -1.0;   // bytes, or -1 (not reported)
     double rendererVramTotalBytes = -1.0;  // bytes, or -1 (not reported)
     qint64 capturedAtMs = 0;           // host capture time (epoch ms)
+    // v1.8 TAIL APPEND: the renderer's EMA-smoothed MEASURED frame rate
+    // (stats_state's fps key, events.md §14 — one decimal; distinct from
+    // the set_fps TARGET). -1 sentinel when the renderer has not
+    // reported it / the key was absent or invalid on the wire (the same
+    // -1 = "not reported" convention as the GPU/VRAM halves above).
+    // MUST stay the last member: stage-2 freezes struct layout, and
+    // tail-append is the only additive change allowed post-freeze.
+    double rendererFps = -1.0;
 };
 
 // IMonitorApi::subscribe() argument (v1.4, S7). minIntervalMs is the

@@ -97,6 +97,12 @@ RuleEngine::KnownEventTable RuleEngineService::makeKnownEventTable()
 {
     // Cancellable matrix straight from api/EventIds.hpp (S8a froze the
     // flags; hit + idle_tick are the designated pre-action gates).
+    // v1.7 (S9): now holds ALL 21 catalog events — the completeness-guard
+    // test asserts the key set == pet::kAllEventIds, so the
+    // audio_finished-style omission (constant added, entry forgotten)
+    // can never recur silently.
+    // v1.8: expression_applied + motion_progress join (23 total) — both
+    // pure telemetry, non-cancellable.
     RuleEngine::KnownEventTable table;
     table.insert(QString(pet::kEventInstanceHit), true);
     table.insert(QString(pet::kEventInstanceIdleTick), true);
@@ -104,12 +110,25 @@ RuleEngine::KnownEventTable RuleEngineService::makeKnownEventTable()
     table.insert(QString(pet::kEventInstanceMotionStarted), false);
     table.insert(QString(pet::kEventInstanceMotionFinished), false);
     table.insert(QString(pet::kEventInstanceAudioFinished), false);
+    table.insert(QString(pet::kEventInstanceExpressionApplied), false);
+    table.insert(QString(pet::kEventInstanceMotionProgress), false);
     table.insert(QString(pet::kEventDragStarted), false);
     table.insert(QString(pet::kEventDragEnded), false);
     table.insert(QString(pet::kEventModelLoaded), false);
     table.insert(QString(pet::kEventModelLoadFailed), false);
     table.insert(QString(pet::kEventPackMounted), false);
     table.insert(QString(pet::kEventPackUnmounted), false);
+    // v1.7 (S9) additions — all pure telemetry/observability, none
+    // cancellable.
+    table.insert(QString(pet::kEventInstanceError), false);
+    table.insert(QString(pet::kEventInstanceDialogue), false);
+    table.insert(QString(pet::kEventInstanceRestartScheduled), false);
+    table.insert(QString(pet::kEventInstanceGaveUp), false);
+    table.insert(QString(pet::kEventInstanceLayoutChanged), false);
+    table.insert(QString(pet::kEventInstanceWindowResized), false);
+    table.insert(QString(pet::kEventPanelSettingsChanged), false);
+    table.insert(QString(pet::kEventPanelPluginLoaded), false);
+    table.insert(QString(pet::kEventPanelPluginUnloaded), false);
     return table;
 }
 

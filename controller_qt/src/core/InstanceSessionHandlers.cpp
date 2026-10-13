@@ -155,12 +155,29 @@ void InstanceSession::MountedBehaviorAdapter::onEvent(pet::Event& event)
         // Voice-pack dialogue text goes to the notification bubble stream
         // (never to the renderer — the subtitle side-channel is gone).
         // Bubble lifetime = audio length + 8s display margin; 0 = default.
-        if (!result->dialogueText.isEmpty() && m_session->m_dialogueSink) {
-            m_session->m_dialogueSink(m_session->m_config.id,
-                                      m_session->label(),
-                                      m_session->avatar(),
-                                      result->dialogueText,
-                                      audioMs > 0 ? int(audioMs + 8000) : 0);
+        //
+        // v1.7 (S9) DUAL-CHANNEL SPLIT: this call site is the sink INFLOW
+        // point — the earliest single spot where the instance uuid, the
+        // text and the display duration coexist (InstanceManager /
+        // PanelUiBoot merely forward the sink onward to the stream). The
+        // bubble stream stays the DISPLAY channel; the bus event below is
+        // the OBSERVABILITY channel (plugins / rules react to spoken
+        // lines without touching the display). Gated on non-empty text
+        // only — observability mirrors the display channel's CONTENT,
+        // not its wiring (a headless/degraded sink still observes lines).
+        if (!result->dialogueText.isEmpty()) {
+            const int durationMs =
+                audioMs > 0 ? int(audioMs + 8000) : 0;
+            if (m_session->m_dialogueSink) {
+                m_session->m_dialogueSink(m_session->m_config.id,
+                                          m_session->label(),
+                                          m_session->avatar(),
+                                          result->dialogueText,
+                                          durationMs);
+            }
+            m_session->publishHostEvent(
+                pet::kEventInstanceDialogue, /*cancellable=*/false,
+                core::makeDialoguePayload(result->dialogueText, durationMs));
         }
         m_session->m_scheduler.pause();
         // Mutual exclusion: MBE produced the behavior — cancel so the
@@ -377,6 +394,15 @@ void InstanceSession::handleLayoutChangedEvent(const Envelope& env)
         LOG_ERROR("InstanceSession[{}]: failed to persist layout after layout_changed",
                   m_instanceId);
     }
+
+    // v1.7 (S9): post-commit bypass publish — AFTER the layout is
+    // persisted (or its failure logged), the same discipline as
+    // drag_ended. Payload is the VERBATIM WS payload (offset_x/offset_y/
+    // scale per events.md §12 — the makeLayoutChangedPayload
+    // passthrough). The malformed early return above publishes nothing:
+    // no commit, no event.
+    publishHostEvent(pet::kEventInstanceLayoutChanged, /*cancellable=*/false,
+                     core::makeLayoutChangedPayload(env.payload));
 }
 
 void InstanceSession::handleWindowResizedEvent(const Envelope& env)
@@ -410,6 +436,14 @@ void InstanceSession::handleWindowResizedEvent(const Envelope& env)
         LOG_ERROR("InstanceSession[{}]: failed to persist window after window_resized",
                   m_instanceId);
     }
+
+    // v1.7 (S9): post-commit bypass publish — AFTER the window geometry
+    // is persisted (or its failure logged); the malformed early return
+    // above publishes nothing. Payload is the VERBATIM WS payload
+    // (window_width/window_height/window_x/window_y per events.md §13 —
+    // the makeWindowResizedPayload passthrough).
+    publishHostEvent(pet::kEventInstanceWindowResized, /*cancellable=*/false,
+                     core::makeWindowResizedPayload(env.payload));
 }
 
 void InstanceSession::handleLayoutStateEvent(const Envelope& env)
@@ -489,4 +523,84 @@ void InstanceSession::handleAudioFinishedEvent(const Envelope& env)
     publishHostEvent(pet::kEventInstanceAudioFinished,
                      /*cancellable=*/false,
                      core::makeAudioFinishedPayload(env.payload));
+}
+
+void InstanceSession::handleExpressionAppliedEvent(const Envelope& env)
+{
+    // events.md §16: expression_applied is the set_expression SUCCESS
+    // receipt — unknown ids / unloaded models never emit it (the caller
+    // infers "not applied" from the receipt's absence). The
+    // audio_finished publish-only override pattern: this override
+    // (registered in start(), after registerDefaults) reproduces the
+    // default's DEBUG log line verbatim (zero log change) and
+    // additionally fans the event onto the bus with the VERBATIM WS
+    // payload keys (expression_id — the makeExpressionAppliedPayload
+    // single-key echo). Pure telemetry: no local state keys off an
+    // applied expression (currentExpression persistence happens at the
+    // command site, not here).
+    LOG_DEBUG("event action='expression_applied' payload={}",
+              QString::fromUtf8(QJsonDocument(env.payload).toJson(
+                                    QJsonDocument::Compact))
+                  .toStdString());
+    publishHostEvent(
+        pet::kEventInstanceExpressionApplied, /*cancellable=*/false,
+        core::makeExpressionAppliedPayload(
+            env.payload.value(QStringLiteral("expression_id")).toString()));
+}
+
+void InstanceSession::handleMotionProgressEvent(const Envelope& env)
+{
+    // events.md §17: motion_progress is a playback progress snapshot the
+    // renderer throttles to at most one per 500ms per playing motion
+    // (short motions may never emit one; the end is motion_finished's
+    // job). The audio_finished publish-only override pattern with a
+    // HIGH-FREQUENCY caveat: this body deliberately does NOTHING except
+    // reproduce the default's DEBUG log verbatim + pass the payload
+    // through — no persistence, no state, no scheduler interaction, no
+    // extra logging. Two wire variants (the motion_finished §5/§10
+    // convention): the discriminator is the motion_path key's presence;
+    // the OPTIONAL progress key is mirrored only when the wire carried
+    // it (unknown-duration motions omit it — the builder never
+    // fabricates a value).
+    LOG_DEBUG("event action='motion_progress' payload={}",
+              QString::fromUtf8(QJsonDocument(env.payload).toJson(
+                                    QJsonDocument::Compact))
+                  .toStdString());
+    const QJsonValue progressValue =
+        env.payload.value(QStringLiteral("progress"));
+    const bool hasProgress = progressValue.isDouble();
+    if (env.payload.contains(QStringLiteral("motion_path"))) {
+        publishHostEvent(
+            pet::kEventInstanceMotionProgress, /*cancellable=*/false,
+            core::makeMotionProgressPayload(
+                env.payload.value(QStringLiteral("motion_path")).toString(),
+                hasProgress, progressValue.toDouble()));
+    } else {
+        publishHostEvent(
+            pet::kEventInstanceMotionProgress, /*cancellable=*/false,
+            core::makeMotionProgressPayload(
+                env.payload.value(QStringLiteral("group")).toString(),
+                env.payload.value(QStringLiteral("index")).toInt(),
+                hasProgress, progressValue.toDouble()));
+    }
+}
+
+void InstanceSession::handleErrorEvent(const Envelope& env)
+{
+    // events.md §9: the renderer reports a runtime error. The
+    // audio_finished publish-only override pattern, one tier up: `error`
+    // sits in EventRegistry's kActiveEvents (INFO default), so this
+    // override (registered in start(), after registerDefaults) reproduces
+    // the default's INFO log line verbatim (zero log change) and
+    // additionally fans the VERBATIM WS payload onto the bus as
+    // pet.instance.error (error_code/error_message are already
+    // snake_case — the makeErrorPayload passthrough). Pure telemetry:
+    // renderer-error surfaces (status flips, startFailed) live in the
+    // process/connection paths and are deliberately untouched.
+    LOG_INFO("event action='error' payload={}",
+             QString::fromUtf8(QJsonDocument(env.payload).toJson(
+                                   QJsonDocument::Compact))
+                 .toStdString());
+    publishHostEvent(pet::kEventInstanceError, /*cancellable=*/false,
+                     core::makeErrorPayload(env.payload));
 }

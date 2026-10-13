@@ -1249,3 +1249,26 @@ target_link_libraries(RuleApiTest PRIVATE pet_panel_core Qt6::Test)
 pet_deploy_qt_test(RuleApiTest)
 
 add_test(NAME RuleApiTest COMMAND RuleApiTest)
+
+# ── v1.8 family tests ─────────────────────────────────────────────────────────
+
+# LayoutApiImplTest (v1.8): the real pet::ILayoutApi over a REAL
+# InstanceManager harness (the TuningApiImplTest pattern), plus the
+# family's queryApi routing matrix kept in the same binary (the
+# PluginQueryApiTest direct-construction shape). Five slots: getLayout
+# config-snapshot projection (pre-seeded distinctive InstanceConfig
+# loaded from disk — x/y/width/height window halves + scale=layoutScale
+# NOT modelScale; defaults; null out → InvalidArgument; miss zero-init),
+# write forwarding (setAutoStart persists to the session + the config
+# file with NO command; resetLayout hits commandSent as reset_layout),
+# the NotFound matrix (incl. null-manager degraded wiring), the
+# pending-delete Busy matrix, and the routing matrix (granted+switch+
+# injected → shared-impl identity / switch off / not granted / not
+# injected → capability stub with zeroed *out / minVersion over →
+# nullptr). QTEST_MAIN — InstanceManager harness parity.
+qt_add_executable(LayoutApiImplTest LayoutApiImplTest.cpp)
+target_link_libraries(LayoutApiImplTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(LayoutApiImplTest)
+
+add_test(NAME LayoutApiImplTest COMMAND LayoutApiImplTest)

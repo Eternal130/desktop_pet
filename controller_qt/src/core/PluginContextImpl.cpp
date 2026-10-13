@@ -10,6 +10,7 @@
 #include "core/DownloadService.hpp"
 #include "core/ConfigDir.hpp"
 #include "core/EventBus.hpp"
+#include "core/EventCatalog.hpp"
 #include "core/InstanceManager.hpp"
 #include "core/InstanceSession.hpp"
 #include "core/ModelInfoParser.hpp"
@@ -761,23 +762,31 @@ pet::PluginError SettingsApiImpl::setCloseAction(const QString& action)
                  action.toStdString());
         return pet::PluginError::InvalidArgument;
     }
-    return updateField([action](PanelConfig& cfg) { cfg.closeAction = action; })
-               ? pet::PluginError::Ok
-               : pet::PluginError::Generic;
+    if (updateField([action](PanelConfig& cfg) { cfg.closeAction = action; })) {
+        // v1.7 (S9): post-commit panel-level publish — only after the
+        // panel_config row actually persisted.
+        publishSettingsChanged(QStringLiteral("close_action"), action);
+        return pet::PluginError::Ok;
+    }
+    return pet::PluginError::Generic;
 }
 
 pet::PluginError SettingsApiImpl::setConfirmOnExit(bool enabled)
 {
-    return updateField([enabled](PanelConfig& cfg) { cfg.confirmOnExit = enabled; })
-               ? pet::PluginError::Ok
-               : pet::PluginError::Generic;
+    if (updateField([enabled](PanelConfig& cfg) { cfg.confirmOnExit = enabled; })) {
+        publishSettingsChanged(QStringLiteral("confirm_on_exit"), enabled);
+        return pet::PluginError::Ok;
+    }
+    return pet::PluginError::Generic;
 }
 
 pet::PluginError SettingsApiImpl::setStartMinimized(bool enabled)
 {
-    return updateField([enabled](PanelConfig& cfg) { cfg.startMinimized = enabled; })
-               ? pet::PluginError::Ok
-               : pet::PluginError::Generic;
+    if (updateField([enabled](PanelConfig& cfg) { cfg.startMinimized = enabled; })) {
+        publishSettingsChanged(QStringLiteral("start_minimized"), enabled);
+        return pet::PluginError::Ok;
+    }
+    return pet::PluginError::Generic;
 }
 
 pet::PluginError SettingsApiImpl::setDefaultModelName(const QString& name)
@@ -790,9 +799,31 @@ pet::PluginError SettingsApiImpl::setDefaultModelName(const QString& name)
                  "ERR_INVALID_ARGUMENT");
         return pet::PluginError::InvalidArgument;
     }
-    return updateField([name](PanelConfig& cfg) { cfg.defaultModelName = name; })
-               ? pet::PluginError::Ok
-               : pet::PluginError::Generic;
+    if (updateField([name](PanelConfig& cfg) { cfg.defaultModelName = name; })) {
+        publishSettingsChanged(QStringLiteral("default_model_name"), name);
+        return pet::PluginError::Ok;
+    }
+    return pet::PluginError::Generic;
+}
+
+void SettingsApiImpl::publishSettingsChanged(const QString& field,
+                                             const QJsonValue& value)
+{
+    // v1.7 (S9): pet.panel.settings_changed — the FIRST host use of the
+    // reserved pet.panel.* domain. PANEL-LEVEL: instanceUuid stays "" (no
+    // per-pet identity applies). autoLaunchSystem deliberately never
+    // emits here: it walks the host-direct AutoLaunchManager path
+    // outside ISettingsApi, and this channel mirrors the ISettingsApi
+    // write surface only (see docs/bus-events.md 「未收录事件与理由」).
+    if (m_eventPublisher == nullptr)
+        return; // tests / degraded wiring — pre-v1.7 behavior
+    pet::Event evt;
+    evt.eventId = QString(pet::kEventPanelSettingsChanged);
+    evt.instanceUuid = QString(); // panel-level
+    evt.publisherId = QString(pet::kEventPublisherHost);
+    evt.cancellable = false;
+    evt.payload = core::makeSettingsChangedPayload(field, value);
+    m_eventPublisher->publish(evt); // synchronous; errors are bus-level
 }
 
 // ── MonitorApiImpl (S7, v1.4) ─────────────────────────────────────────────────
@@ -969,9 +1000,109 @@ pet::MonitorSample MonitorApiImpl::projectSnapshot(
             ? static_cast<double>(*snapshot->renderer->vramUsedBytes) : -1.0;
         out.rendererVramTotalBytes = snapshot->renderer->vramTotalBytes
             ? static_cast<double>(*snapshot->renderer->vramTotalBytes) : -1.0;
+        // v1.8: the EMA-measured frame rate — an always-a-double half on
+        // RendererStats whose -1 default IS the sentinel (missing key /
+        // wrong type / renderer pre-first-frame sentinel all arrive as
+        // -1 from RendererStats::fromJson), so a plain copy suffices.
+        out.rendererFps = snapshot->renderer->fps;
     }
     out.capturedAtMs = snapshot->capturedAtMs;
     return out;
+}
+
+// ── LayoutApiImpl (v1.8) ─────────────────────────────────────────────────────
+
+LayoutApiImpl::LayoutApiImpl(InstanceManager* instanceManager, QObject* parent)
+    : QObject(parent), m_instanceManager(instanceManager)
+{
+}
+
+InstanceSession* LayoutApiImpl::sessionForUuid(const QString& uuid) const
+{
+    // Same public-surface linear scan as TuningApiImpl (sidebar-sized N).
+    if (m_instanceManager == nullptr)
+        return nullptr;
+    for (int row = 0; row < m_instanceManager->rowCount(); ++row) {
+        InstanceSession* s = m_instanceManager->instanceAt(row);
+        if (s != nullptr && s->uuid() == uuid)
+            return s;
+    }
+    return nullptr;
+}
+
+pet::PluginError LayoutApiImpl::locateAlive(const QString& uuid,
+                                            InstanceSession** out) const
+{
+    *out = sessionForUuid(uuid);
+    if (*out == nullptr) {
+        LOG_WARN("[plugin-api] layoutApi() op on '{}' — not in roster, "
+                 "ERR_NOT_FOUND", uuid.toStdString());
+        return pet::PluginError::NotFound;
+    }
+    if ((*out)->isDeletePending()) {
+        LOG_WARN("[plugin-api] layoutApi() op on '{}' — pending delete, "
+                 "ERR_BUSY", uuid.toStdString());
+        return pet::PluginError::Busy;
+    }
+    return pet::PluginError::Ok;
+}
+
+pet::PluginError LayoutApiImpl::getLayout(const QString& uuid,
+                                          pet::LayoutInfo* out)
+{
+    if (out != nullptr)
+        *out = pet::LayoutInfo{}; // never leave *out half-written on a miss
+    if (out == nullptr) {
+        LOG_WARN("[plugin-api] layoutApi().getLayout('{}') with null out "
+                 "pointer — ERR_INVALID_ARGUMENT", uuid.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    // CONFIG-SNAPSHOT projection (the ILayoutApi.hpp contract): the
+    // persisted InstanceConfig halves, NOT live renderer state — mid-
+    // drag changes ride the pet.instance.layout_changed /
+    // window_resized bus events. Field mapping (LayoutInfo ↔
+    // InstanceConfig): x=windowX, y=windowY, width=windowWidth,
+    // height=windowHeight (persisted on drag_end / window_resized);
+    // scale=layoutScale (the set_layout / reset_layout domain,
+    // persisted on layout_changed — NOT the legacy modelScale boot
+    // field).
+    const InstanceConfig& cfg = s->config();
+    out->x = static_cast<double>(cfg.windowX);
+    out->y = static_cast<double>(cfg.windowY);
+    out->width = static_cast<double>(cfg.windowWidth);
+    out->height = static_cast<double>(cfg.windowHeight);
+    out->scale = cfg.layoutScale;
+    return pet::PluginError::Ok;
+}
+
+pet::PluginError LayoutApiImpl::resetLayout(const QString& uuid)
+{
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    // Accepted, not applied (fire-and-forget reset_layout): the renderer
+    // applies defaults; any resulting layout_changed persists + publishes
+    // through the session's existing event path.
+    s->resetLayout();
+    return pet::PluginError::Ok;
+}
+
+pet::PluginError LayoutApiImpl::setAutoStart(const QString& uuid, bool enabled)
+{
+    InstanceSession* s = nullptr;
+    const pet::PluginError locate = locateAlive(uuid, &s);
+    if (locate != pet::PluginError::Ok)
+        return locate;
+    // Same persistence the detail page's toggle drives: the flag applies
+    // at the next panel launch, no synchronous renderer start. The
+    // session absorbs same-value writes (idempotent) — Ok stays truthful.
+    s->setAutoStart(enabled);
+    return pet::PluginError::Ok;
 }
 
 // ── EventApiImpl + EventApiProxy (S8a, v1.5) ────────────────────────────────
@@ -1399,6 +1530,25 @@ pet::IExtApi* PluginContextImpl::queryApi(const char* apiId, int minVersion)
         if (m_settingsWriteGranted && writeEnabled && m_settingsApi != nullptr)
             return m_settingsApi;
         return &m_settingsStub;
+    }
+
+    // ── Family: pet.layout (v1.8) ────────────────────────────────────────
+    // Same routing matrix as pet.instance_tuning, gated by the SAME
+    // "instance_tuning" capability (layout ops are the tuning domain —
+    // the capability's own doc line reads "scale / layout / motion
+    // parameters"):
+    //   granted + switch on + shared impl → real LayoutApiImpl
+    //   granted + switch off              → stub (PluginError::Capability)
+    //   not granted                       → stub
+    //   degraded wiring (no shared impl)  → stub
+    //   minVersion > family version       → nullptr
+    if (QLatin1StringView(apiId) == QLatin1StringView(pet::kLayoutApiId)) {
+        if (minVersion > pet::kLayoutApiVersion)
+            return nullptr;
+        const bool writeEnabled = m_writeEnabled ? m_writeEnabled() : true;
+        if (m_instanceTuningGranted && writeEnabled && m_layoutApi != nullptr)
+            return m_layoutApi;
+        return &m_layoutStub;
     }
 
     // Unknown family — the documented "feature absent" answer (see

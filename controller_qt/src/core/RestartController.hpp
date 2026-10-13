@@ -73,6 +73,12 @@ public:
     // since the last successful connect (resetOnConnect clears it).
     int attempts() const { return m_attempts; }
 
+    // v1.7 (S9): the backoff delay armed by the most recent
+    // scheduleRestart() call — read by InstanceSession's retry wiring to
+    // fill pet.instance.restart_scheduled's delay_ms payload half.
+    // 0 before any schedule (the sentinel, never an absent key).
+    int lastArmedDelayMs() const { return m_lastArmedDelayMs; }
+
     // Test seam: override the production BACKOFF_MS ladder with a faster one
     // so the test suite can assert the full 5-rung sequence in milliseconds.
     // The vector MUST have at least kMaxAttempts entries; extra entries are
@@ -111,6 +117,9 @@ private:
     int delayForCurrentAttempt() const;
 
     int             m_attempts = 0;
+    // v1.7 (S9): delay armed by the last scheduleRestart (payload source
+    // for pet.instance.restart_scheduled; 0 before any schedule).
+    int             m_lastArmedDelayMs = 0;
     // Empty by default → delayForCurrentAttempt uses kBackoffMs. When set by
     // setBackoffForTest, used instead (test fast-ladder).
     QVector<int>    m_backoffOverride;

@@ -1,5 +1,5 @@
-// EventBusEmissionTest (S8a/S8b, v1.5) — the emission-point wiring + the
-// "flagship" end-to-end paths.
+// EventBusEmissionTest (S8a/S8b, v1.5; extended v1.7/S9) — the
+// emission-point wiring + the "flagship" end-to-end paths.
 //
 // Slots:
 //   - hit emission: triggerHitArea drives the REAL handleHitEvent → a
@@ -30,6 +30,24 @@
 //         areas still run the IH default)
 //       idle_tick cancellation (a cancelling subscriber → no play_motion)
 //       adapter unsubscribe on session destruction (no dangling listener)
+//   - v1.7 (S9) catalog-completion slots:
+//       error / layout_changed / window_resized (WS mirrors, verbatim
+//         payloads, malformed early-return publishes nothing)
+//       dialogue (MBE sink inflow → pet.instance.dialogue, dual-channel
+//         split: the sink STILL receives the text)
+//       restart_scheduled / gave_up (RestartController driven through
+//         its setBackoffForTest seam on a REAL session's controller)
+//       settings_changed (SettingsApiImpl writes → panel-level events;
+//         invalid writes emit nothing)
+//       plugin_loaded / plugin_unloaded (PluginHost harness, panel-level,
+//         instanceUuid == "")
+//       the CATALOG COMPLETENESS GUARD: makeKnownEventTable's key set
+//         must equal pet::kAllEventIds element-for-element (an
+//         audio_finished-style gap fails here).
+//   - v1.8 renderer-event bridge slots:
+//       expression_applied (§16 receipt, verbatim {expression_id})
+//       motion_progress (§17 both variants, progress omission mirrored
+//         verbatim — group {group,index,progress} + path {motion_path})
 //
 // QTEST_MAIN — the fake-renderer slots launch a QProcess + pump the
 // event loop (QTest::qWait). The fake renderer is the POSIX sleeper
@@ -51,6 +69,8 @@
 #include "core/PluginContextImpl.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginRegistry.hpp"
+#include "core/RestartController.hpp"
+#include "core/RuleEngineService.hpp"
 #include "network/Envelope.hpp"
 #include "network/PendingRequests.hpp"
 #include "network/WsServer.hpp"
@@ -62,6 +82,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
+#include <QSet>
 #include <QSignalSpy>
 #include <QString>
 #include <QTemporaryDir>
@@ -247,10 +268,13 @@ QByteArray encodeMessageField(int fieldNumber, const QByteArray& message)
 // so mountVoicePack's parseMetaMko accepts it. `groupCode` is the group
 // key the mounted behavior engine matches hit areas against
 // (hasGroupForArea is a case-insensitive areaId == groupCode equality —
-// S8b tests use the plain area name, e.g. "head").
+// S8b tests use the plain area name, e.g. "head"). `doc` (v1.7/S9
+// dialogue slot) optionally populates the action's dialogue-text field
+// (bundles.proto Action.doc, wire field 6).
 bool writeMetaMkoFixture(const QString& packDir,
                          const QString& groupCode =
-                             QStringLiteral("tap_head"))
+                             QStringLiteral("tap_head"),
+                         const QString& doc = QString())
 {
     if (!QDir().mkpath(packDir))
         return false;
@@ -266,6 +290,11 @@ bool writeMetaMkoFixture(const QString& packDir,
     action += encodeStringField(2, groupCode);
     action += encodeStringField(3,
                                 QStringLiteral("motions/tap01.motion3.json"));
+    // v1.7 (S9) dialogue slot: Action.doc (wire field 6) is the dialogue
+    // text the MBE surfaces; empty default keeps the fixture
+    // byte-identical for the pre-existing slots.
+    if (!doc.isEmpty())
+        action += encodeStringField(6, doc);
     QByteArray bundle;
     bundle += encodeMessageField(1, meta);
     bundle += encodeMessageField(4, group);
@@ -440,6 +469,16 @@ private slots:
     void testIdleTickCancelledSkipsPlayMotion();
     void testHitAdaptersUnsubscribedOnDestruction();
     void testAudioFinishedEmission();
+
+    // ── v1.7 (S9): catalog completion — 9 new channels + the guard ──────
+    void testErrorLayoutWindowEmissions();
+    void testDialogueEmission();
+    void testRestartScheduledAndGaveUpEmissions();
+    void testSettingsChangedEmission();
+    void testPluginLifecycleEmissions();
+    void testExpressionAppliedEmission();
+    void testMotionProgressEmission();
+    void testKnownEventTableCoversCatalog();
 
 private:
     InstanceSession* makeSession(const QTemporaryDir& base, WsServer& server,
@@ -1121,6 +1160,548 @@ void EventBusEmissionTest::testAudioFinishedEmission()
 
     stopSession(session);
 #endif
+}
+
+// ── 12. v1.7 (S9): error / layout_changed / window_resized WS mirrors ───────
+// All three arrive via onMessage on a started fake-renderer session and
+// fan onto the bus with VERBATIM payloads; malformed payloads take the
+// persist early-return and publish NOTHING (post-commit discipline).
+void EventBusEmissionTest::testErrorLayoutWindowEmissions()
+{
+#ifndef Q_OS_UNIX
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    QString rendererDir;
+    QVERIFY2(makeFakeRendererDir(base.path(), &rendererDir),
+             "failed to build the fake renderer dir");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+    RecordingListener recorder;
+    QCOMPARE(eventApi.subscribe(pet::kEventInstanceError.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+    QCOMPARE(eventApi.subscribe(pet::kEventInstanceLayoutChanged.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+    QCOMPARE(eventApi.subscribe(pet::kEventInstanceWindowResized.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+
+    InstanceSession* session =
+        makeSession(base, server, pending, &eventApi, rendererDir);
+    session->start();
+    QVERIFY2(session->isProcessRunning(),
+             "fake renderer process failed to launch");
+
+    // error (events.md §9): verbatim {error_code, error_message}.
+    const QJsonObject errorPayload{
+        { QStringLiteral("error_code"), 6001 },
+        { QStringLiteral("error_message"),
+          QStringLiteral("shader compile failed") }
+    };
+    session->onMessage(makeEvent(QStringLiteral("error"), errorPayload));
+    QCOMPARE(recorder.countOf(pet::kEventInstanceError.toString()), 1);
+    const pet::Event* errEvt =
+        recorder.first(pet::kEventInstanceError.toString());
+    QVERIFY(errEvt != nullptr);
+    QCOMPARE(errEvt->payload, errorPayload); // VERBATIM
+    QCOMPARE(errEvt->instanceUuid, session->uuid());
+    QCOMPARE(errEvt->publisherId, QString(pet::kEventPublisherHost));
+    QVERIFY(!errEvt->cancellable);
+
+    // layout_changed (events.md §12): verbatim {offset_x, offset_y, scale},
+    // AFTER the persist. A malformed follow-up publishes nothing.
+    const QJsonObject layoutPayload{
+        { QStringLiteral("offset_x"), 0.1 },
+        { QStringLiteral("offset_y"), -0.05 },
+        { QStringLiteral("scale"), 1.2 }
+    };
+    session->onMessage(makeEvent(QStringLiteral("layout_changed"),
+                                 layoutPayload));
+    QCOMPARE(
+        recorder.countOf(pet::kEventInstanceLayoutChanged.toString()), 1);
+    const pet::Event* layoutEvt =
+        recorder.first(pet::kEventInstanceLayoutChanged.toString());
+    QVERIFY(layoutEvt != nullptr);
+    QCOMPARE(layoutEvt->payload, layoutPayload); // VERBATIM
+    QCOMPARE(layoutEvt->instanceUuid, session->uuid());
+    QVERIFY(!layoutEvt->cancellable);
+    session->onMessage(makeEvent(
+        QStringLiteral("layout_changed"),
+        QJsonObject{ { QStringLiteral("offset_x"), 0.2 } })); // missing halves
+    QCOMPARE(
+        recorder.countOf(pet::kEventInstanceLayoutChanged.toString()), 1);
+
+    // window_resized (events.md §13): verbatim {window_width,
+    // window_height, window_x, window_y}, AFTER the persist.
+    const QJsonObject resizePayload{
+        { QStringLiteral("window_width"), 400 },
+        { QStringLiteral("window_height"), 600 },
+        { QStringLiteral("window_x"), 1200 },
+        { QStringLiteral("window_y"), 300 }
+    };
+    session->onMessage(
+        makeEvent(QStringLiteral("window_resized"), resizePayload));
+    QCOMPARE(
+        recorder.countOf(pet::kEventInstanceWindowResized.toString()), 1);
+    const pet::Event* resizeEvt =
+        recorder.first(pet::kEventInstanceWindowResized.toString());
+    QVERIFY(resizeEvt != nullptr);
+    QCOMPARE(resizeEvt->payload, resizePayload); // VERBATIM
+    QCOMPARE(resizeEvt->instanceUuid, session->uuid());
+    QVERIFY(!resizeEvt->cancellable);
+    session->onMessage(makeEvent(
+        QStringLiteral("window_resized"),
+        QJsonObject{ { QStringLiteral("window_width"), 500 } })); // missing
+    QCOMPARE(
+        recorder.countOf(pet::kEventInstanceWindowResized.toString()), 1);
+
+    stopSession(session);
+#endif
+}
+
+// ── 13. v1.7 (S9): dialogue — the MBE sink-inflow dual-channel split ────────
+// A mounted pack whose action carries dialogue text (Action.doc): the
+// hit → MBE adapter calls the session's dialogue sink (DISPLAY channel
+// intact) AND publishes pet.instance.dialogue {text, duration_ms}
+// (OBSERVABILITY channel) with the session's uuid.
+void EventBusEmissionTest::testDialogueEmission()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+    RecordingListener recorder;
+    QCOMPARE(eventApi.subscribe(pet::kEventInstanceDialogue.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+
+    InstanceSession* session =
+        makeSession(base, server, pending, &eventApi);
+
+    const QString packDir = QDir(base.path()).absoluteFilePath(
+        QStringLiteral("packs/pack_talk"));
+    QVERIFY(writeMetaMkoFixture(packDir, QStringLiteral("head"),
+                                QStringLiteral("摸摸头～")));
+    QVERIFY(session->mountVoicePack(packDir));
+
+    // The DISPLAY channel: the sink still receives the line.
+    QStringList sinkTexts;
+    QStringList sinkUuids;
+    session->setDialogueSink(
+        [&](const QString& uuid, const QString&, const QString&,
+            const QString& text, int) {
+            sinkUuids.append(uuid);
+            sinkTexts.append(text);
+        });
+
+    QSignalSpy commandSpy(session, &InstanceSession::commandSent);
+    session->triggerHitArea(QStringLiteral("head"));
+    QCOMPARE(commandSpy.count(), 1); // the pack behavior still fires
+    QCOMPARE(sinkTexts, QStringList{ QStringLiteral("摸摸头～") });
+    QCOMPARE(sinkUuids, QStringList{ session->uuid() });
+
+    // The OBSERVABILITY channel: same text on the bus.
+    QCOMPARE(recorder.countOf(pet::kEventInstanceDialogue.toString()), 1);
+    const pet::Event* evt =
+        recorder.first(pet::kEventInstanceDialogue.toString());
+    QVERIFY(evt != nullptr);
+    QCOMPARE(evt->payload.value(QStringLiteral("text")).toString(),
+             QStringLiteral("摸摸头～"));
+    // No audio track in the fixture → duration degrades to the 0
+    // sentinel (the stream applies its default).
+    QCOMPARE(evt->payload.value(QStringLiteral("duration_ms")).toInt(), 0);
+    QCOMPARE(evt->instanceUuid, session->uuid());
+    QCOMPARE(evt->publisherId, QString(pet::kEventPublisherHost));
+    QVERIFY(!evt->cancellable);
+
+    delete session;
+}
+
+// ── 14. v1.7 (S9): restart_scheduled / gave_up at the session wiring ───────
+// Drives the REAL session-owned RestartController through its
+// setBackoffForTest seam (the RestartControllerTest precedent) — the
+// retry/gaveUp signals fire the very ctor wiring that publishes the
+// events. Empty rendererPath keeps each retry's start() a no-process
+// failure; the publishes happen before/around it regardless.
+void EventBusEmissionTest::testRestartScheduledAndGaveUpEmissions()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+    RecordingListener recorder;
+    QCOMPARE(eventApi.subscribe(
+                 pet::kEventInstanceRestartScheduled.toString(), &recorder,
+                 pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+    QCOMPARE(eventApi.subscribe(pet::kEventInstanceGaveUp.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+
+    InstanceSession* session =
+        makeSession(base, server, pending, &eventApi);
+
+    // The session's RestartController is a QObject child — reach it via
+    // findChild (no new test seam needed on InstanceSession).
+    auto* rc = session->findChild<RestartController*>();
+    QVERIFY(rc != nullptr);
+    rc->setBackoffForTest({ 10, 20, 30, 40, 50 });
+
+    // 5 scheduleRestart calls → 5 retries → 5 restart_scheduled events
+    // with the 1-based attempt number + the armed test-ladder delay.
+    for (int i = 0; i < RestartController::kMaxAttempts; ++i) {
+        rc->scheduleRestart();
+        QTRY_COMPARE_WITH_TIMEOUT(
+            recorder.countOf(pet::kEventInstanceRestartScheduled.toString()),
+            i + 1, 2000);
+    }
+    // Verify attempt/delay pairs by scanning the captured events in order.
+    QList<QPair<int, int>> seen;
+    for (const pet::Event& e : recorder.events) {
+        if (e.eventId == pet::kEventInstanceRestartScheduled.toString()) {
+            seen.append({ e.payload.value(QStringLiteral("attempt")).toInt(),
+                          e.payload.value(QStringLiteral("delay_ms")).toInt() });
+            QCOMPARE(e.instanceUuid, session->uuid());
+            QCOMPARE(e.publisherId, QString(pet::kEventPublisherHost));
+            QVERIFY(!e.cancellable);
+        }
+    }
+    QCOMPARE(seen.size(), 5);
+    for (int i = 0; i < 5; ++i) {
+        QCOMPARE(seen.at(i).first, i + 1);           // attempt 1..5
+        QCOMPARE(seen.at(i).second, (i + 1) * 10);   // delay 10..50
+    }
+
+    // The 6th schedule (attempts == kMaxAttempts) fires gaveUp
+    // synchronously → pet.instance.gave_up {attempts: 5} post-commit.
+    rc->scheduleRestart();
+    QCOMPARE(recorder.countOf(pet::kEventInstanceGaveUp.toString()), 1);
+    const pet::Event* gaveUp =
+        recorder.first(pet::kEventInstanceGaveUp.toString());
+    QVERIFY(gaveUp != nullptr);
+    QCOMPARE(gaveUp->payload.value(QStringLiteral("attempts")).toInt(),
+             RestartController::kMaxAttempts);
+    QCOMPARE(gaveUp->instanceUuid, session->uuid());
+    QVERIFY(!gaveUp->cancellable);
+
+    delete session;
+}
+
+// ── 15. v1.7 (S9): pet.panel.settings_changed (panel-level) ─────────────────
+// Every SUCCESSFUL SettingsApiImpl write publishes {field, value} with
+// instanceUuid == ""; rejected writes (validation) publish nothing.
+// autoLaunchSystem has no ISettingsApi surface at all (host-direct
+// path), so it structurally cannot emit — asserted by the total count.
+void EventBusEmissionTest::testSettingsChangedEmission()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+
+    RecordingPublisher publisher;
+    core::SettingsApiImpl api(base.path(), nullptr);
+    api.setEventPublisher(&publisher);
+
+    QCOMPARE(api.setCloseAction(QStringLiteral("minimize")),
+             pet::PluginError::Ok);
+    QCOMPARE(api.setConfirmOnExit(true), pet::PluginError::Ok);
+    QCOMPARE(api.setStartMinimized(false), pet::PluginError::Ok);
+    QCOMPARE(api.setDefaultModelName(QStringLiteral("Hiyori")),
+             pet::PluginError::Ok);
+
+    // Rejected writes emit nothing.
+    QCOMPARE(api.setCloseAction(QStringLiteral("bogus")),
+             pet::PluginError::InvalidArgument);
+    QCOMPARE(api.setDefaultModelName(QString()),
+             pet::PluginError::InvalidArgument);
+
+    const QString changed = pet::kEventPanelSettingsChanged.toString();
+    QCOMPARE(publisher.countOf(changed), 4);
+    QCOMPARE(publisher.events.size(), 4); // no other channel fired
+    for (const pet::Event& e : publisher.events) {
+        QCOMPARE(e.eventId, changed);
+        QCOMPARE(e.instanceUuid, QString()); // PANEL-LEVEL
+        QCOMPARE(e.publisherId, QString(pet::kEventPublisherHost));
+        QVERIFY(!e.cancellable);
+    }
+    QCOMPARE(publisher.events.at(0).payload.value(QStringLiteral("field"))
+                 .toString(),
+             QStringLiteral("close_action"));
+    QCOMPARE(publisher.events.at(0).payload.value(QStringLiteral("value"))
+                 .toString(),
+             QStringLiteral("minimize"));
+    QCOMPARE(publisher.events.at(1).payload.value(QStringLiteral("field"))
+                 .toString(),
+             QStringLiteral("confirm_on_exit"));
+    QVERIFY(publisher.events.at(1).payload.value(QStringLiteral("value"))
+                .isBool());
+    QCOMPARE(publisher.events.at(1).payload.value(QStringLiteral("value"))
+                 .toBool(),
+             true);
+    QCOMPARE(publisher.events.at(2).payload.value(QStringLiteral("field"))
+                 .toString(),
+             QStringLiteral("start_minimized"));
+    QCOMPARE(publisher.events.at(2).payload.value(QStringLiteral("value"))
+                 .toBool(),
+             false);
+    QCOMPARE(publisher.events.at(3).payload.value(QStringLiteral("field"))
+                 .toString(),
+             QStringLiteral("default_model_name"));
+    QCOMPARE(publisher.events.at(3).payload.value(QStringLiteral("value"))
+                 .toString(),
+             QStringLiteral("Hiyori"));
+}
+
+// ── 16. v1.7 (S9): pet.panel.plugin_loaded / plugin_unloaded ────────────────
+// A REAL PluginHost over the shared bus: initializeAll publishes
+// plugin_loaded per Started plugin, shutdownAll publishes plugin_unloaded
+// per swept plugin — both PANEL-LEVEL (instanceUuid == "").
+void EventBusEmissionTest::testPluginLifecycleEmissions()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+    RecordingListener recorder;
+    QCOMPARE(eventApi.subscribe(pet::kEventPanelPluginLoaded.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+    QCOMPARE(eventApi.subscribe(pet::kEventPanelPluginUnloaded.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+
+    InstanceManager mgr(base.path(), server, pending,
+                        [](const PanelConfig&) {}, nullptr);
+    core::PluginRegistry registry;
+    core::PluginHost host(registry);
+    host.setInstanceManager(&mgr);
+    host.setEventApi(&eventApi);
+    registry.addStaticPlugin(flagshipManifest(), &spawnFlagshipPlugin);
+    host.initializeAll();
+
+    QVERIFY(g_flagshipPlugin != nullptr); // the plugin actually started
+    QCOMPARE(recorder.countOf(pet::kEventPanelPluginLoaded.toString()), 1);
+    QCOMPARE(
+        recorder.countOf(pet::kEventPanelPluginUnloaded.toString()), 0);
+    const pet::Event* loaded =
+        recorder.first(pet::kEventPanelPluginLoaded.toString());
+    QVERIFY(loaded != nullptr);
+    QCOMPARE(loaded->payload.value(QStringLiteral("plugin_id")).toString(),
+             QStringLiteral("org.test.flagship"));
+    QCOMPARE(loaded->instanceUuid, QString()); // PANEL-LEVEL
+    QCOMPARE(loaded->publisherId, QString(pet::kEventPublisherHost));
+    QVERIFY(!loaded->cancellable);
+
+    host.shutdownAll();
+    QCOMPARE(recorder.countOf(pet::kEventPanelPluginUnloaded.toString()), 1);
+    const pet::Event* unloaded =
+        recorder.first(pet::kEventPanelPluginUnloaded.toString());
+    QVERIFY(unloaded != nullptr);
+    QCOMPARE(unloaded->payload.value(QStringLiteral("plugin_id")).toString(),
+             QStringLiteral("org.test.flagship"));
+    QCOMPARE(unloaded->instanceUuid, QString()); // PANEL-LEVEL
+    QVERIFY(!unloaded->cancellable);
+}
+
+// ── 16b. v1.8: expression_applied publish-only override ─────────────────────
+// events.md §16 — the set_expression SUCCESS receipt (unknown ids /
+// unloaded models never emit it). The override publishes
+// pet.instance.expression_applied with the VERBATIM {expression_id}
+// payload, non-cancellable, host-stamped; zero command side effects.
+void EventBusEmissionTest::testExpressionAppliedEmission()
+{
+#ifndef Q_OS_UNIX
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    QString rendererDir;
+    QVERIFY2(makeFakeRendererDir(base.path(), &rendererDir),
+             "failed to build the fake renderer dir");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+    RecordingListener recorder;
+    QCOMPARE(eventApi.subscribe(pet::kEventInstanceExpressionApplied.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+
+    InstanceSession* session =
+        makeSession(base, server, pending, &eventApi, rendererDir);
+    session->start();
+    QVERIFY2(session->isProcessRunning(),
+             "fake renderer process failed to launch");
+
+    const QJsonObject wirePayload{
+        { QStringLiteral("expression_id"), QStringLiteral("f01") }
+    };
+    session->onMessage(
+        makeEvent(QStringLiteral("expression_applied"), wirePayload));
+
+    QCOMPARE(recorder.countOf(pet::kEventInstanceExpressionApplied.toString()),
+             1);
+    const pet::Event* evt =
+        recorder.first(pet::kEventInstanceExpressionApplied.toString());
+    QVERIFY(evt != nullptr);
+    QCOMPARE(evt->payload, wirePayload); // VERBATIM expression_id echo
+    QCOMPARE(evt->payload.size(), 1);    // single key — nothing added
+    QCOMPARE(evt->instanceUuid, session->uuid());
+    QCOMPARE(evt->publisherId, QString(pet::kEventPublisherHost));
+    QVERIFY(!evt->cancellable); // pure telemetry — never cancellable
+
+    // Pure telemetry: no command side effects.
+    QSignalSpy commandSpy(session, &InstanceSession::commandSent);
+    session->onMessage(
+        makeEvent(QStringLiteral("expression_applied"), wirePayload));
+    QCOMPARE(commandSpy.count(), 0);
+
+    stopSession(session);
+#endif
+}
+
+// ── 16c. v1.8: motion_progress publish-only override (both variants) ────────
+// events.md §17 — the 500ms-throttled progress snapshot. Group variant
+// {group,index,progress} and path variant {motion_path} (progress
+// OMITTED — unknown-duration motions; the omission mirrors verbatim)
+// both arrive on the bus with their exact wire shape, non-cancellable;
+// zero command side effects (the high-frequency handler does nothing
+// but pass through).
+void EventBusEmissionTest::testMotionProgressEmission()
+{
+#ifndef Q_OS_UNIX
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    QString rendererDir;
+    QVERIFY2(makeFakeRendererDir(base.path(), &rendererDir),
+             "failed to build the fake renderer dir");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    core::EventBus bus;
+    core::EventApiImpl eventApi(&bus);
+    RecordingListener recorder;
+    QCOMPARE(eventApi.subscribe(pet::kEventInstanceMotionProgress.toString(),
+                                &recorder, pet::EventPriority::Highest),
+             pet::PluginError::Ok);
+
+    InstanceSession* session =
+        makeSession(base, server, pending, &eventApi, rendererDir);
+    session->start();
+    QVERIFY2(session->isProcessRunning(),
+             "fake renderer process failed to launch");
+
+    QSignalSpy commandSpy(session, &InstanceSession::commandSent);
+
+    // Group variant (play_motion): {group, index, progress}.
+    const QJsonObject groupPayload{
+        { QStringLiteral("group"), QStringLiteral("TapHead") },
+        { QStringLiteral("index"), 0 },
+        { QStringLiteral("progress"), 0.42 }
+    };
+    session->onMessage(
+        makeEvent(QStringLiteral("motion_progress"), groupPayload));
+
+    // Path variant (play_motion_ext): {motion_path} only — the OPTIONAL
+    // progress key omitted (looping / unresolved duration); the bus
+    // payload mirrors the omission verbatim, never fabricates a value.
+    const QJsonObject pathPayload{
+        { QStringLiteral("motion_path"),
+          QStringLiteral("Resources/VoicePacks/pack-a/motions/tap01.motion3.json") }
+    };
+    session->onMessage(
+        makeEvent(QStringLiteral("motion_progress"), pathPayload));
+
+    QCOMPARE(recorder.countOf(pet::kEventInstanceMotionProgress.toString()), 2);
+    const pet::Event* groupEvt =
+        recorder.first(pet::kEventInstanceMotionProgress.toString());
+    QVERIFY(groupEvt != nullptr);
+    QCOMPARE(groupEvt->payload, groupPayload); // VERBATIM {group,index,progress}
+    QCOMPARE(groupEvt->instanceUuid, session->uuid());
+    QCOMPARE(groupEvt->publisherId, QString(pet::kEventPublisherHost));
+    QVERIFY(!groupEvt->cancellable);
+
+    // The path-variant sample: the recorder keeps arrival order.
+    const pet::Event* pathEvt = nullptr;
+    for (const pet::Event& e : recorder.events) {
+        if (e.eventId == pet::kEventInstanceMotionProgress.toString()
+            && e.payload.contains(QStringLiteral("motion_path"))) {
+            pathEvt = &e;
+            break;
+        }
+    }
+    QVERIFY(pathEvt != nullptr);
+    QCOMPARE(pathEvt->payload, pathPayload); // VERBATIM {motion_path}, no progress
+    QVERIFY(!pathEvt->payload.contains(QStringLiteral("progress")));
+    QCOMPARE(pathEvt->instanceUuid, session->uuid());
+    QVERIFY(!pathEvt->cancellable);
+
+    // Pure pass-through telemetry: no commands sent.
+    QCOMPARE(commandSpy.count(), 0);
+
+    stopSession(session);
+#endif
+}
+
+// ── 17. v1.7 (S9): the CATALOG COMPLETENESS GUARD ───────────────────────────
+// makeKnownEventTable's key set must equal pet::kAllEventIds
+// element-for-element. The audio_finished-style gap (constant added to
+// EventIds.hpp, table entry forgotten — which once made cancel_default
+// WARN on a legal event) fails HERE, at the source: every direction is
+// checked (missing table entry, ghost table entry, duplicate array id).
+void EventBusEmissionTest::testKnownEventTableCoversCatalog()
+{
+    const core::RuleEngine::KnownEventTable table =
+        core::RuleEngineService::makeKnownEventTable();
+
+    // The catalog side: every id in kAllEventIds, with no duplicates
+    // (a duplicated array entry would silently shrink the guard).
+    QStringList ids;
+    for (const QLatin1StringView& id : pet::kAllEventIds)
+        ids.append(QString(id));
+    const QSet<QString> catalog(ids.cbegin(), ids.cend());
+    QCOMPARE(ids.size(), int(pet::kAllEventIds.size()));
+    QCOMPARE(catalog.size(), ids.size());
+
+    // The table side.
+    QSet<QString> known;
+    for (auto it = table.cbegin(); it != table.cend(); ++it)
+        known.insert(it.key());
+
+    // Both directions: no missing entry (the audio_finished failure
+    // mode), no ghost entry (a table key with no catalog constant).
+    QCOMPARE(known.size(), catalog.size());
+    QCOMPARE(known, catalog);
+
+    // The two designated cancellable channels stay cancellable; the
+    // v1.7 additions are all non-cancellable telemetry.
+    QVERIFY(table.value(QString(pet::kEventInstanceHit), false));
+    QVERIFY(table.value(QString(pet::kEventInstanceIdleTick), false));
+    QVERIFY(!table.value(QString(pet::kEventInstanceError), true));
+    QVERIFY(!table.value(QString(pet::kEventPanelSettingsChanged), true));
 }
 
 QTEST_MAIN(EventBusEmissionTest)

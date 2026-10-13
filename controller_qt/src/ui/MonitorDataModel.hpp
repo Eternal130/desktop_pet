@@ -76,6 +76,14 @@ struct RendererStats
     // VRAM total (bytes). std::nullopt when DXGI unavailable (Linux Stub).
     std::optional<qint64> vramTotalBytes;
 
+    // v1.8: renderer's EMA-smoothed MEASURED frame rate (one decimal;
+    // the stats_state `fps` key, events.md §14). Always-a-double with
+    // the -1 sentinel for "not reported" (absent key / JSON null /
+    // wrong type / pre-first-frame renderer sentinel) — the same flat
+    // projection MonitorSample.rendererFps carries across the plugin
+    // boundary, so no std::optional is needed here.
+    double fps = -1.0;
+
     // Renderer-side epoch-ms timestamp. Always available per interface.md §K.
     qint64 timestampMs = 0;
 

@@ -198,6 +198,15 @@ public:
                                      qint64 lastActivityMs,
                                      qint64 lastMotionMs);
 
+    // v1.7 (S9): the cancellability matrix for EVERY catalog event, keyed
+    // by pet::kAllEventIds. PUBLIC static pure factory precisely so the
+    // completeness-guard test can assert table keys == kAllEventIds (an
+    // audio_finished-style gap — constant added, table entry forgotten —
+    // turns EventBusEmissionTest::testKnownEventTableCoversCatalog red;
+    // the rule engine's cancel_default static WARN depends on the table
+    // being complete).
+    static RuleEngine::KnownEventTable makeKnownEventTable();
+
     // ── pet::IEventListener ──────────────────────────────────────────────
     void onEvent(pet::Event& event) override;
 
@@ -210,8 +219,6 @@ public:
 private:
     // One rule >20 fires for a single event smells like a rule-set loop.
     static constexpr int kMaxFiresPerEvent = 20;
-
-    static RuleEngine::KnownEventTable makeKnownEventTable();
 
     // Full startup load: panel + every roster instance into a FRESH engine,
     // then atomic swap + subscription recompute.

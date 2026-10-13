@@ -130,6 +130,16 @@ InstanceSession::InstanceSession(InstanceConfig config, WsServer& server,
     connect(&m_restartController, &RestartController::retry, this, [this]() {
         LOG_INFO("InstanceSession[{}]: restartController.retry → start",
                  m_instanceId);
+        // v1.7 (S9): observability bypass BEFORE the relaunch — the retry
+        // just fired; attempt/delay come straight off the controller
+        // (attempts() is the 1-based retry number, lastArmedDelayMs() the
+        // backoff that was armed for it). Pure append: the start() below
+        // is untouched.
+        publishHostEvent(pet::kEventInstanceRestartScheduled,
+                         /*cancellable=*/false,
+                         core::makeRestartScheduledPayload(
+                             m_restartController.attempts(),
+                             m_restartController.lastArmedDelayMs()));
         start();
     });
     connect(&m_restartController, &RestartController::gaveUp, this, [this]() {
@@ -137,6 +147,12 @@ InstanceSession::InstanceSession(InstanceConfig config, WsServer& server,
                   "attempts reached", m_instanceId);
         setStatus(kStatusError);
         emit startFailed(QStringLiteral("max restart attempts reached"));
+        // v1.7 (S9): post-commit observability — after the terminal error
+        // state is committed (status flip + startFailed), with the final
+        // attempt count from the controller.
+        publishHostEvent(pet::kEventInstanceGaveUp, /*cancellable=*/false,
+                         core::makeGaveUpPayload(
+                             m_restartController.attempts()));
     });
 
     // ProcessManager::exited → crash-vs-user-stop routing.
@@ -482,6 +498,31 @@ void InstanceSession::start()
     m_dispatcher.registerEventHandler(
         QStringLiteral("audio_finished"), [this](const Envelope& env) {
             handleAudioFinishedEvent(env);
+        });
+
+    // v1.7 (S9): error (docs/protocol/events.md §9 — renderer runtime
+    // error report). Same publish-only override shape as audio_finished:
+    // the body (Handlers TU) reproduces the kActiveEvents default's INFO
+    // log verbatim + fans the VERBATIM WS payload onto the bus as
+    // pet.instance.error. Pure telemetry.
+    m_dispatcher.registerEventHandler(
+        QStringLiteral("error"), [this](const Envelope& env) {
+            handleErrorEvent(env);
+        });
+
+    // v1.8: expression_applied + motion_progress (docs/protocol/events.md
+    // §16/§17 — the set_expression success receipt + the 500ms-throttled
+    // motion progress snapshot). Same publish-only override shape as
+    // audio_finished: the bodies (Handlers TU) reproduce the kPhase6Events
+    // defaults' DEBUG logs verbatim + fan the VERBATIM WS payloads onto
+    // the bus. Pure telemetry.
+    m_dispatcher.registerEventHandler(
+        QStringLiteral("expression_applied"), [this](const Envelope& env) {
+            handleExpressionAppliedEvent(env);
+        });
+    m_dispatcher.registerEventHandler(
+        QStringLiteral("motion_progress"), [this](const Envelope& env) {
+            handleMotionProgressEvent(env);
         });
 
     // Launch the renderer. The renderer connects back to 127.0.0.1:kWsPort with

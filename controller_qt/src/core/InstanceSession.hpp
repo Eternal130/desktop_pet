@@ -495,6 +495,32 @@ private:
     // behavior.
     void handleAudioFinishedEvent(const Envelope& env);
 
+    // expression_applied (docs/protocol/events.md §16 — the set_expression
+    // SUCCESS receipt) → publish-only override in the audio_finished
+    // shape: reproduces the default's DEBUG log verbatim + fans the
+    // VERBATIM WS payload onto the bus as pet.instance.expression_applied
+    // (non-cancellable telemetry). No local behavior — the receipt is
+    // pure observability (behavior scripts / plugins confirm applies).
+    void handleExpressionAppliedEvent(const Envelope& env);
+
+    // motion_progress (docs/protocol/events.md §17 — a motion playback
+    // progress snapshot, renderer-throttled to ≤1 per 500ms) →
+    // publish-only override in the audio_finished shape. HIGH-FREQUENCY
+    // BY DESIGN: the body deliberately does NOTHING except reproduce the
+    // default's DEBUG log + pass the payload through (the EventCatalog
+    // builder mirrors both wire variants, progress omission included) —
+    // no persistence, no state, no scheduler interaction. Consumers that
+    // cannot keep up simply do not subscribe.
+    void handleMotionProgressEvent(const Envelope& env);
+
+    // error (docs/protocol/events.md §9 — renderer runtime error report) →
+    // publish-only override in the audio_finished shape: reproduces the
+    // EventRegistry default's INFO log verbatim (zero log change) and fans
+    // the VERBATIM WS payload onto the bus as pet.instance.error
+    // (non-cancellable telemetry). No local behavior — the renderer error
+    // surface (status flips, startFailed) stays where it was.
+    void handleErrorEvent(const Envelope& env);
+
     // ── Phase-5 Wave 8 todo 18 (monitor poller + stats_state merge) ──────────
     // Bodies live in InstanceSessionMonitor.cpp (extracted to keep
     // InstanceSession.cpp under the 250 pure-LOC ceiling, same split as

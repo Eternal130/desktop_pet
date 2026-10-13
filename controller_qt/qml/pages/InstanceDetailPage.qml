@@ -579,7 +579,7 @@ Rectangle {
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: instance ? instance.autoStartEnabled() : false
                                 onToggled: if (instance)
-                                    instance.setAutoStart(checked)
+                                    instanceControl.setAutoStart(instance.uuid, checked)
                             }
                         }
                     }
@@ -633,7 +633,8 @@ Rectangle {
                             AppButton {
                                 text: qsTr("↺ 重置布局")
                                 enabled: instance && instance.modelLoaded
-                                onClicked: if (instance) instance.resetLayout()
+                                onClicked: if (instance)
+                                    instanceControl.resetLayout(instance.uuid)
                             }
                         }
                     }

@@ -68,11 +68,14 @@ fi
 
 # ── Violation patterns (ERE, matched line-wise) ─────────────────────────────
 # Core write-method vocabulary = InstanceManager roster writes +
-# InstanceSession lifecycle/tuning writes + the not-yet-in-API layout
-# ops (setAutoStart/resetLayout/getLayout are pattern-covered but
-# individually allowlisted below until an API family absorbs them).
-# Extracted from the InstanceControlBridge / InstanceDetailPage
-# rebinding set (S5-S7).
+# InstanceSession lifecycle/tuning writes + the layout ops. The layout
+# trio (setAutoStart/resetLayout/getLayout) is covered by the
+# pet.layout API family since v1.8 — the QML calls were rebound onto
+# the instanceControl bridge in the same change, so they are now
+# ORDINARY violations (no allowlist entries; the pattern table keeps
+# covering them so a future regression bites immediately). Extracted
+# from the InstanceControlBridge / InstanceDetailPage rebinding set
+# (S5-S7, extended v1.8).
 QML_UNIQUE='[.](createInstance|deleteInstance|loadModel|playMotion|setExpression|triggerHitArea|mountVoicePack|unmountVoicePack|setOpacity|setVolume|setMuted|setFps|setAutoStart|resetLayout|getLayout)[[:space:]]*\('
 QML_SSR='(^|[^[:alnum:]_])(instance|_inst|inst|s)[.](start|stop|restart)[[:space:]]*\('
 # QML-PW (audit follow-up): imperative property assignment on the four
@@ -91,26 +94,23 @@ QML_APPROVED='(instanceControl|rosterModel)[.]'
 # Each entry carries its justification; entries are precise on purpose
 # (a widening edit must come with a new reason, visible in review).
 #
-# [1] instance.setAutoStart( — per-instance start-with-panel flag.
-#     Not in any API family (deliberately: host persistence convenience,
-#     no renderer round-trip). Documented debt — revisit when a
-#     lifecycle-adjacent family absorbs it.
-# [2] instance.resetLayout( — renderer layout reset; getLayout( (same
-#     category, currently unused in QML) is covered by the identical
-#     debt note. Outside the current API families.
-# [3] instanceManager.stopAll( — host EXIT-SHELL flow (Main.qml close
+# v1.8 cleanup: the two InstanceDetailPage layout entries
+# (instance.setAutoStart / instance.resetLayout) were REMOVED — the
+# pet.layout family absorbed the ops and the QML calls were rebound
+# onto instanceControl, so direct session layout calls are ordinary
+# violations again (the pattern table above keeps covering them).
+#
+# [1] instanceManager.stopAll( — host EXIT-SHELL flow (Main.qml close
 #     sequence: stop every renderer before quit). Not an instance op;
 #     TODO route through an API family if a shell-lifecycle family ever
 #     lands. stopAll does not match the violation patterns today — the
 #     entry documents the decision and future-proofs the pattern set.
-# [4] src/ui/VoicePackController.cpp legacy mount fallback — the
+# [2] src/ui/VoicePackController.cpp legacy mount fallback — the
 #     production path above it forwards through the shared
 #     pet::ITuningApi; this branch runs only when NO api was injected
 #     (degraded wiring / unit tests with fakes). S6 seam, kept for the
 #     null-API VoicePackController tests.
 ALLOWLIST=(
-    'qml/pages/InstanceDetailPage\.qml::instance[[:space:]]*[.]setAutoStart[[:space:]]*\('
-    'qml/pages/InstanceDetailPage\.qml::instance[[:space:]]*[.]resetLayout[[:space:]]*\('
     'qml/Main\.qml::instanceManager[[:space:]]*[.]stopAll[[:space:]]*\('
     'src/ui/VoicePackController\.cpp::s->(mountVoicePack|unmountVoicePack)'
 )

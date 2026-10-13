@@ -56,6 +56,10 @@ void RestartController::scheduleRestart()
     // past the end of the ladder clamp to the last (cap) entry.
     const int delayMs = delayForCurrentAttempt();
 
+    // v1.7 (S9): remember the armed delay so the retry wiring can publish
+    // it as pet.instance.restart_scheduled's delay_ms payload half.
+    m_lastArmedDelayMs = delayMs;
+
     LOG_INFO("RestartController: scheduling retry #{} in {}ms",
              m_attempts + 1, delayMs);
 

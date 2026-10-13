@@ -6,8 +6,10 @@
 
 #include <spdlog/spdlog.h>
 
+#include "api/EventIds.hpp"
 #include "core/DownloadService.hpp"
 #include "core/EventBus.hpp"
+#include "core/EventCatalog.hpp"
 #include "core/PluginContextImpl.hpp"
 #include "core/PluginPageModel.hpp"
 #include "core/RuleEngineService.hpp" // complete type for the S8f fallback
@@ -19,6 +21,28 @@
 // is the documented, accepted stage-1 model ("第一方插件 = 面板组成部分").
 
 namespace core {
+
+namespace {
+
+// v1.7 (S9): publish one PANEL-LEVEL host event (pet.panel.* —
+// instanceUuid stays "", publisherId = host, never cancellable). No-op on
+// a null/unwired API (degraded wiring — the fallback pair below resolves
+// in both callers before this runs).
+void publishPanelEvent(EventApiImpl* eventApi, const QString& eventId,
+                       const QJsonObject& payload)
+{
+    if (eventApi == nullptr)
+        return;
+    pet::Event evt;
+    evt.eventId = eventId;
+    evt.instanceUuid = QString(); // panel-level — no per-pet identity
+    evt.publisherId = QString(pet::kEventPublisherHost);
+    evt.cancellable = false;
+    evt.payload = payload;
+    eventApi->publish(evt); // synchronous; errors are bus-level
+}
+
+} // namespace
 
 PluginPageModel* PluginHost::s_pageModel = nullptr;
 NotificationStreamController* PluginHost::s_stream = nullptr;
@@ -71,6 +95,11 @@ void PluginHost::setVoicePackApi(pet::IVoicePackApi* voicePackApi)
 void PluginHost::setMonitorApi(pet::IMonitorApi* monitorApi)
 {
     m_monitorApi = monitorApi;
+}
+
+void PluginHost::setLayoutApi(pet::ILayoutApi* layoutApi)
+{
+    m_layoutApi = layoutApi;
 }
 
 void PluginHost::setEventApi(EventApiImpl* eventApi)
@@ -209,8 +238,15 @@ void PluginHost::initializeAll()
             if (modelApi == nullptr)
                 modelApi = new ModelApiImpl(this);
             pet::ISettingsApi* settingsApi = m_settingsApi;
-            if (settingsApi == nullptr)
-                settingsApi = new SettingsApiImpl(m_configRoot, this);
+            if (settingsApi == nullptr) {
+                // v1.7 (S9): the fallback settings impl also emits
+                // pet.panel.settings_changed onto the resolved event API
+                // (the same bus the shared impl publishes on).
+                auto* fallbackSettings = new SettingsApiImpl(m_configRoot,
+                                                             this);
+                fallbackSettings->setEventPublisher(eventApi);
+                settingsApi = fallbackSettings;
+            }
             // S7 (v1.4): same per-host fallback for the monitor read
             // family (a host without the PanelApplication service tree
             // still serves queryApi("pet.monitor") over the injected
@@ -218,6 +254,14 @@ void PluginHost::initializeAll()
             pet::IMonitorApi* monitorApi = m_monitorApi;
             if (monitorApi == nullptr)
                 monitorApi = new MonitorApiImpl(m_instanceManager, this);
+            // v1.8: same per-host fallback for the layout family (the
+            // setTuningApi pattern — a host without the service tree
+            // still serves queryApi("pet.layout") over the injected
+            // InstanceManager; the context gates it per manifest
+            // capability + the live write switch).
+            pet::ILayoutApi* layoutApi = m_layoutApi;
+            if (layoutApi == nullptr)
+                layoutApi = new LayoutApiImpl(m_instanceManager, this);
             auto* ctx = new PluginContextImpl(entry->manifest.id, api,
                                               controlApi,
                                               m_writeEnabledProvider,
@@ -231,6 +275,7 @@ void PluginHost::initializeAll()
             ctx->setModelApi(modelApi);
             ctx->setSettingsApi(settingsApi);
             ctx->setMonitorApi(monitorApi); // v1.4 (S7)
+            ctx->setLayoutApi(layoutApi);   // v1.8
             // S8a (v1.5): every context gets its per-plugin proxy over
             // the shared bus (prefix enforcement + publisher stamping
             // live in the proxy — see EventApiProxy).
@@ -254,6 +299,14 @@ void PluginHost::initializeAll()
             m_registry.transition(entry->manifest.id, PluginStatus::Started);
             m_startedIds.append(entry->manifest.id);
             LOG_INFO("PluginHost: plugin '{}' Started", entry->manifest.id.toStdString());
+            // v1.7 (S9): panel-level observability — every successful
+            // initialize fans pet.panel.plugin_loaded {plugin_id} onto
+            // the resolved bus (shared or fallback). Failures above
+            // continue past this point, so they publish nothing.
+            publishPanelEvent(eventApi,
+                              QString(pet::kEventPanelPluginLoaded),
+                              core::makePluginLifecyclePayload(
+                                  entry->manifest.id));
         } catch (const std::exception& ex) {
             m_registry.transition(e.manifest.id, PluginStatus::Failed,
                                   QStringLiteral("initialize threw: %1")
@@ -348,6 +401,13 @@ void PluginHost::shutdownAll()
         m_registry.transition(*it, PluginStatus::Stopped);
         ++shutDown;
         LOG_INFO("PluginHost: plugin '{}' Stopped", it->toStdString());
+        // v1.7 (S9): panel-level observability — pet.panel.plugin_unloaded
+        // {plugin_id} fires per plugin AFTER its event/rule sweeps + the
+        // delete complete (the same "cleaned up" position as the sweeps).
+        publishPanelEvent(
+            m_eventApi != nullptr ? m_eventApi : m_eventApiFallback,
+            QString(pet::kEventPanelPluginUnloaded),
+            core::makePluginLifecyclePayload(*it));
     }
     m_startedIds.clear();
 }

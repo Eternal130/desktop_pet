@@ -226,16 +226,19 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
                                                m_rosterApiModel);
 
     // InstanceControlBridge context property (S5 dogfooding → v1.3 write
-    // path). The detail page's WRITE calls (tuning setters, motion/
-    // expression/hit triggers, lifecycle buttons) go through this bridge —
-    // the SAME shared TuningApi/InstanceControlApi implementations the
-    // plugin SDK serves (capability-gated there, ungated here: the host
-    // UI is the host). Read bindings stay on the live InstanceSession.
+    // path; layout ops since v1.8). The detail page's WRITE calls
+    // (tuning setters, motion/expression/hit triggers, lifecycle
+    // buttons, auto-start toggle + layout reset) go through this bridge —
+    // the SAME shared TuningApi/InstanceControlApi/LayoutApi
+    // implementations the plugin SDK serves (capability-gated there,
+    // ungated here: the host UI is the host). Read bindings stay on the
+    // live InstanceSession.
     // Lifetime (M3): heap child of this PanelUiBoot — dies during engine
     // destruction, BEFORE the PanelApplication service tree that owns the
     // shared implementations.
     m_instanceControlBridge = new InstanceControlBridge(m_app.tuningApi(),
                                                         m_app.instanceControlApi(),
+                                                        m_app.layoutApi(),
                                                         this);
     m_engine.rootContext()->setContextProperty("instanceControl",
                                                m_instanceControlBridge);

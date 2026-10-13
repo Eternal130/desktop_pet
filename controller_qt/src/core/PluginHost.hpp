@@ -25,6 +25,7 @@
 #include "core/PluginRegistry.hpp"
 
 #include "api/IEventApi.hpp"
+#include "api/ILayoutApi.hpp"
 #include "api/IModelApi.hpp"
 #include "api/IMonitorApi.hpp"
 #include "api/ISettingsApi.hpp"
@@ -95,6 +96,12 @@ public:
     // per-host implementation over the injected InstanceManager (the
     // setInstanceApi fallback pattern; tests / degraded wiring).
     void setMonitorApi(pet::IMonitorApi* monitorApi);
+    // v1.8: the SHARED pet::ILayoutApi served through
+    // queryApi("pet.layout" — instance_tuning + write-switch gated at
+    // the context, the pet.instance_tuning matrix). Null → initializeAll
+    // constructs a per-host implementation over the injected
+    // InstanceManager (the setTuningApi fallback pattern).
+    void setLayoutApi(pet::ILayoutApi* layoutApi);
     // S8a (v1.5): the SHARED EventApiImpl (over the shared core::EventBus)
     // served to plugin contexts through queryApi("pet.events") — every
     // context receives a per-plugin EventApiProxy built from it (prefix
@@ -181,6 +188,7 @@ private:
     pet::ISettingsApi* m_settingsApi = nullptr;
     pet::IVoicePackApi* m_voicePackApi = nullptr; // v1.3 shared, not owned
     pet::IMonitorApi* m_monitorApi = nullptr;     // v1.4 (S7), not owned
+    pet::ILayoutApi* m_layoutApi = nullptr;       // v1.8, not owned
     // S8a (v1.5): shared event-bus implementation, not owned. When null,
     // initializeAll builds the per-host fallback pair (bus first, then
     // impl — registration order keeps the bus alive past the impl).

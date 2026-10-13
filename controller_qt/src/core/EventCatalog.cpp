@@ -72,6 +72,41 @@ QJsonObject makeAudioFinishedPayload(const QJsonObject& wsPayload)
     return wsPayload;
 }
 
+QJsonObject makeExpressionAppliedPayload(const QString& expressionId)
+{
+    // events.md §16: one key, verbatim — the set_expression receipt.
+    QJsonObject payload;
+    payload.insert(QStringLiteral("expression_id"), expressionId);
+    return payload;
+}
+
+QJsonObject makeMotionProgressPayload(const QString& group, int index,
+                                      bool hasProgress, double progress)
+{
+    // play_motion variant (events.md §17): {group, index} + the
+    // OPTIONAL progress — inserted only when the wire carried it
+    // (unknown-duration motions omit the key; the host never
+    // fabricates a value).
+    QJsonObject payload;
+    payload.insert(QStringLiteral("group"), group);
+    payload.insert(QStringLiteral("index"), index);
+    if (hasProgress)
+        payload.insert(QStringLiteral("progress"), progress);
+    return payload;
+}
+
+QJsonObject makeMotionProgressPayload(const QString& motionPath,
+                                      bool hasProgress, double progress)
+{
+    // play_motion_ext variant (events.md §17): {motion_path} + the
+    // optional progress (same omission rule as the group variant).
+    QJsonObject payload;
+    payload.insert(QStringLiteral("motion_path"), motionPath);
+    if (hasProgress)
+        payload.insert(QStringLiteral("progress"), progress);
+    return payload;
+}
+
 QJsonObject makeDragStartedPayload(double x, double y)
 {
     QJsonObject payload;
@@ -89,6 +124,51 @@ QJsonObject makeDragEndedPayload(double x, double y, int windowX,
     payload.insert(QStringLiteral("window_x"), windowX);
     payload.insert(QStringLiteral("window_y"), windowY);
     return payload;
+}
+
+QJsonObject makeErrorPayload(const QJsonObject& wsPayload)
+{
+    // Verbatim (the makeReadyPayload discipline): the bus consumer sees
+    // exactly what the renderer sent — error_code/error_message are
+    // already snake_case per events.md §9.
+    return wsPayload;
+}
+
+QJsonObject makeDialoguePayload(const QString& text, int durationMs)
+{
+    QJsonObject payload;
+    payload.insert(QStringLiteral("text"), text);
+    payload.insert(QStringLiteral("duration_ms"), durationMs);
+    return payload;
+}
+
+QJsonObject makeRestartScheduledPayload(int attempt, int delayMs)
+{
+    QJsonObject payload;
+    payload.insert(QStringLiteral("attempt"), attempt);
+    payload.insert(QStringLiteral("delay_ms"), delayMs);
+    return payload;
+}
+
+QJsonObject makeGaveUpPayload(int attempts)
+{
+    QJsonObject payload;
+    payload.insert(QStringLiteral("attempts"), attempts);
+    return payload;
+}
+
+QJsonObject makeLayoutChangedPayload(const QJsonObject& wsPayload)
+{
+    // Verbatim: offset_x/offset_y/scale arrive snake_case on the wire
+    // (events.md §12) — same passthrough as makeReadyPayload.
+    return wsPayload;
+}
+
+QJsonObject makeWindowResizedPayload(const QJsonObject& wsPayload)
+{
+    // Verbatim: window_width/window_height/window_x/window_y arrive
+    // snake_case on the wire (events.md §13).
+    return wsPayload;
 }
 
 QJsonObject makeModelLoadedPayload(const QString& modelId,
@@ -117,6 +197,22 @@ QJsonObject makePackPayload(const QString& packId)
 {
     QJsonObject payload;
     payload.insert(QStringLiteral("pack_id"), packId);
+    return payload;
+}
+
+QJsonObject makeSettingsChangedPayload(const QString& field,
+                                       const QJsonValue& value)
+{
+    QJsonObject payload;
+    payload.insert(QStringLiteral("field"), field);
+    payload.insert(QStringLiteral("value"), value);
+    return payload;
+}
+
+QJsonObject makePluginLifecyclePayload(const QString& pluginId)
+{
+    QJsonObject payload;
+    payload.insert(QStringLiteral("plugin_id"), pluginId);
     return payload;
 }
 

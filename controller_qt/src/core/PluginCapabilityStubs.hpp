@@ -21,6 +21,7 @@
 
 #include "api/IDownloadApi.hpp"
 #include "api/IInstanceControlApi.hpp"
+#include "api/ILayoutApi.hpp"
 #include "api/ISettingsApi.hpp"
 #include "api/ITuningApi.hpp"
 #include "api/IVoicePackApi.hpp"
@@ -93,6 +94,22 @@ public:
     pet::PluginError setConfirmOnExit(bool enabled) override;
     pet::PluginError setStartMinimized(bool enabled) override;
     pet::PluginError setDefaultModelName(const QString& name) override;
+};
+
+// v1.8: ILayoutApi capability stub — handed out when the manifest lacks
+// "instance_tuning" OR the write switch is off OR the shared impl is
+// not wired. Same loud-failure discipline: every method returns
+// PluginError::Capability (getLayout additionally leaves *out
+// zero-initialized). Stateless.
+class LayoutApiStub : public pet::ILayoutApi
+{
+public:
+    ~LayoutApiStub() override = default;
+
+    pet::PluginError getLayout(const QString& uuid,
+                               pet::LayoutInfo* out) override;
+    pet::PluginError resetLayout(const QString& uuid) override;
+    pet::PluginError setAutoStart(const QString& uuid, bool enabled) override;
 };
 
 // VoicePackApiImpl: real read-only view. v1.3 (S6) adds the pack-list

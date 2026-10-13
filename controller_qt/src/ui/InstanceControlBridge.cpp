@@ -5,8 +5,10 @@
 
 InstanceControlBridge::InstanceControlBridge(pet::ITuningApi* tuningApi,
                                              pet::IInstanceControlApi* controlApi,
+                                             pet::ILayoutApi* layoutApi,
                                              QObject* parent)
-    : QObject(parent), m_tuningApi(tuningApi), m_controlApi(controlApi)
+    : QObject(parent), m_tuningApi(tuningApi), m_controlApi(controlApi),
+      m_layoutApi(layoutApi)
 {
 }
 
@@ -111,4 +113,45 @@ int InstanceControlBridge::loadModel(const QString& uuid,
     if (m_controlApi == nullptr)
         return static_cast<int>(pet::PluginError::Generic);
     return static_cast<int>(m_controlApi->loadModel(uuid, modelName));
+}
+
+// ── Layout forwards (v1.8) ──────────────────────────────────────────────────
+
+int InstanceControlBridge::setAutoStart(const QString& uuid, bool enabled)
+{
+    if (m_layoutApi == nullptr)
+        return static_cast<int>(pet::PluginError::Generic);
+    return static_cast<int>(m_layoutApi->setAutoStart(uuid, enabled));
+}
+
+int InstanceControlBridge::resetLayout(const QString& uuid)
+{
+    if (m_layoutApi == nullptr)
+        return static_cast<int>(pet::PluginError::Generic);
+    return static_cast<int>(m_layoutApi->resetLayout(uuid));
+}
+
+QVariantMap InstanceControlBridge::getLayout(const QString& uuid)
+{
+    QVariantMap out;
+    if (m_layoutApi == nullptr) {
+        out.insert(QStringLiteral("ok"), false);
+        out.insert(QStringLiteral("error"),
+                   static_cast<int>(pet::PluginError::Generic));
+        return out;
+    }
+    pet::LayoutInfo info;
+    const pet::PluginError err = m_layoutApi->getLayout(uuid, &info);
+    if (err != pet::PluginError::Ok) {
+        out.insert(QStringLiteral("ok"), false);
+        out.insert(QStringLiteral("error"), static_cast<int>(err));
+        return out;
+    }
+    out.insert(QStringLiteral("ok"), true);
+    out.insert(QStringLiteral("x"), info.x);
+    out.insert(QStringLiteral("y"), info.y);
+    out.insert(QStringLiteral("width"), info.width);
+    out.insert(QStringLiteral("height"), info.height);
+    out.insert(QStringLiteral("scale"), info.scale);
+    return out;
 }

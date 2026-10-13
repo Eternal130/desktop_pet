@@ -186,6 +186,11 @@ bool InstanceSession::mountVoicePack(const QString& packPath)
     LOG_INFO("InstanceSession[{}]: mounted voice pack \"{}\" ({} groups)",
              m_instanceId, m_mountedPack->displayName.toStdString(),
              m_mountedPack->groups.size());
+    // Idle-source switch: a pack with an "idle" group takes priority over
+    // the model's Idle group — startIdleScheduler re-evaluates (calling
+    // start() on a running scheduler is a clean parameterized restart,
+    // Scheduler.hpp). No-op while the model is not loaded yet.
+    startIdleScheduler();
     return true;
 }
 
@@ -212,6 +217,10 @@ void InstanceSession::unmountVoicePack()
     publishHostEvent(pet::kEventPackUnmounted, /*cancellable=*/false,
                      core::makePackPayload(previousPackId));
     LOG_INFO("InstanceSession[{}]: unmounted voice pack", m_instanceId);
+    // Idle-source switch back: with the engine cleared, startIdleScheduler
+    // falls back to the model's Idle group (or stops when neither source
+    // exists). No-op while the model is not loaded yet.
+    startIdleScheduler();
 }
 
 QString InstanceSession::mountedVoicePack() const

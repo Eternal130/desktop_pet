@@ -38,6 +38,14 @@
 //                                      voice pack's "idle" group's motion
 //                                      paths (used by the motion_finished
 //                                      handler to judge idle vs non-idle).
+//   - hasIdleMotions()               — the pack can supply idle motions
+//                                      (mounted + "idle" group + at least one
+//                                      motion-bearing action).
+//   - idleMotionCount()              — size of the pack's motion-bearing
+//                                      idle pool.
+//   - buildIdleMotionCommand(index)  — play_motion_ext for the index-th
+//                                      motion of the pack's "idle" group at
+//                                      FIXED priority=1 (Idle tier).
 //   - groupNames()                   — the voice pack's group codes (empty if
 //                                      no voice pack).
 //
@@ -132,6 +140,30 @@ public:
     // Path comparison uses '/'→'\\' normalization (Windows-friendly, matches
     // the Java reference). False when no voice pack or no "idle" group.
     bool isIdleMotionPath(const QString& absolutePath) const;
+
+    // True when the mounted pack can supply idle motions: a voice pack is
+    // mounted AND it has an "idle" group (case-insensitive, the same
+    // convention as hasGroupForArea) AND that group holds at least one
+    // action with a non-empty motionPath. When true, startIdleScheduler
+    // prefers the pack's idle motions over the model's Idle group (pack >
+    // model > none — a motionless model still idles via its pack).
+    bool hasIdleMotions() const;
+
+    // Number of "idle"-group actions with a non-empty motionPath — the pool
+    // buildIdleMotionCommand indexes into. 0 when no voice pack / no "idle"
+    // group / no motion-bearing actions in the group.
+    int idleMotionCount() const;
+
+    // Build a play_motion_ext Envelope for the `index`-th motion-bearing
+    // action of the "idle" group (0-based over the same filtered pool as
+    // idleMotionCount). Returns std::nullopt when no voice pack / no "idle"
+    // group / `index` out of range. priority is FIXED at 1 (the Idle tier
+    // per interface.md §B.1 — behavior motions play at 2+ and may interrupt
+    // an idle motion). fadeIn/fadeOut convert from the action's ms fields to
+    // seconds (the buildBehaviorCommand math). audioPath/lipSyncPath ride
+    // along when the action carries them (typical pack idles have neither —
+    // no special-casing, the empty-string passthrough covers it).
+    std::optional<Envelope> buildIdleMotionCommand(int index) const;
 
     // The voice pack's group codes (keys of voicePack.groups). Empty when no
     // voice pack is mounted. Used by diagnostic UI / logging.

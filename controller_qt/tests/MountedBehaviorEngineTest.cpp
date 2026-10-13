@@ -1,5 +1,5 @@
 // MountedBehaviorEngineTest — Phase 5 Wave 8 todo 20 TDD for the C++ port of
-// Java's MountedBehaviorEngine (246 LOC). Five behaviors locked:
+// Java's MountedBehaviorEngine (246 LOC). Behaviors locked:
 //
 //   1. testBuildBehaviorCommand — synthetic VoicePackInfo with one head-tap
 //      action (motion + audio) → buildBehaviorCommand returns a play_motion_ext
@@ -15,6 +15,15 @@
 //      buildAudioOnlyCommand returns a play_audio Envelope.
 //   5. testIsIdleMotionPath — an "idle" group action's resolved motion path is
 //      recognized as idle; a non-matching path returns false.
+//   6. testHasIdleMotionsAndCount — the idle-query trio: 2 motion-bearing
+//      actions + 1 empty-motion action in the "idle" group → count 2; a
+//      case-different group key still resolves; no pack → false/0.
+//   7. testBuildIdleMotionCommand — index-addressed idle build with FIXED
+//      priority=1 + ms→s fade conversion; out-of-range / negative / no-pack
+//      indices → nullopt.
+//   8. testBuildBehaviorCommandPriorityClamp — a pack group with priority 0
+//      (MetaMkoParser's default) clamps to 1 (ReserveMotion(0) is always
+//      rejected by the renderer — the behavior would die silently).
 //
 // The estimateOggDurationMs heuristic has its own test file
 // (OggDurationHeuristicTest.cpp) — it's a self-contained static method that
@@ -126,6 +135,46 @@ core::VoicePackInfo buildHeadPack(const QTemporaryDir& tempDir)
     group.actions.append(action);
 
     pack.groups.insert(QStringLiteral("head"), group);
+    return pack;
+}
+
+// Build a VoicePackInfo with an "idle" group holding 2 motion-bearing
+// actions + 1 empty-motion action (the filter pool behind hasIdleMotions /
+// idleMotionCount / buildIdleMotionCommand). `groupKey` lets tests prove the
+// case-insensitive resolution ("idle" / "IDLE").
+core::VoicePackInfo buildIdlePack(const QTemporaryDir& tempDir,
+                                  const QString& groupKey =
+                                      QStringLiteral("idle"))
+{
+    core::VoicePackInfo pack;
+    pack.dirName = QStringLiteral("idle-pack");
+    pack.displayName = QStringLiteral("Idle Pack");
+    pack.code = QStringLiteral("idle_pack");
+    pack.basePath = tempDir.path();
+
+    core::VoicePackGroup group;
+    group.code = groupKey;
+    group.name = QStringLiteral("Idle");
+    group.priority = 0; // MetaMkoParser's default — irrelevant for the idle build
+
+    core::VoicePackAction a1;
+    a1.id = 1;
+    a1.motionPath = QStringLiteral("motions/idle01.motion3.json");
+    a1.fadeInMs = 250;
+    a1.fadeOutMs = 500;
+    group.actions.append(a1);
+
+    core::VoicePackAction a2;
+    a2.id = 2;
+    a2.motionPath = QStringLiteral("motions/idle02.motion3.json");
+    group.actions.append(a2);
+
+    core::VoicePackAction empty; // audio-less, motion-less — NOT in the pool
+    empty.id = 3;
+    empty.doc = QStringLiteral("no motion here");
+    group.actions.append(empty);
+
+    pack.groups.insert(groupKey, group);
     return pack;
 }
 
@@ -287,6 +336,108 @@ private slots:
         QVERIFY(!engine.isIdleMotionPath(
             QStringLiteral("C:/some/other/motion.json3")));
         QVERIFY(!engine.isIdleMotionPath(QString()));
+    }
+
+    // The idle-query trio: the "idle" group's motion-bearing pool only. The
+    // empty-motion action must not count; a case-different group key must
+    // still resolve; a pack without an "idle" group reports nothing.
+    void testHasIdleMotionsAndCount()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+
+        {
+            const auto pack = buildIdlePack(tempDir);
+            const core::MountedBehaviorEngine engine(&pack);
+            QVERIFY(engine.hasIdleMotions());
+            QCOMPARE(engine.idleMotionCount(), 2);
+        }
+        {
+            // Case-insensitive group resolution ("IDLE" key == "idle").
+            const auto pack = buildIdlePack(tempDir, QStringLiteral("IDLE"));
+            const core::MountedBehaviorEngine engine(&pack);
+            QVERIFY(engine.hasIdleMotions());
+            QCOMPARE(engine.idleMotionCount(), 2);
+        }
+        {
+            // No "idle" group at all → false/0 (the head pack has none).
+            const auto pack = buildHeadPack(tempDir);
+            const core::MountedBehaviorEngine engine(&pack);
+            QVERIFY(!engine.hasIdleMotions());
+            QCOMPARE(engine.idleMotionCount(), 0);
+        }
+    }
+
+    // Index-addressed idle build: FIXED priority=1 (Idle tier), absolute
+    // motion path, ms→s fade conversion, index clamped by the motion pool
+    // (the empty-motion action shrinks it to 2 → index 2 is out of range).
+    void testBuildIdleMotionCommand()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const auto pack = buildIdlePack(tempDir);
+        const core::MountedBehaviorEngine engine(&pack);
+
+        // index 0 — full field assertions (fades present on this action).
+        const auto c0 = engine.buildIdleMotionCommand(0);
+        QVERIFY(c0.has_value());
+        QCOMPARE(c0->type, QStringLiteral("command"));
+        QCOMPARE(c0->action, QStringLiteral("play_motion_ext"));
+        QCOMPARE(c0->payload.value(QStringLiteral("priority")).toInt(), 1);
+        const QString motion0 = c0->payload.value(
+            QStringLiteral("motion_path")).toString();
+        QVERIFY(motion0.endsWith(QStringLiteral("motions/idle01.motion3.json")));
+        QVERIFY(QDir::isAbsolutePath(motion0));
+        QCOMPARE(c0->payload.value(QStringLiteral("fade_in")).toDouble(), 0.25);
+        QCOMPARE(c0->payload.value(QStringLiteral("fade_out")).toDouble(), 0.5);
+        // Idle pack actions carry no audio/lipSync — those side-channels stay
+        // absent (buildPlayMotionExt emits them only when non-empty).
+        QVERIFY(!c0->payload.contains(QStringLiteral("audio_path")));
+        QVERIFY(!c0->payload.contains(QStringLiteral("lip_sync_path")));
+
+        // index 1 — in range, no fades (defaults 0 → 0.0 seconds).
+        const auto c1 = engine.buildIdleMotionCommand(1);
+        QVERIFY(c1.has_value());
+        QVERIFY(c1->payload.value(QStringLiteral("motion_path")).toString()
+                    .endsWith(QStringLiteral("motions/idle02.motion3.json")));
+        QCOMPARE(c1->payload.value(QStringLiteral("priority")).toInt(), 1);
+
+        // Out of range / negative — the pool holds only 2 motions.
+        QVERIFY(!engine.buildIdleMotionCommand(2).has_value());
+        QVERIFY(!engine.buildIdleMotionCommand(-1).has_value());
+
+        // No pack → nullopt for every index (the disabled sentinel).
+        const core::MountedBehaviorEngine disabled;
+        QVERIFY(!disabled.buildIdleMotionCommand(0).has_value());
+    }
+
+    // Priority clamp: a pack group with priority 0 (MetaMkoParser's default)
+    // must reach the renderer as 1 — ReserveMotion(0) is always rejected, so
+    // the unclamped behavior would die silently. Higher tiers pass through.
+    void testBuildBehaviorCommandPriorityClamp()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+
+        core::VoicePackInfo pack;
+        pack.dirName = QStringLiteral("clamp-pack");
+        pack.displayName = QStringLiteral("Clamp");
+        pack.code = QStringLiteral("clamp_pack");
+        pack.basePath = tempDir.path();
+
+        core::VoicePackGroup group;
+        group.code = QStringLiteral("head");
+        group.priority = 0; // the dangerous default
+        core::VoicePackAction action;
+        action.motionPath = QStringLiteral("m.json3");
+        group.actions.append(action);
+        pack.groups.insert(QStringLiteral("head"), group);
+
+        const core::MountedBehaviorEngine engine(&pack);
+        const auto result = engine.buildBehaviorCommand(QStringLiteral("head"));
+        QVERIFY(result.has_value());
+        QCOMPARE(result->command.payload.value(
+                     QStringLiteral("priority")).toInt(), 1);
     }
 };
 

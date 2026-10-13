@@ -31,8 +31,10 @@
 #include <QTest>
 #include <QElapsedTimer>
 #include <QJsonObject>
+#include <QJsonDocument>
 #include <QDir>
 #include <QFile>
+#include <QWebSocket>
 
 #include <optional>
 
@@ -45,6 +47,134 @@
 #include "network/Envelope.hpp"
 #include "network/PendingRequests.hpp"
 #include "network/WsServer.hpp"
+
+namespace {
+
+// ── Headless pack-idle fixtures (Phase 8 todo 20 idle wiring) ────────────────
+// Minimal protobuf wire-format serializer for synthesizing a meta.mko (the
+// same approach as MetaMkoParserTest — the reader consumes real protobuf
+// wire bytes, so the synthesized bundle is byte-equivalent to a real .mko).
+// Only the two wire types bundles.proto uses are needed: varint + string.
+QByteArray encodeVarint(quint64 value)
+{
+    QByteArray out;
+    while (value >= 0x80) {
+        out.append(static_cast<char>((value & 0x7F) | 0x80));
+        value >>= 7;
+    }
+    out.append(static_cast<char>(value));
+    return out;
+}
+
+QByteArray encodeTag(int fieldNumber, int wireType)
+{
+    return encodeVarint((static_cast<quint64>(fieldNumber) << 3)
+                        | static_cast<quint64>(wireType));
+}
+
+QByteArray encodeVarintField(int fieldNumber, quint64 value)
+{
+    return encodeTag(fieldNumber, 0) + encodeVarint(value);
+}
+
+QByteArray encodeStringField(int fieldNumber, const QString& value)
+{
+    const QByteArray utf8 = value.toUtf8();
+    return encodeTag(fieldNumber, 2) + encodeVarint(utf8.size()) + utf8;
+}
+
+QByteArray encodeMessageField(int fieldNumber, const QByteArray& message)
+{
+    return encodeTag(fieldNumber, 2) + encodeVarint(message.size()) + message;
+}
+
+// A Bundle whose ONLY group is "idle" (priority omitted → MetaMkoParser's
+// default 0) with 2 motion actions + 1 motionless action — mirrors the real
+// pack shape the scheduler's pack mode cycles.
+QByteArray buildPackIdleOnlyBundle()
+{
+    QByteArray meta;
+    meta += encodeStringField(1, QStringLiteral("Pack Idle"));
+    meta += encodeStringField(2, QStringLiteral("pack_idle"));
+
+    QByteArray group;
+    group += encodeStringField(1, QStringLiteral("idle"));
+    group += encodeStringField(3, QStringLiteral("Idle"));
+
+    QByteArray a1; // motion + fades
+    a1 += encodeVarintField(1, 1);
+    a1 += encodeStringField(2, QStringLiteral("idle"));
+    a1 += encodeStringField(3, QStringLiteral("motions/idle01.motion3.json"));
+    a1 += encodeVarintField(7, 250);
+    a1 += encodeVarintField(8, 500);
+
+    QByteArray a2;
+    a2 += encodeVarintField(1, 2);
+    a2 += encodeStringField(2, QStringLiteral("idle"));
+    a2 += encodeStringField(3, QStringLiteral("motions/idle02.motion3.json"));
+
+    QByteArray a3; // motionless — excluded from the idle pool
+    a3 += encodeVarintField(1, 3);
+    a3 += encodeStringField(2, QStringLiteral("idle"));
+    a3 += encodeStringField(6, QStringLiteral("no motion"));
+
+    QByteArray bundle;
+    bundle += encodeMessageField(1, meta);
+    bundle += encodeMessageField(4, group);
+    bundle += encodeMessageField(5, a1);
+    bundle += encodeMessageField(5, a2);
+    bundle += encodeMessageField(5, a3);
+    return bundle;
+}
+
+// Write the synthesized idle-only meta.mko under <parentDir>/pack/meta.mko.
+// Returns the pack directory (the mountVoicePack argument).
+QString writeIdleOnlyPack(const QString& parentDir)
+{
+    const QString packDir = QDir(parentDir).absoluteFilePath(QStringLiteral("pack"));
+    QDir().mkpath(packDir);
+    QFile f(QDir(packDir).absoluteFilePath(QStringLiteral("meta.mko")));
+    f.open(QIODevice::WriteOnly);
+    f.write(buildPackIdleOnlyBundle());
+    f.close();
+    return packDir;
+}
+
+// Write a minimal <rendererDir>/Resources/Models/<modelName>/<modelName>
+// .model3.json (the path shape resolveModel3JsonPath expects). `json` is the
+// full file body — "{}"-ish for a motionless model, or one with Motions.
+bool writeModel3Json(const QString& rendererDir, const QString& modelName,
+                     const QByteArray& json)
+{
+    const QString dir = QDir(rendererDir).absoluteFilePath(
+        QStringLiteral("Resources/Models/%1").arg(modelName));
+    if (!QDir().mkpath(dir))
+        return false;
+    QFile f(QDir(dir).absoluteFilePath(
+        QStringLiteral("%1.model3.json").arg(modelName)));
+    if (!f.open(QIODevice::WriteOnly))
+        return false;
+    f.write(json);
+    f.close();
+    return f.error() == QFile::NoError;
+}
+
+// Send an event envelope from the fake-renderer socket (server routes it to
+// messageReceived → the test's session.onMessage wiring).
+void sendEventFromClient(QWebSocket& client, const Envelope& env)
+{
+    client.sendTextMessage(QString::fromUtf8(
+        serialize(env).toJson(QJsonDocument::Compact)));
+}
+
+// Parse a captured textMessageReceived string into its JSON object.
+QJsonObject parseWireJson(const QString& message)
+{
+    return QJsonDocument::fromJson(message.toUtf8()).object();
+}
+
+} // namespace
+
 
 class InstanceSessionTest : public QObject {
     Q_OBJECT
@@ -74,6 +204,10 @@ private slots:
     void testHitSendsPlayMotion();
     void testMotionFinishedNonIdleTriggersScheduler();
     void testMotionFinishedIdleDoesNotTrigger();
+
+    // ── Phase-8 todo 20 idle wiring (headless sleeper + fake-renderer WS) ──
+    void testPackIdleSchedulerHeadless();
+    void testIdleSchedulerModelModeLowercaseGroup();
 
     // ── Phase-5 Wave 8 todo 22 (layout) [REQUIRES_RENDERER] ───────────────
     void testLayoutChangedPersists();
@@ -885,6 +1019,199 @@ void InstanceSessionTest::testMotionFinishedIdleDoesNotTrigger()
     // S4: async stop — wait for completion before closing the server.
     QVERIFY2(stopAndWait(session, 7000), "session did not finish stopping");
     server.close();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Phase-8 todo 20 idle wiring — headless pack-idle scheduling tests
+// ────────────────────────────────────────────────────────────────────────────
+
+// Pack idle mode end-to-end (headless): a motionless model + a mounted pack
+// with an "idle" group → the scheduler runs in PACK mode. The fake-renderer
+// socket (a QWebSocket handshaked with a test-registered token) both receives
+// the play_motion_ext commands (full JSON → priority assertions) and injects
+// motion_finished events. Locks:
+//   - motionless model alone → scheduler NEVER starts (non-idle
+//     motion_finished is a no-op — the frozen-on-last-frame bug shape);
+//   - mountVoicePack (re)starts the scheduler in pack mode;
+//   - non-idle behavior motion_finished → triggerNow → immediate pack idle
+//     play_motion_ext with priority=1 over the pack's motion paths;
+//   - idle motion_finished (an echoed pack idle path) → NO triggerNow.
+void InstanceSessionTest::testPackIdleSchedulerHeadless()
+{
+#ifdef Q_OS_WIN
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    QString rendererDir;
+    makeFakeRendererDir(dir, &rendererDir); // fake renderer = sleeper
+    // Motionless model (the giwa-idol2023 shape: no Motions at all).
+    QVERIFY2(writeModel3Json(rendererDir, QStringLiteral("PackIdle"),
+                             QByteArrayLiteral("{\"Version\":3,\"FileReferences\":{},\"HitAreas\":[]}")),
+             "precondition: failed to write synthetic model3.json");
+    const QString packDir = writeIdleOnlyPack(dir.path());
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.rendererPath = rendererDir;
+    cfg.graphicsBackend = QStringLiteral("opengl");
+    cfg.modelName = QStringLiteral("PackIdle");
+    cfg.idleInterval = 60; // suppress timer ticks — ticks are driven via triggerNow
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    QObject::connect(&server, &WsServer::messageReceived,
+                     &session, [&session](int, const Envelope& env) {
+                         session.onMessage(env);
+                     });
+
+    session.start();
+    session.setStopTimeoutMs(300); // fast kill (test seam) — sleeper never exits gracefully
+
+    // model_loaded with a motionless model → NO idle source → scheduler
+    // stays stopped (previously a WARN + never started, the root cause).
+    session.onMessage(createEvent(QStringLiteral("model_loaded")));
+    QVERIFY(session.modelLoaded());
+
+    // Fake-renderer socket: override the session's random token with a known
+    // one (WsServer::registerToken replaces), then handshake as this instance.
+    const QString knownToken = QStringLiteral("cafef00d");
+    server.registerToken(session.instanceId(), knownToken);
+    QWebSocket client;
+    QSignalSpy msgSpy(&client, &QWebSocket::textMessageReceived);
+    client.open(QUrl(QStringLiteral("ws://127.0.0.1:%1/?instance_id=%2&token=%3")
+                         .arg(server.serverPort())
+                         .arg(session.instanceId())
+                         .arg(knownToken)));
+    QElapsedTimer t;
+    t.start();
+    while (!t.hasExpired(5000) && !session.connected())
+        QTest::qWait(25);
+    QVERIFY2(session.connected(), "fake renderer socket did not connect");
+
+    // BEFORE mount: a non-idle behavior motion_finished must be a NO-OP —
+    // the scheduler never started for the motionless model (triggerNow's
+    // !m_running guard). Nothing may reach the renderer socket.
+    QJsonObject behaviorFinished;
+    behaviorFinished.insert(
+        QStringLiteral("motion_path"),
+        QDir(packDir).absoluteFilePath(QStringLiteral("motions/behavior01.motion3.json")));
+    sendEventFromClient(client, createEvent(QStringLiteral("motion_finished"),
+                                            behaviorFinished));
+    QVERIFY2(!msgSpy.wait(500),
+             "scheduler fired before any idle source existed");
+
+    // Mount the pack with the "idle" group → scheduler restarts in pack mode.
+    QVERIFY2(session.mountVoicePack(packDir), "mountVoicePack failed");
+
+    // Same non-idle behavior motion_finished → triggerNow fires an immediate
+    // pack idle tick: a play_motion_ext with priority=1 (Idle tier) over one
+    // of the pack's two motion paths.
+    sendEventFromClient(client, createEvent(QStringLiteral("motion_finished"),
+                                            behaviorFinished));
+    QVERIFY2(msgSpy.wait(3000),
+             "no play_motion_ext after non-idle motion_finished (pack mode)");
+    const QJsonObject cmd1 = parseWireJson(msgSpy.takeFirst().at(0).toString());
+    QCOMPARE(cmd1.value(QStringLiteral("action")).toString(),
+             QStringLiteral("play_motion_ext"));
+    QCOMPARE(cmd1.value(QStringLiteral("payload"))
+                 .toObject()
+                 .value(QStringLiteral("priority"))
+                 .toInt(), 1);
+    const QString idlePath = cmd1.value(QStringLiteral("payload"))
+                                 .toObject()
+                                 .value(QStringLiteral("motion_path"))
+                                 .toString();
+    QVERIFY2(idlePath.endsWith(QStringLiteral("motions/idle01.motion3.json"))
+                 || idlePath.endsWith(QStringLiteral("motions/idle02.motion3.json")),
+             qPrintable(QStringLiteral("unexpected idle motion_path: %1").arg(idlePath)));
+
+    // Idle motion_finished (echo the pack idle path the renderer just
+    // "played") → NO triggerNow — the feedback-loop guard via
+    // MountedBehaviorEngine::isIdleMotionPath.
+    QJsonObject idleFinished;
+    idleFinished.insert(QStringLiteral("motion_path"), idlePath);
+    sendEventFromClient(client, createEvent(QStringLiteral("motion_finished"),
+                                            idleFinished));
+    QVERIFY2(!msgSpy.wait(800),
+             "idle motion_finished must not trigger another idle motion");
+
+    client.close();
+    QVERIFY2(stopAndWait(session, 5000), "session did not finish stopping");
+    server.close();
+#endif
+}
+
+// Model mode with a LOWERCASE "idle" group: the two-tier Idle resolution
+// (exact "Idle" → case-insensitive scan) must pass the RESOLVED group name
+// to the scheduler — fireOnce's map lookup is exact, so passing the literal
+// "Idle" would never tick an "idle"-keyed model. Headless: the sleeper
+// renderer never speaks, we only assert idleMotionTriggered carries the
+// model's original lowercase key and that a play_motion went out.
+void InstanceSessionTest::testIdleSchedulerModelModeLowercaseGroup()
+{
+#ifdef Q_OS_WIN
+    QSKIP("fake-renderer sleeper harness is POSIX-only");
+#else
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    QString rendererDir;
+    makeFakeRendererDir(dir, &rendererDir);
+    QVERIFY2(writeModel3Json(
+                 rendererDir, QStringLiteral("LowerIdle"),
+                 QByteArrayLiteral("{\"Version\":3,\"FileReferences\":{\"Motions\":"
+                                   "{\"idle\":[{\"File\":\"i1.motion3.json\"},"
+                                   "{\"File\":\"i2.motion3.json\"}],"
+                                   "\"TapBody\":[{\"File\":\"t1.motion3.json\"}]}}}")),
+             "precondition: failed to write synthetic model3.json");
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.rendererPath = rendererDir;
+    cfg.graphicsBackend = QStringLiteral("opengl");
+    cfg.modelName = QStringLiteral("LowerIdle");
+    cfg.idleInterval = 1; // 1s ticks
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    QSignalSpy idleSpy(&session, &InstanceSession::idleMotionTriggered);
+    QSignalSpy cmdSpy(&session, &InstanceSession::commandSent);
+    QVERIFY(idleSpy.isValid());
+    QVERIFY(cmdSpy.isValid());
+
+    session.start();
+    session.setStopTimeoutMs(300); // fast kill (test seam) — sleeper never exits gracefully
+    session.onMessage(createEvent(QStringLiteral("model_loaded")));
+    QVERIFY(session.modelLoaded());
+
+    // The scheduler must tick with the RESOLVED lowercase group name.
+    QElapsedTimer t;
+    t.start();
+    while (!t.hasExpired(5000) && idleSpy.isEmpty())
+        QTest::qWait(50);
+    QVERIFY2(!idleSpy.isEmpty(),
+             "scheduler never ticked for the lowercase 'idle' group model");
+    QCOMPARE(idleSpy.at(0).at(0).toString(), QStringLiteral("idle"));
+
+    // …and each tick sent a play_motion over that same resolved group.
+    bool foundPlayMotion = false;
+    for (int i = 0; i < cmdSpy.count(); ++i) {
+        if (cmdSpy.at(i).at(0).toString() == QStringLiteral("play_motion")) {
+            foundPlayMotion = true;
+            break;
+        }
+    }
+    QVERIFY2(foundPlayMotion, "no play_motion captured for the resolved idle group");
+
+    QVERIFY2(stopAndWait(session, 5000), "session did not finish stopping");
+    server.close();
+#endif
 }
 
 // ────────────────────────────────────────────────────────────────────────────

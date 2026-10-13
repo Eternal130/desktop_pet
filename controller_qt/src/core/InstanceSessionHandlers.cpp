@@ -270,8 +270,10 @@ void InstanceSession::handleMotionFinishedEvent(const Envelope& env)
     //     triggerNow → ...).
     //   - Variant A with group != "Idle" (e.g. "TapBody") → non-idle →
     //     triggerNow to resume the idle cadence sooner.
-    //   - Variant B (motion_path) → non-idle for Phase 6 (idle-pack path
-    //     detection arrives in Phase 8 todo 20) → triggerNow.
+    //   - Variant B (motion_path) → idle when the path matches the mounted
+    //     pack's "idle" group (MountedBehaviorEngine::isIdleMotionPath — the
+    //     Phase 8 todo 20 wiring); any other path is a behavior motion →
+    //     triggerNow.
     // triggerNow only fires when connected — no point queuing a play_motion
     // the renderer cannot receive.
     const bool hasMotionPath = env.payload.contains(QStringLiteral("motion_path"));
@@ -299,8 +301,12 @@ void InstanceSession::handleMotionFinishedEvent(const Envelope& env)
 
     bool isIdle = false;
     if (hasMotionPath) {
-        // Variant B — assume non-idle until Phase 8 adds idle-pack path matching.
-        isIdle = false;
+        // Variant B — pack idle detection (todo 20 wiring): a motion_path
+        // matching one of the mounted pack's "idle"-group motion paths is an
+        // idle motion (same feedback-loop guard as Variant A — the pack-mode
+        // scheduler triggered it); any other path is a behavior motion.
+        isIdle = m_behaviorEngine.isIdleMotionPath(
+            env.payload.value(QStringLiteral("motion_path")).toString());
     } else {
         const QString group = env.payload.value(QStringLiteral("group")).toString();
         isIdle = group.compare(QStringLiteral("Idle"), Qt::CaseInsensitive) == 0;
@@ -324,47 +330,124 @@ void InstanceSession::handleMotionFinishedEvent(const Envelope& env)
 
 void InstanceSession::startIdleScheduler()
 {
-    // Guard: need motionGroups from m_modelInfo. If the .model3.json failed to
-    // parse, there is nothing to cycle — the scheduler stays stopped.
-    if (!m_modelInfo.has_value() || m_modelInfo->motionGroups.isEmpty()) {
-        LOG_WARN("InstanceSession[{}]: cannot start Scheduler — no motionGroups",
-                 m_instanceId);
+    // Guard: without a loaded model there is nothing to idle-cycle yet. A
+    // mount that happens BEFORE model_loaded defers here and is picked up
+    // when the model_loaded handler calls startIdleScheduler() again.
+    if (!m_modelLoaded) {
+        LOG_DEBUG("InstanceSession[{}]: startIdleScheduler deferred — model not loaded yet",
+                  m_instanceId);
         return;
     }
     // idleInterval is in SECONDS (InstanceConfig); Scheduler takes milliseconds.
     const int intervalMs = m_config.idleInterval * 1000;
 
-    // The callback sends play_motion with priority=1 (Idle priority per
-    // interface.md §B.1). sendCommand serializes compact + pushes through
-    // WsServer::sendText + emits commandSent — so idle-triggered play_motion
-    // is observable in the unified command stream.
-    m_scheduler.setIdleMotions(m_modelInfo->motionGroups);
-    m_scheduler.start(
-        intervalMs,
-        m_modelInfo->motionGroups,
-        [this](const QString& group, int index) {
-            // S8b: publish + HONOR cancellation — a bus listener (a plugin
-            // at Normal+, the rule engine at Low) may claim the tick; the
-            // priority=1 play_motion is then skipped entirely. With no
-            // publisher injected publishHostEvent returns false and the
-            // idle cadence is unchanged (pre-S8a shape).
-            const bool cancelled = publishHostEvent(
-                pet::kEventInstanceIdleTick, /*cancellable=*/true,
-                core::makeIdleTickPayload(group, index));
-            if (cancelled) {
-                LOG_DEBUG("InstanceSession[{}]: idle_tick (\"{}\", {}) "
-                          "cancelled by a bus listener — play_motion skipped",
-                          m_instanceId, group.toStdString(), index);
-                return;
-            }
-            // priority=1 (Idle) per interface.md §B.1.
-            // (todo 16: previously inline createCommand; now via typed factory.)
-            sendCommand(Protocol::buildPlayMotion(group, index, 1));
-        },
-        Scheduler::kDefaultGroup);
+    // ── Pack mode: the mounted pack's "idle" group WINS over the model ────
+    // A motionless model (empty motionGroups) still idles through its pack —
+    // this is the Phase-8 todo-20 idle wiring.
+    if (m_behaviorEngine.hasIdleMotions()) {
+        m_scheduler.start(
+            intervalMs,
+            {{QStringLiteral("idle"), m_behaviorEngine.idleMotionCount()}},
+            [this](const QString& group, int index) {
+                // Same S8b discipline as the model-mode callback: publish +
+                // honor cancellation, then send. The command is a
+                // play_motion_ext over the pack's own idle motions at
+                // priority=1 (Idle tier — behavior motions at 2+ interrupt).
+                const bool cancelled = publishHostEvent(
+                    pet::kEventInstanceIdleTick, /*cancellable=*/true,
+                    core::makeIdleTickPayload(group, index));
+                if (cancelled) {
+                    LOG_DEBUG("InstanceSession[{}]: idle_tick (\"{}\", {}) "
+                              "cancelled by a bus listener — play_motion_ext skipped",
+                              m_instanceId, group.toStdString(), index);
+                    return;
+                }
+                const auto command =
+                    m_behaviorEngine.buildIdleMotionCommand(index);
+                if (!command.has_value()) {
+                    LOG_WARN("InstanceSession[{}]: idle tick index={} out of "
+                             "pack pool — skipped",
+                             m_instanceId, index);
+                    return;
+                }
+                sendCommand(*command);
+            },
+            QStringLiteral("idle"));
 
-    LOG_INFO("InstanceSession[{}]: Scheduler started (interval={}ms, idleGroup=\"{}\")",
-             m_instanceId, intervalMs, Scheduler::kDefaultGroup.toStdString());
+        LOG_INFO("InstanceSession[{}]: Scheduler started (interval={}ms, pack "
+                  "idle mode, motions={})",
+                  m_instanceId, intervalMs, m_behaviorEngine.idleMotionCount());
+        return;
+    }
+
+    // ── Model mode: resolve the model's Idle group ─────────────────────────
+    if (m_modelInfo.has_value() && !m_modelInfo->motionGroups.isEmpty()) {
+        // Two-tier Idle resolution: exact "Idle" first, then a
+        // case-insensitive scan over the model3.json group keys (models
+        // exist with "idle"/"IDLE"). The RESOLVED name must reach BOTH the
+        // scheduler's group param (fireOnce's map lookup is exact — passing
+        // the literal "Idle" would never hit an "idle"-keyed model) and the
+        // play_motion command (the renderer indexes groups by their
+        // model3.json original names).
+        QString idleGroup = Scheduler::kDefaultGroup;
+        if (!m_modelInfo->motionGroups.contains(idleGroup)) {
+            idleGroup.clear();
+            for (auto it = m_modelInfo->motionGroups.constBegin();
+                 it != m_modelInfo->motionGroups.constEnd(); ++it) {
+                if (it.key().compare(Scheduler::kDefaultGroup,
+                                     Qt::CaseInsensitive) == 0) {
+                    idleGroup = it.key();
+                    break;
+                }
+            }
+        }
+        if (idleGroup.isEmpty()) {
+            LOG_WARN("InstanceSession[{}]: model has {} groups but none "
+                     "idle-like — Scheduler stays stopped",
+                     m_instanceId, m_modelInfo->motionGroups.size());
+            return;
+        }
+
+        // The callback sends play_motion with priority=1 (Idle priority per
+        // interface.md §B.1). sendCommand serializes compact + pushes through
+        // WsServer::sendText + emits commandSent — so idle-triggered play_motion
+        // is observable in the unified command stream.
+        m_scheduler.start(
+            intervalMs,
+            m_modelInfo->motionGroups,
+            [this](const QString& group, int index) {
+                // S8b: publish + HONOR cancellation — a bus listener (a plugin
+                // at Normal+, the rule engine at Low) may claim the tick; the
+                // priority=1 play_motion is then skipped entirely. With no
+                // publisher injected publishHostEvent returns false and the
+                // idle cadence is unchanged (pre-S8a shape).
+                const bool cancelled = publishHostEvent(
+                    pet::kEventInstanceIdleTick, /*cancellable=*/true,
+                    core::makeIdleTickPayload(group, index));
+                if (cancelled) {
+                    LOG_DEBUG("InstanceSession[{}]: idle_tick (\"{}\", {}) "
+                              "cancelled by a bus listener — play_motion skipped",
+                              m_instanceId, group.toStdString(), index);
+                    return;
+                }
+                // priority=1 (Idle) per interface.md §B.1.
+                // (todo 16: previously inline createCommand; now via typed factory.)
+                sendCommand(Protocol::buildPlayMotion(group, index, 1));
+            },
+            idleGroup);
+
+        LOG_INFO("InstanceSession[{}]: Scheduler started (interval={}ms, model "
+                  "idleGroup=\"{}\")",
+                  m_instanceId, intervalMs, idleGroup.toStdString());
+        return;
+    }
+
+    // Neither source: a motionless model with no pack idle group — nothing
+    // to cycle (the scheduler stays stopped; mount/unmount restart paths
+    // land here too when no idle source exists).
+    LOG_WARN("InstanceSession[{}]: cannot start Scheduler — no idle source "
+             "(no pack idle group, no model Idle group)",
+             m_instanceId);
 }
 
 void InstanceSession::handleLayoutChangedEvent(const Envelope& env)

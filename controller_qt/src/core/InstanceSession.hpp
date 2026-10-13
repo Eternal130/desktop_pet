@@ -552,11 +552,21 @@ private:
     // order. Missing/null fields are handled by fromJson's per-field guards.
     void handleStatsStateEvent(const Envelope& env);
 
-    // Start (or restart) the idle Scheduler using m_modelInfo->motionGroups +
-    // m_config.idleInterval. Called from the model_loaded handler. The callback
-    // publishes the cancellable pet.instance.idle_tick and — unless a bus
-    // listener cancelled it — sends play_motion with priority=1 (Idle per
-    // interface.md §B.1).
+    // Start (or restart) the idle Scheduler. Dual-source with a strict
+    // priority order — pack > model > none:
+    //   1. Pack mode: when the mounted voice pack has an "idle" group with
+    //      motion-bearing actions, the tick callback sends a play_motion_ext
+    //      over the pack's idle motions (priority=1).
+    //   2. Model mode: the model's Idle motion group (exact "Idle" first,
+    //      then a case-insensitive scan — the RESOLVED name reaches both the
+    //      scheduler's group param and the play_motion command).
+    //   3. Neither → WARN + scheduler stays stopped.
+    // Called from the model_loaded handler AND mount/unmountVoicePack (the
+    // idle source follows the mount state; calling start() on a running
+    // scheduler is a clean parameterized restart). Defers while the model is
+    // not loaded yet. The callback publishes the cancellable
+    // pet.instance.idle_tick and — unless a bus listener cancelled it —
+    // sends the idle command with priority=1 (Idle per interface.md §B.1).
     void startIdleScheduler();
 
     // ── S8a/S8b (v1.5) event-bus emission helper ──────────────────────────

@@ -62,6 +62,27 @@ QString normalizePath(const QString& path)
     return out;
 }
 
+// Collect the "idle" group's actions that have a non-empty motionPath — the
+// shared pool behind hasIdleMotions / idleMotionCount / buildIdleMotionCommand
+// (Phase 8 todo 20 idle wiring: the scheduler cycles THESE, not the model's
+// Idle group, when a pack with an idle group is mounted). Empty when no voice
+// pack / no "idle" group / no motion-bearing actions.
+QList<VoicePackAction> idleMotionActions(const VoicePackInfo* voicePack)
+{
+    if (voicePack == nullptr) return {};
+    const VoicePackGroup* group = findGroupCaseInsensitive(
+        voicePack, QStringLiteral("idle"));
+    if (group == nullptr) return {};
+    QList<VoicePackAction> motions;
+    motions.reserve(group->actions.size());
+    for (const VoicePackAction& action : group->actions) {
+        if (!action.motionPath.isEmpty()) {
+            motions.append(action);
+        }
+    }
+    return motions;
+}
+
 } // namespace
 
 // ── hasGroupForArea ──────────────────────────────────────────────────────────
@@ -123,7 +144,11 @@ MountedBehaviorEngine::buildBehaviorCommand(const QString& areaId) const
 
     const Envelope command = Protocol::buildPlayMotionExt(
         motionAbs,
-        group->priority,
+        // Clamp to >=1: a pack group with priority 0 (MetaMkoParser's
+        // default) reaches the renderer as ReserveMotion(0), which it
+        // rejects unconditionally — the behavior would die silently. 1 is
+        // the lowest legal tier (Idle); ≥2 passes through unchanged.
+        qMax(1, group->priority),
         fadeInSec,
         fadeOutSec,
         audioAbs,
@@ -190,6 +215,46 @@ bool MountedBehaviorEngine::isIdleMotionPath(const QString& absolutePath) const
         }
     }
     return false;
+}
+
+// ── hasIdleMotions / idleMotionCount / buildIdleMotionCommand ───────────────
+
+bool MountedBehaviorEngine::hasIdleMotions() const
+{
+    return !idleMotionActions(m_voicePack).isEmpty();
+}
+
+int MountedBehaviorEngine::idleMotionCount() const
+{
+    return idleMotionActions(m_voicePack).size();
+}
+
+std::optional<Envelope>
+MountedBehaviorEngine::buildIdleMotionCommand(int index) const
+{
+    const QList<VoicePackAction> motions = idleMotionActions(m_voicePack);
+    if (index < 0 || index >= motions.size()) {
+        return std::nullopt;
+    }
+    const VoicePackAction& chosen = motions.at(index);
+
+    const QDir baseDir(m_voicePack->basePath);
+    const QString motionAbs = baseDir.absoluteFilePath(chosen.motionPath);
+    const QString audioAbs = chosen.audioPath.isEmpty()
+        ? QString() : baseDir.absoluteFilePath(chosen.audioPath);
+    const QString lipSyncAbs = chosen.lipSyncPath.isEmpty()
+        ? QString() : baseDir.absoluteFilePath(chosen.lipSyncPath);
+
+    const double fadeInSec  = chosen.fadeInMs  / 1000.0;
+    const double fadeOutSec = chosen.fadeOutMs / 1000.0;
+
+    return Protocol::buildPlayMotionExt(
+        motionAbs,
+        /*priority=*/1, // FIXED Idle tier — behavior motions (2+) interrupt
+        fadeInSec,
+        fadeOutSec,
+        audioAbs,
+        lipSyncAbs);
 }
 
 // ── groupNames ───────────────────────────────────────────────────────────────

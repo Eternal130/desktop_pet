@@ -213,13 +213,17 @@ stable）。宿主侧的既定阶梯（与 `docs/rules.md` §7 同一真相）:
 | 项 | 值 |
 |---|---|
 | 可取消 | **是**（poster 消费终值：被取消则跳过本次 idle `play_motion`） |
-| 来源 | **宿主点**——闲时调度器 `Scheduler` 的触发回调（非 WS 事件）；在 idle `play_motion` 发出**之前**发布 |
+| 来源 | **宿主点**——闲时调度器 `Scheduler` 的触发回调（非 WS 事件）；在 idle 动作命令发出**之前**发布 |
 | 频率 | 每个调度节拍一发（节拍间隔 = 实例配置 `idle_interval` 秒，默认 10，范围 1..60） |
 
 | 字段 | 类型 | 语义 | 哨兵 |
 |---|---|---|---|
 | `group` | string | 配置的闲时动作组（默认 "Idle"） | — |
 | `index` | int | 0..count-1 随机序号 | — |
+
+idle 源优先级为 **包 > 模型 > 无**：挂载含 "idle" 组的语音包时，`group` 固定为
+`"idle"`，动作来自该包（回调发送 `play_motion_ext`，priority=1），无包时回落到
+模型自身解析出的 Idle 动作组（`play_motion`）。
 
 ### 6.6 `pet.instance.audio_finished`（kEventInstanceAudioFinished）
 

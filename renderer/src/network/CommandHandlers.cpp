@@ -125,6 +125,7 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
          Csm::CubismMotionQueueEntryHandle handle = model->StartMotionWithCustomData(group.c_str(), index, priority, OnMotionFinishedStatic, ctx);
          
          if (handle == Csm::InvalidMotionQueueEntryHandleValue) {
+             LAppPal::PrintLogLn("[CommandHandlers] play_motion rejected: group=%s index=%d priority=%d", group.c_str(), index, priority);
              delete ctx;
              return;
          }

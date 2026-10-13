@@ -469,19 +469,6 @@ void LAppModel::Update()
 
 CubismMotionQueueEntryHandle LAppModel::StartMotion(const csmChar* group, csmInt32 no, csmInt32 priority, ACubismMotion::FinishedMotionCallback onFinishedMotionHandler, ACubismMotion::BeganMotionCallback onBeganMotionHandler)
 {
-    if (priority == PriorityForce)
-    {
-        _motionManager->SetReservePriority(priority);
-    }
-    else if (!_motionManager->ReserveMotion(priority))
-    {
-        if (_debugMode)
-        {
-            LAppPal::PrintLogLn("[APP]can't start motion.");
-        }
-        return InvalidMotionQueueEntryHandleValue;
-    }
-
     const csmString fileName = _modelSetting->GetMotionFileName(group, no);
 
     //ex) idle_0
@@ -511,6 +498,39 @@ CubismMotionQueueEntryHandle LAppModel::StartMotion(const csmChar* group, csmInt
     {
         motion->SetBeganMotionHandler(onBeganMotionHandler);
         motion->SetFinishedMotionHandler(onFinishedMotionHandler);
+    }
+
+    // Load-failure guard (hardening): a NULL motion must never reach
+    // StartMotionPriority — it sets _currentPriority BEFORE the queue
+    // manager's NULL check, and the resulting empty queue keeps
+    // IsFinished() true so UpdateMotion never runs to reset the priority.
+    // Every later motion at priority <= this level would then be silently
+    // rejected by ReserveMotion (permanent idle/animation death).
+    if (motion == NULL)
+    {
+        LAppPal::PrintLogLn("[LAppModel] can't start motion '%s_%d': load failed (group missing or file unreadable)", group, no);
+        return InvalidMotionQueueEntryHandleValue;
+    }
+
+    // Reserve only after a successful load so reserve/start are always
+    // paired — no early return path can leak _reservePriority. The
+    // priority==Force (3) bypass of ReserveMotion is preserved.
+    if (priority == PriorityForce)
+    {
+        _motionManager->SetReservePriority(priority);
+    }
+    else if (!_motionManager->ReserveMotion(priority))
+    {
+        if (_debugMode)
+        {
+            LAppPal::PrintLogLn("[APP]can't start motion.");
+        }
+        if (autoDelete)
+        {
+            // Freshly loaded this call; ownership never reached the queue.
+            ACubismMotion::Delete(motion);
+        }
+        return InvalidMotionQueueEntryHandleValue;
     }
 
     //voice
@@ -817,7 +837,33 @@ static void OnExtMotionFinishedStatic(Csm::ACubismMotion* motion) {
 bool LAppModel::StartMotionFromFile(const std::string& filePath, int priority,
                                       float fadeIn, float fadeOut, Network::EventEmitter* emitter)
 {
+    // Load BEFORE reserving so reserve/start stay paired — any failure below
+    // must not leave a stale _reservePriority behind, or every later
+    // play_motion_ext at the same priority tier would be silently rejected.
+    csmByte* buffer;
+    csmSizeInt size;
+    buffer = CreateBuffer(filePath.c_str(), &size);
+    if (!buffer || size == 0) {
+        LAppPal::PrintLogLn("[LAppModel] play_motion_ext failed to load motion file (unreadable): %s", filePath.c_str());
+        if (buffer) { DeleteBuffer(buffer, filePath.c_str()); }
+        return false;
+    }
+
+    CubismMotion* motion = static_cast<CubismMotion*>(LoadMotion(buffer, size, NULL, NULL, NULL));
+    DeleteBuffer(buffer, filePath.c_str());
+
+    if (!motion) {
+        LAppPal::PrintLogLn("[LAppModel] play_motion_ext failed to load motion file (invalid motion3): %s", filePath.c_str());
+        return false;
+    }
+
     auto* ctx = new ExtMotionCtx{emitter, filePath};
+
+    motion->SetFadeInTime(fadeIn);
+    motion->SetFadeOutTime(fadeOut);
+    motion->SetEffectIds(_eyeBlinkIds, _lipSyncIds);
+    motion->SetFinishedMotionHandler(OnExtMotionFinishedStatic);
+    motion->SetFinishedMotionCustomData(ctx);
 
     if (priority == PriorityForce)
     {
@@ -830,33 +876,9 @@ bool LAppModel::StartMotionFromFile(const std::string& filePath, int priority,
             LAppPal::PrintLogLn("[APP]StartMotionFromFile: can't start motion (priority too low): %s", filePath.c_str());
         }
         delete ctx;
+        ACubismMotion::Delete(motion); // ownership never reached the queue
         return false;
     }
-
-    csmByte* buffer;
-    csmSizeInt size;
-    buffer = CreateBuffer(filePath.c_str(), &size);
-    if (!buffer || size == 0) {
-        LAppPal::PrintLogLn("[LAppModel] StartMotionFromFile: failed to read file: %s", filePath.c_str());
-        if (buffer) { DeleteBuffer(buffer, filePath.c_str()); }
-        delete ctx;
-        return false;
-    }
-
-    CubismMotion* motion = static_cast<CubismMotion*>(LoadMotion(buffer, size, NULL, NULL, NULL));
-    DeleteBuffer(buffer, filePath.c_str());
-
-    if (!motion) {
-        LAppPal::PrintLogLn("[LAppModel] StartMotionFromFile: failed to create motion from: %s", filePath.c_str());
-        delete ctx;
-        return false;
-    }
-
-    motion->SetFadeInTime(fadeIn);
-    motion->SetFadeOutTime(fadeOut);
-    motion->SetEffectIds(_eyeBlinkIds, _lipSyncIds);
-    motion->SetFinishedMotionHandler(OnExtMotionFinishedStatic);
-    motion->SetFinishedMotionCustomData(ctx);
 
     const CubismMotionQueueEntryHandle handle = _motionManager->StartMotionPriority(motion, true, priority);
     // Track for motion_progress snapshots (events.md §17). Path variant has

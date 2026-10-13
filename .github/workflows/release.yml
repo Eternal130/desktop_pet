@@ -3,10 +3,11 @@
 #
 # Artifacts per release:
 #   Windows: DesktopPet-Setup-<tag-no-v>.exe (Inno Setup) + portable zip
-#            + DesktopPet-Update-<tag>-windows-x64.zip (slim overwrite-update:
-#              build/bin minus fonts/ + Resources/Models/ — for users who
-#              already installed a full release; those first-install payloads
-#              are ~61MB and never change between releases)
+#            + DesktopPet-Update-<tag-no-v>.exe (slim in-place update
+#              installer — installer.iss UPDATE mode: same AppId/dir,
+#              full tree minus fonts/ + Resources/Models/, for users who
+#              already installed a full release; those first-install
+#              payloads are ~61MB and never change between releases)
 #   Linux:   DesktopPet-<tag>-x86_64.AppImage + portable tar.gz (both full)
 #
 # Coexists with ci.yml by design: ci handles push/PR, this handles tags.
@@ -144,39 +145,6 @@ jobs:
           fi
           ls -la dist/
 
-      - name: Update zip (build/bin minus fonts/models, overwrite-update)
-        run: |
-          # Slim update package for users who already installed a FULL
-          # release: everything from build/bin EXCEPT fonts/ (~37MB, 4 CJK
-          # fonts) and Resources/Models/ (~24MB, 8 sample models) — the
-          # update is an unzip-over-{localappdata}\DesktopPet overwrite, and
-          # those first-install payloads are already on the user's disk.
-          # Same tar-pipe staging + 7z + size-floor self-check as above.
-          mkdir -p dist updstage
-          (cd build/bin && tar cf - \
-              --exclude=renderer_tests.exe \
-              --exclude=desktop-pet-controller-qt-poc.exe \
-              --exclude='*.pdb' --exclude='*.lib' \
-              --exclude=./fonts --exclude=./Resources/Models \
-              .) | (cd updstage && tar xf -)
-          # Guard against staging failures landing in the Release: a broken
-          # tar pipe archives ~nothing, while the real payload (Qt runtime +
-          # both renderers + shaders, after the windeployqt pruning) is
-          # comfortably above 20MB compressed. fonts/models omission is
-          # verified below by content checks, not by this size floor.
-          if [ -d updstage/fonts ] || [ -d updstage/Resources/Models ]; then
-            echo "update zip staging unexpectedly contains fonts/ or Resources/Models/ — exclude failed" >&2
-            exit 1
-          fi
-          (cd updstage && 7z a "../dist/DesktopPet-Update-$TAG-windows-x64.zip" ./*)
-          upd_size=$(wc -c < "dist/DesktopPet-Update-$TAG-windows-x64.zip")
-          if [ "$upd_size" -lt 20000000 ]; then
-            echo "update zip is only ${upd_size} bytes — staging failed?" >&2
-            ls -laR updstage | head -20 >&2
-            exit 1
-          fi
-          ls -la dist/
-
       - name: Inno Setup installer
         run: |
           if ! command -v iscc >/dev/null 2>&1; then
@@ -190,6 +158,41 @@ jobs:
                /DBUILD_BIN="$(cygpath -m "$(pwd)/build/bin")" \
                packaging/windows/installer.iss
           mv packaging/windows/DesktopPet-Setup-*.exe dist/
+
+      - name: Update installer (installer.iss UPDATE mode, in-place)
+        run: |
+          # Same iscc script, /DUPDATE switches it into slim-update flavor:
+          # [Files] drops fonts\* + Resources\Models\* (~61MB first-install
+          # payloads already on the user's disk), OutputBaseFilename becomes
+          # DesktopPet-Update-<ver>, AppId/dir stay identical → in-place
+          # update sharing the main install's uninstall entry.
+          # PATH fallback is step-local (export above doesn't cross steps).
+          if ! command -v iscc >/dev/null 2>&1; then
+            export PATH="$PATH:/c/Program Files (x86)/Inno Setup 6"
+          fi
+          MSYS_NO_PATHCONV=1 iscc /DUPDATE /DVERSION="${TAG#v}" \
+               /DBUILD_BIN="$(cygpath -m "$(pwd)/build/bin")" \
+               packaging/windows/installer.iss
+          mv packaging/windows/DesktopPet-Update-*.exe dist/
+          # Self-checks against a silently-broken UPDATE build landing in
+          # the Release. Absolute floor: a compile/staging failure produces
+          # a near-empty exe; the real payload (Qt runtime + both renderers
+          # + shaders) is comfortably above 20MB compressed. Relative check:
+          # fonts+models are ~50MB compressed, so a valid update must be
+          # distinctly smaller than the main Setup — if not, the UPDATE
+          # excludes failed and the "update" is a full installer under a
+          # wrong name.
+          upd_size=$(wc -c < dist/DesktopPet-Update-*.exe)
+          setup_size=$(wc -c < dist/DesktopPet-Setup-*.exe)
+          if [ "$upd_size" -lt 20000000 ]; then
+            echo "update installer is only ${upd_size} bytes — build failed?" >&2
+            exit 1
+          fi
+          if [ "$upd_size" -ge "$setup_size" ]; then
+            echo "update installer (${upd_size}B) >= main Setup (${setup_size}B) — UPDATE excludes failed?" >&2
+            exit 1
+          fi
+          ls -la dist/
 
       - uses: actions/upload-artifact@v4
         with:

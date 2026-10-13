@@ -6,6 +6,21 @@
 ; VERSION defaults to 0.0.0 (manual/local compiles); the CI flow always
 ; passes the git tag.
 ;
+; DUAL MODE (2026-10 slimming) — one script, two installers, no copy-drift.
+; The UPDATE preprocessor switch (iscc /DUPDATE) selects the slim update
+; flavor; without it this is the full main installer, byte-for-byte the
+; same behavior as before the switch existed:
+;   main (default)  — FULL build/bin tree: fonts/ + sample models included,
+;                     first install gets everything. Output: DesktopPet-Setup.
+;   /DUPDATE        — same tree MINUS fonts\* + Resources\Models\* (~61MB of
+;                     first-install payloads that never change between
+;                     releases). Output: DesktopPet-Update. AppId / AppName /
+;                     DefaultDirName / PrivilegesRequired are IDENTICAL in
+;                     both modes: an in-place update over the existing
+;                     %LOCALAPPDATA%\DesktopPet install (Inno re-uses the
+;                     previous install dir via UsePreviousAppDir) sharing the
+;                     same uninstall entry.
+;
 ; PER-USER INSTALL (storage-layout revision 2026-09): installs to
 ; {localappdata}\DesktopPet with PrivilegesRequired=lowest — NO UAC
 ; elevation prompt, uninstall key under HKCU, {autoprograms}/{autodesktop}
@@ -24,13 +39,30 @@
 ; Contents = the whole self-contained build/bin tree (controller exe +
 ; GL/VK renderers + Live2DCubismCore.dll + Resources/ + fonts/ + shader
 ; dirs + Qt runtime DLLs deployed by windeployqt POST_BUILD). Test and
-; debug artifacts never ship (Excludes below).
+; debug artifacts never ship (Excludes below); UPDATE mode additionally
+; excludes fonts\* and Resources\Models\* (see FILE_EXCLUDES).
 
 #ifndef VERSION
 #define VERSION "0.0.0"
 #endif
 #ifndef BUILD_BIN
 #define BUILD_BIN "..\..\build\bin"
+#endif
+
+; [Files] exclude list, parameterized for the two modes so the Source rule
+; itself is never duplicated (drift-proof). UPDATE appends the first-install
+; payloads. The directory excludes are deliberately belt-and-braces:
+;   - a bare name mask ('fonts') matches the directory ENTRY during wildcard
+;     expansion — the whole subtree is dropped from the file list;
+;   - the '\*' variants match path-relatively against every file below the
+;     directory ('*' spans path separators in Inno's mask matcher).
+; Together: nothing under fonts\ or Resources\Models\ can ship in UPDATE
+; mode, whatever the matcher edge case. ISPP string literals keep '\' raw
+; (ISPP escapes use '#', not backslash).
+#ifdef UPDATE
+#define FILE_EXCLUDES "renderer_tests.exe,desktop-pet-controller-qt-poc.exe,*.pdb,*.lib,fonts,fonts\*,Resources\Models,Resources\Models\*"
+#else
+#define FILE_EXCLUDES "renderer_tests.exe,desktop-pet-controller-qt-poc.exe,*.pdb,*.lib"
 #endif
 
 [Setup]
@@ -52,9 +84,20 @@ MinVersion=10.0
 ArchitecturesInstallIn64BitMode=x64compatible
 Compression=lzma2
 SolidCompression=yes
+; CloseApplications IS Inno's default (=yes) — written out explicitly for
+; the UPDATE flow: the running pet/panel locks the exes being replaced, and
+; Restart Manager (CloseApplicationsFilter default *.exe,*.dll,*.chm)
+; prompts the user to close them before files are overwritten. Behavior of
+; the main installer is unchanged (same default as before).
+CloseApplications=yes
 WizardStyle=modern
 OutputDir=.
+#ifdef UPDATE
+; UPDATE flavor: distinct artifact name (DesktopPet-Update-<ver>.exe).
+OutputBaseFilename=DesktopPet-Update-{#VERSION}
+#else
 OutputBaseFilename=DesktopPet-Setup-{#VERSION}
+#endif
 
 [Languages]
 ; Vendored: choco's Inno Setup package does not ship ChineseSimplified.isl
@@ -71,8 +114,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
 ; Everything build/bin produces. Excludes: renderer_tests.exe (GoogleTest
 ; binary), the retired PoC exe (stale local builds only — CI never produces
 ; it), plus PDB/lib files that can leak in from debug-adjacent tooling.
+; UPDATE mode additionally drops fonts\* + Resources\Models\* via the
+; FILE_EXCLUDES define above (main install keeps the tree full).
 Source: "{#BUILD_BIN}\*"; DestDir: "{app}"; \
-    Excludes: "renderer_tests.exe,desktop-pet-controller-qt-poc.exe,*.pdb,*.lib"; \
+    Excludes: "{#FILE_EXCLUDES}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

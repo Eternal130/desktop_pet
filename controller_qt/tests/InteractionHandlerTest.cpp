@@ -77,11 +77,13 @@ private slots:
         const QJsonObject payload = obj.value("payload").toObject();
         QCOMPARE(payload.value("group").toString(), QStringLiteral("TapHead"));
         QCOMPARE(payload.value("index").toInt(), 0);
-        QCOMPARE(payload.value("priority").toInt(), 2);
+        // Force-tier floor (see InteractionHandler.cpp's build site): hit
+        // motions must interrupt a still-playing same-tier motion.
+        QCOMPARE(payload.value("priority").toInt(), 3);
     }
 
     // Default body mapping: no modelConfig set → hit{body} → play_motion
-    // {group:TapBody, priority:2}.
+    // {group:TapBody, priority:3 (Force floor)}.
     void testHitBodyDefault()
     {
         QStringList captured;
@@ -98,7 +100,7 @@ private slots:
         QCOMPARE(obj.value("action").toString(), QStringLiteral("play_motion"));
         const QJsonObject payload = obj.value("payload").toObject();
         QCOMPARE(payload.value("group").toString(), QStringLiteral("TapBody"));
-        QCOMPARE(payload.value("priority").toInt(), 2);
+        QCOMPARE(payload.value("priority").toInt(), 3);
     }
 
     // Case-fold tier 2: modelConfig has "Head" (capitalized), renderer sends

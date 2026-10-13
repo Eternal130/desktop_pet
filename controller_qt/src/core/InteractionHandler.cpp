@@ -71,7 +71,14 @@ void InteractionHandler::handleHitEvent(const Envelope& hitEvent)
 
     // Build play_motion via the typed factory. index=0 — the renderer cycles
     // or picks the first motion in the group. (todo 16: previously inline.)
-    const Envelope command = Protocol::buildPlayMotion(action->group, 0, action->priority);
+    // Priority floored at 3 (Force tier): a second tap while the previous
+    // tap motion is still playing must INTERRUPT it — same-priority(2) sends
+    // hit ReserveMotion's `priority <= _currentPriority` guard and die
+    // silently (the WS path gives no failure feedback). Same convention as
+    // MountedBehaviorEngine's hit behaviors (qMax(3, ·) there) and the
+    // Cubism samples' PriorityForce taps.
+    const Envelope command =
+        Protocol::buildPlayMotion(action->group, 0, qMax(3, action->priority));
     const QString json = QString::fromUtf8(
         serialize(command).toJson(QJsonDocument::Compact));
 

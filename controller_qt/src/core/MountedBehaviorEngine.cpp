@@ -144,11 +144,18 @@ MountedBehaviorEngine::buildBehaviorCommand(const QString& areaId) const
 
     const Envelope command = Protocol::buildPlayMotionExt(
         motionAbs,
-        // Clamp to >=1: a pack group with priority 0 (MetaMkoParser's
-        // default) reaches the renderer as ReserveMotion(0), which it
-        // rejects unconditionally — the behavior would die silently. 1 is
-        // the lowest legal tier (Idle); ≥2 passes through unchanged.
-        qMax(1, group->priority),
+        // Force-tier floor (qMax(3, ·)): a hit-triggered behavior must
+        // interrupt whatever is still playing. Log-verified failure mode
+        // (v2.0.5-era, 2026-10-13): the cooldown window is the AUDIO length,
+        // but the motion often outlives it — a same-priority(2) tap then hits
+        // ReserveMotion's `priority <= _currentPriority` guard and is
+        // silently rejected, leaving the bubble (pushed controller-side,
+        // fire-and-forget) without any motion. Cubism's own samples use
+        // PriorityForce for taps for exactly this reason; groups that
+        // deliberately declare a higher tier (4/5) pass through unchanged.
+        // Idle stays at 1 (see buildIdleMotionCommand) so behaviors always
+        // outrank it.
+        qMax(3, group->priority),
         fadeInSec,
         fadeOutSec,
         audioAbs,

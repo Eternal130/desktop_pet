@@ -411,9 +411,12 @@ private slots:
         QVERIFY(!disabled.buildIdleMotionCommand(0).has_value());
     }
 
-    // Priority clamp: a pack group with priority 0 (MetaMkoParser's default)
-    // must reach the renderer as 1 — ReserveMotion(0) is always rejected, so
-    // the unclamped behavior would die silently. Higher tiers pass through.
+    // Priority floor: a pack group with priority 0 (MetaMkoParser's default)
+    // — or any tier below Force — must reach the renderer as 3. Lower tiers
+    // either die outright (ReserveMotion(0) is always rejected) or collide
+    // with the still-playing previous behavior at the same tier and die
+    // silently; see the qMax(3, ·) rationale in MountedBehaviorEngine.cpp.
+    // Higher tiers (4/5) pass through unchanged.
     void testBuildBehaviorCommandPriorityClamp()
     {
         QTemporaryDir tempDir;
@@ -437,7 +440,7 @@ private slots:
         const auto result = engine.buildBehaviorCommand(QStringLiteral("head"));
         QVERIFY(result.has_value());
         QCOMPARE(result->command.payload.value(
-                     QStringLiteral("priority")).toInt(), 1);
+                     QStringLiteral("priority")).toInt(), 3);
     }
 };
 

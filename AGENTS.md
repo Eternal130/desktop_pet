@@ -60,9 +60,9 @@ desktop_pet/
 | `InstanceSession` | C++ | `controller_qt/src/core/InstanceSession.hpp` | Per-pet orchestrator (split across 5 TUs: .cpp/Setters/Commands/Handlers/Monitor); owns ProcessManager + MessageDispatcher + EventRegistry + Scheduler + InteractionHandler + RestartController + MonitorDataModel |
 | `InstanceManager` | C++ | `controller_qt/src/core/InstanceManager.hpp` | QAbstractListModel sidebar roster, demuxes WsServer messages by instanceId, persistence via savePanel callback |
 | `WsServer` | C++ | `controller_qt/src/network/WsServer.hpp` | QWebSocketServer on 127.0.0.1:9001, 3-gate token handshake, multi-instance routing |
-| `Scheduler` | C++ | `controller_qt/src/core/Scheduler.hpp` | QTimer idle motion cadence |
+| `Scheduler` | C++ | `controller_qt/src/core/Scheduler.hpp` | QTimer idle motion cadence; dual-source since pack-idle fix (see MBE row): pack "idle" group > model Idle group (case-insensitive resolve) > none |
 | `InteractionHandler` | C++ | `controller_qt/src/core/InteractionHandler.hpp` | hit → play_motion (3-tier case-folding lookup) |
-| `MountedBehaviorEngine` | C++ | `controller_qt/src/core/MountedBehaviorEngine.hpp` | Voice-pack behavior engine (priority over InteractionHandler when a pack is mounted) |
+| `MountedBehaviorEngine` | C++ | `controller_qt/src/core/MountedBehaviorEngine.hpp` | Voice-pack behavior engine (priority over InteractionHandler when a pack is mounted); ALSO owns pack idle playback — `hasIdleMotions`/`buildIdleMotionCommand` (priority=1, index-addressed) drive the pack-mode scheduler, `isIdleMotionPath` classifies variant-B motion_finished; mount/unmount restarts the idle scheduler to switch idle source |
 | `RestartController` | C++ | `controller_qt/src/core/RestartController.hpp` | Exponential-backoff crash recovery (max 5 attempts) |
 | `TrayManager` | C++ | `controller_qt/src/system/TrayManager.hpp` | QSystemTrayIcon wrapper (QtGui only — no QMenu, QML popup) |
 | `AutoLaunchManager` | C++ | `controller_qt/src/system/AutoLaunchManager.hpp` | Win `reg.exe` via QProcess / Linux `.desktop` (injectable suppliers for testing) |

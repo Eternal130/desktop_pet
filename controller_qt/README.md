@@ -390,6 +390,28 @@ controller_qt/
 
 ---
 
+## Third-party dependencies
+
+Pulled at configure time via CMake FetchContent (first configure needs
+network access; re-configures reuse `build/_deps/`):
+
+| Library | Version | License | Used for | Integration point |
+|---------|---------|---------|----------|-------------------|
+| [spdlog](https://github.com/gabime/spdlog) | v1.15.0 | MIT | Rotating file logging + Qt message bridge | `src/logging/` |
+| [miniz](https://github.com/richgel999/miniz) | 3.0.2 | MIT | Plugin-install zip pipeline | `src/core/ZipArchive.cpp` |
+| [QWindowKit](https://github.com/stdware/qwindowkit) | 1.5.0 | Apache-2.0 | Frameless window chrome: titlebar drag / edge resize / system menu / Win11 Snap Layout + Mica | `qml/Main.qml` (WindowAgent) + `src/main.cpp` (type registration) + CMakeLists.txt |
+
+QWindowKit notes: linked **statically** (`QWINDOWKIT_BUILD_STATIC=ON`,
+Quick component only) into the controller exe; its `qmsetup` build
+dependency is fetched recursively by FetchContent. Windows-side the agent
+reports Mica support only on Windows 11 22H2+ (version-gated inside QWK —
+older systems silently keep the palette background). Offline builds can
+point at a local checkout via
+`-DFETCHCONTENT_SOURCE_DIR_QWINDOWKIT=/path/to/qwindowkit` (run
+`git submodule update --init --recursive` inside that copy first).
+
+---
+
 ## Protocol interoperability
 
 controller_qt drives the renderer over a **JSON-over-WebSocket protocol** —

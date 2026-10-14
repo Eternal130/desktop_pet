@@ -1,11 +1,16 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
+import QWindowKit
 import DesktopPet
 
 // Native Fluent-style shell (design doc fluent-ui-redesign.html), no third-
-// party QML library. Frameless window + custom titlebar + nav pane with
-// groups / badges / instance section / search filter.
+// party QML library. Frameless window via QWindowKit (stdware/qwindowkit,
+// linked from CMake + registered in main.cpp): the WindowAgent owns titlebar
+// drag, double-click maximize, the titlebar right-click system menu, edge
+// resize and (on Windows) Snap Layout + Mica, replacing the previous hand-
+// rolled DragHandler + 8 ResizeEdge strips. Custom titlebar + nav pane with
+// groups / badges / instance section / search filter remain right here.
 //
 // Preserved business surface: switchPage(name) / selectInstance(row, uuid),
 // tray Connections, delete/exit confirm dialogs, closeAction branching,
@@ -19,11 +24,47 @@ Window {
     minimumHeight: 600
     x: initialX >= 0 ? initialX : (Screen.width - width) / 2
     y: initialY >= 0 ? initialY : (Screen.height - height) / 2
-    visible: true
     title: qsTr("Desktop Pet Controller")
-    color: Theme.bgColor
 
-    flags: Qt.Window | Qt.FramelessWindowHint
+    // NO manual FramelessWindowHint here: QWindowKit applies the right
+    // per-platform strategy when the platform window is created (Qt-context
+    // platforms — incl. Linux — get the frameless hint from QWK itself;
+    // Windows gets native frame stripping + hit-test rewrite WITHOUT the
+    // hint, which is what unlocks Snap Layout flyouts and the system menu).
+    //
+    // Show is deferred to Component.onCompleted: agent.setup() must run
+    // before the platform window exists so the frame never flashes decorated.
+    //
+    // Material coupling: when Mica activates (Windows 11 22H2+, QWK reports
+    // support via the attribute call's return) both the window base and the
+    // canvas layer go transparent so the system material shows through; on
+    // everything else (incl. all of Linux) micaActive stays false and the
+    // SystemPalette-driven Theme.bgColor chain below is untouched.
+    color: root.micaActive ? "transparent" : Theme.bgColor
+    readonly property bool isWindows: Qt.platform.os === "windows"
+    property bool micaActive: false
+
+    function applyMaterial() {
+        if (!root.isWindows)
+            return
+        // dark-mode FIRST (it tints the material), then the mica request;
+        // a false return (Win10 / unsupported SKU) keeps the palette bg.
+        windowAgent.setWindowAttribute("dark-mode", Theme.dark)
+        root.micaActive = windowAgent.setWindowAttribute("mica", true)
+    }
+
+    // OS light/dark switch (also fires for the PET_COLORSCHEME QA env):
+    // re-sync the material tint. Linux is a no-op inside applyMaterial.
+    Connections {
+        target: Qt.styleHints
+        function onColorSchemeChanged(scheme) {
+            root.applyMaterial()
+        }
+    }
+
+    WindowAgent {
+        id: windowAgent
+    }
 
     // ── Page bookkeeping ────────────────────────────────────────────────
     property string currentPage: "welcome"
@@ -211,78 +252,36 @@ Window {
     }
 
     // ── Canvas base (solid palette window color; chrome distinguishes
-    // itself by hairlines instead of translucent overlays) ────────────────
+    // itself by hairlines instead of translucent overlays). Under Mica
+    // (Windows) both layers go transparent so the system material shows
+    // through; Linux keeps the opaque palette chain. ──────────────────────
     Rectangle {
         id: canvasLayer
         z: 0
         anchors.fill: parent
-        color: Theme.bgColor
+        color: root.micaActive ? "transparent" : Theme.bgColor
     }
 
-    // ── Window resize edges (frameless windows lose the system border;
-    // 8 invisible strips call startSystemResize, same family as the
-    // titlebar's startSystemMove) ────────────────────────────────────────
-    component ResizeEdge : MouseArea {
-        id: edge
-        property int edges: 0          // combination of Qt.LeftEdge etc.
-        z: 50
-        hoverEnabled: true
-        cursorShape: {
-            const l = edges & Qt.LeftEdge, r = edges & Qt.RightEdge
-            const t = edges & Qt.TopEdge,  b = edges & Qt.BottomEdge
-            if ((l && t) || (r && b)) return Qt.SizeFDiagCursor
-            if ((l && b) || (r && t)) return Qt.SizeBDiagCursor
-            if (l || r) return Qt.SizeHorCursor
-            return Qt.SizeVerCursor
-        }
-        onPressed: (mouse) => {
-            const accepted = root.startSystemResize(edge.edges)
-            if (accepted) mouse.accepted = true
-        }
-    }
+    // ── Window resize edges: OWNED BY QWK NOW. The previous hand-rolled
+    // ResizeEdge strips (8 MouseAreas + startSystemResize) and the titlebar
+    // DragHandler/TapHandler are replaced by the WindowAgent's hit-test:
+    // identical 8px borders on Linux, native borders + Snap Layout on
+    // Windows. ───────────────────────────────────────────────────────────
 
-    ResizeEdge { // left
-        anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
-        width: 6; edges: Qt.LeftEdge
-    }
-    ResizeEdge { // right
-        anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
-        width: 6; edges: Qt.RightEdge
-    }
-    ResizeEdge { // top
-        anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-        height: 6; edges: Qt.TopEdge
-    }
-    ResizeEdge { // bottom
-        anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-        height: 6; edges: Qt.BottomEdge
-    }
-    ResizeEdge { // top-left
-        anchors.left: parent.left; anchors.top: parent.top
-        width: 12; height: 12; edges: Qt.LeftEdge | Qt.TopEdge
-    }
-    ResizeEdge { // top-right
-        anchors.right: parent.right; anchors.top: parent.top
-        width: 12; height: 12; edges: Qt.RightEdge | Qt.TopEdge
-    }
-    ResizeEdge { // bottom-left
-        anchors.left: parent.left; anchors.bottom: parent.bottom
-        width: 12; height: 12; edges: Qt.LeftEdge | Qt.BottomEdge
-    }
-    ResizeEdge { // bottom-right
-        anchors.right: parent.right; anchors.bottom: parent.bottom
-        width: 12; height: 12; edges: Qt.RightEdge | Qt.BottomEdge
-    }
-
-    // ── Titlebar (design .titlebar: 44px translucent band + hairline) ────
+    // ── Titlebar (Fluent spec: 32px band + hairline; QWK drag region) ────
     Rectangle {
         id: titleBar
         z: 10
-        height: 44
+        height: 32
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         color: "transparent"
+
+        // The QWK drag region: every press/double-click/right-click inside
+        // this item (minus the system buttons registered below in root's
+        // Component.onCompleted) is intercepted before QML sees it — no
+        // DragHandler/TapHandler here.
 
         Rectangle {
             anchors.bottom: parent.bottom
@@ -292,20 +291,26 @@ Window {
             color: Theme.hairlineColor
         }
 
+        // Window icon area — registered as the WindowIcon system button:
+        // native behavior (click = system menu, double-click = close on
+        // Windows), excluded from the drag region.
         Rectangle {
-            width: 18; height: 18; radius: 4
+            id: logoMark
+            width: 16; height: 16; radius: 4
             x: 16; y: (parent.height - height) / 2
+            opacity: root.active ? 1 : 0.55
             color: assetManager.logoUrl.length > 0
                    ? "transparent"
                    : Theme.accentColor
             PanelLogoGlyph {
                 anchors.centerIn: parent
-                size: 18
+                size: 16
             }
         }
         Text {
-            x: 44
+            x: 42
             y: (parent.height - height) / 2
+            opacity: root.active ? 1 : 0.55
             text: {
                 const pageNames = {
                     "welcome":   qsTr("主页"),
@@ -338,31 +343,27 @@ Window {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
+            // Win11: caption content fades on an inactive window
+            opacity: root.active ? 1 : 0.55
 
-            TitleBarButton { kind: "min";  onActivated: root.showMinimized() }
             TitleBarButton {
-                kind: root.visibility === Window.Maximized ? "restore" : "max"
+                id: minBtn
+                kind: "min"
+                onActivated: root.showMinimized()
+            }
+            TitleBarButton {
+                id: maxBtn
+                kind: root.visibility === Window.Maximized
+                      ? "restore" : "max"
                 onActivated: root.visibility === Window.Maximized
                            ? root.showNormal() : root.showMaximized()
             }
             TitleBarButton {
+                id: closeBtn
                 kind: "close"
                 isClose: true
                 onActivated: root.close()
             }
-        }
-
-        DragHandler {
-            target: null
-            onActiveChanged: if (active) {
-                if (root.visibility === Window.Maximized)
-                    root.showNormal()
-                root.startSystemMove()
-            }
-        }
-        TapHandler {
-            onDoubleTapped: root.visibility === Window.Maximized
-                            ? root.showNormal() : root.showMaximized()
         }
     }
 
@@ -853,6 +854,24 @@ Window {
 
     Component.onCompleted: {
         console.log("COLD_START_MS=" + (Date.now() - coldStartT0Ms))
+        // QWindowKit wiring — kept in ONE place, in this exact order:
+        // QML's Component.onCompleted finalization order between the root
+        // and its children is UNSPECIFIED, but the agent's context only
+        // exists after setup(), so every registration is sequenced here
+        // after setup() deterministically (per-item onCompleted hooks would
+        // race the root on some Qt versions).
+        //
+        // setup() must also run BEFORE the platform window is created (the
+        // show() below) — QWK applies the per-platform strategy at winId
+        // time, so the frame never flashes decorated.
+        windowAgent.setup(root)
+        windowAgent.setTitleBar(titleBar)
+        windowAgent.setSystemButton(WindowAgent.WindowIcon, logoMark)
+        windowAgent.setSystemButton(WindowAgent.Minimize, minBtn)
+        windowAgent.setSystemButton(WindowAgent.Maximize, maxBtn)
+        windowAgent.setSystemButton(WindowAgent.Close, closeBtn)
+        root.applyMaterial()
+        root.show()
         // Theme colors are system-palette driven now; the persisted panel
         // theme string (panelConfig.theme) is no longer consumed by QML —
         // kept for SDK/persistence compatibility only.
@@ -886,100 +905,30 @@ Window {
         }
     }
 
-    // Caption glyphs drawn as vector shapes (Win11 style) — Unicode
-    // ▢/❐/✕ glyphs render at inconsistent sizes across font fallbacks, so
-    // minimize/maximize/restore/close are hand-drawn strokes instead.
-    component TitleBarGlyph : Item {
-        id: glyph
-        property string kind: "min"   // min | max | restore | close
-        width: 10
-        height: 10
-
-        // minimize: thin centered dash, slightly above optical center
-        Rectangle {
-            visible: glyph.kind === "min"
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.verticalCenterOffset: 1.5
-            width: parent.width
-            height: 1
-            radius: 0.5
-            color: glyph._c
-        }
-        // maximize: 10x10 square outline (1px)
-        Rectangle {
-            visible: glyph.kind === "max"
-            anchors.fill: parent
-            radius: 1
-            border.width: 1
-            border.color: glyph._c
-            color: "transparent"
-        }
-        // restore: two offset squares (back 8x8 top-right, front 8x8 bottom-left)
-        Rectangle {
-            visible: glyph.kind === "restore"
-            x: 2; y: 0
-            width: 8; height: 8
-            radius: 1
-            border.width: 1
-            border.color: glyph._c
-            color: "transparent"
-        }
-        Rectangle {
-            visible: glyph.kind === "restore"
-            x: 0; y: 2
-            width: 8; height: 8
-            radius: 1
-            border.width: 1
-            border.color: glyph._c
-            color: Theme.bgColor
-        }
-        Rectangle {
-            visible: glyph.kind === "restore"
-            x: 0; y: 2
-            width: 8; height: 8
-            radius: 1
-            border.width: 1
-            border.color: glyph._c
-            color: "transparent"
-        }
-        // close: X of two rotated bars
-        Rectangle {
-            visible: glyph.kind === "close"
-            anchors.centerIn: parent
-            width: parent.width * 1.35
-            height: 1
-            rotation: 45
-            color: glyph._c
-        }
-        Rectangle {
-            visible: glyph.kind === "close"
-            anchors.centerIn: parent
-            width: parent.width * 1.35
-            height: 1
-            rotation: -45
-            color: glyph._c
-        }
-
-        readonly property color _c: Theme.text2Color
-    }
-
+    // Caption glyphs: the AppIcon SVG set ("windowmin/max/restore/close" —
+    // 24×24 stroked paths at 10px display size) — deliberately NOT the
+    // Segoe Fluent Icons font, which does not exist on Linux (tofu) and is
+    // not shipped with the app. Win11 metrics: full-bleed 46×<bar> hover
+    // targets, red close hover (Theme.errorColor + readable-on-red glyph).
     component TitleBarButton : Rectangle {
         id: btn
-        property string glyph: ""   // unused; kept for compat
-        property string kind: "min"
+        property string kind: "min"   // min | max | restore | close
         property bool isClose: false
         signal activated()
         width: 46
-        height: 44
+        height: parent.height
         color: _hover.hovered
                ? (isClose ? Theme.errorColor
-                          : Qt.alpha(Theme.textColor, 0.07))
+                          : Qt.alpha(Theme.textColor, 0.06))
                : "transparent"
 
-        TitleBarGlyph {
+        AppIcon {
             anchors.centerIn: parent
-            kind: btn.kind
+            name: "window" + btn.kind
+            size: 10
+            color: btn.isClose && _hover.hovered
+                   ? Theme.accentTextColor   // readable X on the red fill
+                   : Theme.text2Color
         }
         HoverHandler { id: _hover }
         TapHandler { onTapped: btn.activated() }

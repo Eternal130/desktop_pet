@@ -12,6 +12,8 @@
 #include <QStyleHints>
 #include <QTimer>
 
+#include <QWKQuick/qwkquickglobal.h>
+
 #include <chrono>
 
 #include "app/AppFontGuard.hpp"
@@ -162,6 +164,14 @@ int main(int argc, char* argv[])
     pet_register_static_plugins(panelApp.pluginRegistry());
 
     QQmlApplicationEngine engine;
+
+    // QWindowKit (stdware/qwindowkit): registers the "QWindowKit 1.0" QML
+    // module (the WindowAgent type) at runtime — no qmldir/plugin deployment
+    // involved. MUST run before loadFromModule below so Main.qml's
+    // `import QWindowKit` resolves. Main.qml owns the actual wiring
+    // (agent.setup(window) + titlebar registration); nothing else is needed
+    // on the C++ side.
+    QWK::registerTypes(&engine);
 
     // All 17 context properties + UI-bridge wiring (names & order verbatim,
     // QML unchanged); PanelUiBoot is parented to the engine — mount-point

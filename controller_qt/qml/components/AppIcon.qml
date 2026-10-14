@@ -59,6 +59,14 @@ Item {
         stop: "M8.2 6.9h7.6a1.3 1.3 0 0 1 1.3 1.3v7.6a1.3 1.3 0 0 1-1.3 1.3H8.2a1.3 1.3 0 0 1-1.3-1.3V8.2a1.3 1.3 0 0 1 1.3-1.3z",
         restart: "M4.6 8.3a7.7 7.7 0 0 1 14.4 0 M19.3 4v4.3H15 M19.4 15.7a7.7 7.7 0 0 1-14.4 0 M4.7 20v-4.3H9",
         copy: "M9.3 10.7h7.3a1.9 1.9 0 0 1 1.9 1.9v6.5a1.9 1.9 0 0 1-1.9 1.9H9.3a1.9 1.9 0 0 1-1.9-1.9v-6.5a1.9 1.9 0 0 1 1.9-1.9z M14.7 7.4V7a1.9 1.9 0 0 0-1.9-1.9H6.5A1.9 1.9 0 0 0 4.6 7v6.3a1.9 1.9 0 0 0 1.9 1.9h.6",
+        // Window caption glyphs (titlebar min/max/restore/close) — same
+        // 24×24 stroked language so the titlebar never depends on the
+        // Windows-only Segoe Fluent Icons font (tofu on Linux). Rendered at
+        // 10px they land on the Fluent-caption optical weight.
+        windowmin: "M4.5 12h15",
+        windowmax: "M6.6 5.2h10.8a1.4 1.4 0 0 1 1.4 1.4v10.8a1.4 1.4 0 0 1-1.4 1.4H6.6a1.4 1.4 0 0 1-1.4-1.4V6.6a1.4 1.4 0 0 1 1.4-1.4z",
+        windowrestore: "M9.1 8.9V6.6a1.4 1.4 0 0 1 1.4-1.4h6.9a1.4 1.4 0 0 1 1.4 1.4v6.9a1.4 1.4 0 0 1-1.4 1.4h-2.3 M6.6 8.9h6.9a1.4 1.4 0 0 1 1.4 1.4v6.9a1.4 1.4 0 0 1-1.4 1.4H6.6a1.4 1.4 0 0 1-1.4-1.4v-6.9a1.4 1.4 0 0 1 1.4-1.4z",
+        windowclose: "M6.1 6.1l11.8 11.8 M17.9 6.1L6.1 17.9",
         // Animal avatars (CreateInstanceDialog picker data)
         cat: "M6.1 7.6 4.9 3.3l4.5 1.8 M17.9 7.6l1.2-4.3-4.5 1.8 M4.8 12.7a7.2 6.5 0 1 0 14.4 0a7.2 6.5 0 1 0-14.4 0 M9.5 12.4v.01 M14.5 12.4v.01",
         dog: "M5.2 13.2a6.8 6.1 0 1 0 13.6 0a6.8 6.1 0 1 0-13.6 0 M6.6 7.9C4.3 8.8 3.5 11.7 4.4 14.4c.4 1.2 1.9 1.2 2.4.1 M17.4 7.9c2.3.9 3.1 3.8 2.2 6.5-.4 1.2-1.9 1.2-2.4.1 M9.7 12.4v.01 M14.3 12.4v.01 M10.5 16.1a2.1 1.5 0 0 0 3 0",

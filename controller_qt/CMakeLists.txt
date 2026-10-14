@@ -71,6 +71,106 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(miniz)
 unset(CMAKE_POLICY_VERSION_MINIMUM)
 
+# QWindowKit 1.5.0 (stdware/qwindowkit, Apache-2.0): Win11-modern window
+# chrome for the panel's frameless shell — native Snap Layout flyout on the
+# maximize button, titlebar system menu, DWM round corners, and the Mica
+# material on Windows 11 22H2+ (version-gated inside QWK; on older systems
+# setWindowAttribute("mica", …) simply reports false and we keep the plain
+# palette background). On Linux QWK falls back to its Qt-window-context
+# implementation (titlebar drag / 8px resize borders / double-click
+# maximize / system menu), which REPLACES Main.qml's hand-rolled
+# DragHandler + 8 ResizeEdge strips with identical net behavior.
+#
+# License attribution: third-party Apache-2.0 — noted here and in
+# controller_qt/README.md (the tree keeps no separate NOTICE file; the only
+# other third-party entries are spdlog MIT + miniz MIT, pulled by the two
+# FetchContent blocks above).
+#
+# Offline cache: a fresh build dir re-clones this once (same as spdlog/miniz
+# above). To point the build at an existing checkout instead of the network
+# set -DFETCHCONTENT_SOURCE_DIR_QWINDOWKIT=/path/to/qwindowkit (FetchContent
+# standard override); QWK's qmsetup submodule must be checked out in that
+# copy (git submodule update --init --recursive).
+
+# ── Linux system-Qt private-headers shim (QA host only, no-op elsewhere) ───
+# MUST run before FetchContent_MakeAvailable(qwindowkit) further below.
+# QWindowKit links Qt PRIVATE headers (QtCore/private/qobject_p.h,
+# QtQuick/private/qquickanchors_p.h). The Windows Qt (online installer) and
+# any machine with qt6-base-private-dev + qt6-declarative-private-dev
+# installed have them on disk. The Ubuntu system-Qt QA host ships the
+# Qt6*Private CMake packages WITHOUT the header tree (the headers live in
+# those two -private-dev debs), and CMake generation then aborts with
+# "Imported target Qt6::CorePrivate includes non-existent path".
+#
+# The Qt6<Mod>Private imported targets are created NON-GLOBAL inside QWK's
+# subdirectory scope, so they cannot be patched from here afterwards — the
+# fix must land BEFORE QWK's own find_package resolves them. Mechanism:
+# clone each Qt6<Mod>Private CMake package dir into build/qt-private-shims/,
+# rewrite the include prefix inside the cloned Targets.cmake to the local
+# header tree, and cache-pin <pkg>_DIR at the clone (must precede
+# FetchContent_MakeAvailable(qwindowkit) below — qmsetup's
+# qm_include_qt_private() resolves Qt6::<Mod>Private during it).
+#
+# One-time machine setup (no root needed; build/ is gitignored):
+#   apt-get download qt6-base-private-dev qt6-declarative-private-dev
+#   mkdir -p rootfs && for f in qt6-*-private-dev_*.deb; do dpkg -x "$f" rootfs; done
+#   cp -r rootfs/usr/include/x86_64-linux-gnu/qt6 <repo>/build/qt-private-headers/
+# Non-Linux hosts and hosts with the real distro packages skip all of this.
+if(UNIX AND NOT APPLE
+        AND EXISTS "${CMAKE_BINARY_DIR}/../qt-private-headers/qt6"
+        AND NOT EXISTS "/usr/include/x86_64-linux-gnu/qt6/QtCore/6.10.2")
+    set(_pet_priv_root "${CMAKE_BINARY_DIR}/../qt-private-headers/qt6")
+    # Shim EVERY Qt6<Mod>Private package the system ships whose header dir
+    # exists in the local tree — the dependency closure of QuickPrivate
+    # grows across distro point releases (QmlModels, QmlMeta, …), so the
+    # list is discovered, not enumerated.
+    file(GLOB _pet_all_pkgs "/usr/lib/*/cmake/Qt6*Private" "/usr/lib/cmake/Qt6*Private")
+    foreach(_pet_cfg_dir ${_pet_all_pkgs})
+        get_filename_component(_pet_pkg "${_pet_cfg_dir}" NAME)
+        # Qt6CorePrivate → QtCore (header dir name)
+        string(REGEX REPLACE "^Qt6(.*)Private$" "\\1" _pet_mod "${_pet_pkg}")
+        if(NOT EXISTS "${_pet_priv_root}/Qt${_pet_mod}")
+            continue()   # no local headers for this module → leave QWK's fallback
+        endif()
+        set(_pet_shim "${CMAKE_BINARY_DIR}/qt-private-shims/${_pet_pkg}")
+        file(REMOVE_RECURSE "${_pet_shim}")
+        file(COPY "${_pet_cfg_dir}/" DESTINATION "${_pet_shim}")
+        # Rewrite the import-prefix include path in the cloned Targets file:
+        # both the ${_IMPORT_PREFIX}/include/... form and ABSOLUTE sibling
+        # paths (Qt6QuickPrivate's file bakes /usr/include/.../QtQmlModels/
+        # 6.10.2 for its QmlModels dependency) become the local header root.
+        # Bracket argument = no variable expansion.
+        file(READ "${_pet_shim}/${_pet_pkg}Targets.cmake" _pet_targets_text)
+        string(REPLACE
+            [[${_IMPORT_PREFIX}/include/x86_64-linux-gnu/qt6]]
+            "${_pet_priv_root}"
+            _pet_targets_text
+            "${_pet_targets_text}")
+        string(REPLACE
+            "/usr/include/x86_64-linux-gnu/qt6"
+            "${_pet_priv_root}"
+            _pet_targets_text
+            "${_pet_targets_text}")
+        file(WRITE "${_pet_shim}/${_pet_pkg}Targets.cmake" "${_pet_targets_text}")
+        set(${_pet_pkg}_DIR "${_pet_shim}" CACHE PATH
+            "Patched Qt private package (local private-headers shim)" FORCE)
+    endforeach()
+    unset(_pet_priv_root)
+endif()
+
+set(QWINDOWKIT_BUILD_STATIC ON CACHE BOOL "" FORCE)   # link into the exe, no extra runtime DLL
+set(QWINDOWKIT_BUILD_WIDGETS OFF CACHE BOOL "" FORCE) # QML panel: Quick only
+set(QWINDOWKIT_BUILD_QUICK ON CACHE BOOL "" FORCE)
+set(QWINDOWKIT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(QWINDOWKIT_INSTALL OFF CACHE BOOL "" FORCE)       # never installed, no install rules needed
+FetchContent_Declare(
+    qwindowkit
+    GIT_REPOSITORY https://github.com/stdware/qwindowkit.git
+    GIT_TAG 1.5.0
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(qwindowkit)
+
 # ── P2c target layout (docs/refactor/plugin-architecture-and-cmake-migration.md
 # §B.1) ─────────────────────────────────────────────────────────────────────
 # pet_panel_api  INTERFACE — plugin SDK scaffolding (headers land in P4)
@@ -662,6 +762,10 @@ target_link_libraries(desktop-pet-controller-qt PRIVATE
     # implicitly. Symptom if missing (verified): runtime "No module named
     # \"DesktopPet\" found" with zero compile-time errors.
     pet_panel_coreplugin
+    # QWindowKit Quick (static): main.cpp calls QWK::registerTypes(&engine)
+    # before loading Main.qml so `import QWindowKit` resolves without any
+    # qmldir/plugin deployment; Main.qml drives the WindowAgent from QML.
+    QWindowKit::Quick
     # P4: plugin STATIC libraries (pet_plugin_<dir>); empty list when the
     # tree has no plugins.
     ${_plugin_targets}

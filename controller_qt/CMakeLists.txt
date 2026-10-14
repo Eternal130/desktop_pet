@@ -729,6 +729,7 @@ qt_add_executable(desktop-pet-controller-qt
     src/app/ScreenshotRunner.cpp
     src/app/PanelApplication.cpp
     src/app/PanelUiBoot.cpp
+    src/app/ThemeSchemeController.cpp
     src/app/AppFontGuard.cpp
     # P4: CMake-generated static plugin factory table (see the pipeline
     # section above; defines pet_register_static_plugins — exe-side because

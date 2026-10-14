@@ -151,13 +151,31 @@ Rectangle {
                     id: appearanceCard
                     width: parent.width
                     title: qsTr("外观")
-                    hint: qsTr("深浅色与强调色跟随系统设置")
+                    hint: qsTr("深浅色可独立于系统设置 · 强调色始终跟随系统")
 
-                    // palette-migration note: the in-app theme toggle and the
-                    // accent swatches were removed (2026-10-13) — light/dark
-                    // now follows the system color scheme and the accent
-                    // follows the style/system default. The Logo section below
-                    // is what remains under 外观.
+                    // 2026-10-13 the in-app theme toggle was removed with the
+                    // palette migration; Windows users asked for it back
+                    // (2026-10-15) — the three-way switch is restored, now
+                    // through the ThemeSchemeController (src/app composition
+                    // layer): setColorScheme + explicit palette for the
+                    // forced modes, launch-state restore for 跟随系统.
+                    // Persistence: panel kv "theme" ("light"/"dark"/"system").
+                    Segmented {
+                        options: [
+                            { label: qsTr("浅色"), value: "light" },
+                            { label: qsTr("深色"), value: "dark" },
+                            { label: qsTr("跟随系统"), value: "system" }
+                        ]
+                        currentValue: themeScheme.theme
+                        onSelected: (v) => themeScheme.setTheme(v)
+                    }
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: qsTr("「跟随系统」恢复与 Windows 深浅色联动；浅色/深色为面板独立强制，Mica 材质深浅随之切换。")
+                        color: root._mutedColor
+                        font.pixelSize: 11
+                    }
                 }
 
                 // ── Logo 替换 (design §7 — lives in 外观, not its own nav) ──

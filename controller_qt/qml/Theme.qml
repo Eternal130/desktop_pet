@@ -1,12 +1,13 @@
-// Global design tokens — palette-migration revision (2026-10-13).
+// Theme.qml — global design tokens.
 //
 // COLOR SOURCE: the SYSTEM PALETTE ONLY. Every color below derives from a
 // SystemPalette role (or Qt.alpha/lighter/darker of one), so the whole panel
-// follows the platform color scheme — light/dark switches with the OS
-// (Qt.styleHints.colorScheme), accent follows the style/theme default
-// (FluentWinUI3 system accent on Windows, Fluent blue on Linux). There is NO
-// in-app theme toggle and NO custom palette anymore; the old hand-rolled
-// light/dark palettes, overlays and gradient stops were removed.
+// follows whatever palette the runtime presents — the OS color scheme by
+// default, or the ThemeSchemeController's explicit light/dark palettes when
+// the user forces a mode in 设置 → 外观 (2026-10-15: the in-panel three-way
+// 浅色/深色/跟随系统 switch is back by user demand; this token layer is
+// deliberately agnostic to which of the three is active). Qt.styleHints
+// remains the scheme authority (QA still works via PET_COLORSCHEME=dark|light).
 //
 // Theme deliberately KEEPS its historical semantic token names (bgColor,
 // textColor, accentColor, …) so the QML pages keep one indirection point:

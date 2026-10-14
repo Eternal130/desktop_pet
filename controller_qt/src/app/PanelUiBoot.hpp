@@ -67,6 +67,7 @@ private:
     class NotificationStreamController* m_notificationStream;
     class EnvironmentChecker* m_envChecker;
     class WindowStateSaver* m_windowStateSaver;
+    class ThemeSchemeController* m_themeSchemeController = nullptr;
     class VoicePackController* m_voicePackController;
     class ModelController* m_modelController;
     class RosterApiModel* m_rosterApiModel;

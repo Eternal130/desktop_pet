@@ -44,21 +44,54 @@ Window {
     readonly property bool isWindows: Qt.platform.os === "windows"
     property bool micaActive: false
 
-    function applyMaterial() {
-        if (!root.isWindows)
+    // Material application runs in THREE phases, all funnelling through this
+    // one function (its log lines are the Windows-side diagnosis surface):
+    //   pre-show     — QWK stores the attributes and the color binding above
+    //                  flips to transparent BEFORE the platform window
+    //                  exists, so the surface is alpha-capable from frame 1.
+    //                  (Return value is meaningless here — QWK always
+    //                  returns true when merely storing.)
+    //   post-show    — the ONLY timing QWK's own examples exercise: the
+    //                  calls now run windowAttributeChanged against the live
+    //                  HWND (DwmSetWindowAttribute DWMWA_SYSTEMBACKDROP_TYPE
+    //                  + DwmExtendFrameIntoClientArea on a mapped window).
+    //                  A false return here genuinely means "unsupported"
+    //                  (e.g. Win10) and micaActive drops back to the palette
+    //                  background — self-correcting the pre-show store.
+    //   theme-change — 面板内深浅切换后重设 dark-mode（mica 激活则保持）。
+    function applyMaterial(phase) {
+        if (!root.isWindows) {
+            console.warn("MATERIAL_APPLIED=none phase=" + phase
+                         + " platform=" + Qt.platform.os
+                         + " win=" + themeScheme.osVersion())
             return
-        // dark-mode FIRST (it tints the material), then the mica request;
-        // a false return (Win10 / unsupported SKU) keeps the palette bg.
-        windowAgent.setWindowAttribute("dark-mode", Theme.dark)
-        root.micaActive = windowAgent.setWindowAttribute("mica", true)
+        }
+        // dark-mode FIRST (it tints the material), then the mica request.
+        const darkRet = windowAgent.setWindowAttribute("dark-mode", Theme.dark)
+        const micaRet = windowAgent.setWindowAttribute("mica", true)
+        root.micaActive = micaRet
+        console.warn("MATERIAL_APPLIED=" + (micaRet ? "mica" : "none")
+                     + " phase=" + phase
+                     + " ret=" + micaRet
+                     + " dark-mode=" + Theme.dark + "/" + darkRet
+                     + " win=" + themeScheme.osVersion())
     }
 
-    // OS light/dark switch (also fires for the PET_COLORSCHEME QA env):
-    // re-sync the material tint. Linux is a no-op inside applyMaterial.
+    // OS light/dark switch (also fires when themeScheme calls
+    // setColorScheme): re-sync the material tint. Linux is a no-op inside
+    // applyMaterial.
     Connections {
         target: Qt.styleHints
         function onColorSchemeChanged(scheme) {
-            root.applyMaterial()
+            root.applyMaterial("scheme-change")
+        }
+    }
+
+    // 面板内深浅切换（SettingsPage 外观卡 → themeScheme.setTheme）。
+    Connections {
+        target: themeScheme
+        function onThemeChanged(theme) {
+            root.applyMaterial("theme-change")
         }
     }
 
@@ -870,8 +903,13 @@ Window {
         windowAgent.setSystemButton(WindowAgent.Minimize, minBtn)
         windowAgent.setSystemButton(WindowAgent.Maximize, maxBtn)
         windowAgent.setSystemButton(WindowAgent.Close, closeBtn)
-        root.applyMaterial()
+        root.applyMaterial("pre-show")
         root.show()
+        // Phase 2 runs AFTER show(): the platform window exists by now, so
+        // QWK's windowAttributeChanged executes its DWM sequence directly —
+        // the proven path from the QWK examples (their menus can only fire
+        // on a visible window).
+        root.applyMaterial("post-show")
         // Theme colors are system-palette driven now; the persisted panel
         // theme string (panelConfig.theme) is no longer consumed by QML —
         // kept for SDK/persistence compatibility only.
@@ -906,10 +944,12 @@ Window {
     }
 
     // Caption glyphs: the AppIcon SVG set ("windowmin/max/restore/close" —
-    // 24×24 stroked paths at 10px display size) — deliberately NOT the
-    // Segoe Fluent Icons font, which does not exist on Linux (tofu) and is
-    // not shipped with the app. Win11 metrics: full-bleed 46×<bar> hover
-    // targets, red close hover (Theme.errorColor + readable-on-red glyph).
+    // Segoe Fluent Icons native geometry, see the path comments in AppIcon)
+    // at 10px display size with the native 1px optical stroke (2.4 on the
+    // 24-grid) — deliberately NOT the Segoe Fluent Icons font, which does
+    // not exist on Linux (tofu) and is not shipped with the app. Win11
+    // metrics: full-bleed 46×<bar> hover targets, red close hover
+    // (Theme.errorColor + readable-on-red glyph).
     component TitleBarButton : Rectangle {
         id: btn
         property string kind: "min"   // min | max | restore | close
@@ -926,6 +966,7 @@ Window {
             anchors.centerIn: parent
             name: "window" + btn.kind
             size: 10
+            strokeWidth: 2.4
             color: btn.isClose && _hover.hovered
                    ? Theme.accentTextColor   // readable X on the red fill
                    : Theme.text2Color

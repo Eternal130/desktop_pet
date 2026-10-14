@@ -13,6 +13,7 @@
 #include <spdlog/spdlog.h>
 
 #include "app/PanelApplication.hpp"
+#include "app/ThemeSchemeController.hpp"
 #include "core/AssetManager.hpp"
 #include "core/ConfigDir.hpp"
 #include "core/EnvironmentChecker.hpp"
@@ -215,6 +216,25 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     m_windowStateSaver = new WindowStateSaver(ConfigDir::configDir(), this);
     m_engine.rootContext()->setContextProperty("windowStateSaver",
                                                m_windowStateSaver);
+
+    // ThemeSchemeController (2026-10-15) — the runtime light/dark/follow-
+    // system switcher exposed as the "themeScheme" context property.
+    // SettingsPage's 外观 card calls themeScheme.setTheme(...); Main.qml's
+    // Connections re-applies the QWK Mica dark-mode attribute on
+    // themeChanged. The initial PanelConfig.theme is applied here EXCEPT
+    // when the PET_COLORSCHEME QA env is active — main.cpp already pinned a
+    // deterministic scheme before this point and must not be overridden.
+    // Lifetime (M3): heap child of this PanelUiBoot — dies during engine
+    // destruction, AFTER the engine's own QML internals (mount-point note).
+    {
+        const bool qaSchemeActive =
+            !qEnvironmentVariableIsEmpty("PET_COLORSCHEME");
+        m_themeSchemeController = new ThemeSchemeController(
+            ConfigDir::configDir(), m_app.panelConfig().theme,
+            !qaSchemeActive, this);
+        m_engine.rootContext()->setContextProperty("themeScheme",
+                                                   m_themeSchemeController);
+    }
 
     // Network stack context properties (Phase 5, todo 1). Exposed globally so
     // QML pages can observe WS state + pending-request diagnostics. Only

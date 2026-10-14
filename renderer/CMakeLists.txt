@@ -191,17 +191,22 @@ else()
     endif()
     target_include_directories(Framework PUBLIC ${GLEW_PATH}/include)
     target_link_libraries(Framework Live2DCubismCore glew_s)
-    if(WIN32)
-        # GCC rejects PROC-to-void* implicit conversion in SDK's wglGetProcAddress usage
-        target_compile_options(Framework PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fpermissive>)
-        # The pinned Cubism Framework emits cosmetic MinGW diagnostics that
-        # are inherent to upstream code (-fpermissive downcasts like
-        # wglGetProcAddress PROC->void*, NULL-to-int conversions). Silence
-        # them wholesale: the submodule is pinned, the warnings are not
-        # actionable here, and they bury actionable ones in CI logs.
-        target_compile_options(Framework PRIVATE $<$<CXX_COMPILER_ID:GNU>:-w>)
-    endif()
 endif()
+
+# GCC diagnostics suppression for the pinned Cubism Framework — BOTH backends.
+# This block used to live inside the OpenGL branch only, so the vk builds
+# (win-vk-release / linux-vk-release) spewed the same upstream noise in CI.
+# -fpermissive: GCC rejects PROC-to-void* implicit conversion in SDK's
+#   wglGetProcAddress usage (MinGW GL only).
+# -w: the pinned Framework emits cosmetic GCC diagnostics inherent to upstream
+#   code on every platform (NULL-to-int conversions like
+#   CubismClippingManager.tpp's `_clearedMaskBufferFlags = NULL`). Silence
+#   them wholesale: the submodule is pinned, the warnings are not
+#   actionable here, and they bury actionable ones in CI logs.
+if(WIN32)
+    target_compile_options(Framework PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fpermissive>)
+endif()
+target_compile_options(Framework PRIVATE $<$<CXX_COMPILER_ID:GNU>:-w>)
 
 # === Vulkan Shader Compilation ===
 if(USE_VULKAN)

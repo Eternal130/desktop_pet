@@ -233,11 +233,13 @@ Window {
     onClosing: function(close) {
         windowStateSaver.saveWindowState(root.x, root.y, root.width,
                                          root.height, panelConfig.theme)
-        if (panelConfig.closeAction === "minimize") {
-            root.hide()
-            close.accepted = false
-        } else if (panelConfig.confirmOnExit || panelConfig.closeAction === "ask") {
+        // 确认开关是唯一的询问入口: 开 → 无论退出还是最小化都先弹三钮确认
+        // (最小化到托盘 / 退出 / 取消); 关 → 按关闭行为直接执行。
+        if (panelConfig.confirmOnExit) {
             exitConfirmDialog.open()
+            close.accepted = false
+        } else if (panelConfig.closeAction === "minimize") {
+            root.hide()
             close.accepted = false
         } else {
             root.doExit()
@@ -822,9 +824,12 @@ Window {
 
     AppDialog {
         id: exitConfirmDialog
-        title: qsTr("退出确认")
-        message: qsTr("确定要退出桌面宠物控制器吗？所有运行中的实例将被停止。")
+        danger: true
+        title: qsTr("关闭面板")
+        message: qsTr("关闭面板时你想…（退出会停止所有运行中的实例）")
         positiveText: qsTr("退出")
+        neutralText: qsTr("最小化到托盘")
+        onNeutralClicked: root.hide()
         onPositiveClicked: root.doExit()
     }
 
@@ -887,6 +892,17 @@ Window {
 
     Component.onCompleted: {
         console.log("COLD_START_MS=" + (Date.now() - coldStartT0Ms))
+        // Legacy "ask" close-action normalization (2026-10-15): the
+        // 每次询问 option was folded into the 退出前确认 switch — a
+        // persisted "ask" maps to 直接退出 + confirm ON, which is
+        // behavior-equivalent (close previously asked). One-shot: the
+        // panelConfig writes go through the whitelisted settings bridge
+        // and the kv never holds "ask" again.
+        if (panelConfig.closeAction === "ask") {
+            panelConfig.closeAction = "exit"
+            panelConfig.confirmOnExit = true
+            console.warn("CLOSE_ACTION_MIGRATED ask -> exit + confirmOnExit=true")
+        }
         // QWindowKit wiring — kept in ONE place, in this exact order:
         // QML's Component.onCompleted finalization order between the root
         // and its children is UNSPECIFIED, but the agent's context only

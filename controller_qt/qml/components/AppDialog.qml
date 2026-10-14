@@ -2,7 +2,15 @@ import QtQuick
 import DesktopPet
 
 // AppDialog — design-mock floating confirmation dialog with scrim.
-// open()/close(); positiveClicked / negativeClicked signals.
+// open()/close(); positiveClicked / neutralClicked / negativeClicked signals.
+//
+// Neutral action (2026-10-15): optional third button for three-way
+// confirmations (tray-app close: 最小化到托盘 / 退出 / 取消). Declared via
+// neutralText ("" hides the button — every pre-existing call site keeps its
+// exact two-button layout). Button order in the right-to-left row:
+// positive (rightmost) · neutral · negative (leftmost). Style: the neutral
+// action is the non-destructive PRIMARY accent button when the dialog is
+// danger-mode (positive renders red), plain otherwise.
 //
 // P1-8 (true modal): appModal (default true) — open() re-parents the
 // dialog to the WINDOW's contentItem so the scrim + card cover the whole
@@ -25,12 +33,14 @@ Rectangle {
     property string title: ""
     property string message: ""
     property string positiveText: qsTr("确定")
+    property string neutralText: ""  // optional third action ("" = hidden)
     property string negativeText: qsTr("取消")
     property bool showNegative: true
     property bool danger: false      // positive button renders as "danger"
     property bool appModal: true     // P1-8: window-level scrim (see header)
 
     signal positiveClicked()
+    signal neutralClicked()
     signal negativeClicked()
 
     function open() {
@@ -106,6 +116,17 @@ Rectangle {
                     text: root.positiveText
                     onClicked: {
                         root.positiveClicked()
+                        root.close()
+                    }
+                }
+                AppButton {
+                    visible: root.neutralText.length > 0
+                    // complementary accent for danger dialogs (退出红 +
+                    // 最小化到托盘主蓝), plain elsewhere
+                    style: root.danger ? "primary" : "normal"
+                    text: root.neutralText
+                    onClicked: {
+                        root.neutralClicked()
                         root.close()
                     }
                 }

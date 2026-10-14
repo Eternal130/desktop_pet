@@ -4,7 +4,7 @@ import DesktopPet
 
 // Settings page (design doc §5). Anchor nav left + SettingRow cards right.
 // Behavior fields unchanged (panelConfig / autoLaunch). Three-way
-// closeAction (exit / minimize / ask) + accent swatches + theme mode.
+// closeAction (exit / minimize — legacy "ask" normalized away) + theme mode.
 Rectangle {
     id: root
     color: "transparent"
@@ -77,15 +77,14 @@ Rectangle {
 
                     Segmented {
                         options: [ { label: qsTr("退出程序"), value: "exit" },
-                                   { label: qsTr("最小化到托盘"), value: "minimize" },
-                                   { label: qsTr("每次询问"), value: "ask" } ]
+                                   { label: qsTr("最小化到托盘"), value: "minimize" } ]
                         currentValue: panelConfig.closeAction
                         onSelected: (v) => { panelConfig.closeAction = v }
                     }
                     Text {
                         width: parent.width
                         wrapMode: Text.WordWrap
-                        text: qsTr("选择「每次询问」时将弹出确认对话框。")
+                        text: qsTr("点关闭按钮时直接执行所选行为；勾选「退出前确认」时先弹出确认（最小化到托盘 / 退出 / 取消）。")
                         color: root._mutedColor
                         font.pixelSize: 11
                     }

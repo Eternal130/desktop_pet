@@ -3,6 +3,11 @@
 #include <QJsonDocument>
 #include <QTimer>
 
+#include <QByteArray>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QWindow>
+
 #include <spdlog/spdlog.h>
 
 #include "core/ConfigDir.hpp"
@@ -559,4 +564,112 @@ void PanelApplication::launchAutoStartInstances()
             }
         }
     });
+}
+
+// ── Single-instance activation (Fix 1) ─────────────────────────────────────
+//
+// End-to-end: second launch → QLockFile tryLock fails (main.cpp) →
+// QLocalSocket connects to singleInstanceServerName(), sends "activate\n",
+// waits briefly for the ack and exits → THIS process's QLocalServer (started
+// early, before the engine loads) gets newConnection → handleActivation()
+// raises the panel window. A ping racing engine load (early double-click
+// during cold start) defers via m_pendingActivation until
+// setActivationWindow() hands over the root window.
+
+QString PanelApplication::singleInstanceServerName()
+{
+    // Per-user suffix so multi-user machines never collide (each user's
+    // second launch activates that user's panel). USERNAME on Windows,
+    // USER elsewhere; sanitized to a legal socket/pipe name — domain
+    // usernames can carry '\\', '/' or spaces.
+    QString user;
+#ifdef Q_OS_WIN
+    user = qEnvironmentVariable("USERNAME", QString());
+#else
+    user = qEnvironmentVariable("USER", QString());
+#endif
+    QString safe;
+    for (const QChar ch : user) {
+        safe += (ch.isLetterOrNumber() || ch == QLatin1Char('.')
+                 || ch == QLatin1Char('-') || ch == QLatin1Char('_'))
+                    ? ch
+                    : QChar(QLatin1Char('_'));
+    }
+    if (safe.isEmpty())
+        safe = QStringLiteral("user");
+    return QStringLiteral("desktop-pet-panel-") + safe;
+}
+
+void PanelApplication::startSingleInstanceServer()
+{
+    if (m_activationServer != nullptr)
+        return; // idempotent — second call is a programming no-op
+    const QString name = singleInstanceServerName();
+    // Clear a crashed leftover (Unix: removes the stale socket file that
+    // would make listen() fail; Windows named pipes: harmless no-op).
+    // Safe because main()'s QLockFile already proved THIS process owns
+    // the panel slot — no live panel is listening under this name.
+    QLocalServer::removeServer(name);
+    m_activationServer = new QLocalServer(this);
+    // Same-user access only: the channel can raise the window, so other
+    // local users must not be able to ping it.
+    m_activationServer->setSocketOptions(QLocalServer::UserAccessOption);
+    if (!m_activationServer->listen(name)) {
+        LOG_WARN("PanelApplication: activation server failed to listen as "
+                 "\"{}\" ({}); second launches will not activate this panel",
+                 name.toStdString(),
+                 m_activationServer->errorString().toStdString());
+        delete m_activationServer;
+        m_activationServer = nullptr;
+        return;
+    }
+    LOG_INFO("PanelApplication: activation server listening as \"{}\"",
+             name.toStdString());
+    // Lambda connect — no slots, so the class stays Q_OBJECT-free (the
+    // AUTOMOC note in the header still holds).
+    QObject::connect(m_activationServer, &QLocalServer::newConnection, this,
+                     [this]() {
+                         while (QLocalSocket* conn =
+                                    m_activationServer->nextPendingConnection()) {
+                             // Any connection on this private per-user
+                             // channel IS an activation request (only our
+                             // own second instances know the name). Best-
+                             // effort ack so the sender can exit promptly;
+                             // never blocks the GUI thread (no readyRead
+                             // wait — the payload is advisory only).
+                             conn->write(QByteArrayLiteral("ack\n"));
+                             conn->flush();
+                             conn->disconnectFromServer();
+                             conn->deleteLater();
+                         }
+                         handleActivation();
+                     });
+}
+
+void PanelApplication::setActivationWindow(QWindow* window)
+{
+    m_activationWindow = window; // QPointer: auto-nulls if the window dies
+    if (m_pendingActivation)
+        handleActivation(); // ping arrived before the window existed
+}
+
+void PanelApplication::handleActivation()
+{
+    if (m_activationWindow.isNull()) {
+        // Window not created yet (engine still loading) — defer to
+        // setActivationWindow(). The activating process already exited;
+        // this panel becoming visible IS the response.
+        m_pendingActivation = true;
+        LOG_INFO("PanelApplication: activation requested before the panel "
+                 "window exists — deferring until the window is ready");
+        return;
+    }
+    m_pendingActivation = false;
+    LOG_INFO("PanelApplication: activation — raising the panel window");
+    // showNormal() restores a minimized / hidden-to-tray window; raise() +
+    // requestActivate() pull it to the foreground. All QWindow-level APIs —
+    // QWK (frameless chrome) does not intercept visibility.
+    m_activationWindow->showNormal();
+    m_activationWindow->raise();
+    m_activationWindow->requestActivate();
 }

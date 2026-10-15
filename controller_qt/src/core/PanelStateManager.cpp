@@ -50,12 +50,32 @@ DatabaseManager* PanelStateManager::db() const
 
 PanelConfig PanelStateManager::load()
 {
+    // Fix 2: clear at entry — the flag reflects THIS manager's last load.
+    // (PanelConfigController/SettingsApiImpl build a fresh manager per
+    // load-modify-save, so a transient failure blocks exactly that write;
+    // the next write re-attempts the load.)
+    m_lastLoadFailed = false;
+
     DatabaseManager* database = db();
-    if (database == nullptr)
+    if (database == nullptr) {
+        // db() already logged the open failure — defaults are the only
+        // honest answer, but a subsequent save() must NOT persist them
+        // over state we could not read.
+        m_lastLoadFailed = true;
         return defaultPanelConfig();
-    const QString blob = database->getValue(kPanelKey);
+    }
+    bool ok = false;
+    const QString blob = database->getValue(kPanelKey, &ok);
+    if (!ok) {
+        // QUERY FAILED (SQL error on an open db) — NOT "row absent". Same
+        // discipline as the open-failure path: defaults out, save refused.
+        LOG_WARN("PanelStateManager: panel_config query failed — returning "
+                 "defaults; save() will refuse until a load succeeds");
+        m_lastLoadFailed = true;
+        return defaultPanelConfig();
+    }
     if (blob.isEmpty())
-        return defaultPanelConfig();
+        return defaultPanelConfig(); // genuinely absent row — first-run
     const QJsonDocument doc = QJsonDocument::fromJson(blob.toUtf8());
     if (!doc.isObject()) {
         LOG_WARN("PanelStateManager: corrupt panel row; using defaults");
@@ -66,6 +86,12 @@ PanelConfig PanelStateManager::load()
 
 bool PanelStateManager::save(const PanelConfig& cfg)
 {
+    if (m_lastLoadFailed) {
+        LOG_WARN("PanelStateManager: refusing to save — the previous "
+                 "load() failed (db open/query error), so writing would "
+                 "persist a defaults-seeded blob over the on-disk state");
+        return false;
+    }
     DatabaseManager* database = db();
     if (database == nullptr)
         return false;

@@ -3,14 +3,18 @@
 // tree), PanelUiBoot (M3, UI bridges + the 17 context properties),
 // AppFontGuard (M4, CJK tofu guard). main() is sequencing only.
 #include <QApplication>
+#include <QByteArray>
 #include <QDir>
 #include <QLibraryInfo>
+#include <QLocalSocket>
+#include <QLockFile>
 #include <QPalette>
 #include <QQmlApplicationEngine>
 #include <QCoreApplication>
 #include <QStyleFactory>
 #include <QStyleHints>
 #include <QTimer>
+#include <QWindow>
 
 #include <QWKQuick/qwkquickglobal.h>
 
@@ -23,6 +27,10 @@
 #include "core/ConfigDir.hpp"
 #include "core/PluginHost.hpp"
 #include "core/StaticPluginBootstrap.hpp"
+// spdlog MUST be included before logging/Logging.hpp — the Fix-1 guard
+// below calls LOG_* directly (the same T5 include-order discipline every
+// other logging TU follows; pre-Fix-1 main.cpp used no LOG_* macros).
+#include <spdlog/spdlog.h>
 #include "logging/Logging.hpp"
 
 int main(int argc, char* argv[])
@@ -148,6 +156,55 @@ int main(int argc, char* argv[])
     ConfigDir::ensureDirectories();
     Logging::init(ConfigDir::logsDir());
 
+    // ── Single-instance guard (Fix 1) ───────────────────────────────────
+    // Root cause of the settings "regression": two concurrently-running
+    // panels share one app.db and each whole-row write clobbers the other's
+    // state. Acquire the per-config-dir lock BEFORE any heavy init; the
+    // QLockFile lives on main()'s stack for the whole process lifetime.
+    // Default stale handling stays ON (crashes must not brick startup: a
+    // lock whose owning PID is dead is auto-removed by tryLock).
+    // QDir().mkpath creates ONLY the config root — never the full
+    // ensureDirectories scaffold — so the Windows legacy migration above
+    // still sees a not-yet-populated dir on the run that created it (this
+    // placement runs after migration by design; the mkpath is for the
+    // QLockFile, which does not create parent dirs itself).
+    QDir().mkpath(ConfigDir::configDir());
+    QLockFile panelLock(ConfigDir::configDir() + QStringLiteral("panel.lock"));
+    if (!panelLock.tryLock(100)) {
+        if (panelLock.error() != QLockFile::LockFailedError) {
+            // Not another instance — an unwritable/odd lock location.
+            // Refuse to brick startup over a non-essential guard: log and
+            // continue WITHOUT single-instance protection.
+            LOG_WARN("panel lock could not be acquired (error {}); starting "
+                     "without single-instance protection",
+                     static_cast<int>(panelLock.error()));
+        } else {
+            LOG_INFO("another panel instance is running — activating it and "
+                     "exiting");
+            // Activate the running panel so the user's launch attempt is
+            // still answered: ping its per-user activation server, wait
+            // briefly for the ack (bounded — never a long GUI-less hang;
+            // waitForConnected drives its own eventless wait), then exit.
+            QLocalSocket activator;
+            activator.connectToServer(
+                PanelApplication::singleInstanceServerName());
+            if (activator.waitForConnected(400)) {
+                activator.write(QByteArrayLiteral("activate\n"));
+                if (activator.waitForBytesWritten(300))
+                    activator.waitForReadyRead(300); // ack — content ignored
+            } else {
+                // Lock held but nobody answered (orphaned lock from a
+                // live-but-hung process). Still exit: a second panel over
+                // one app.db is the corruption path this guard exists to
+                // close.
+                LOG_WARN("panel lock is held but no activation socket "
+                         "answered (orphaned lock?) — exiting without "
+                         "starting a second panel");
+            }
+            return 0;
+        }
+    }
+
     // CJK tofu guard — after Logging::init, before engine load (see
     // app/AppFontGuard.cpp for the full rationale; WARN-only on failure).
     installDefaultFontWithCjk();
@@ -157,6 +214,11 @@ int main(int argc, char* argv[])
     // in PanelApplication.cpp.
     PanelApplication panelApp;
     panelApp.wireLegacyInstanceZeroSenders();
+
+    // Fix 1: listen for activation pings from second launches EARLY (the
+    // window is attached after loadFromModule below; a ping that arrives
+    // before then is deferred inside PanelApplication).
+    panelApp.startSingleInstanceServer();
 
     // P4 (§B.6 two-phase loading): push the CMake-generated factory table
     // (static_plugins.cpp, exe-linked) into the registry — after the
@@ -183,6 +245,14 @@ int main(int argc, char* argv[])
     // Loads type "Main" from the QML module registered in CMakeLists.txt
     // (qt_add_qml_module, URI "DesktopPet").
     engine.loadFromModule("DesktopPet", "Main");
+
+    // Fix 1: hand the engine root window (Main.qml Window, as its QWindow
+    // base) to the activation path — a deferred ping from a second launch
+    // that raced startup is honored now.
+    if (!engine.rootObjects().isEmpty()) {
+        panelApp.setActivationWindow(
+            qobject_cast<QWindow*>(engine.rootObjects().constFirst()));
+    }
 
     // Auto-start salvo — singleShot(0) so the first frame paints before the
     // (blocking, process-spawning) start() calls run (PanelApplication).

@@ -37,10 +37,17 @@ public:
     // Load the persisted PanelConfig. Empty db / corrupt row → defaults
     // (which are NOT written back — the next save() persists them). NEVER
     // throws.
+    //
+    // Fix 2 (lost-update hardening): a FAILED query (db open failure, SQL
+    // error) ALSO returns defaults, but arms the internal last-load-failed
+    // flag — the next save() then refuses instead of persisting a
+    // defaults-seeded blob over the (unread) on-disk state. A genuinely
+    // MISSING row stays first-run semantics: defaults, save allowed.
     PanelConfig load();
 
     // Persist the PanelConfig to the panel_config kv row. Returns true on
-    // success, false on db failure (logged).
+    // success, false on db failure (logged). Refuses (false + WARN) when
+    // the previous load() failed — see load()'s Fix 2 note.
     bool save(const PanelConfig& cfg);
 
 private:
@@ -53,4 +60,7 @@ private:
     // Owned fallback connection (tests / non-injected production path).
     mutable DatabaseManager* m_ownedDb = nullptr;
     mutable bool m_ownedOpenAttempted = false;
+    // Fix 2: set by load() on db-open / query failure, cleared by a
+    // successful load(); save() refuses while armed.
+    bool m_lastLoadFailed = false;
 };

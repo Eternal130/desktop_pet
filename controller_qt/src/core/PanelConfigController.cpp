@@ -83,6 +83,17 @@ bool PanelConfigController::updateField(std::function<void(PanelConfig&)> mutato
 // non-exit/minimize/ask closeAction) and the controller keeps its cache + a
 // WARN, exactly like the old inline guards. Null API (tests / degraded
 // wiring) takes the legacy direct path below — byte-identical behavior.
+//
+// Fix 3 (silent-failure NOTIFY): every FAILED-API / FAILED-updateField
+// early return emits the property's NOTIFY anyway. The cache was never
+// changed, but the QML side HAS already flipped its visual state (two-way
+// bindings write first, read back on NOTIFY) — without a NOTIFY the
+// display keeps showing the user's rejected pick and looks saved. The
+// extra signal re-evaluates bindings off the unchanged cache so the
+// display reverts to the persisted value. Pre-validation guards
+// (vocabulary / empty-name rejects) do NOT emit — existing tests assert
+// those stay silent, and no write was attempted. Success paths are
+// byte-identical to before.
 
 void PanelConfigController::setCloseAction(const QString& action)
 {
@@ -101,9 +112,11 @@ void PanelConfigController::setCloseAction(const QString& action)
     if (m_settingsApi != nullptr) {
         if (m_settingsApi->setCloseAction(action) != pet::PluginError::Ok) {
             LOG_WARN("PanelConfigController: settingsApi setCloseAction failed");
+            emit closeActionChanged(); // Fix 3: revert display to cache
             return;
         }
     } else if (!updateField([action](PanelConfig& cfg) { cfg.closeAction = action; })) {
+        emit closeActionChanged(); // Fix 3: revert display to cache
         return;
     }
     const QString old = m_closeAction;
@@ -117,9 +130,12 @@ void PanelConfigController::setConfirmOnExit(bool enabled)
 {
     if (m_confirmOnExit == enabled) return;
     if (m_settingsApi != nullptr) {
-        if (m_settingsApi->setConfirmOnExit(enabled) != pet::PluginError::Ok)
+        if (m_settingsApi->setConfirmOnExit(enabled) != pet::PluginError::Ok) {
+            emit confirmOnExitChanged(); // Fix 3: revert display to cache
             return;
+        }
     } else if (!updateField([enabled](PanelConfig& cfg) { cfg.confirmOnExit = enabled; })) {
+        emit confirmOnExitChanged(); // Fix 3: revert display to cache
         return;
     }
     m_confirmOnExit = enabled;
@@ -131,9 +147,12 @@ void PanelConfigController::setStartMinimized(bool enabled)
 {
     if (m_startMinimized == enabled) return;
     if (m_settingsApi != nullptr) {
-        if (m_settingsApi->setStartMinimized(enabled) != pet::PluginError::Ok)
+        if (m_settingsApi->setStartMinimized(enabled) != pet::PluginError::Ok) {
+            emit startMinimizedChanged(); // Fix 3: revert display to cache
             return;
+        }
     } else if (!updateField([enabled](PanelConfig& cfg) { cfg.startMinimized = enabled; })) {
+        emit startMinimizedChanged(); // Fix 3: revert display to cache
         return;
     }
     m_startMinimized = enabled;
@@ -156,6 +175,7 @@ void PanelConfigController::setAutoLaunchSystem(bool enabled)
     m_autoLaunchSystem = enabled;
     if (!updateField([enabled](PanelConfig& cfg) { cfg.autoLaunchSystem = enabled; })) {
         m_autoLaunchSystem = !enabled;
+        emit autoLaunchSystemChanged(); // Fix 3: revert display to cache
         return;
     }
     emit autoLaunchSystemChanged();
@@ -176,9 +196,11 @@ void PanelConfigController::setDefaultModelName(const QString& name)
     if (m_settingsApi != nullptr) {
         if (m_settingsApi->setDefaultModelName(name) != pet::PluginError::Ok) {
             LOG_WARN("PanelConfigController: settingsApi setDefaultModelName failed");
+            emit defaultModelNameChanged(); // Fix 3: revert display to cache
             return;
         }
     } else if (!updateField([name](PanelConfig& cfg) { cfg.defaultModelName = name; })) {
+        emit defaultModelNameChanged(); // Fix 3: revert display to cache
         return;
     }
     const QString old = m_defaultModelName;
@@ -207,11 +229,13 @@ void PanelConfigController::setDefaultGraphicsBackend(const QString& backend)
                 != pet::PluginError::Ok) {
             LOG_WARN("PanelConfigController: settingsApi "
                      "setDefaultGraphicsBackend failed");
+            emit defaultGraphicsBackendChanged(); // Fix 3: revert display
             return;
         }
     } else if (!updateField([normalized](PanelConfig& cfg) {
                    cfg.defaultGraphicsBackend = normalized;
                })) {
+        emit defaultGraphicsBackendChanged(); // Fix 3: revert display
         return;
     }
     const QString old = m_defaultGraphicsBackend;
@@ -229,11 +253,13 @@ void PanelConfigController::setPluginWriteEnabled(bool enabled)
     if (m_db == nullptr) {
         LOG_WARN("PanelConfigController::setPluginWriteEnabled: no shared "
                  "DatabaseManager — kv row not written");
+        emit pluginWriteEnabledChanged(); // Fix 3: revert display to cache
         return;
     }
     if (!m_db->setValue(QStringLiteral("plugin_write_enabled"),
                         enabled ? QStringLiteral("1") : QStringLiteral("0"))) {
         LOG_WARN("PanelConfigController: plugin_write_enabled write failed");
+        emit pluginWriteEnabledChanged(); // Fix 3: revert display to cache
         return;
     }
     m_pluginWriteEnabled = enabled;

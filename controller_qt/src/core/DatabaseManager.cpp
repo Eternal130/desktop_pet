@@ -116,6 +116,27 @@ QString DatabaseManager::getValue(const QString& key,
     return row.isEmpty() ? fallback : row.first();
 }
 
+QString DatabaseManager::getValue(const QString& key, bool* ok) const
+{
+    // Fix 2: the distinguishing twin of the overload above — a FAILED
+    // query (closed db / SQL error) reports *ok = false instead of
+    // masquerading as "row absent" (which would let a defaults-seeded
+    // whole-blob write through and clobber real state).
+    if (ok != nullptr)
+        *ok = false;
+    if (!m_open)
+        return {};
+    QStringList row;
+    if (!queryRowEx(
+            QStringLiteral("SELECT value FROM panel_config WHERE key = ?"),
+            {key}, &row)) {
+        return {}; // queryRowEx already logged the SQL error
+    }
+    if (ok != nullptr)
+        *ok = true;
+    return row.isEmpty() ? QString() : row.first();
+}
+
 bool DatabaseManager::setValue(const QString& key, const QString& value)
 {
     if (!m_open)
@@ -414,16 +435,37 @@ bool DatabaseManager::exec(const QString& sql, const QVariantList& args) const
 QStringList DatabaseManager::queryRow(const QString& sql,
                                       const QVariantList& args) const
 {
+    QStringList out;
+    if (!queryRowEx(sql, args, &out))
+        return {};
+    return out;
+}
+
+bool DatabaseManager::queryRowEx(const QString& sql, const QVariantList& args,
+                                 QStringList* out) const
+{
+    // Same discipline as the old inline queryRow body, plus a logged
+    // failure flag so getValue(key, ok) can distinguish error from absent.
     QSqlQuery query(QSqlDatabase::database(m_connectionName));
     query.prepare(sql);
     for (const QVariant& arg : args)
         query.addBindValue(normalizeBindValue(arg));
-    if (!query.exec() || !query.next()) {
-        return {};
+    if (!query.exec()) {
+        LOG_WARN("DatabaseManager: query failed (\"{}\"): {}",
+                 sql.left(60).toStdString(),
+                 query.lastError().text().toStdString());
+        return false;
     }
-    QStringList out;
+    if (!query.next()) {
+        if (out != nullptr)
+            out->clear();
+        return true; // valid empty result — no matching rows
+    }
+    QStringList row;
     const int n = query.record().count();
     for (int i = 0; i < n; ++i)
-        out.append(query.value(i).toString());
-    return out;
+        row.append(query.value(i).toString());
+    if (out != nullptr)
+        *out = row;
+    return true;
 }

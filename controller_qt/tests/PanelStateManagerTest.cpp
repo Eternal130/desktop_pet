@@ -15,6 +15,7 @@
 #include <QObject>
 #include <QString>
 #include <QTemporaryDir>
+#include <QTemporaryFile>
 #include <QTest>
 
 class PanelStateManagerTest : public QObject
@@ -26,6 +27,12 @@ private slots:
     void testSaveLoadRoundTrip();
     void testPersistedAcrossManagers();
     void testCorruptRowReturnsDefaults();
+    // Fix 2 (lost-update hardening): a FAILED query / db open must never be
+    // treated as "row absent" — otherwise the next fresh load-modify-save
+    // writer persists a defaults-seeded blob over the real state.
+    void testQueryFailureRefusesSave();
+    void testOwnedOpenFailureRefusesSave();
+    void testMissingRowDefaultsSaveAllowed();
 };
 
 void PanelStateManagerTest::testFreshDbReturnsDefaults()
@@ -103,6 +110,58 @@ void PanelStateManagerTest::testCorruptRowReturnsDefaults()
         return;
     }
     QCOMPARE(loaded, defaultPanelConfig());
+}
+
+// Fix 2: injected-but-never-opened DatabaseManager → every query fails
+// (closed connection). load() still returns defaults and never throws,
+// but save() must REFUSE so a defaults-seeded blob cannot be written over
+// the unread on-disk state.
+void PanelStateManagerTest::testQueryFailureRefusesSave()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+
+    DatabaseManager closed; // never opened — isOpen() == false
+    PanelStateManager mgr(base.path());
+    mgr.setDatabase(&closed);
+
+    QCOMPARE(mgr.load(), defaultPanelConfig());
+    QVERIFY2(!mgr.save(defaultPanelConfig()),
+             "save() must refuse after a failed load (query failure)");
+}
+
+// Fix 2, owned-db angle: the config root path is blocked by a regular
+// FILE, so app.db cannot be created under it → db() open fails → same
+// contract (defaults from load(), save() refused).
+void PanelStateManagerTest::testOwnedOpenFailureRefusesSave()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+
+    QTemporaryFile notADir(base.path() + QStringLiteral("/blockerXXXXXX"));
+    QVERIFY2(notADir.open(), "fixture blocker file creation failed");
+
+    PanelStateManager mgr(notADir.fileName());
+    QCOMPARE(mgr.load(), defaultPanelConfig());
+    QVERIFY2(!mgr.save(defaultPanelConfig()),
+             "save() must refuse after a failed load (db open failure)");
+}
+
+// Fix 2 baseline: a genuinely MISSING row keeps first-run semantics —
+// load() returns defaults AND save() stays allowed (the error-path
+// refusal must not bleed into the fresh-install happy path).
+void PanelStateManagerTest::testMissingRowDefaultsSaveAllowed()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+
+    PanelStateManager mgr(base.path());
+    QCOMPARE(mgr.load(), defaultPanelConfig());
+
+    PanelConfig cfg = defaultPanelConfig();
+    cfg.theme = QStringLiteral("first-run");
+    QVERIFY2(mgr.save(cfg), "first-run save must be allowed");
+    QCOMPARE(mgr.load(), cfg);
 }
 
 QTEST_MAIN(PanelStateManagerTest)

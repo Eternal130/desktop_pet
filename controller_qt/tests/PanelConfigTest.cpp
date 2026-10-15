@@ -92,6 +92,12 @@ private slots:
     void testDefaultModelNameControllerRoundTrip();
     void testDefaultGraphicsBackendControllerRoundTrip();
     void testPluginWriteEnabledKvRoundTrip();
+    // Fix 2 + Fix 3: persistence failure (PanelStateManager refuses the
+    // save after a failed load) keeps the controller cache at the persisted
+    // value AND emits the property NOTIFY anyway, so two-way QML bindings
+    // re-evaluate off the unchanged cache instead of showing the rejected
+    // pick as if it had been saved.
+    void testSetterFailureNotifiesAndKeepsCache();
 };
 
 void PanelConfigTest::testRoundTripAllFields()
@@ -430,6 +436,51 @@ void PanelConfigTest::testPluginWriteEnabledKvRoundTrip()
     PanelConfigController reloaded(dir.path());
     reloaded.setDatabase(&db);
     QCOMPARE(reloaded.pluginWriteEnabled(), true);
+}
+
+// Fix 2 + Fix 3: when persistence FAILS, every setter keeps its cache at
+// the persisted value and emits the NOTIFY on the failure path (the QML
+// side has already flipped its visual state — without the NOTIFY it keeps
+// showing the user's pick and looks saved). Injected-but-never-opened
+// DatabaseManager: PanelStateManager::load() flags the failed query, so
+// updateField's save() is refused (Fix 2) and the setters early-return
+// with a NOTIFY (Fix 3). The null-settingsApi legacy direct path is the
+// one exercised here; the settingsApi path has the identical shape.
+void PanelConfigTest::testSetterFailureNotifiesAndKeepsCache()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    DatabaseManager closed; // never opened — queries fail, writes fail
+    PanelConfigController ctl(dir.path());
+    ctl.setDatabase(&closed);
+
+    QSignalSpy startSpy(&ctl, &PanelConfigController::startMinimizedChanged);
+    QSignalSpy backendSpy(&ctl,
+                          &PanelConfigController::defaultGraphicsBackendChanged);
+    QSignalSpy launchSpy(&ctl, &PanelConfigController::autoLaunchSystemChanged);
+    QSignalSpy writeSpy(&ctl, &PanelConfigController::pluginWriteEnabledChanged);
+
+    // updateField → psm.save() refused → early return + NOTIFY, cache
+    // unchanged.
+    ctl.setStartMinimized(true);
+    QCOMPARE(ctl.startMinimized(), false);
+    QCOMPARE(startSpy.count(), 1);
+
+    ctl.setDefaultGraphicsBackend(QStringLiteral("vulkan"));
+    QCOMPARE(ctl.defaultGraphicsBackend(), QStringLiteral("opengl"));
+    QCOMPARE(backendSpy.count(), 1);
+
+    // autoLaunchSystem optimistically flips its cache, then reverts on the
+    // failed persist — the NOTIFY surfaces the reverted value to QML.
+    ctl.setAutoLaunchSystem(true);
+    QCOMPARE(ctl.autoLaunchSystem(), false);
+    QCOMPARE(launchSpy.count(), 1);
+
+    // kv-row failure path (setValue on a closed db) — same contract.
+    ctl.setPluginWriteEnabled(false);
+    QCOMPARE(ctl.pluginWriteEnabled(), true);
+    QCOMPARE(writeSpy.count(), 1);
 }
 
 QTEST_MAIN(PanelConfigTest)

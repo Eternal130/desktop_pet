@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QPointer>
 
 #include "core/PanelConfig.hpp"
 #include "core/PluginRegistry.hpp"
@@ -12,6 +13,8 @@ class PendingRequests;
 class InstanceManager;
 class StartupSalvo;
 class ProcessManager;
+class QLocalServer;
+class QWindow;
 
 namespace core {
 class DownloadService;
@@ -219,6 +222,43 @@ public:
     // the first frame paints before the (blocking, process-spawning) start()
     // calls run, exactly like the old inline block.
     void launchAutoStartInstances();
+
+    // ── Single-instance activation (Fix 1) ─────────────────────────────
+    //
+    // Root cause of the settings "regression": two concurrently-running
+    // panels share one app.db and each whole-row write clobbers the
+    // other's state. main() now holds a QLockFile for the whole process
+    // lifetime; a second launch fails the lock, pings this server and
+    // exits. The ping brings the RUNNING panel's window back up
+    // (showNormal + raise + requestActivate — also restores a window
+    // minimized to tray).
+    //
+    // Per-user server name (USERNAME on Windows / USER elsewhere, both
+    // sanitized) so multi-user machines never cross-activate; shared by
+    // main.cpp's activation client and startSingleInstanceServer().
+    static QString singleInstanceServerName();
+
+    // Start listening for activation pings. Call ONCE from main(), EARLY
+    // (before the engine loads) so a second launch during cold start
+    // still reaches us; idempotent. A listen failure is WARN-only — the
+    // panel runs normally, second launches just cannot activate it.
+    void startSingleInstanceServer();
+
+    // Hand the engine root window (Main.qml Window, as its QWindow base)
+    // to the activation path. Call after engine.loadFromModule. A ping
+    // that arrived BEFORE the window existed is honored here (deferred
+    // raise). Stored as QPointer — auto-nulls if the window dies first.
+    void setActivationWindow(QWindow* window);
+
+private:
+    // Shared raise logic for the newConnection handler and the deferred
+    // path in setActivationWindow(): window ready → showNormal + raise +
+    // requestActivate; not yet → remember m_pendingActivation.
+    void handleActivation();
+
+    QLocalServer* m_activationServer = nullptr; // child — dies with tree
+    QPointer<QWindow> m_activationWindow;       // engine-owned, not ours
+    bool m_pendingActivation = false;
 
 private:
     // Registration order = old main() declaration order; destruction

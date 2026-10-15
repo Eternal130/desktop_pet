@@ -55,6 +55,14 @@ public:
     // ── panel_config key-value ────────────────────────────────────────────
     // Returns the stored value or `fallback` when absent / db closed.
     QString getValue(const QString& key, const QString& fallback = {}) const;
+    // Distinguishing read (Fix 2, lost-update hardening): callers that must
+    // NOT fold "query FAILED" into "row absent" (PanelStateManager — a
+    // defaults-seeded whole-blob write over real state is the corruption
+    // path). *ok = false when the db is closed or the SELECT errored;
+    // *ok = true when the query ran (empty return = row absent or a stored
+    // empty string — either maps to the caller's fallback semantics, same
+    // as the two-arg overload). Never throws.
+    QString getValue(const QString& key, bool* ok) const;
     // Insert-or-replace. Returns false on failure.
     bool setValue(const QString& key, const QString& value);
 
@@ -111,6 +119,12 @@ private:
     // Runs `sql` and returns the first result row as a string list; empty
     // list on error / no rows.
     QStringList queryRow(const QString& sql, const QVariantList& args) const;
+    // Core row read behind queryRow (Fix 2): the returned flag separates
+    // "query FAILED / db unusable" (false) from "no rows" (true + empty
+    // *out), which queryRow's empty-list return cannot express. Logs a
+    // WARN on SQL failure. Never throws.
+    bool queryRowEx(const QString& sql, const QVariantList& args,
+                    QStringList* out) const;
 
     bool m_open = false;
     QString m_connectionName; // unique per instance; QSqlDatabase registry key

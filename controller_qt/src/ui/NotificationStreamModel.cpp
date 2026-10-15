@@ -33,9 +33,10 @@ QVariant NotificationStreamModel::data(const QModelIndex& index, int role) const
         return {};
     const Entry& e = m_entries.at(row);
     switch (role) {
-        case AvatarRole:     return e.avatar;
-        case NameRole:       return e.name;
-        case TextRole:       return e.text;
+        case InstanceIdRole:  return e.instanceId;
+        case AvatarRole:      return e.avatar;
+        case NameRole:        return e.name;
+        case TextRole:        return e.text;
         case CreatedAtMsRole: return e.createdAtMs;
         case ExpiresAtMsRole: return e.expiresAtMs;
     }
@@ -45,6 +46,7 @@ QVariant NotificationStreamModel::data(const QModelIndex& index, int role) const
 QHash<int, QByteArray> NotificationStreamModel::roleNames() const
 {
     return {
+        {InstanceIdRole,  "instanceId"},
         {AvatarRole,      "avatar"},
         {NameRole,        "name"},
         {TextRole,        "text"},
@@ -53,10 +55,12 @@ QHash<int, QByteArray> NotificationStreamModel::roleNames() const
     };
 }
 
-void NotificationStreamModel::push(const QString& name, const QString& avatar,
+void NotificationStreamModel::push(const QString& instanceId,
+                                   const QString& name, const QString& avatar,
                                    const QString& text, int durationMs)
 {
     Entry entry;
+    entry.instanceId = instanceId;
     entry.name = name;
     entry.avatar = avatar;
     entry.text = text;
@@ -106,6 +110,12 @@ void NotificationStreamModel::dismiss(int row)
     m_entries.removeAt(row);
     endRemoveRows();
     emit countChanged();
+}
+
+QString NotificationStreamModel::instanceIdAt(int row) const
+{
+    return (row >= 0 && row < m_entries.size())
+                ? m_entries.at(row).instanceId : QString();
 }
 
 QString NotificationStreamModel::nameAt(int row) const

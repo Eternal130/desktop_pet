@@ -23,7 +23,7 @@
 // Tests call expireNow() DIRECTLY with an injectable now — no timing
 // dependence.
 //
-// Roles: avatar, name, text, createdAtMs, expiresAtMs.
+// Roles: instanceId, avatar, name, text, createdAtMs, expiresAtMs.
 class NotificationStreamModel : public QAbstractListModel {
     Q_OBJECT
     // Roster size for QML (window visible-binding + Repeater bookkeeping) —
@@ -39,6 +39,7 @@ public:
         TextRole,
         CreatedAtMsRole,
         ExpiresAtMsRole,
+        InstanceIdRole,   // appended (not inserted) to keep role values stable
     };
     Q_ENUM(Roles)
 
@@ -50,12 +51,14 @@ public:
 
     int count() const { return m_entries.size(); }
 
-    // Prepend a bubble (newest first). durationMs <= 0 → no auto-expiry
+    // Prepend a bubble (newest first). instanceId may be "" (rule-engine /
+    // plugin bubbles carry no pet identity — BubbleCard then falls back to
+    // the avatar glyph / paw). durationMs <= 0 → no auto-expiry
     // (expiresAtMs == createdAtMs + default handled by the caller; here a
     // non-positive duration means "never expires"). Overlow beyond
     // kMaxEntries drops the OLDEST entry.
-    void push(const QString& name, const QString& avatar, const QString& text,
-              int durationMs);
+    void push(const QString& instanceId, const QString& name,
+              const QString& avatar, const QString& text, int durationMs);
 
     // Remove every entry whose expiresAtMs deadline has passed. Returns the
     // number removed. Uses the injectable clock (real wall clock by default).
@@ -69,6 +72,7 @@ public:
     void setClock(std::function<qint64()> clock) { m_clock = std::move(clock); }
 
     // Test seam: read one entry's field by row (QVariant for QCOMPARE ease).
+    QString instanceIdAt(int row) const;
     QString nameAt(int row) const;
     QString textAt(int row) const;
     qint64 expiresAtMsAt(int row) const;
@@ -78,6 +82,7 @@ signals:
 
 private:
     struct Entry {
+        QString instanceId;   // "" = no pet identity (rule/plugin bubble)
         QString name;
         QString avatar;
         QString text;

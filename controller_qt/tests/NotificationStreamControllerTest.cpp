@@ -26,13 +26,15 @@ void NotificationStreamControllerTest::testPushChangesCount()
 
     QSignalSpy countSpy(&controller,
                         &NotificationStreamController::countChanged);
-    controller.push(QStringLiteral("A"), QStringLiteral("🐱"),
-                    QStringLiteral("hello"));
+    controller.push(QStringLiteral("uuid-a"), QStringLiteral("A"),
+                    QStringLiteral("🐱"), QStringLiteral("hello"));
     QCOMPARE(controller.count(), 1);
     QCOMPARE(countSpy.count(), 1);
 
-    controller.push(QStringLiteral("B"), QString(), QStringLiteral("again"), 5000);
+    controller.push(QStringLiteral("uuid-b"), QStringLiteral("B"), QString(),
+                    QStringLiteral("again"), 5000);
     QCOMPARE(controller.count(), 2);
+    QCOMPARE(controller.model()->instanceIdAt(0), QStringLiteral("uuid-b"));
     QCOMPARE(controller.model()->nameAt(0), QStringLiteral("B"));
 
     controller.dismiss(0);
@@ -46,11 +48,13 @@ void NotificationStreamControllerTest::testDisabledSuppressesPush()
     controller.setEnabled(false);
     QVERIFY(!controller.isEnabled());
 
-    controller.push(QStringLiteral("A"), QString(), QStringLiteral("nope"));
+    controller.push(QString(), QStringLiteral("A"), QString(),
+                    QStringLiteral("nope"));
     QCOMPARE(controller.count(), 0);
 
     controller.setEnabled(true);
-    controller.push(QStringLiteral("A"), QString(), QStringLiteral("yes"));
+    controller.push(QString(), QStringLiteral("A"), QString(),
+                    QStringLiteral("yes"));
     QCOMPARE(controller.count(), 1);
 }
 
@@ -59,6 +63,9 @@ void NotificationStreamControllerTest::testTestBubble()
     NotificationStreamController controller;
     controller.testBubble();
     QCOMPARE(controller.count(), 1);
+    // No pet identity on the QA bubble → instanceId "" (BubbleCard glyph
+    // fallback), canned name stays (bridge has no roster access).
+    QCOMPARE(controller.model()->instanceIdAt(0), QString());
     QVERIFY(controller.model()->textAt(0).contains(
         QStringLiteral("气泡信息流测试")));
 }

@@ -431,7 +431,10 @@ void PluginHost::bridgeNotify(const QString& pluginId, const QString& title,
                  pluginId.toStdString());
         return;
     }
-    s_stream->push(title.isEmpty() ? pluginId : title, QString(), text, durationMs);
+    // Plugin bridge bubble: title (or plugin id) stays the bubble NAME;
+    // no pet identity → instanceId "" (BubbleCard glyph fallback).
+    s_stream->push(QString(), title.isEmpty() ? pluginId : title, QString(),
+                   text, durationMs);
 }
 
 QString PluginHost::entryQmlUrlFor(const QString& pluginId)

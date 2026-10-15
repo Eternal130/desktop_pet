@@ -11,7 +11,7 @@
 //   - expireNow() removes overdue entries (injectable clock — no timing
 //     dependence; entries with expiresAtMs == 0 never expire)
 //   - dismiss(row) removes exactly that row; invalid row no-ops
-//   - roleNames expose avatar/name/text/createdAtMs/expiresAtMs
+//   - roleNames expose instanceId/avatar/name/text/createdAtMs/expiresAtMs
 //
 // Recompiles NotificationStreamModel.cpp directly (same pattern as
 // MonitorDataModelTest — no shared lib yet). QTEST_MAIN (NOT APPLESS): the
@@ -35,11 +35,15 @@ void NotificationStreamModelTest::testPushPrepends()
     QCOMPARE(m.count(), 0);
     QCOMPARE(m.rowCount(), 0);
 
-    m.push(QStringLiteral("A"), QStringLiteral("🐱"), QStringLiteral("first"), 0);
-    m.push(QStringLiteral("B"), QStringLiteral("🐶"), QStringLiteral("second"), 0);
-    m.push(QStringLiteral("C"), QStringLiteral("🐾"), QStringLiteral("third"), 0);
+    m.push(QStringLiteral("uuid-a"), QStringLiteral("A"),
+           QStringLiteral("🐱"), QStringLiteral("first"), 0);
+    m.push(QStringLiteral("uuid-b"), QStringLiteral("B"),
+           QStringLiteral("🐶"), QStringLiteral("second"), 0);
+    m.push(QStringLiteral("uuid-c"), QStringLiteral("C"),
+           QStringLiteral("🐾"), QStringLiteral("third"), 0);
 
     QCOMPARE(m.count(), 3);
+    QCOMPARE(m.instanceIdAt(0), QStringLiteral("uuid-c"));
     QCOMPARE(m.nameAt(0), QStringLiteral("C"));
     QCOMPARE(m.nameAt(1), QStringLiteral("B"));
     QCOMPARE(m.nameAt(2), QStringLiteral("A"));
@@ -53,7 +57,8 @@ void NotificationStreamModelTest::testCapSixDropsOldest()
 {
     NotificationStreamModel m;
     for (int i = 0; i < 8; ++i) {
-        m.push(QStringLiteral("n%1").arg(i), QString(), QStringLiteral("t"), 0);
+        m.push(QString(), QStringLiteral("n%1").arg(i), QString(),
+               QStringLiteral("t"), 0);
     }
 
     // 8 pushes → capped at 6; the two OLDEST (n0, n1) are dropped.
@@ -70,9 +75,12 @@ void NotificationStreamModelTest::testExpireNowRemovesOverdue()
     qint64 now = 1000000;
     m.setClock([&now] { return now; });
 
-    m.push(QStringLiteral("old"), QString(), QStringLiteral("expired"), 5000);
-    m.push(QStringLiteral("keep"), QString(), QStringLiteral("fresh"), 60000);
-    m.push(QStringLiteral("forever"), QString(), QStringLiteral("no expiry"), 0);
+    m.push(QString(), QStringLiteral("old"), QString(),
+           QStringLiteral("expired"), 5000);
+    m.push(QString(), QStringLiteral("keep"), QString(),
+           QStringLiteral("fresh"), 60000);
+    m.push(QString(), QStringLiteral("forever"), QString(),
+           QStringLiteral("no expiry"), 0);
     QCOMPARE(m.count(), 3);
 
     // Advance past the 5s deadline of "old" but not the 60s of "keep".
@@ -98,9 +106,9 @@ void NotificationStreamModelTest::testExpireNowRemovesOverdue()
 void NotificationStreamModelTest::testDismiss()
 {
     NotificationStreamModel m;
-    m.push(QStringLiteral("A"), QString(), QStringLiteral("1"), 0);
-    m.push(QStringLiteral("B"), QString(), QStringLiteral("2"), 0);
-    m.push(QStringLiteral("C"), QString(), QStringLiteral("3"), 0);
+    m.push(QString(), QStringLiteral("A"), QString(), QStringLiteral("1"), 0);
+    m.push(QString(), QStringLiteral("B"), QString(), QStringLiteral("2"), 0);
+    m.push(QString(), QStringLiteral("C"), QString(), QStringLiteral("3"), 0);
 
     QSignalSpy countSpy(&m, &NotificationStreamModel::countChanged);
     m.dismiss(1);
@@ -121,7 +129,8 @@ void NotificationStreamModelTest::testRoleNames()
 {
     NotificationStreamModel m;
     const QHash<int, QByteArray> roles = m.roleNames();
-    QCOMPARE(roles.size(), 5);
+    QCOMPARE(roles.size(), 6);
+    QVERIFY(roles.key("instanceId", 0) != 0);
     QVERIFY(roles.key("avatar", 0) != 0);
     QVERIFY(roles.key("name", 0) != 0);
     QVERIFY(roles.key("text", 0) != 0);
@@ -129,10 +138,12 @@ void NotificationStreamModelTest::testRoleNames()
     QVERIFY(roles.key("expiresAtMs", 0) != 0);
 
     // data() serves every role for a valid index.
-    m.push(QStringLiteral("Hiyori"), QStringLiteral("🐾"),
-           QStringLiteral("hello"), 10000);
+    m.push(QStringLiteral("uuid-1"), QStringLiteral("Hiyori"),
+           QStringLiteral("🐾"), QStringLiteral("hello"), 10000);
     const QModelIndex idx = m.index(0, 0);
     QVERIFY(idx.isValid());
+    QCOMPARE(idx.data(NotificationStreamModel::InstanceIdRole).toString(),
+             QStringLiteral("uuid-1"));
     QCOMPARE(idx.data(NotificationStreamModel::AvatarRole).toString(),
              QStringLiteral("🐾"));
     QCOMPARE(idx.data(NotificationStreamModel::NameRole).toString(),

@@ -21,7 +21,8 @@ void NotificationStreamController::setEnabled(bool enabled)
     LOG_INFO("NotificationStream: enabled -> {}", enabled);
 }
 
-void NotificationStreamController::push(const QString& name,
+void NotificationStreamController::push(const QString& instanceId,
+                                        const QString& name,
                                         const QString& avatar,
                                         const QString& text,
                                         int durationMs)
@@ -31,7 +32,7 @@ void NotificationStreamController::push(const QString& name,
         return;
     }
     const int effective = durationMs > 0 ? durationMs : kDefaultDurationMs;
-    m_model.push(name, avatar, text, effective);
+    m_model.push(instanceId, name, avatar, text, effective);
 }
 
 void NotificationStreamController::dismiss(int row)
@@ -41,7 +42,11 @@ void NotificationStreamController::dismiss(int row)
 
 void NotificationStreamController::testBubble()
 {
-    push(QStringLiteral("Hiyori"), QStringLiteral("🐾"),
+    // QA helper only: this bridge has no roster access (the panel
+    // composition root owns the InstanceManager), so the canned identity
+    // stays. instanceId "" keeps BubbleCard's glyph fallback for
+    // non-instance bubbles.
+    push(QString(), QStringLiteral("Hiyori"), QStringLiteral("🐾"),
          QStringLiteral("气泡信息流测试 — 如果你看到这条气泡，说明通知流工作正常。"),
          kDefaultDurationMs);
 }

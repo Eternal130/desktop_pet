@@ -43,15 +43,23 @@ Window {
         Repeater {
             model: notificationStream.model
 
-            // Roles avatar/name/text inject automatically into BubbleCard's
+            // Roles instanceId/avatar/name/text inject automatically into
             // same-name required properties (Qt injects model roles into
             // required properties; the `model` context object is DISABLED
             // in delegates that declare required properties).
             delegate: BubbleCard {
                 required property int index
+                required property string instanceId
 
                 width: contentColumn.width
                 stackIndex: index
+                // Per-instance avatar: resolve the custom icon exactly like
+                // InstanceDetailPage does — assetManager is the engine root
+                // context property this window shares. "" (no instance /
+                // no custom icon) → BubbleCard's glyph/paw fallback.
+                avatarFile: instanceId !== ""
+                            ? assetManager.instanceIconUrl(instanceId)
+                            : ""
                 onClicked: notificationStream.dismiss(index)
             }
         }

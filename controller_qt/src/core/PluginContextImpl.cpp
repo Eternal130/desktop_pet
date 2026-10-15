@@ -273,7 +273,11 @@ void UiApiImpl::notifyBubble(const QString& text, int durationMs)
                  m_pluginId.toStdString());
         return;
     }
-    m_notificationStream->push(m_pluginId, QString(), text, durationMs);
+    // Plugin bubbles keep the plugin id as the bubble NAME (existing
+    // behavior); no pet identity → instanceId "" (BubbleCard glyph
+    // fallback).
+    m_notificationStream->push(QString(), m_pluginId, QString(), text,
+                               durationMs);
 }
 
 // ── DownloadApiAdapter (P5) ─────────────────────────────────────────────────

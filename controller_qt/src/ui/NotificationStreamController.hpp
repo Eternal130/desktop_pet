@@ -33,10 +33,12 @@ public:
     bool isEnabled() const { return m_enabled; }
     void setEnabled(bool enabled);
 
-    // Direct bubble push (durationMs <= 0 → kDefaultDurationMs). No-op when
-    // the stream is disabled.
-    Q_INVOKABLE void push(const QString& name, const QString& avatar,
-                          const QString& text, int durationMs = -1);
+    // Direct bubble push (durationMs <= 0 → kDefaultDurationMs; instanceId
+    // "" = no pet identity → BubbleCard glyph fallback). No-op when the
+    // stream is disabled.
+    Q_INVOKABLE void push(const QString& instanceId, const QString& name,
+                          const QString& avatar, const QString& text,
+                          int durationMs = -1);
     Q_INVOKABLE void dismiss(int row);
 
     // QA helper: pushes a canned bubble (verifies the whole chain from QML).

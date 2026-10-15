@@ -185,8 +185,12 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
         [this](const QString& instanceId, const QString& name,
                const QString& avatar, const QString& text,
                int durationMs) {
-            Q_UNUSED(instanceId);
-            m_notificationStream->push(name, avatar, text, durationMs);
+            // instanceId threads through so BubbleStreamWindow's delegate
+            // can resolve the instance's custom icon via
+            // assetManager.instanceIconUrl(instanceId); "" (or no custom
+            // icon) falls back to the avatar glyph inside BubbleCard.
+            m_notificationStream->push(instanceId, name, avatar, text,
+                                       durationMs);
         });
     // S8e: rule-engine notify_bubble actions land in the SAME stream.
     // Late injection (this controller is a UiBoot child, constructed after
@@ -195,7 +199,7 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     // action carries text/duration only, so name/avatar stay empty.
     m_app.ruleEngineService()->setBubbleSink(
         [this](const QString& text, int durationMs) {
-            m_notificationStream->push(QString(), QString(), text,
+            m_notificationStream->push(QString(), QString(), QString(), text,
                                        durationMs);
         });
 

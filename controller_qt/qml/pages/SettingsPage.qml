@@ -612,8 +612,8 @@ Rectangle {
                     SettingRow {
                         width: parent.width
                         title: qsTr("Desktop Pet Controller (Qt)")
-                        desc: qsTr("v2.0 · Qt %1 · 原生 QML Fluent 风格").arg(
-                            envChecker.qtVersion)
+                        desc: qsTr("%1 · Qt %2 · 原生 QML Fluent 风格").arg(
+                            appVersion).arg(envChecker.qtVersion)
                     }
                     SettingRow {
                         width: parent.width

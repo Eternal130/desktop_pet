@@ -39,6 +39,13 @@
 #include "ui/RosterApiModel.hpp"
 #include "ui/VoicePackController.hpp"
 
+// Compile-time app version from CMakeLists.txt (git tag at configure time /
+// CI env). Fallback keeps TUs built outside the pet_panel_core definition
+// compilable — they simply display "dev".
+#ifndef PET_APP_VERSION
+#define PET_APP_VERSION "dev"
+#endif
+
 // Moved from main() (P3/M3). All 17 context property names and their
 // registration order are byte-identical to the old main() sequence — QML is
 // untouched. Log strings keep their historical prefixes for P0 baselines /
@@ -234,6 +241,14 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
                                                m_app.panelConfig().panelHeight);
     m_engine.rootContext()->setContextProperty("initialTheme",
                                                m_app.panelConfig().theme);
+
+    // App version as a plain QString context property — Main.qml's profile
+    // footer (and its collapsed-rail tooltip) bind appVersion instead of a
+    // hardcoded "v2.0". Value comes from the PET_APP_VERSION compile
+    // definition (CMakeLists.txt: -D > CI env > git tag > "dev"). Read-only
+    // string; no bridge object needed.
+    m_engine.rootContext()->setContextProperty(
+        "appVersion", QStringLiteral(PET_APP_VERSION));
 
     // WindowStateSaver (T28) — Q_INVOKABLE saveWindowState called from
     // Main.qml's onClosing handler and from a Theme.themeChanged Connections

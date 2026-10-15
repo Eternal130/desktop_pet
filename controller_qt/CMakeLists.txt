@@ -553,6 +553,48 @@ target_link_libraries(pet_panel_core PUBLIC
 target_compile_definitions(pet_panel_core PUBLIC
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
+# ── App version (profile footer, tag-driven) ────────────────────────────────
+# Resolved once at configure time and displayed as-is (v2.0.13 → "v2.0.13";
+# nothing is stripped). Priority:
+#   1. -DPET_APP_VERSION=<x> explicit cache override
+#   2. PET_APP_VERSION env var — the release pipeline's injection point:
+#      release.yml configures via `cmake --workflow --preset`, which accepts
+#      no extra -D args, so CI exports the tag as an env var instead
+#   3. `git describe --tags --abbrev=0` (local dev builds inside a repo)
+#   4. literal "dev" (git missing / not a repo / no tags)
+set(PET_APP_VERSION "" CACHE STRING
+    "App version shown in the panel footer (default: latest git tag)")
+if(PET_APP_VERSION STREQUAL "")
+    if(DEFINED ENV{PET_APP_VERSION} AND NOT "$ENV{PET_APP_VERSION}" STREQUAL "")
+        set(PET_APP_VERSION "$ENV{PET_APP_VERSION}")
+    else()
+        find_package(Git QUIET) # sets GIT_EXECUTABLE; guard for git-less hosts
+        set(_pet_git_tag "")
+        if(Git_FOUND)
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                RESULT_VARIABLE _pet_git_result
+                OUTPUT_VARIABLE _pet_git_tag
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET)
+        endif()
+        if(Git_FOUND AND _pet_git_result EQUAL 0 AND NOT _pet_git_tag STREQUAL "")
+            set(PET_APP_VERSION "${_pet_git_tag}")
+        else()
+            set(PET_APP_VERSION "dev")
+        endif()
+    endif()
+endif()
+message(STATUS "App version: ${PET_APP_VERSION}")
+# PUBLIC, not the usual PRIVATE: the QML exposure lives in
+# src/app/PanelUiBoot.cpp, which compiles into the EXE shell target — the
+# definition must propagate through the pet_panel_core link the exe already
+# declares (the #ifndef fallback in PanelUiBoot.cpp covers TUs built without
+# it). Tests linking core inherit it too, harmlessly.
+target_compile_definitions(pet_panel_core PUBLIC
+    PET_APP_VERSION="${PET_APP_VERSION}")
+
 # Windows-only system-library link for ResourceStatsCollector (todo 17):
 # GetProcessMemoryInfo lives in Psapi.lib. MinGW ships libpsapi.a so the
 # plain `psapi` link name resolves. No-op on Linux (/proc needs no link).

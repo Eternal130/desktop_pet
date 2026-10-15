@@ -871,8 +871,8 @@ Window {
                     visible: opacity > 0
                     opacity: navPane.collapsed ? 0 : 1
                     Behavior on opacity { NumberAnimation { duration: 120 } }
-                    text: qsTr("v2.0 · %1 实例运行中").arg(
-                        root._runningCount())
+                    text: qsTr("%1 · %2 实例运行中").arg(
+                        appVersion).arg(root._runningCount())
                     color: Theme.text2Color
                     font.pixelSize: 12
                 }
@@ -882,8 +882,8 @@ Window {
                 // status line said — tooltip it (no-op when expanded,
                 // showNavTip guards on navPane.collapsed)
                 onHoveredChanged: {
-                    const tip = qsTr("v2.0 · %1 实例运行中").arg(
-                        root._runningCount())
+                    const tip = qsTr("%1 · %2 实例运行中").arg(
+                        appVersion).arg(root._runningCount())
                     hovered ? navPane.showNavTip(tip,
                                   profileRow.mapToItem(navPane, 0, 0).y + 27)
                             : navPane.hideNavTip(tip)

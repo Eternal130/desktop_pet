@@ -32,6 +32,11 @@ jobs:
         shell: bash
     env:
       TAG: ${{ github.ref_name }}
+      # App version for the controller's profile footer. The controller step
+      # configures via `cmake --workflow --preset` (no extra -D args allowed),
+      # so the tag travels as an env var that controller_qt/CMakeLists.txt
+      # reads at configure time (priority: -D > this env > git tag > dev).
+      PET_APP_VERSION: ${{ github.ref_name }}
     steps:
       - name: Checkout (submodules recursive - CubismNativeSamples + Framework)
         uses: actions/checkout@v4
@@ -210,6 +215,9 @@ jobs:
         shell: bash
     env:
       TAG: ${{ github.ref_name }}
+      # App version for the controller's profile footer — see the Windows
+      # job's twin entry (cmake --workflow preset takes no -D args).
+      PET_APP_VERSION: ${{ github.ref_name }}
     steps:
       - name: Checkout (submodules recursive - CubismNativeSamples + Framework)
         uses: actions/checkout@v4

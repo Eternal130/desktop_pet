@@ -22,6 +22,37 @@ Rectangle {
     }
     property string activeSection: "behavior"
 
+    // 2026-10-15 nav space fix: the anchor column shrank 150 → 112 and the
+    // Flickable width arithmetic (formerly hardcoded as
+    // `root.width - 2*Theme.spacePage - 150 - 24` below) lives in these two
+    // named properties, so the column width, the gap and the scroll view
+    // can never drift apart again.
+    readonly property real anchorNavWidth: 112
+    readonly property real anchorNavGap: 24
+
+    // Scroll → highlight sync: activeSection used to be click-only. The
+    // topmost card whose top sits above (contentY + 80) wins — the 80px
+    // look-ahead matches _scrollTo's -16px landing offset (a clicked card
+    // lands at contentY+16, comfortably inside the threshold) so a clicked
+    // section stays highlighted after the jump. Bottom edge pins 关于.
+    function _syncActiveFromScroll() {
+        const sections = [
+            ["behavior", behaviorCard], ["startup", startupCard],
+            ["appearance", appearanceCard], ["plugins", pluginsCard],
+            ["about", aboutCard]
+        ]
+        const top = flick.contentY + 80
+        let current = "behavior"
+        for (const [name, card] of sections) {
+            if (card.mapToItem(contentCol, 0, 0).y <= top)
+                current = name
+        }
+        if (flick.atYEnd)
+            current = "about"
+        if (current !== activeSection)
+            activeSection = current
+    }
+
     // Dev/QA seam (set by Main.qml on behalf of ScreenshotRunner): scroll
     // to a section on creation so below-the-fold cards (e.g. the
     // plugin-management card) can be captured. Empty for normal runs.
@@ -33,11 +64,11 @@ Rectangle {
         anchors.leftMargin: Theme.spacePage
         anchors.rightMargin: Theme.spacePage
         anchors.topMargin: Theme.spacePage
-        spacing: 24
+        spacing: root.anchorNavGap
 
         // ── Left anchor nav ────────────────────────────────────────────
         Column {
-            width: 150
+            width: root.anchorNavWidth
             spacing: 2
 
             Text {
@@ -57,13 +88,15 @@ Rectangle {
         // ── Right settings column ──────────────────────────────────────
         Flickable {
             id: flick
-            width: root.width - 2 * Theme.spacePage - 150 - 24
+            width: root.width - 2 * Theme.spacePage
+                   - root.anchorNavWidth - root.anchorNavGap
             height: parent.height
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             contentWidth: width
             contentHeight: contentCol.implicitHeight + 48
             ScrollBar.vertical: AppScrollBar {}
+            onContentYChanged: root._syncActiveFromScroll()
 
             Column {
                 id: contentCol
@@ -610,7 +643,7 @@ Rectangle {
         property string iconName: ""
         property string text: ""
         property string section: ""
-        width: 130
+        width: root.anchorNavWidth
         height: 34
         radius: Theme.radiusMd
         readonly property bool sel: root.activeSection === section

@@ -444,11 +444,57 @@ Window {
         anchors.left: parent.left
         anchors.top: titleBar.bottom
         anchors.bottom: parent.bottom
-        width: 256
+        // 2026-10-15 nav space fix: 256px expanded ⇄ 52px icon rail (Fluent
+        // compact mode). Every consumer on the right (pageLoader, plugin
+        // page hosts) anchors to navPane.right and tracks the width
+        // animation for free. Collapse state is SESSION-ONLY: the
+        // WindowStateSaver C++ signature is fixed (x/y/w/h/theme) and
+        // panel config is the guarded settings surface, so the pane always
+        // starts EXPANDED per launch (documented trade-off).
+        width: collapsed ? 52 : 256
+        Behavior on width {
+            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+        }
         color: "transparent"
 
         property string activeKey: "welcome"
         property string searchFilter: ""
+
+        // Collapsed icon-rail mode. Toggled by the hamburger below; every
+        // nav cell reads this to hide labels/badges/captions and to route
+        // hover tooltips.
+        property bool collapsed: false
+
+        // ── Shared collapsed-rail tooltip state ──────────────────────────
+        // ONE tooltip instance (right below the hairlines) serves every
+        // icon-only cell. It is parented to navPane — NOT to the cells —
+        // because navScroll clips at its bounds and would cut a tip that
+        // floats past the rail edge.
+        property string tipText: ""
+        property real tipY: 0
+        property bool tipShown: false
+        // force: the pane toggle is icon-only in BOTH modes, so its tip is
+        // wanted even while expanded; plain cells only tip when collapsed.
+        function showNavTip(text, y, force) {
+            if (!navPane.collapsed && !force)
+                return
+            tipText = text
+            tipY = y
+            tipShown = true
+        }
+        function hideNavTip(text) {
+            if (tipText === text)
+                tipShown = false
+        }
+        function toggleCollapsed() {
+            navPane.collapsed = !navPane.collapsed
+            if (navPane.collapsed) {
+                // an invisibly focused field would swallow keys
+                if (searchInput.activeFocus)
+                    searchInput.focus = false
+                tipShown = false
+            }
+        }
 
         Rectangle {
             anchors.top: parent.top
@@ -471,16 +517,88 @@ Window {
             color: Theme.hairlineColor
         }
 
+        // Collapsed-rail hover tooltip (shared; state lives on navPane).
+        // Fluent-style: near-black card, white caption, floating just right
+        // of the pane so it paints OVER the content area (navPane z:5
+        // already sits above the page loaders). Vertically clamped so tips
+        // for the topmost/bottommost cells stay inside the pane.
+        Rectangle {
+            id: navTip
+            visible: opacity > 0.01
+            opacity: navPane.tipShown && navPane.tipText.length > 0 ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 100 } }
+            x: navPane.width + 8
+            width: navTipText.implicitWidth + 20
+            height: 28
+            radius: Theme.radiusMd
+            color: "#242424"
+            y: Math.max(4, Math.min(navPane.tipY - height / 2,
+                                    navPane.height - height - 4))
+            Text {
+                id: navTipText
+                anchors.centerIn: parent
+                text: navPane.tipText
+                color: "#ffffff"
+                font.pixelSize: 12
+            }
+        }
+
+        // Pane toggle (Fluent hamburger) — the ONLY chrome that stays
+        // visible in collapsed mode. Lives at navPane top, NOT the
+        // titlebar: the titlebar is the QWK drag region and logoMark is
+        // already the registered WindowIcon system button, so extra
+        // interactive chrome there would fight the hit-test. Its origin
+        // (10,12) is identical in both modes — at 52px rail width,
+        // (52-32)/2 = 10 centers it exactly, so nothing needs to move.
+        Rectangle {
+            id: navToggle
+            x: 10; y: 12
+            width: 32; height: 32
+            radius: Theme.radiusMd
+            color: _tglHover.hovered
+                   ? Qt.alpha(Theme.textColor, 0.06) : "transparent"
+
+            AppIcon {
+                name: "menu"
+                size: 16
+                color: Theme.text2Color
+                anchors.centerIn: parent
+            }
+            HoverHandler {
+                id: _tglHover
+                // icon-only in BOTH modes → tooltip always
+                onHoveredChanged: {
+                    const tip = navPane.collapsed ? qsTr("展开导航")
+                                                  : qsTr("折叠导航")
+                    hovered ? navPane.showNavTip(tip,
+                                  navToggle.mapToItem(navPane, 0, 0).y + 16,
+                                  true)
+                            : navPane.hideNavTip(tip)
+                }
+            }
+            TapHandler {
+                cursorShape: Qt.PointingHandCursor
+                onTapped: navPane.toggleCollapsed()
+            }
+        }
+
         // search box (Fluent field: visible stroke + bottom emphasis line).
         // Two-layer trick: outer = stroke color, inner (inset 1px) = the
         // field fill. A transparent inner let the focused accent fill the
         // whole box (blue-background bug) and made the 1px ring too faint
         // at high DPI.
+        //
+        // 2026-10-15 nav space fix: pushed right of the hamburger (50 =
+        // 10 + 32 + 8) and hidden while collapsed — the rail carries no
+        // inline field, the toggle expands back. A filter present at
+        // collapse time is KEPT (no silent list jumps); expanding reveals
+        // the field with its text intact.
         Rectangle {
             id: searchBox
-            x: 10; y: 12
-            width: parent.width - 20
+            x: 50; y: 12
+            width: parent.width - 60
             height: 32
+            visible: !navPane.collapsed
             radius: Theme.radiusMd
             color: searchInput.activeFocus
                    ? Theme.accentColor : Theme.borderColor
@@ -565,13 +683,16 @@ Window {
             }
         }
 
-        // scrollable nav list between search box and pinned settings item
+        // scrollable nav list between the header band and the pinned
+        // settings item. Band = 12 + 32 + 8 = 52px — exactly the old
+        // searchBox bottom (44) + margin (8), so the list below did not
+        // move relative to the pane.
         Flickable {
             id: navScroll
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.top: searchBox.bottom
-            anchors.topMargin: 8
+            anchors.top: parent.top
+            anchors.topMargin: 52
             anchors.bottom: settingsNavItem.top
             contentHeight: navCol.implicitHeight
             clip: true
@@ -694,7 +815,9 @@ Window {
             match: navPane.searchFilter
         }
 
-        // profile footer
+        // profile footer. 2026-10-15 nav space fix: collapsed rail keeps
+        // only the logo disc, optically centered ((52-30)/2 = 11), with
+        // the version/status line as the shared pane tooltip instead.
         Rectangle {
             id: profileRow
             width: parent.width
@@ -711,7 +834,11 @@ Window {
             }
 
             Row {
-                x: 16; y: (parent.height - height) / 2
+                x: navPane.collapsed ? 11 : 16
+                Behavior on x {
+                    NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+                }
+                y: (parent.height - height) / 2
                 spacing: 10
                 Item {
                     width: 30; height: 30
@@ -741,10 +868,25 @@ Window {
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
+                    visible: opacity > 0
+                    opacity: navPane.collapsed ? 0 : 1
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
                     text: qsTr("v2.0 · %1 实例运行中").arg(
                         root._runningCount())
                     color: Theme.text2Color
                     font.pixelSize: 12
+                }
+            }
+            HoverHandler {
+                // collapsed rail: the avatar alone can't say what the
+                // status line said — tooltip it (no-op when expanded,
+                // showNavTip guards on navPane.collapsed)
+                onHoveredChanged: {
+                    const tip = qsTr("v2.0 · %1 实例运行中").arg(
+                        root._runningCount())
+                    hovered ? navPane.showNavTip(tip,
+                                  profileRow.mapToItem(navPane, 0, 0).y + 27)
+                            : navPane.hideNavTip(tip)
                 }
             }
         }
@@ -1052,12 +1194,18 @@ Window {
     component NavGroupLabel : Item {
         id: grp
         property string text: ""
-        height: visible ? 24 : 0
+        // 2026-10-15 nav space fix: the collapsed icon rail hides group
+        // captions entirely (height collapses; the Text hides with it so
+        // nothing paints above a 0-height cell). Instance-level `visible`
+        // overrides — like the 插件 label's pluginPages.count binding —
+        // stay independent of the rail state.
+        height: visible && !navPane.collapsed ? 24 : 0
         width: parent.width
         Text {
             x: 12
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 4
+            visible: !navPane.collapsed
             text: grp.text
             color: Theme.text3Color
             font.pixelSize: 12
@@ -1104,8 +1252,17 @@ Window {
                 color: Theme.accentColor
             }
             Row {
-                x: 12; y: (parent.height - height) / 2
+                // 2026-10-15 nav space fix: collapsed icon rail — label
+                // fades out, icon optically centers (content rect is
+                // pane-16 = 36px → icon x = 10). navScroll clips at the
+                // pane bounds, so the fading label never bleeds over the
+                // hairline mid-animation.
+                x: navPane.collapsed ? 10 : 12
+                y: (parent.height - height) / 2
                 spacing: 14
+                opacity: navPane.collapsed ? 0 : 1
+                Behavior on opacity { NumberAnimation { duration: 120 } }
+                visible: opacity > 0
                 // vector nav icon (was emoji text) — tint follows the
                 // selection like Fluent nav panes do
                 AppIcon {
@@ -1121,12 +1278,24 @@ Window {
                     font.weight: item.active ? Font.DemiBold : Font.Normal
                 }
             }
+            // collapsed rail: count → 7px accent status dot on the icon's
+            // upper-right (Fluent compact-mode badge hint), ringed in the
+            // window background so it separates from the icon glyph.
+            Rectangle {
+                visible: item.badgeCount > 0 && navPane.collapsed
+                x: 22; y: 4
+                width: 7; height: 7; radius: 3.5
+                color: Theme.accentColor
+                border.width: 2
+                border.color: Theme.bgColor
+            }
             // FluBadge pill geometry (width = text + 12, height 20, fully
             // rounded r10) with an ACCENT-TINTED fill instead of Flu's
             // alert-red solid: a translucent accent wash + accent-derived
             // label keeps four count badges calm in both schemes. 0 hides.
+            // Collapsed rail shows the dot above instead.
             Rectangle {
-                visible: item.badgeCount > 0
+                visible: item.badgeCount > 0 && !navPane.collapsed
                 anchors.right: parent.right
                 anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
@@ -1144,7 +1313,16 @@ Window {
                     font.weight: Font.DemiBold
                 }
             }
-            HoverHandler { id: _hover }
+            HoverHandler {
+                id: _hover
+                // collapsed rail: icon-only cells identify themselves on
+                // hover via the shared pane tooltip (no-op when expanded —
+                // showNavTip guards on navPane.collapsed)
+                onHoveredChanged: hovered
+                    ? navPane.showNavTip(item.label,
+                          item.mapToItem(navPane, 0, 0).y + 17)
+                    : navPane.hideNavTip(item.label)
+            }
             TapHandler { onTapped: root.switchPage(item.itemKey) }
         }
     }
@@ -1173,8 +1351,14 @@ Window {
             color: _hover.hovered ? Qt.alpha(Theme.textColor, 0.05)
                                   : "transparent"
             Row {
-                x: 12; y: (parent.height - height) / 2
+                // 2026-10-15 nav space fix: same collapsed icon-rail
+                // treatment as NavItem (fade + optical centering)
+                x: navPane.collapsed ? 10 : 12
+                y: (parent.height - height) / 2
                 spacing: 14
+                opacity: navPane.collapsed ? 0 : 1
+                Behavior on opacity { NumberAnimation { duration: 120 } }
+                visible: opacity > 0
                 AppIcon {
                     name: "paw"
                     size: 16
@@ -1188,14 +1372,34 @@ Window {
                 }
             }
             Rectangle {
-                visible: iitem.live
+                // live dot, expanded layout — right-aligned
+                visible: iitem.live && !navPane.collapsed
                 anchors.right: parent.right
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 width: 8; height: 8; radius: 4
                 color: Theme.successColor
             }
-            HoverHandler { id: _hover }
+            Rectangle {
+                // live dot, collapsed rail — rides the paw icon's
+                // lower-right corner, ringed in the window background
+                visible: iitem.live && navPane.collapsed
+                x: 20; y: 17
+                width: 8; height: 8; radius: 4
+                color: Theme.successColor
+                border.width: 2
+                border.color: Theme.bgColor
+            }
+            HoverHandler {
+                id: _hover
+                // collapsed rail: instance rows are paw-icon-only — the
+                // shared pane tooltip carries the instance name (no-op
+                // when expanded — showNavTip guards on navPane.collapsed)
+                onHoveredChanged: hovered
+                    ? navPane.showNavTip(iitem.instanceLabel,
+                          iitem.mapToItem(navPane, 0, 0).y + 17)
+                    : navPane.hideNavTip(iitem.instanceLabel)
+            }
             TapHandler { onTapped: iitem.clicked() }
         }
     }

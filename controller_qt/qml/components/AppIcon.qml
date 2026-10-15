@@ -64,6 +64,9 @@ Item {
         stop: "M8.2 6.9h7.6a1.3 1.3 0 0 1 1.3 1.3v7.6a1.3 1.3 0 0 1-1.3 1.3H8.2a1.3 1.3 0 0 1-1.3-1.3V8.2a1.3 1.3 0 0 1 1.3-1.3z",
         restart: "M4.6 8.3a7.7 7.7 0 0 1 14.4 0 M19.3 4v4.3H15 M19.4 15.7a7.7 7.7 0 0 1-14.4 0 M4.7 20v-4.3H9",
         copy: "M9.3 10.7h7.3a1.9 1.9 0 0 1 1.9 1.9v6.5a1.9 1.9 0 0 1-1.9 1.9H9.3a1.9 1.9 0 0 1-1.9-1.9v-6.5a1.9 1.9 0 0 1 1.9-1.9z M14.7 7.4V7a1.9 1.9 0 0 0-1.9-1.9H6.5A1.9 1.9 0 0 0 4.6 7v6.3a1.9 1.9 0 0 0 1.9 1.9h.6",
+        // nav-pane hamburger (Fluent NavigationView global-nav glyph):
+        // three full-width lines on the 24 grid
+        menu: "M3.5 6.8h17 M3.5 12h17 M3.5 17.2h17",
         // Window caption glyphs — 24×24 renderings of the Segoe Fluent
         // Icons caption geometry (E921 ChromeMinimize / E922 ChromeMaximize
         // / E923 ChromeRestore / E8BB ChromeClose). Native spec: the glyphs

@@ -58,8 +58,11 @@ private:
     PanelApplication& m_app;
 
     // Construction/registration order = old main() order; within this tree
-    // children die registration-reverse (Qt 6.6+ implementation behavior,
-    // not a contract — §B.2 v2).
+    // children die in REGISTRATION order on Qt >= 6.6 (first registered
+    // dies FIRST — 2026-10 teardown diagnosis corrected §B.2 v2's claimed
+    // direction; these bridges have no dtor-time cross-references, so the
+    // forward order is safe HERE — see ~PanelApplication for where it was
+    // not).
     class TrayManager* m_trayManager;
     class AutoLaunchManager* m_autoLaunchManager;
     class PanelConfigController* m_panelConfigController;

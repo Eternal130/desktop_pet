@@ -72,9 +72,12 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     // so each bridge still outlives the QML context it serves; and the
     // engine (stack object in main) still dies before the PanelApplication
     // service tree, so the bridge-vs-service relative order is UNCHANGED
-    // (services last, exactly as before). Within this tree children die
-    // registration-reverse — Qt 6.6+ implementation behavior, NOT a
-    // documented contract (§B.2 v2 annotation). The per-bridge "Lifetime
+    // (services last, exactly as before). Within this tree children die in
+    // REGISTRATION order on Qt >= 6.6 (first registered dies FIRST — 2026-10
+    // teardown diagnosis corrected the §B.2 v2 annotation's direction;
+    // PanelUiBoot bridges have no destructor-time cross-references, so the
+    // forward order is safe HERE — see ~PanelApplication for where it was
+    // NOT). The per-bridge "Lifetime
     // (M3)" notes below replace the old dead "declared BEFORE engine"
     // stack-discipline sentences; everything else in those comments is
     // verbatim.

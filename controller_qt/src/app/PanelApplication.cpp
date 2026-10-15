@@ -118,16 +118,20 @@ PanelApplication::PanelApplication(QObject* parent)
     // (InstanceManager.cpp), so those Session objects remain parent=nullptr —
     // giving them a Qt parent would double-delete.
     //
-    // Destruction-order assumption (§B.2 v2 annotation): QObject children die
-    // in registration-reverse order — Qt 6.6+ implementation behavior, NOT a
-    // documented contract. Registration order in this ctor mirrors the old
-    // declaration order (databaseManager → psm → wsServer → pendingRequests
-    // → instanceManager), so the subtree tears down exactly like the old
-    // stack-reverse sequence did (instanceManager first, databaseManager
-    // last). The CROSS-subtree order — this service tree vs main()'s UI
-    // bridges and the engine — is governed by main()'s stack, not by this
-    // class: PanelApplication is declared before all of them, so it is
-    // destroyed after them.
+    // Destruction-order FACT (2026-10 teardown diagnosis; direction
+    // corrected from the §B.2 v2 annotation): QObject children die in
+    // REGISTRATION order on Qt >= 6.6 — first registered dies FIRST
+    // (empirically verified on Qt 6.10.2; NOT a documented contract).
+    // Registration order in this ctor mirrors the old declaration order
+    // (databaseManager → psm → wsServer → pendingRequests →
+    // instanceManager), so the DEFAULT cascade tears down in that same
+    // forward order — NOT the old stack-reverse sequence. Where a
+    // later-registered service's destructor still calls an
+    // earlier-registered one, ~PanelApplication() deletes those explicitly
+    // beforehand (exit-path use-after-free fix). The CROSS-subtree order —
+    // this service tree vs main()'s UI bridges and the engine — is governed
+    // by main()'s stack, not by this class: PanelApplication is declared
+    // before all of them, so it is destroyed after them.
     m_instanceManager = new InstanceManager(
         ConfigDir::configDir(), *m_wsServer, *m_pendingRequests,
         [this](const PanelConfig& cfg) { m_panelStateManager->save(cfg); },
@@ -174,8 +178,12 @@ PanelApplication::PanelApplication(QObject* parent)
     // context (below, via the host) AND into the panel's own RosterApiModel
     // (PanelUiBoot) — the sidebar's read path and the plugin SDK's read path
     // converge on this single object. Registered AFTER the manager → dies
-    // BEFORE it (registration-reverse), so its model-signal connections
-    // never dangle. Zero core behavior change: it only re-homes the object
+    // AFTER it (Qt ≥ 6.6 registration order — the old registration-reverse
+    // claim had the direction backwards). The model-signal connections
+    // still never dangle: they are QObject connections that drop
+    // automatically when the sessions die with the manager, and
+    // ~InstanceApiImpl makes no cross-calls. Zero core behavior change:
+    // it only re-homes the object
     // that used to be a per-plugin PluginContextImpl member.
     m_instanceApi = new core::InstanceApiImpl(m_instanceManager, this);
 
@@ -186,15 +194,19 @@ PanelApplication::PanelApplication(QObject* parent)
     // the "instance_lifecycle" capability AND the live plugin_write_enabled
     // switch) and into the panel's own RosterApiModel write bridge (host
     // bridge, deliberately NOT capability-gated). Registered after
-    // m_instanceApi → dies before it (registration-reverse).
+    // m_instanceApi → dies AFTER it (Qt ≥ 6.6 registration order); no
+    // destructor cross-calls — safe.
     m_instanceControlApi = new core::InstanceControlApiImpl(m_instanceManager,
                                                             this);
 
     // ── Shared v1.3 families (S5/S6 dogfooding) ────────────────────────
     // ONE implementation per family for the whole panel, same discipline
     // as the shared InstanceApiImpl/InstanceControlApiImpl above. All
-    // registered after m_instanceControlApi → destroyed before it
-    // (registration-reverse). The model scan cache + the voice-pack
+    // registered after m_instanceControlApi → destroyed after it, same
+    // forward order (Qt ≥ 6.6 registration order — the old
+    // registration-reverse claim had the direction backwards); none of
+    // their destructors make cross-calls — safe. The model scan cache +
+    // the voice-pack
     // source seams get their renderer-dir / host-scan wiring in
     // PanelUiBoot (they observe UI-adjacent singletons constructed
     // later); the settings impl shares this tree's DatabaseManager so
@@ -206,13 +218,17 @@ PanelApplication::PanelApplication(QObject* parent)
     // v1.7 (S9): the shared settings impl publishes
     // pet.panel.settings_changed onto the shared bus after every
     // successful persist (the same setEventPublisher discipline the
-    // sessions use; m_eventApi was registered before this tree's
-    // services, so it outlives the settings impl).
+    // sessions use; m_eventApi is registered before this tree's
+    // services — under the Qt ≥ 6.6 forward cascade it dies BEFORE the
+    // settings impl, which is harmless: ~SettingsApiImpl never calls
+    // the publisher).
     m_settingsApi->setEventPublisher(m_eventApi);
     m_voicePackApi = new core::VoicePackApiImpl(/*refresh=*/{}, this);
     // S7 (v1.4): shared monitor read family — wraps the sessions'
     // MonitorDataModel rings (registered after m_voicePackApi → dies
-    // before it, registration-reverse).
+    // after it, Qt ≥ 6.6 registration order; the InstanceManager dies
+    // even earlier, so the held roster pointer is dangling by the time
+    // ~MonitorApiImpl runs — never called there, safe).
     m_monitorApi = new core::MonitorApiImpl(m_instanceManager, this);
 
     // ── Shared layout family (v1.8) ────────────────────────────────────
@@ -220,7 +236,8 @@ PanelApplication::PanelApplication(QObject* parent)
     // the resetLayout / setAutoStart forwards over the same
     // InstanceSession surfaces the detail page used to call directly
     // (host UI and plugins go through the same vtable). Registered
-    // after m_monitorApi → dies before it (registration-reverse).
+    // after m_monitorApi → dies AFTER it (Qt ≥ 6.6 registration order);
+    // no destructor cross-calls — safe.
     m_layoutApi = new core::LayoutApiImpl(m_instanceManager, this);
 
     // ── Rule-engine host service (S8e) ────────────────────────────────────
@@ -233,7 +250,11 @@ PanelApplication::PanelApplication(QObject* parent)
     // late-injected by PanelUiBoot (NotificationStreamController is a
     // UiBoot child constructed later) — the service tolerates the null
     // sink with a per-action WARN until then. Registered after
-    // m_monitorApi → dies before it (registration-reverse).
+    // m_monitorApi → dies AFTER it in the default cascade (Qt ≥ 6.6
+    // registration order); its dtor calls the earlier-registered
+    // instanceApi/eventApi (freed first under the forward order — the
+    // exit-path use-after-free), so it is deleted explicitly in
+    // ~PanelApplication() while they are still alive.
     m_ruleEngineService = new core::RuleEngineService(
         m_eventApi, m_instanceApi, m_tuningApi, m_databaseManager, this);
     m_ruleEngineService->setPackAudioChannel(
@@ -261,8 +282,10 @@ PanelApplication::PanelApplication(QObject* parent)
     // ONE RuleApiImpl over the RuleEngineService: injected into every
     // plugin context below (queryApi("pet.rules") → per-plugin
     // owner-stamping proxy). Registered after m_ruleEngineService →
-    // dies before it (registration-reverse; the impl borrows the
-    // service pointer).
+    // dies AFTER it in the default cascade (Qt ≥ 6.6 registration order
+    // — the old registration-reverse claim had the direction backwards;
+    // the borrowed service pointer would dangle). Covered by
+    // ~PanelApplication(), which deletes m_ruleApi BEFORE the service.
     m_ruleApi = new core::RuleApiImpl(m_ruleEngineService, this);
     // Owner action gate (play_motion/set_expression from plugin-owned
     // rules), checked LIVE at emission time inside the service. The
@@ -295,13 +318,17 @@ PanelApplication::PanelApplication(QObject* parent)
     // Registry first (pure store, no deps), host last (observes the roster
     // above; its page model / stream / config root are mounted later by
     // PanelUiBoot, before main() calls initializeAll()). Both parented to
-    // this tree — registered after the five services → destroyed before
-    // them (registration-reverse), so plugin shutdown during app teardown
-    // happens while the roster/network/database are still alive.
+    // this tree — registered after the five services → destroyed AFTER
+    // them (Qt ≥ 6.6 registration order — the old registration-reverse
+    // claim had the direction backwards). Plugin shutdown still happens
+    // while the roster/network/database are alive: main() calls
+    // pluginHost()->shutdownAll() explicitly BEFORE any teardown;
+    // ~PluginHost itself makes no cross-calls.
     // P5: the download service BEFORE the host (contexts receive it at
-    // initializeAll). Registered between registry/host — destruction
-    // (registration-reverse) tears the host down first, then the service:
-    // plugin shutdown callbacks cannot reach a dead service. Destructor
+    // initializeAll). Registered between registry/host — under the
+    // forward cascade the service dies before the host; harmless:
+    // plugin shutdown runs via main()'s shutdownAll() while both are
+    // alive, and neither destructor reaches the other. Destructor
     // silently cancels active jobs — the exit path never blocks.
     // Storage-layout revision: staging + installs live under the per-user
     // DATA dir (<dataDir>/downloads/ → <dataDir>/VoicePacks/), never inside
@@ -335,6 +362,30 @@ PanelApplication::PanelApplication(QObject* parent)
     });
     m_pluginHost->setConfigRoot(ConfigDir::configDir());
     m_pluginHost->setDownloadService(m_downloadService);
+}
+
+PanelApplication::~PanelApplication()
+{
+    // Exit-path use-after-free fix (2026-10 teardown diagnosis, ASAN
+    // 100%-repro → 10/10 green with this dtor). Qt >= 6.6 deletes QObject
+    // children in REGISTRATION order (first registered dies FIRST — the
+    // tree's old comments had the Qt 6.6 change direction backwards). Under
+    // that default cascade EventApiImpl (#early) and InstanceApiImpl die
+    // BEFORE the destructors that still call into them:
+    //   ~RuleEngineService → m_instanceApi->unsubscribeInstances(this)
+    //   ~InstanceSession   → m_eventPublisher->unsubscribe(&m_mbeAdapter)
+    // i.e. heap-use-after-free at exit (release flakiness: glibc tcache
+    // clobbers the freed vptr slot → sporadic SEGV/heap-corruption abort).
+    // Tear the cross-referencing services down HERE — the dtor body runs
+    // while every child is still alive, and deleting a child removes it
+    // from the QObject children list, so the default cascade afterwards
+    // cannot double-delete.
+    delete m_ruleApi;           // borrows m_ruleEngineService
+    m_ruleApi = nullptr;
+    delete m_ruleEngineService; // unsubscribes instanceApi + eventApi (both alive here)
+    m_ruleEngineService = nullptr;
+    delete m_instanceManager;   // qDeleteAll sessions unsubscribe via eventApi (alive here)
+    m_instanceManager = nullptr;
 }
 
 DatabaseManager& PanelApplication::databaseManager()
@@ -439,10 +490,11 @@ core::DownloadService* PanelApplication::downloadService()
 
 // Moved from main() (P3/M4). Construction + wiring statements are verbatim;
 // only the storage changed (main stack objects → heap children of this
-// PanelApplication). Registered AFTER the five services → destroyed FIRST
-// among this tree's children (registration-reverse, §B.2 v2 annotation in
-// the ctor), matching the old stack order where salvo/PM died before every
-// service.
+// PanelApplication). Registered AFTER the five services → destroyed LAST
+// among this tree's children (Qt ≥ 6.6 registration order — the §B.2 v2
+// annotation's registration-reverse claim had the direction backwards, so
+// this is NOT the old stack order where salvo/PM died first). Harmless:
+// neither destructor touches the services.
 void PanelApplication::wireLegacyInstanceZeroSenders()
 {
     // StartupSalvo + ProcessManager: Phase-5 single-instance holders wired

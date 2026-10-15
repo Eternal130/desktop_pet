@@ -192,7 +192,14 @@ Rectangle {
                         // S5: creation goes through the rosterModel write
                         // bridge (shared IInstanceControlApi; int error
                         // code, 0 = Ok).
-                        // 4th parameter: the panel default graphics
+                        // 4th parameter: autoStart — explicit false (this
+                        // dialog has no auto-start toggle). The historical
+                        // call passed the backend string here: QML coerced
+                        // it to true AND mis-slotted the 5th argument, so
+                        // every dialog-created instance got autoStart=true
+                        // and backend "opengl" regardless of the panel
+                        // default.
+                        // 5th parameter: the panel default graphics
                         // backend (panelConfig.defaultGraphicsBackend,
                         // "opengl"/"vulkan") — silent pass-through; this
                         // dialog intentionally has no backend selector.
@@ -202,6 +209,7 @@ Rectangle {
                             _nameInput.text.trim(),
                             root._selectedAvatar,
                             model,
+                            false,
                             panelConfig.defaultGraphicsBackend)
                         root.close()
                         if (err === 0) {

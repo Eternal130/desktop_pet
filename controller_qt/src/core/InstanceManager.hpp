@@ -202,10 +202,15 @@ signals:
     void stopAllFinished();
 
 private:
-    // Rebuild m_panelConfig.instanceIds from the live roster order and persist
-    // it via m_savePanel. Called after every create/delete. Rebuilding from the
-    // roster (rather than mutating instanceIds in place) drops any stale id left
-    // behind by a corrupt file skipped at load — self-healing on next mutation.
+    // Rebuild the roster-owned instanceIds from the live roster order and
+    // persist via m_savePanel — LOAD-MODIFY-SAVE: the panel config is re-read
+    // from the backing store first, so panel fields written out-of-band after
+    // construction (settings page → SettingsApiImpl → PanelStateManager) are
+    // preserved instead of being clobbered by the stale construction-time
+    // m_panelConfig snapshot. Called after every create/delete. Rebuilding
+    // from the roster (rather than mutating instanceIds in place) drops any
+    // stale id left behind by a corrupt file skipped at load — self-healing
+    // on next mutation.
     void persistRoster();
 
     // Inject the manager-level dialogue sink seam into a freshly constructed

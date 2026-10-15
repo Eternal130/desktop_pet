@@ -352,8 +352,22 @@ void InstanceManager::wireSession(InstanceSession* session)
 
 void InstanceManager::persistRoster()
 {
+    // Lost-update fix: LOAD-MODIFY-SAVE. The roster (instanceIds) is the ONLY
+    // field this manager owns, but m_panelConfig was snapshotted at
+    // construction and may be stale — persisting it wholesale would clobber
+    // out-of-band panel writes (settings page → SettingsApiImpl →
+    // PanelStateManager: default_graphics_backend, default_model_name,
+    // close_action, ...) back to their startup values. Re-read a FRESH config
+    // from the same backing store (shared db when injected, else the
+    // lazily-opened <m_configDir>/app.db connection — the same wiring
+    // loadFromDisk uses), overwrite only the roster-owned field, then save.
+    PanelStateManager psm(m_configDir);
+    if (m_db != nullptr)
+        psm.setDatabase(m_db);
+    m_panelConfig = psm.load(); // cached copy stays coherent with the store
+
     // Rebuild instanceIds from the live roster order so deletes + inserts are
-    // reflected even if m_panelConfig.instanceIds drifted (e.g. a corrupt file
+    // reflected even if the stored instanceIds drifted (e.g. a corrupt file
     // skipped at load left a stale id — persistRoster drops it on the next
     // mutation, self-healing the roster).
     m_panelConfig.instanceIds.clear();

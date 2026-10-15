@@ -107,6 +107,7 @@ private slots:
     void testCorruptInstanceDegrades();
     void testRoute();
     void testSetDatabaseDoesNotDuplicateRoster();
+    void testRosterPersistKeepsOutOfBandPanelFields();
 
     // ── S4 two-phase delete / async stopAll (fake-sleeper renderer; POSIX) ──
     void testDeleteRunningInstanceIsTwoPhase();
@@ -409,6 +410,68 @@ void InstanceManagerTest::testSetDatabaseDoesNotDuplicateRoster()
     mgr.setDatabase(&db);
     QCOMPARE(mgr.rowCount(), 1);
     QCOMPARE(mgr.instanceAt(0)->label(), QStringLiteral("Solo"));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 5b. persistRoster is load-modify-save: roster mutations must NOT clobber
+// panel fields written out-of-band AFTER construction (the settings page →
+// SettingsApiImpl → PanelStateManager path lands in the same panel_config kv
+// row). Regression: persistRoster used to write the construction-time
+// m_panelConfig snapshot back wholesale on every create/delete, silently
+// reverting default_graphics_backend (and every other non-roster field) to
+// its startup value.
+// ────────────────────────────────────────────────────────────────────────────
+
+void InstanceManagerTest::testRosterPersistKeepsOutOfBandPanelFields()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+
+    WsServer server;
+    PendingRequests pending;
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& cfg) {
+                            PanelStateManager(base.path()).save(cfg);
+                        });
+    QCOMPARE(mgr.rowCount(), 0);
+
+    // Out-of-band write AFTER construction — load-modify-save through the
+    // same PanelStateManager store, exactly how the settings path persists
+    // default_graphics_backend / default_model_name.
+    {
+        PanelStateManager psm(base.path());
+        PanelConfig cfg = psm.load();
+        cfg.defaultGraphicsBackend = QStringLiteral("vulkan");
+        cfg.defaultModelName = QStringLiteral("Mao");
+        QVERIFY(psm.save(cfg));
+    }
+
+    // Roster mutation → persistRoster (the old clobber site). The stored
+    // backend must survive the create AND the roster must be persisted.
+    const QString uuid1 = mgr.createInstance(QStringLiteral("Pet One"));
+    const QString uuid2 = mgr.createInstance(QStringLiteral("Pet Two"));
+    QVERIFY2(!uuid1.isEmpty() && !uuid2.isEmpty(),
+             "createInstance returned an empty uuid (persist failed)");
+
+    {
+        const PanelConfig reloaded = PanelStateManager(base.path()).load();
+        QCOMPARE(reloaded.defaultGraphicsBackend, QStringLiteral("vulkan"));
+        QCOMPARE(reloaded.defaultModelName, QStringLiteral("Mao"));
+        QCOMPARE(reloaded.instanceIds.size(), 2);
+        QCOMPARE(reloaded.instanceIds.at(0), uuid1);
+        QCOMPARE(reloaded.instanceIds.at(1), uuid2);
+    }
+
+    // The delete path shares persistRoster — same guarantee.
+    mgr.deleteInstance(uuid1);
+    QCOMPARE(mgr.rowCount(), 1);
+    {
+        const PanelConfig reloaded = PanelStateManager(base.path()).load();
+        QCOMPARE(reloaded.defaultGraphicsBackend, QStringLiteral("vulkan"));
+        QCOMPARE(reloaded.defaultModelName, QStringLiteral("Mao"));
+        QCOMPARE(reloaded.instanceIds.size(), 1);
+        QCOMPARE(reloaded.instanceIds.at(0), uuid2);
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────────

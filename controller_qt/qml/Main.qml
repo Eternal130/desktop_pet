@@ -423,6 +423,19 @@ Window {
             color: Theme.hairlineColor
         }
 
+        // 1px hairline on the pane's right edge — the nav pane and the
+        // content area share the same window background, so without a
+        // divider the two zones merge into one white field in light scheme
+        // (obs QA 2026-10-15). hairlineColor is an 8% text wash: a quiet
+        // line on light AND dark surfaces alike.
+        Rectangle {
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.right: parent.right
+            width: 1
+            color: Theme.hairlineColor
+        }
+
         // search box (Fluent field: visible stroke + bottom emphasis line).
         // Two-layer trick: outer = stroke color, inner (inset 1px) = the
         // field fill. A transparent inner let the focused accent fill the
@@ -536,13 +549,14 @@ Window {
                 spacing: 0
 
                 // ── Nav information architecture (Fluent group rhythm) ──
-                // 页面 (top-level pages) / 实例 (detail + per-instance
-                // switcher) / 资源 (assets quartet) / 插件 (dynamic). Group
-                // headers keep the FluPaneItemHeader cell rhythm: a full
-                // nav-row-tall cell with the caption anchored low, so groups
-                // breathe ABOVE the label and sit tight to their first item.
-                NavGroupLabel { text: qsTr("页面") }
-
+                // 实例 (detail + per-instance switcher) / 资源 (assets
+                // quartet) / 插件 (dynamic). Group headers keep the
+                // FluPaneItemHeader cell rhythm: a compact cell with the
+                // caption anchored low, so groups sit tight to their first
+                // item. The former 页面 header was removed (2026-10-15 nav
+                // budget cut): its group held only 主页, and a headerless
+                // first item is the conventional IA for the primary
+                // destination — 主页 now leads the list directly.
                 NavItem {
                     itemKey: "welcome"
                     iconName: "home"; label: qsTr("主页")
@@ -992,18 +1006,23 @@ Window {
     }
 
     // Fluent nav group header — the FluPaneItemHeader recipe from
-    // FluNavigationView: the label cell is a full nav row tall with the
-    // caption pushed toward its BOTTOM (air above the label, tight to the
-    // group's first item — the grouping rhythm the prototype demonstrated).
+    // FluNavigationView: the label cell keeps the caption pushed toward its
+    // BOTTOM (tight to the group's first item). 2026-10-15 nav budget cut:
+    // the cell went from a full nav-row-tall 32px to a compact 24px (text
+    // bottom-anchored with the same 4px clearance below, so the 沉底 rhythm
+    // survives and only the air ABOVE the caption shrinks) — three headers
+    // plus the removed 页面 header save ~56px of standing nav height.
     // 12px semibold in the muted text tone (FluTextStyle caption weight,
     // our token colors).
     component NavGroupLabel : Item {
         id: grp
         property string text: ""
-        height: visible ? 32 : 0
+        height: visible ? 24 : 0
         width: parent.width
         Text {
-            x: 12; y: 12
+            x: 12
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 4
             text: grp.text
             color: Theme.text3Color
             font.pixelSize: 12

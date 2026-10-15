@@ -165,8 +165,13 @@ Rectangle {
                             { label: qsTr("深色"), value: "dark" },
                             { label: qsTr("跟随系统"), value: "system" }
                         ]
-                        currentValue: themeScheme.theme
-                        onSelected: (v) => themeScheme.setTheme(v)
+                        // theme() is a Q_INVOKABLE (no Q_PROPERTY/NOTIFY):
+                        // calling it here is what makes this a VALUE read —
+                        // the bare `themeScheme.theme` form evaluates to a
+                        // bare function reference and QML 6.10 rejects the
+                        // assignment with "Unable to assign a function…"
+                        currentValue: themeScheme.theme()
+                        onSelected: (v) => { themeScheme.setTheme(v) }
                     }
                     Text {
                         width: parent.width

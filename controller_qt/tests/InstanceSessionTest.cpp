@@ -133,9 +133,11 @@ QByteArray buildPackIdleOnlyBundle()
 QString writeIdleOnlyPack(const QString& parentDir)
 {
     const QString packDir = QDir(parentDir).absoluteFilePath(QStringLiteral("pack"));
-    QDir().mkpath(packDir);
+    if (!QDir().mkpath(packDir))
+        return {};
     QFile f(QDir(packDir).absoluteFilePath(QStringLiteral("meta.mko")));
-    f.open(QIODevice::WriteOnly);
+    if (!f.open(QIODevice::WriteOnly))
+        return {};
     f.write(buildPackIdleOnlyBundle());
     f.close();
     return packDir;

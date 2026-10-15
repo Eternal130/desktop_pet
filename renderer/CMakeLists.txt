@@ -82,6 +82,13 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(ixwebsocket)
+# IXWebSocket's own CMakeLists appends -Wall -Wextra -pedantic on UNIX, and
+# with USE_ZLIB OFF its gzip / permessage-deflate routines are empty stubs —
+# every "-Wunused parameter" they emit is upstream-by-design. Pinned via
+# FetchContent, not actionable here: silence wholesale (same rationale as
+# the Cubism Framework -w block below; ours appends later in the command
+# line, so it wins over their CMAKE_CXX_FLAGS).
+target_compile_options(ixwebsocket PRIVATE $<$<CXX_COMPILER_ID:GNU>:-w>)
 
 # === libogg + libvorbis (official OGG Vorbis decoder) ===
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)

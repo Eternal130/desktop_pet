@@ -563,9 +563,12 @@ void InstanceSession::handleModelLoadFailedEvent(const Envelope& env)
     // revision counter (drives Q_INVOKABLE binding re-evaluation) + record
     // the message + emit modelLoadFailed. modelLoaded is cleared: the
     // renderer tears the previous model down before attempting the load, so
-    // the UI must not keep showing the old model as live. A missing/empty
-    // error_message degrades to a generic string (never empty — the UI binds
-    // non-empty text). Never throws, never touches the disk.
+    // the UI must not keep showing the old model as live. When a
+    // user-initiated switch is in flight, the config modelName is ALSO
+    // rolled back + re-persisted (see the rollback block below). A
+    // missing/empty error_message degrades to a generic string (never
+    // empty — the UI binds non-empty text). Never throws; the persist is a
+    // QSaveFile-backed atomic write.
     const QString message = env.payload.value(
         QStringLiteral("error_message")).toString();
     m_lastModelLoadError = message.isEmpty()
@@ -577,8 +580,36 @@ void InstanceSession::handleModelLoadFailedEvent(const Envelope& env)
              m_instanceId, m_modelLoadFailureRevision,
              m_lastModelLoadError.toStdString());
     emit modelLoadFailed(m_lastModelLoadError);
+    // Durable rollback (silent-failure fix): loadModel() persisted the
+    // FAILED name unconditionally, so without this the broken choice
+    // survives on disk and every later launch retries it. Roll
+    // m_config.modelName back to the pre-switch value + re-persist (same
+    // QSaveFile-backed save discipline as loadModel / drag_end) + notify so
+    // QML bindings (combo currentIndex, 使用中 pills) reflect reality. Runs
+    // AFTER the modelLoadFailed emit: the QML failure handlers read
+    // modelName at signal time to name the FAILED model in their copy
+    // (combo bounce + dialog); the session-side bounce then AGREES with the
+    // display-side bounce. Gated on m_modelSwitchInFlight so a
+    // startup-salvo failure (no user switch pending — the configured model
+    // is the user's informed choice) leaves the config untouched.
+    if (m_modelSwitchInFlight) {
+        m_modelSwitchInFlight = false;
+        if (m_config.modelName != m_modelNameBeforeSwitch) {
+            LOG_INFO("InstanceSession[{}]: rolling modelName back to \"{}\" "
+                     "(switch rejected by renderer)",
+                     m_instanceId, m_modelNameBeforeSwitch.toStdString());
+            m_config.modelName = m_modelNameBeforeSwitch;
+            if (!m_configManager.save(m_config)) {
+                LOG_ERROR("InstanceSession[{}]: failed to persist modelName "
+                          "rollback to \"{}\"",
+                          m_instanceId, m_modelNameBeforeSwitch.toStdString());
+            }
+            emit modelNameChanged();
+        }
+    }
     // S8a (v1.5): post-commit publish — after the revision bump, the
-    // modelLoaded flip and the modelLoadFailed signal. Payload halves are
+    // modelLoaded flip, the modelLoadFailed signal and (when a switch was
+    // in flight) the config rollback. Payload halves are
     // the VERBATIM wire values (the degraded UI string above stays a QML
     // concern; "" is the bus-side sentinel for "wire event carried none").
     publishHostEvent(pet::kEventModelLoadFailed, /*cancellable=*/false,

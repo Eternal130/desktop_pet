@@ -38,6 +38,7 @@
 
 #include <optional>
 
+#include "core/DatabaseManager.hpp"
 #include "core/InstanceConfig.hpp"
 #include "core/InstanceConfigManager.hpp"
 #include "core/InstanceSession.hpp"
@@ -191,6 +192,17 @@ private slots:
     // observability — both headless.
     void testOfflineLoadModelPersistsConfigOnly();
     void testModelLoadFailedIsObservable();
+    // Silent-failure fixes: connected switches must actually dispatch
+    // load_model, and a rejected switch must roll the persisted config
+    // back — both headless (fake exe + synthetic ready/model_load_failed).
+    void testConnectedLoadModelSendsCommand();
+    void testModelLoadFailedRollsBackPersistedModel();
+    // Silent-persistence-failure fix (exp-4 root cause #2): the backend
+    // selector must REPORT persist failures (bool) and write through the
+    // injectable shared DatabaseManager — all headless.
+    void testSetGraphicsBackendPersists();
+    void testSetGraphicsBackendPersistFailureReported();
+    void testSetGraphicsBackendSharedDatabase();
 
     // ── S4 async lifecycle (headless fake-sleeper renderer; POSIX) ──────
     void testRestartWaitsForAsyncStop();
@@ -484,6 +496,285 @@ void InstanceSessionTest::testModelLoadFailedIsObservable()
     // the async FailedToStart crash path.
     QVERIFY2(stopAndWait(session, 3000), "session did not finish stopping");
     server.close();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Silent-failure fixes: connected loadModel dispatch + durable rollback
+// ────────────────────────────────────────────────────────────────────────────
+
+// Headless shared harness: a fake renderer EXE satisfies path resolution so
+// start() registers the event handlers, then a synthetic `ready` event is
+// dispatched DIRECTLY via onMessage (no real socket needed) — the ready
+// override flips status/connected and fires the salvo synchronously, giving
+// the test a CONNECTED session without launching anything.
+namespace {
+
+bool makeFakeRendererExe(const QTemporaryDir& dir)
+{
+#ifdef Q_OS_WIN
+    const QString exeName = QStringLiteral("desktop-pet-renderer.exe");
+#else
+    const QString exeName = QStringLiteral("desktop-pet-renderer");
+#endif
+    QFile fakeExe(QDir(dir.path()).absoluteFilePath(exeName));
+    if (!fakeExe.open(QIODevice::WriteOnly))
+        return false;
+    fakeExe.close();
+    return true;
+}
+
+Envelope syntheticEvent(const QString& action)
+{
+    Envelope env;
+    env.type = QStringLiteral("event");
+    env.action = action;
+    return env;
+}
+
+} // namespace
+
+// A CONNECTED session's loadModel must dispatch the load_model command
+// (observed on the unified commandSent stream — the same observability the
+// salvo test uses; the WsServer has no client, so sendText WARN-no-ops —
+// that is fine, the envelope dispatch is what this pins down) AND persist
+// the choice. Regression guard for the "applied but nothing happened"
+// symptom class.
+void InstanceSessionTest::testConnectedLoadModelSendsCommand()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+    QVERIFY2(makeFakeRendererExe(dir), "precondition: fake renderer exe");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.rendererPath = dir.path();
+    cfg.graphicsBackend = QStringLiteral("opengl");
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    session.start();
+
+    // Synthetic ready → connected (salvo fires synchronously inside).
+    session.onMessage(syntheticEvent(QStringLiteral("ready")));
+    QVERIFY2(session.connected(), "ready event must flip connected");
+
+    QSignalSpy cmdSpy(&session, &InstanceSession::commandSent);
+    QSignalSpy nameSpy(&session, &InstanceSession::modelNameChanged);
+    QVERIFY(cmdSpy.isValid());
+
+    session.loadModel(QStringLiteral("Haru"));
+
+    // Exactly one outbound command: load_model (the switch command itself).
+    QCOMPARE(cmdSpy.count(), 1);
+    QCOMPARE(cmdSpy.at(0).at(0).toString(), QStringLiteral("load_model"));
+    QCOMPARE(session.modelName(), QStringLiteral("Haru"));
+    QCOMPARE(nameSpy.count(), 1);
+
+    // And it persisted (online switches also survive a restart).
+    InstanceConfigManager persisted(dir.path());
+    const auto reloaded = persisted.load(cfg.id);
+    QVERIFY2(reloaded.has_value(), "config row missing after connected loadModel");
+    QCOMPARE(reloaded->modelName, QStringLiteral("Haru"));
+
+    QVERIFY2(stopAndWait(session, 3000), "session did not finish stopping");
+    server.close();
+}
+
+// model_load_failed after a user switch must roll m_config.modelName back
+// to the PRE-switch value AND re-persist it (loadModel persisted the failed
+// name; without the rollback every later launch retries the broken model).
+// Also pins the ordering the QML failure copy depends on (failed name still
+// current at modelLoadFailed-emit time) and the startup-failure guard (a
+// model_load_failed with NO switch in flight must not touch the config).
+void InstanceSessionTest::testModelLoadFailedRollsBackPersistedModel()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+    QVERIFY2(makeFakeRendererExe(dir), "precondition: fake renderer exe");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.rendererPath = dir.path();
+    cfg.graphicsBackend = QStringLiteral("opengl");
+    QVERIFY(cfg.modelName != QStringLiteral("Haru")); // precondition: a model to roll back TO
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    session.start();
+    session.onMessage(syntheticEvent(QStringLiteral("ready")));
+    QVERIFY(session.connected());
+
+    // Capture modelName AT modelLoadFailed-emit time (QML reads it in its
+    // signal handlers to name the failed model in the dialog copy).
+    QString nameAtSignal;
+    QObject::connect(&session, &InstanceSession::modelLoadFailed,
+                     &session, [&nameAtSignal, &session](const QString&) {
+                         nameAtSignal = session.modelName();
+                     });
+    QSignalSpy nameSpy(&session, &InstanceSession::modelNameChanged);
+    QSignalSpy failedSpy(&session, &InstanceSession::modelLoadFailed);
+    QVERIFY(nameSpy.isValid());
+    QVERIFY(failedSpy.isValid());
+
+    // The doomed switch: Hiyori → Haru (persisted), renderer rejects.
+    session.loadModel(QStringLiteral("Haru"));
+    QCOMPARE(session.modelName(), QStringLiteral("Haru"));
+    QCOMPARE(nameSpy.count(), 1);
+
+    Envelope failEnv = syntheticEvent(QStringLiteral("model_load_failed"));
+    failEnv.payload.insert(QStringLiteral("error_code"), 1001);
+    failEnv.payload.insert(QStringLiteral("error_message"),
+                           QStringLiteral("Model path not found: Haru"));
+    session.onMessage(failEnv);
+
+    // Failure surfaced with the FAILED name still current at emit time...
+    QCOMPARE(failedSpy.count(), 1);
+    QCOMPARE(nameAtSignal, QStringLiteral("Haru"));
+    // ...then the rollback flipped it back and notified QML.
+    QCOMPARE(session.modelName(), cfg.modelName);
+    QCOMPARE(session.config().modelName, cfg.modelName);
+    QCOMPARE(nameSpy.count(), 2);
+
+    // The rollback hit disk — a fresh manager over the same dir reads the
+    // pre-switch model, not the failed one.
+    InstanceConfigManager persisted(dir.path());
+    const auto reloaded = persisted.load(cfg.id);
+    QVERIFY2(reloaded.has_value(), "config row missing after rollback");
+    QCOMPARE(reloaded->modelName, cfg.modelName);
+
+    // Startup-failure guard: a model_load_failed with NO switch in flight
+    // (e.g. the salvo's load of the configured model) leaves the config
+    // untouched — the configured model is the user's informed choice.
+    session.onMessage(failEnv);
+    QCOMPARE(failedSpy.count(), 2);
+    QCOMPARE(session.modelName(), cfg.modelName);
+    QCOMPARE(nameSpy.count(), 2); // no extra modelNameChanged
+
+    QVERIFY2(stopAndWait(session, 3000), "session did not finish stopping");
+    server.close();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Silent-persistence-failure fix (exp-4 root cause #2) — graphics backend
+// ────────────────────────────────────────────────────────────────────────────
+
+// Happy path: setGraphicsBackend returns true, flips the live property +
+// NOTIFY, and the choice PERSISTS (a fresh InstanceConfigManager over the
+// same config dir reads it back). The same-value call stays an accepted
+// no-op (true, no re-save, no second NOTIFY).
+void InstanceSessionTest::testSetGraphicsBackendPersists()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    WsServer server;
+    PendingRequests pending;
+    InstanceConfig cfg = defaultInstanceConfig();
+    QCOMPARE(cfg.graphicsBackend, QStringLiteral("opengl")); // precondition: the default
+
+    InstanceSession session(cfg, server, pending, dir.path());
+
+    QSignalSpy gfxSpy(&session, &InstanceSession::graphicsBackendChanged);
+    QVERIFY(gfxSpy.isValid());
+
+    QVERIFY2(session.setGraphicsBackend(QStringLiteral("vulkan")),
+             "happy-path setGraphicsBackend must report success");
+    QCOMPARE(session.graphicsBackend(), QStringLiteral("vulkan"));
+    QCOMPARE(session.config().graphicsBackend, QStringLiteral("vulkan"));
+    QCOMPARE(gfxSpy.count(), 1);
+
+    // Persisted: a fresh manager over the same dir reads the choice back.
+    InstanceConfigManager persisted(dir.path());
+    const auto reloaded = persisted.load(cfg.id);
+    QVERIFY2(reloaded.has_value(), "config row missing after setGraphicsBackend");
+    QCOMPARE(reloaded->graphicsBackend, QStringLiteral("vulkan"));
+
+    // Same-value no-op: accepted (true — nothing to persist), no NOTIFY.
+    QVERIFY(session.setGraphicsBackend(QStringLiteral("vulkan")));
+    QCOMPARE(gfxSpy.count(), 1);
+}
+
+// Failure path: a config dir whose app.db CANNOT be opened (configBasePath
+// points at a regular FILE — the lazy open's mkpath fails) → save() false.
+// The failure must be REPORTED (false), and all-or-nothing semantics keep
+// BOTH the live snapshot and the NOTIFY on the old backend — the QML combo
+// bounce and the on-disk row agree. The same-value no-op still returns
+// true even on this broken dir (nothing to persist).
+void InstanceSessionTest::testSetGraphicsBackendPersistFailureReported()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    // configBasePath = a FILE: <basePath>/app.db sits under a
+    // non-directory → DatabaseManager::open's mkpath fails → the owned
+    // manager latches the failed open → every save() returns false.
+    const QString notADirPath =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("not-a-dir"));
+    QFile notADir(notADirPath);
+    QVERIFY2(notADir.open(QIODevice::WriteOnly),
+             "precondition: failed to block the db path");
+    notADir.close();
+
+    WsServer server;
+    PendingRequests pending;
+    InstanceConfig cfg = defaultInstanceConfig();
+
+    InstanceSession session(cfg, server, pending, notADirPath);
+
+    QSignalSpy gfxSpy(&session, &InstanceSession::graphicsBackendChanged);
+    QVERIFY(gfxSpy.isValid());
+
+    QVERIFY2(!session.setGraphicsBackend(QStringLiteral("vulkan")),
+             "persist failure must be reported as false (was silent before)");
+    // All-or-nothing: the live snapshot stays on the old backend.
+    QCOMPARE(session.graphicsBackend(), QStringLiteral("opengl"));
+    QCOMPARE(session.config().graphicsBackend, QStringLiteral("opengl"));
+    QCOMPARE(gfxSpy.count(), 0);
+
+    // Same-value call on the broken dir still reports true (no-op).
+    QVERIFY(session.setGraphicsBackend(QStringLiteral("opengl")));
+    QCOMPARE(gfxSpy.count(), 0);
+}
+
+// Shared-db injection: a session with the panel's ONE shared
+// DatabaseManager injected (the InstanceManager::wireSession production
+// path) writes through it — a SEPARATE InstanceConfigManager bound to the
+// same db reads the write back. Production sessions therefore share one
+// connection / one failure domain instead of each opening (and latching a
+// failed) private connection to the same app.db.
+void InstanceSessionTest::testSetGraphicsBackendSharedDatabase()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    WsServer server;
+    PendingRequests pending;
+
+    // Declared BEFORE the session so destruction order keeps the raw
+    // injected pointer valid for the session's whole lifetime.
+    DatabaseManager db;
+    QVERIFY2(db.open(QDir(dir.path()).absoluteFilePath(QStringLiteral("app.db"))),
+             "precondition: shared db failed to open");
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    InstanceSession session(cfg, server, pending, dir.path());
+    session.setConfigDatabase(&db); // the wireSession injection (m_db path)
+
+    QVERIFY2(session.setGraphicsBackend(QStringLiteral("vulkan")),
+             "shared-db setGraphicsBackend must report success");
+    QCOMPARE(session.graphicsBackend(), QStringLiteral("vulkan"));
+
+    // Visible through a separate manager bound to the SAME shared db —
+    // the session never opened a private connection.
+    InstanceConfigManager sameDb;
+    sameDb.setDatabase(&db);
+    const auto reloaded = sameDb.load(cfg.id);
+    QVERIFY2(reloaded.has_value(), "config row missing via the shared db");
+    QCOMPARE(reloaded->graphicsBackend, QStringLiteral("vulkan"));
 }
 
 // ────────────────────────────────────────────────────────────────────────────

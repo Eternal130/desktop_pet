@@ -693,7 +693,17 @@ pet::PluginError TuningApiImpl::setGraphicsBackend(const QString& uuid,
         return locate;
     // OFFLINE-only selector: the session persists the choice (applies on
     // next start); a running renderer keeps its backend until restarted.
-    s->setGraphicsBackend(normalized);
+    // false = the persist failed (the session's save-first-then-apply
+    // leaves both the disk row and the live snapshot on the previous
+    // backend) — surface it as Generic instead of the historical silent
+    // Ok (exp-4 root cause #2). Generic (1) lands in the QML error-text
+    // default bucket, which is the intended "persist failed" rendering.
+    if (!s->setGraphicsBackend(normalized)) {
+        LOG_WARN("[plugin-api] tuningApi().setGraphicsBackend('{}', '{}') — "
+                 "persist failed, ERR_GENERIC",
+                 uuid.toStdString(), backend.toStdString());
+        return pet::PluginError::Generic;
+    }
     return pet::PluginError::Ok;
 }
 

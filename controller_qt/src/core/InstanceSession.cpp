@@ -395,6 +395,11 @@ void InstanceSession::start()
                 m_config.layoutOffsetX, m_config.layoutOffsetY,
                 m_config.layoutScale));
             setModelLoaded(true);
+            // Switch verdict: CONFIRMED — the in-flight marker is consumed
+            // so a later, unrelated load failure (e.g. a restart's salvo
+            // hitting a removed model dir) never rolls back to a stale
+            // pre-switch name. See m_modelSwitchInFlight's member comment.
+            m_modelSwitchInFlight = false;
             // Start idle-motion cycling now that motionGroups are known.
             startIdleScheduler();
             // S8a (v1.5): post-commit bypass publish — AFTER set_hit_areas,
@@ -660,6 +665,15 @@ void InstanceSession::loadModel(const QString& modelName)
 {
     LOG_INFO("InstanceSession::loadModel instanceId={} model=\"{}\" connected={}",
              m_instanceId, modelName.toStdString(), m_connected);
+    // Rollback bookkeeping (silent-failure fix): remember the pre-switch
+    // name while the switch awaits its verdict (model_loaded = confirmed,
+    // model_load_failed = rejected → handleModelLoadFailedEvent rolls back
+    // to this value). Only the FIRST unconfirmed switch of a chain records
+    // — see the member comment. Set in BOTH branches (online + offline):
+    // an offline switch's verdict arrives at the next start()'s salvo.
+    if (!m_modelSwitchInFlight)
+        m_modelNameBeforeSwitch = m_config.modelName;
+    m_modelSwitchInFlight = true;
     m_config.modelName = modelName;
     // Persist ALWAYS (offline + online): start() launches the renderer with
     // --model m_config.modelName, so without the persist an offline switch

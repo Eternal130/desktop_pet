@@ -82,6 +82,21 @@ void PendingRequests::handleResponse(const Envelope& response) {
 }
 
 void PendingRequests::resolveFromResponse(const Envelope& env) {
+    // Response black-hole guard (silent-failure fix): nothing on the host
+    // side registers expectResponse (commands are fire-and-forget; failure
+    // feedback arrives via EVENTS like model_load_failed), so a
+    // success:false response — renderer 5003 unknown action, 6001 handler
+    // exception, ... — previously reached nobody: at best the unknown-id
+    // WARN below, which carries no error detail. This is the ONE funnel
+    // every renderer response passes through (WsServer → session dispatcher
+    // → handleResponse → here), so surface the failure triad here. Logging
+    // only — no event, no retry.
+    if (!env.success) {
+        LOG_WARN("command response reports failure "
+                 "(action='{}', id='{}', error_code={}, error_message=\"{}\")",
+                 env.action.toStdString(), env.id.toStdString(),
+                 env.errorCode, env.errorMessage.toStdString());
+    }
     auto it = m_entries.find(env.id);
     if (it == m_entries.end()) {
         // Unknown id: a response arrived with no matching pending request.

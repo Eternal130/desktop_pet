@@ -9,6 +9,10 @@
 //      round-trip (NOTIFY + persisted InstanceConfig.graphics_backend),
 //      case-insensitive normalization, illegal values → InvalidArgument,
 //      same-value idempotence.
+//   1c. testGraphicsBackendPersistFailure (exp-4 #2): a session whose
+//      config persist fails (never-opened DatabaseManager injected via
+//      the wireSession seam) → setGraphicsBackend returns Generic (not
+//      the historical silent Ok); re-binding a healthy db recovers.
 //   2. testTriggersForward: playMotion/setExpression/triggerHitArea are
 //      accepted (Ok); empty group/expression/area → InvalidArgument.
 //   3. testUnknownUuidNotFound: every op on a uuid not in the roster →
@@ -135,6 +139,7 @@ class TuningApiImplTest : public QObject
 private slots:
     void testSettersForward();
     void testGraphicsBackendWrite();
+    void testGraphicsBackendPersistFailure();
     void testTriggersForward();
     void testUnknownUuidNotFound();
     void testPendingDeleteIsBusy();
@@ -245,6 +250,60 @@ void TuningApiImplTest::testGraphicsBackendWrite()
     }
     QCOMPARE(session->graphicsBackend(), QStringLiteral("opengl"));
     QCOMPARE(gfxSpy.count(), 2);
+}
+
+// ── 1c. persist failure → Generic (exp-4 root cause #2) ─────────────────────
+
+// Mirror of the testGraphicsBackendWrite fixture, with a session whose
+// persist deterministically FAILS: a NEVER-OPENED DatabaseManager injected
+// via setConfigDatabase (the same seam InstanceManager::wireSession uses
+// in production) — DatabaseManager's contract makes every write on an
+// unopened db a safe false. The API must surface Generic instead of the
+// historical silent Ok, the live value stays on the old backend, and the
+// failure does not latch: re-binding a healthy db makes the SAME write
+// succeed.
+void TuningApiImplTest::testGraphicsBackendPersistFailure()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& cfg) {
+                            PanelStateManager(base.path()).save(cfg);
+                        });
+    core::TuningApiImpl api(&mgr, nullptr);
+
+    const QString uuid = mgr.createInstance(QStringLiteral("GfxFail"));
+    QVERIFY(!uuid.isEmpty());
+    InstanceSession* session = mgr.instanceAt(0);
+    QVERIFY(session != nullptr);
+    QCOMPARE(session->graphicsBackend(), QStringLiteral("opengl")); // default
+
+    // Failing-persist fixture: never-opened db → every save() false.
+    DatabaseManager broken;
+    session->setConfigDatabase(&broken);
+
+    QSignalSpy gfxSpy(session, &InstanceSession::graphicsBackendChanged);
+    QCOMPARE(api.setGraphicsBackend(uuid, QStringLiteral("vulkan")),
+             pet::PluginError::Generic);
+    QCOMPARE(session->graphicsBackend(), QStringLiteral("opengl"));
+    QCOMPARE(gfxSpy.count(), 0); // all-or-nothing: no NOTIFY on failure
+
+    // Not latching: a healthy db on the same row makes the same write
+    // succeed (the panel-recovery shape).
+    DatabaseManager healthy;
+    QVERIFY2(healthy.open(QDir(base.path()).absoluteFilePath(
+                              QStringLiteral("app.db"))),
+             "precondition: healthy db open failed");
+    session->setConfigDatabase(&healthy);
+    QCOMPARE(api.setGraphicsBackend(uuid, QStringLiteral("vulkan")),
+             pet::PluginError::Ok);
+    QCOMPARE(session->graphicsBackend(), QStringLiteral("vulkan"));
+    QCOMPARE(gfxSpy.count(), 1);
+    const auto loaded = InstanceConfigManager(base.path()).load(uuid);
+    QVERIFY(loaded.has_value());
+    QCOMPARE(loaded->graphicsBackend, QStringLiteral("vulkan"));
 }
 
 // ── 2. motion/expression/hit triggers ───────────────────────────────────────

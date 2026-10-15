@@ -213,9 +213,12 @@ private:
     // on next mutation.
     void persistRoster();
 
-    // Inject the manager-level dialogue sink seam into a freshly constructed
-    // session. Called from every session-creation site (createInstance /
-    // loadFromDisk). Also wires the S4 stop-completion routing.
+    // Inject the manager-level seams into a freshly constructed session:
+    // the dialogue sink, the shared DatabaseManager when one is held
+    // (production sessions then share ONE sqlite connection/failure
+    // domain instead of opening private per-session connections to the
+    // same app.db), and the S4 stop-completion routing. Called from every
+    // session-creation site (createInstance / loadFromDisk).
     void wireSession(InstanceSession* session);
 
     // S4: per-session stopFinished callback — phase 2 of a two-phase delete

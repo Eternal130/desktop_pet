@@ -430,10 +430,47 @@ Rectangle {
                                 model: instance ? instance.availableModels() : []
                                 onActivated: if (instance && currentText) {
                                     root._prevModel = instance.modelName
-                                    instanceControl.loadModel(
+                                    root._modelApplyMsg = ""
+                                    root._modelApplyErr = false
+                                    // S7: write via the shared-API bridge;
+                                    // the int return is consumed — a
+                                    // refused write must not look like a
+                                    // silent success.
+                                    const err = instanceControl.loadModel(
                                         instance.uuid, currentText)
+                                    if (err !== 0) {
+                                        root._modelApplyErr = true
+                                        root._modelApplyMsg =
+                                            root._pluginErrText(err)
+                                        // Bounce back to the live value —
+                                        // the switch never happened.
+                                        if (instance)
+                                            modelCombo.currentIndex =
+                                                modelCombo.find(
+                                                    instance.modelName)
+                                    } else if (!instance.connected) {
+                                        // Offline switch (B 档): config-only
+                                        // write — tell the user it is NOT
+                                        // broken, it applies on next start.
+                                        root._modelApplyErr = false
+                                        root._modelApplyMsg = qsTr(
+                                            "已写入配置，实例下次启动时生效")
+                                    }
                                 }
                             }
+                        }
+                        // Model-switch apply status: inline error for
+                        // refused writes (bridge int return) / config-only
+                        // hint for offline switches. Same visual pattern as
+                        // backendError below.
+                        Text {
+                            visible: root._modelApplyMsg.length > 0
+                            text: root._modelApplyMsg
+                            color: root._modelApplyErr
+                                   ? root._errorColor : root._faintColor
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                            width: parent.width
                         }
                         Text {
                             visible: !(instance && instance.modelLoaded)
@@ -929,6 +966,25 @@ Rectangle {
     // failure bounce-back target ("" before any switch from this page).
     property string _prevModel: ""
 
+    // Model-switch apply status (inline, under the combo): _modelApplyErr
+    // picks the color (error red vs faint hint). Grounded copy only —
+    // instance missing / busy / invalid argument from the bridge, or the
+    // config-only hint for offline switches.
+    property string _modelApplyMsg: ""
+    property bool _modelApplyErr: false
+
+    // Bridge int return (pet::PluginError: Generic=1, InvalidArgument=2,
+    // NotFound=4, Busy=5) → grounded 简体中文 feedback. Default folds the
+    // raw code in so unknown codes stay diagnosable.
+    function _pluginErrText(code) {
+        switch (code) {
+        case 4: return qsTr("实例不存在，可能已被删除")
+        case 5: return qsTr("实例正忙，请稍后再试")
+        case 2: return qsTr("参数无效，模型未更改")
+        default: return qsTr("操作失败（错误码 %1）").arg(code)
+        }
+    }
+
     ListModel { id: logModel }
 
     Connections {
@@ -944,11 +1000,12 @@ Rectangle {
         }
     }
 
-    // P1-7: model-switch failure feedback. C++ keeps the FAILED name in
-    // modelName (it only clears modelLoaded — see handleModelLoadFailed
-    // Event), so the bounce-back is display-side: re-point the combo at
-    // the recorded pre-switch model, same pattern as the model library's
-    // per-row rollback.
+    // P1-7: model-switch failure feedback. At signal time modelName still
+    // carries the FAILED name (the session's durable rollback — back to the
+    // pre-switch model + re-persist — runs right AFTER this emit), so the
+    // dialog can name it; the combo bounce below then agrees with the
+    // session-side rollback (modelNameChanged flips it back to the same
+    // value), same pattern as the model library's per-row rollback.
     Connections {
         target: root.instance
         ignoreUnknownSignals: true
@@ -958,7 +1015,7 @@ Rectangle {
                 const i = modelCombo.find(root._prevModel)
                 if (i >= 0) modelCombo.currentIndex = i
                 modelFailDialog.message = qsTr(
-                    "切换模型到「%1」失败，下拉已弹回「%2」。\n%3")
+                    "切换模型到「%1」失败，已恢复为原模型「%2」。\n%3")
                     .arg(instance.modelName).arg(root._prevModel).arg(error)
             } else {
                 // Failure not initiated from this combo (e.g. a pack
@@ -1010,6 +1067,9 @@ Rectangle {
         backendCombo.currentIndex = root._backendIndex(
             instance.graphicsBackend)
         backendError.text = ""
+        // Apply-status copy is per-instance — drop it on instance swap.
+        root._modelApplyMsg = ""
+        root._modelApplyErr = false
     }
 
     // ── Inline components ──────────────────────────────────────────────

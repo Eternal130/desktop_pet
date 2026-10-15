@@ -95,6 +95,8 @@ public:
     // on the NEXT instance start — start() resolves a DIFFERENT renderer
     // executable per backend, so there is deliberately no live renderer
     // command (a running renderer keeps its backend until restarted).
+    // A persistence failure → Generic: the config row and the live value
+    // both stay on the previous backend (no silent revert on next start).
     virtual PluginError setGraphicsBackend(const QString& uuid,
                                            const QString& backend) = 0;
 };

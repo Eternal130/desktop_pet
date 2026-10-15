@@ -148,25 +148,36 @@ void InstanceSession::setAutoStart(bool enabled)
     }
 }
 
-void InstanceSession::setGraphicsBackend(const QString& backend)
+bool InstanceSession::setGraphicsBackend(const QString& backend)
 {
     // v1.10 offline-only selector (loadModel's offline-half discipline):
-    // same-value no-op; otherwise assign + persist ALWAYS (start() resolves
-    // the renderer EXECUTABLE from m_config.graphicsBackend — without the
+    // same-value no-op; otherwise persist ALWAYS (start() resolves the
+    // renderer EXECUTABLE from m_config.graphicsBackend — without the
     // persist the choice would silently revert on the next launch) and
     // flip the NOTIFY. NO command is sent: a backend switch needs a
     // different renderer binary, so it takes effect on the next start().
     if (m_config.graphicsBackend == backend)
-        return;
+        return true; // accepted no-op: value already current, nothing to save
     LOG_INFO("InstanceSession[{}]: graphicsBackend \"{}\" -> \"{}\"",
              m_instanceId, m_config.graphicsBackend.toStdString(),
              backend.toStdString());
-    m_config.graphicsBackend = backend;
-    if (!m_configManager.save(m_config)) {
+    // Save-first-then-apply (all-or-nothing): save() upserts the WHOLE
+    // config row, so persist a mutated copy and only then flip the live
+    // snapshot + NOTIFY. A failed save returns false with BOTH the disk
+    // row and m_config still on the old backend — the caller (QML combo
+    // bounce / plugin Generic) and the next launch then agree, and the
+    // failure is REPORTED instead of a silent in-memory-only flip that
+    // reverted on the next launch (exp-4 root cause #2).
+    InstanceConfig next = m_config;
+    next.graphicsBackend = backend;
+    if (!m_configManager.save(next)) {
         LOG_ERROR("InstanceSession[{}]: failed to persist graphicsBackend=\"{}\"",
                   m_instanceId, backend.toStdString());
+        return false;
     }
+    m_config.graphicsBackend = backend;
     emit graphicsBackendChanged();
+    return true;
 }
 
 // ── Voice-pack mount (todo 21) ───────────────────────────────────────────

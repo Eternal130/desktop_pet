@@ -335,6 +335,17 @@ void InstanceManager::setDialogueSink(std::function<void(const QString&,
 }
 void InstanceManager::wireSession(InstanceSession* session)
 {
+    // Shared-db injection (silent-persistence-failure fix): when the
+    // manager holds the panel's shared DatabaseManager (setDatabase was
+    // called — the production wiring), forward it so the session's
+    // config writes ride the SAME sqlite connection / failure domain
+    // instead of lazily opening a private one to the same app.db. Runs
+    // at construction time, before any session persist (the seam's
+    // before-first-save contract). Tests without setDatabase keep the
+    // historical per-session lazy connections.
+    if (m_db != nullptr)
+        session->setConfigDatabase(m_db);
+
     // Forward the manager-level dialogue sink so every session (whenever it
     // was constructed) reaches the shared bubble stream. std::function copies
     // are cheap handles; empty ones no-op inside the session.

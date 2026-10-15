@@ -109,6 +109,27 @@ Rectangle {
         failDialog.open()
     }
 
+    // Bridge int return (pet::PluginError: Generic=1, InvalidArgument=2,
+    // NotFound=4, Busy=5) → grounded 简体中文 feedback. Default folds the
+    // raw code in so unknown codes stay diagnosable. Shared by the
+    // per-instance rows and the apply-all loop.
+    function _pluginErrText(code) {
+        switch (code) {
+        case 4: return qsTr("实例不存在，可能已被删除")
+        case 5: return qsTr("实例正忙，请稍后再试")
+        case 2: return qsTr("参数无效，模型未更改")
+        default: return qsTr("操作失败（错误码 %1）").arg(code)
+        }
+    }
+
+    // Apply-all partial-failure summary (refused writes only — renderer
+    // rejections keep flowing through the per-row modelLoadFailed path).
+    function notifyApplyAllPartial(failedCount) {
+        failDialog.message = qsTr("有 %1 个实例未能切换（可能已删除或正忙），其余实例已切换或将在下次启动时生效。")
+            .arg(failedCount)
+        failDialog.open()
+    }
+
     Component.onCompleted: {
         // Wave-2 selection memory: restore the remembered model key when it
         // still resolves (survives page switches via Main.qml's window-level
@@ -164,6 +185,11 @@ Rectangle {
         property string _prevModel: ""
         property string _failedName: ""
         property bool _rolledBack: false
+        // Apply-status feedback (silent-failure fix): inline error for a
+        // refused write, or the config-only hint for offline switches.
+        // Cleared at the next switch attempt / failure notice.
+        property string _applyMsg: ""
+        property bool _applyErr: false
 
         width: parent.width
         implicitHeight: Math.max(_labels.implicitHeight, 32) + 2 * 10
@@ -209,6 +235,17 @@ Rectangle {
                         : cur + qsTr(" · 切换将于下次启动时生效")
                 }
             }
+            // Apply status under the desc: inline error for refused writes
+            // (bridge int return) / config-only hint for offline switches.
+            // One small Text — no card redesign.
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                visible: irow._applyMsg.length > 0
+                text: irow._applyMsg
+                color: irow._applyErr ? Theme.errorColor : root._faintColor
+                font.pixelSize: 11
+            }
         }
 
         Item {
@@ -234,13 +271,28 @@ Rectangle {
                     irow._prevModel = s.modelName
                     irow._failedName = ""
                     irow._rolledBack = false
+                    irow._applyMsg = ""
+                    irow._applyErr = false
                     // Running: immediate load_model; stopped: config-only
                     // (backend contract) — same call either way. S7: write
                     // goes through the API bridge (instanceControl holds
                     // the shared IInstanceControlApi); the model_load_failed
                     // rollback feedback below keeps listening to the live
-                    // session signal (reads stay on the live object).
-                    instanceControl.loadModel(s.uuid, combo.currentText)
+                    // session signal (reads stay on the live object). The
+                    // int return is consumed — a refused write must not
+                    // look like a silent success.
+                    const err = instanceControl.loadModel(
+                        s.uuid, combo.currentText)
+                    if (err !== 0) {
+                        irow._applyErr = true
+                        irow._applyMsg = root._pluginErrText(err)
+                    } else if (!s.connected) {
+                        // Renderer not connected: the switch is a
+                        // config-only write — say so instead of looking
+                        // silently dead.
+                        irow._applyErr = false
+                        irow._applyMsg = qsTr("已写入配置，实例下次启动时生效")
+                    }
                 }
             }
         }
@@ -255,6 +307,9 @@ Rectangle {
                     return
                 irow._failedName = s.modelName
                 irow._rolledBack = true
+                // The apply hint is stale once the switch failed (the
+                // session rolls the config back) — the dialog takes over.
+                irow._applyMsg = ""
                 root.notifyModelLoadFailed(s.label, s.modelName,
                                            irow._prevModel,
                                            s.lastModelLoadError)
@@ -716,14 +771,19 @@ Rectangle {
         message: qsTr("将把「%1」应用到以下实例：%2。\n运行中的实例即时切换，未启动的将在下次启动时生效。")
             .arg(root.selectedModel).arg(_targets)
         onPositiveClicked: {
-            // S7: writes through the shared API bridge (int error return
-            // ignored here — failures surface per-row via modelLoadFailed,
-            // the same rollback path as the single switch).
+            // S7: writes through the shared API bridge. Running instances
+            // report renderer rejections per-row via modelLoadFailed (the
+            // rollback path); refused writes (row vanished / busy) are
+            // counted here so the apply-all never fails invisibly.
+            let failed = 0
             for (let i = 0; i < instanceManager.rowCount(); ++i) {
                 const s = instanceManager.instanceAt(i)
-                if (s)
-                    instanceControl.loadModel(s.uuid, root.selectedModel)
+                if (s && instanceControl.loadModel(
+                            s.uuid, root.selectedModel) !== 0)
+                    ++failed
             }
+            if (failed > 0)
+                root.notifyApplyAllPartial(failed)
         }
     }
 }

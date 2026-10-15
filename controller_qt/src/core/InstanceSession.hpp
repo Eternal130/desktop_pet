@@ -307,6 +307,20 @@ public slots:
     // with S8b the decision chain lives ON the bus).
     void setEventPublisher(pet::IEventApi* publisher);
 
+    // ── Shared config-database seam (silent-persistence-failure fix) ──────
+    // Forwards the panel's ONE shared DatabaseManager into the owned
+    // InstanceConfigManager (InstanceConfigManager::setDatabase).
+    // Injected by InstanceManager::wireSession whenever the manager itself
+    // holds a shared db (production wiring): every session then writes
+    // through the SAME sqlite connection / failure domain instead of each
+    // lazily opening (and on failure forever latching —
+    // m_ownedOpenAttempted) a private connection to the same app.db.
+    // Must be called before the session's first persist (wireSession runs
+    // at construction time). Plain C++ setter — deliberately NOT a
+    // Q_INVOKABLE / Q_PROPERTY WRITE, same api-boundary-gate discipline
+    // as setDialogueSink/setEventPublisher.
+    void setConfigDatabase(DatabaseManager* db) { m_configManager.setDatabase(db); }
+
     // ── Phase-5 Wave 8 todo 22 (layout UI helpers) ───────────────────────────
     // Q_INVOKABLE triggers consumed by InstanceDetailPage.qml's Layout panel.
     // getLayout sends §E.2 get_layout (empty payload); the response routes back
@@ -335,7 +349,14 @@ public slots:
     // DIFFERENT renderer executable, resolved by start(); a running
     // renderer keeps its backend until restarted). Validation lives at
     // the API layer (TuningApiImpl); the session applies verbatim.
-    Q_INVOKABLE void setGraphicsBackend(const QString& backend);
+    // Returns true only when the value is (or became) durably current:
+    // a same-value call is an accepted no-op (true, no re-save); a
+    // CHANGED value returns true only if the config row was persisted.
+    // Save-first-then-apply, so a false return leaves BOTH the disk row
+    // and the live snapshot on the old backend — the caller surfaces the
+    // failure instead of the pick silently reverting on the next launch
+    // (silent-persistence-failure fix, exp-4 root cause #2).
+    Q_INVOKABLE bool setGraphicsBackend(const QString& backend);
 
     // ── Phase-5 Wave 8 todo 18 (monitor UI helper) ───────────────────────────
     // Returns the per-session MonitorDataModel as a QObject* so QML can bind
@@ -500,7 +521,12 @@ private:
     // message + bumps the failure revision + emits modelLoadFailed so the
     // model-library / detail UI can surface WHY the switch failed. Also
     // clears modelLoaded (the previous model was already torn down
-    // renderer-side when it attempts a load). Missing payload fields →
+    // renderer-side when it attempts a load) AND — when a user-initiated
+    // switch is in flight — rolls m_config.modelName back to the pre-switch
+    // value + re-persists (loadModel persisted the FAILED name; without the
+    // rollback every later launch would retry the broken model). The
+    // rollback runs AFTER the modelLoadFailed emit so QML handlers still
+    // read the failed name at signal time. Missing payload fields →
     // generic message. Never throws.
     void handleModelLoadFailedEvent(const Envelope& env);
 
@@ -709,6 +735,21 @@ private:
     // ── Model-load failure observability (模型库 B 档) ───────────────────────
     int     m_modelLoadFailureRevision = 0;
     QString m_lastModelLoadError;
+
+    // ── Model-switch rollback (silent-failure fix) ──────────────────────────
+    // loadModel() persists the NEW name unconditionally (offline switches
+    // must survive a restart). When the renderer then rejects the switch
+    // (model_load_failed), the FAILED name must not stay on disk — every
+    // later launch would retry the same broken model. m_modelNameBeforeSwitch
+    // is the pre-switch name captured by loadModel(); m_modelSwitchInFlight
+    // gates the rollback so a STARTUP-salvo load failure (no user switch
+    // pending — the configured model is the user's informed choice) never
+    // clobbers the config. Only the FIRST unconfirmed switch of a chain
+    // records the name, so A→B→C with B's verdict still pending rolls back
+    // to A (the last confirmed name), not the intermediate B. Cleared on
+    // model_loaded (verdict: confirmed) and on the rollback itself.
+    QString m_modelNameBeforeSwitch;
+    bool    m_modelSwitchInFlight = false;
 
     // ── Phase-5+ counters / flags (slots for later todos) ───────────────────
     int  m_idleMotionCount = 0;   // todo 8 (Scheduler) increments

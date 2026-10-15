@@ -7,6 +7,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "core/DatabaseManager.hpp"
 #include "core/PanelConfig.hpp"
 #include "core/PanelStateManager.hpp"
 #include "logging/Logging.hpp"
@@ -16,6 +17,20 @@ namespace {
 constexpr const char* kSystem = "system";
 constexpr const char* kLight = "light";
 constexpr const char* kDark = "dark";
+
+// Dedicated panel kv row for the Mica opt-in switch. Kept OUT of the
+// "panel" blob (PanelConfig) on purpose: it is a src/app-level product
+// switch, not a config-model field, and a separate row survives every
+// PanelStateManager save() untouched.
+constexpr const char* kMicaEnabledKey = "mica_enabled";
+
+// Normalize the stored string. Only exactly "true" enables — anything
+// else (missing, legacy junk, "1", "TRUE") reads as the product default
+// false, mirroring how normalize() treats the theme field.
+inline bool parseMicaEnabled(const QString& value)
+{
+    return value == QLatin1String("true");
+}
 
 } // namespace
 
@@ -28,6 +43,17 @@ ThemeSchemeController::ThemeSchemeController(const QString& configDir,
     , m_theme(normalize(initialTheme))
     , m_originalPalette(QGuiApplication::palette())
 {
+    // Mica is opt-in: read the persisted switch (absent row → false) so
+    // Main.qml's applyMaterial phases see the user's choice from the very
+    // first pre-show call. Same per-call DatabaseManager connection
+    // pattern PanelStateManager uses for the panel blob.
+    if (loadMicaEnabled()) {
+        LOG_INFO("ThemeSchemeController: mica_enabled={} (kv)", m_micaEnabled);
+    } else {
+        LOG_INFO("ThemeSchemeController: mica_enabled={} (kv unreadable, "
+                 "default kept)", m_micaEnabled);
+    }
+
     if (applyInitial) {
         applyToRuntime();
         LOG_INFO("ThemeSchemeController: initial theme \"{}\" applied",
@@ -40,6 +66,68 @@ ThemeSchemeController::ThemeSchemeController(const QString& configDir,
                  "(PET_COLORSCHEME env active), stored theme \"{}\"",
                  m_theme.toStdString());
     }
+}
+
+QString ThemeSchemeController::dbPath() const
+{
+    // Same normalization PanelStateManager applies: the config dir arrives
+    // with (or without) a trailing separator, the DB file sits directly
+    // under it.
+    QString root = m_configDir;
+    if (!root.endsWith(QLatin1Char('/')))
+        root += QLatin1Char('/');
+    return root + QStringLiteral("app.db");
+}
+
+bool ThemeSchemeController::loadMicaEnabled()
+{
+    DatabaseManager db;
+    if (!db.open(dbPath())) {
+        LOG_WARN("ThemeSchemeController: cannot open app.db for "
+                 "mica_enabled read");
+        return false;
+    }
+    m_micaEnabled = parseMicaEnabled(
+        db.getValue(QLatin1String(kMicaEnabledKey), QStringLiteral("false")));
+    return true;
+}
+
+bool ThemeSchemeController::persistMicaEnabled(bool enabled)
+{
+    DatabaseManager db;
+    if (!db.open(dbPath())) {
+        LOG_WARN("ThemeSchemeController: cannot open app.db for "
+                 "mica_enabled write");
+        return false;
+    }
+    if (!db.setValue(QLatin1String(kMicaEnabledKey),
+                     enabled ? QStringLiteral("true")
+                             : QStringLiteral("false"))) {
+        LOG_WARN("ThemeSchemeController: mica_enabled kv write failed");
+        return false;
+    }
+    return true;
+}
+
+void ThemeSchemeController::setMicaEnabled(bool enabled)
+{
+    if (enabled == m_micaEnabled) {
+        return;
+    }
+    m_micaEnabled = enabled;
+
+    // Write-through first, then notify — the same order as setTheme: QML
+    // reacts to micaEnabledChanged by re-running applyMaterial, and a
+    // failed persistence must still flip the live runtime (material state
+    // is ephemeral by nature; only the NEXT launch reads the kv).
+    if (persistMicaEnabled(enabled)) {
+        LOG_INFO("ThemeSchemeController: mica_enabled set to {} (persisted)",
+                 enabled);
+    } else {
+        LOG_WARN("ThemeSchemeController: mica_enabled set to {} but "
+                 "panel kv save failed", enabled);
+    }
+    emit micaEnabledChanged(enabled);
 }
 
 QString ThemeSchemeController::normalize(const QString& theme)

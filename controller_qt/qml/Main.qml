@@ -44,7 +44,7 @@ Window {
     readonly property bool isWindows: Qt.platform.os === "windows"
     property bool micaActive: false
 
-    // Material application runs in THREE phases, all funnelling through this
+    // Material application runs in FOUR phases, all funnelling through this
     // one function (its log lines are the Windows-side diagnosis surface):
     //   pre-show     — QWK stores the attributes and the color binding above
     //                  flips to transparent BEFORE the platform window
@@ -59,19 +59,45 @@ Window {
     //                  (e.g. Win10) and micaActive drops back to the palette
     //                  background — self-correcting the pre-show store.
     //   theme-change — 面板内深浅切换后重设 dark-mode（mica 激活则保持）。
+    //   mica-change  — 设置页 Mica 开关切换后整体重跑：开→尝试上材质；
+    //                  关→QWK "mica"=false 主动撤材质（DWMSBT_AUTO +
+    //                  restoreMargins）并回落实色外壳。
+    //
+    // PRODUCT DECISION (2026-10-15): the Mica material is OPT-IN via
+    // themeScheme.micaEnabled (default false). Windows 11 build 26200
+    // reported ret=true in both phases yet never rendered the backdrop
+    // (Qt Quick + newer Win11 DWM composition, unresolved upstream), and
+    // micaActive=true strips the window base color for nothing — a white
+    // shell that collapses dark-mode contrast. The QWK return value is
+    // therefore NOT trusted as visual evidence: micaActive = enabled && ret,
+    // so a disabled (or silently failing) material always keeps the solid
+    // Theme.bgColor shell.
     function applyMaterial(phase) {
         if (!root.isWindows) {
             console.warn("MATERIAL_APPLIED=none phase=" + phase
                          + " platform=" + Qt.platform.os
+                         + " enabled=" + themeScheme.micaEnabled
                          + " win=" + themeScheme.osVersion())
             return
         }
-        // dark-mode FIRST (it tints the material), then the mica request.
+        // dark-mode: true tells DWM the window is dark — dark titlebar
+        // frame, dark-tinted material and dark menu themes
+        // (DWMWA_USE_IMMERSIVE_DARK_MODE + SetPreferredAppMode(PAM_AUTO)
+        // inside QWK); false is the light counterpart. Follows Theme.dark
+        // so the system chrome tracks the panel scheme.
         const darkRet = windowAgent.setWindowAttribute("dark-mode", Theme.dark)
-        const micaRet = windowAgent.setWindowAttribute("mica", true)
-        root.micaActive = micaRet
-        console.warn("MATERIAL_APPLIED=" + (micaRet ? "mica" : "none")
-                     + " phase=" + phase
+        // "mica": true = DWMSBT_MAINWINDOW (22H2+) / DWMWA_MICA_EFFECT
+        // (22000-22621) + extend frame margins; false actively REVERTS the
+        // material (_DWMSBT_AUTO + restoreMargins) — always written, so the
+        // runtime off-switch restores the solid shell and a stale attribute
+        // from a previous phase cannot linger.
+        const micaEnabled = themeScheme.micaEnabled
+        const micaRet = windowAgent.setWindowAttribute("mica", micaEnabled)
+        root.micaActive = micaEnabled && micaRet
+        const state = !micaEnabled ? "mica-disabled"
+                    : (micaRet ? "mica" : "mica-unsupported")
+        console.warn("MATERIAL_APPLIED=" + state + " phase=" + phase
+                     + " enabled=" + micaEnabled
                      + " ret=" + micaRet
                      + " dark-mode=" + Theme.dark + "/" + darkRet
                      + " win=" + themeScheme.osVersion())
@@ -92,6 +118,15 @@ Window {
         target: themeScheme
         function onThemeChanged(theme) {
             root.applyMaterial("theme-change")
+        }
+    }
+
+    // Mica 开关切换（SettingsPage 外观卡 → themeScheme.micaEnabled）：
+    // 重跑整个材质流程——开→尝试上材质；关→QWK 撤材质 + 回落实色外壳。
+    Connections {
+        target: themeScheme
+        function onMicaEnabledChanged(enabled) {
+            root.applyMaterial("mica-change")
         }
     }
 

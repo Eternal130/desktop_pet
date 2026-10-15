@@ -35,9 +35,29 @@
 // QA interplay: when PET_COLORSCHEME=dark|light is set, main.cpp already
 // applied a deterministic scheme before this controller exists — PanelUiBoot
 // passes applyInitial=false in that case so QA screenshots stay exact.
+//
+// Mica switch (2026-10-15, product revision): Windows 11 build 26200
+// reports QWK setWindowAttribute("mica") success in both applyMaterial
+// phases yet the backdrop never renders visually (Qt Quick + newer Win11
+// DWM composition; no upstream fix) — micaActive=true then strips the
+// window base color for nothing, which reads as a white shell and collapses
+// dark-mode contrast. The attribute return value is therefore NOT trusted
+// as visual evidence: the material is now opt-in via the micaEnabled
+// property (default false). Main.qml's applyMaterial gates micaActive on
+// this flag; the toggle lives in 设置 → 外观. Persistence is a dedicated
+// panel kv row "mica_enabled" ("true"/"false") written through
+// DatabaseManager::setValue directly — same panel-kv privilege this class
+// already exercises via PanelStateManager for the "theme" field, and
+// deliberately NOT a PanelConfig field / ISettingsApi surface (no SDK
+// change; the plugin-facing settings API is untouched).
 class ThemeSchemeController : public QObject
 {
     Q_OBJECT
+    // Opt-in Mica material (default false — see class comment). Read by
+    // Main.qml's applyMaterial on every phase; toggled live from the
+    // settings page, persisted immediately.
+    Q_PROPERTY(bool micaEnabled READ micaEnabled WRITE setMicaEnabled
+               NOTIFY micaEnabledChanged)
 
 public:
     // configDir: panel kv root (ConfigDir::configDir() in production).
@@ -54,6 +74,9 @@ public:
 
     Q_INVOKABLE void setTheme(const QString& theme);
 
+    bool micaEnabled() const { return m_micaEnabled; }
+    void setMicaEnabled(bool enabled);
+
     // "Windows 11 (build 22621)"-style diagnostic string for the
     // MATERIAL_APPLIED startup log — build ≥ 22621 is what gates the
     // DWMWA_SYSTEMBACKDROP_TYPE (Mica) API inside QWK.
@@ -61,14 +84,19 @@ public:
 
 signals:
     void themeChanged(const QString& theme);
+    void micaEnabledChanged(bool enabled);
 
 private:
     void applyToRuntime();
     static QPalette makeDarkPalette();
     static QPalette makeLightPalette();
     static QString normalize(const QString& theme);
+    QString dbPath() const;
+    bool loadMicaEnabled();
+    bool persistMicaEnabled(bool enabled);
 
     QString m_configDir;
     QString m_theme;          // normalized: "system" | "light" | "dark"
     QPalette m_originalPalette;
+    bool m_micaEnabled = false;  // product default OFF — see class comment
 };

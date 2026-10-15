@@ -180,6 +180,25 @@ Rectangle {
                         color: root._mutedColor
                         font.pixelSize: 11
                     }
+
+                    // Mica opt-in (2026-10-15 product revision): Win11 26200
+                    // reports QWK success but never renders the backdrop —
+                    // default OFF, user-enabled. Main.qml gates micaActive
+                    // (and with it the transparent shell) on this flag and
+                    // re-runs applyMaterial on change; persistence is the
+                    // dedicated "mica_enabled" panel kv row inside
+                    // ThemeSchemeController (panel-kv direct, same privilege
+                    // as the theme field — no SDK surface).
+                    SettingRow {
+                        width: parent.width
+                        title: qsTr("Mica 材质（实验性）")
+                        desc: qsTr("Windows 11 22H2+ 的云母背景；部分系统/驱动下可能显示异常（白底），异常时关闭")
+                        ToggleSwitch {
+                            anchors.verticalCenter: parent.verticalCenter
+                            checked: themeScheme.micaEnabled
+                            onToggled: themeScheme.micaEnabled = checked
+                        }
+                    }
                 }
 
                 // ── Logo 替换 (design §7 — lives in 外观, not its own nav) ──

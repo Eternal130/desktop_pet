@@ -27,8 +27,16 @@ Rectangle {
     readonly property bool _danger: style === "danger"
 
     color: {
-        if (_primary)
-            return _hover.hovered && enabled ? Theme.accentHoverColor : Theme.accentColor
+        if (_primary) {
+            // FluFilledButton fill recipe (see Theme.accentHoverColor):
+            // accent solid → hover steps 1.1 → press steps 1.2 further
+            // (scheme-aware lighter/darker). Text stays accentTextColor;
+            // the whole-button disabled opacity below keeps the dim.
+            if (!enabled) return Theme.accentColor
+            if (_tap.pressed) return Theme.accentPressedColor
+            if (_hover.hovered) return Theme.accentHoverColor
+            return Theme.accentColor
+        }
         if (_subtle)
             return _hover.hovered && enabled
                 ? Qt.alpha(Theme.textColor, 0.09)
@@ -74,7 +82,10 @@ Rectangle {
     }
 
     HoverHandler { id: _hover; enabled: root.enabled }
+    // TapHandler.pressed drives the primary fill's pressed step (Qt Quick
+    // has no standalone PressHandler; the tap gesture already tracks it).
     TapHandler {
+        id: _tap
         enabled: root.enabled
         onTapped: root.clicked()
     }

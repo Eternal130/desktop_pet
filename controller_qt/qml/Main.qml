@@ -535,23 +535,60 @@ Window {
                 width: parent.width
                 spacing: 0
 
-                NavGroupLabel { text: qsTr("宠物") }
+                // ── Nav information architecture (Fluent group rhythm) ──
+                // 页面 (top-level pages) / 实例 (detail + per-instance
+                // switcher) / 资源 (assets quartet) / 插件 (dynamic). Group
+                // headers keep the FluPaneItemHeader cell rhythm: a full
+                // nav-row-tall cell with the caption anchored low, so groups
+                // breathe ABOVE the label and sit tight to their first item.
+                NavGroupLabel { text: qsTr("页面") }
 
                 NavItem {
                     itemKey: "welcome"
                     iconName: "home"; label: qsTr("主页")
                     match: navPane.searchFilter
                 }
+
+                NavGroupLabel { text: qsTr("实例") }
+
                 NavItem {
                     itemKey: "instance"
                     iconName: "cat"; label: qsTr("实例详情")
                     // S3: roster count read goes through rosterModel (the
                     // pet::IInstanceApi read path); the page itself and all
                     // create/delete flows still use instanceManager.
-                    badgeText: rosterModel.count > 0
-                               ? rosterModel.count : ""
+                    badgeCount: rosterModel.count
                     match: navPane.searchFilter
                 }
+                // S3 dogfooding: the roster LIST is RosterApiModel — the
+                // read path over pet::IInstanceApi (same shared
+                // InstanceApiImpl the plugin SDK serves). Roles are
+                // byte-identical to the old instanceManager binding, so the
+                // delegate is unchanged. Click still routes through
+                // selectInstance(row, uuid) → instanceManager.instanceAt
+                // (write/selection paths deliberately stay on the manager
+                // until S2); row indexes line up because both models share
+                // the manager's roster order. The switcher lives INSIDE the
+                // 实例 group now (was its own 宠物·实例切换 header); the
+                // page-conditional visibility is unchanged.
+                Repeater {
+                    model: rosterModel
+                    delegate: NavInstanceItem {
+                        id: instNav
+                        required property string label
+                        required property string uuid
+                        required property bool connected
+                        required property int index
+                        instanceLabel: instNav.label
+                        live: instNav.connected
+                        match: navPane.searchFilter
+                        visible: root.currentPage === "instance"
+                        onClicked: root.selectInstance(instNav.index, instNav.uuid)
+                    }
+                }
+
+                NavGroupLabel { text: qsTr("资源") }
+
                 NavItem {
                     itemKey: "monitor"
                     iconName: "chart"; label: qsTr("资源监控")
@@ -560,22 +597,19 @@ Window {
                 NavItem {
                     itemKey: "voicepack"
                     iconName: "mic"; label: qsTr("语音包")
-                    badgeText: voicePacks.packCount > 0
-                               ? voicePacks.packCount : ""
+                    badgeCount: voicePacks.packCount
                     match: navPane.searchFilter
                 }
                 NavItem {
                     itemKey: "models"
                     iconName: "cube"; label: qsTr("模型库")
-                    badgeText: modelLibrary.modelCount > 0
-                               ? modelLibrary.modelCount : ""
+                    badgeCount: modelLibrary.modelCount
                     match: navPane.searchFilter
                 }
                 NavItem {
                     itemKey: "assets"
                     iconName: "folder"; label: qsTr("资源管理")
-                    badgeText: assetManager.assetCount() > 0
-                               ? assetManager.assetCount() : ""
+                    badgeCount: assetManager.assetCount()
                     match: navPane.searchFilter
                 }
 
@@ -596,40 +630,6 @@ Window {
                         itemKey: pageKey
                         iconName: "puzzle"; label: title
                         match: navPane.searchFilter
-                    }
-                }
-
-                Item { width: 1; height: 12 }
-
-                // design mock: the nav swaps to per-instance items only on
-                // the instance page; other pages show just the 4 main items.
-                NavGroupLabel {
-                    text: qsTr("宠物 · 实例切换")
-                    visible: root.currentPage === "instance"
-                             && rosterModel.count > 0
-                }
-                // S3 dogfooding: the roster LIST is RosterApiModel — the
-                // read path over pet::IInstanceApi (same shared
-                // InstanceApiImpl the plugin SDK serves). Roles are
-                // byte-identical to the old instanceManager binding, so the
-                // delegate is unchanged. Click still routes through
-                // selectInstance(row, uuid) → instanceManager.instanceAt
-                // (write/selection paths deliberately stay on the manager
-                // until S2); row indexes line up because both models share
-                // the manager's roster order.
-                Repeater {
-                    model: rosterModel
-                    delegate: NavInstanceItem {
-                        id: instNav
-                        required property string label
-                        required property string uuid
-                        required property bool connected
-                        required property int index
-                        instanceLabel: instNav.label
-                        live: instNav.connected
-                        match: navPane.searchFilter
-                        visible: root.currentPage === "instance"
-                        onClicked: root.selectInstance(instNav.index, instNav.uuid)
                     }
                 }
             }
@@ -991,16 +991,22 @@ Window {
         TapHandler { onTapped: btn.activated() }
     }
 
+    // Fluent nav group header — the FluPaneItemHeader recipe from
+    // FluNavigationView: the label cell is a full nav row tall with the
+    // caption pushed toward its BOTTOM (air above the label, tight to the
+    // group's first item — the grouping rhythm the prototype demonstrated).
+    // 12px semibold in the muted text tone (FluTextStyle caption weight,
+    // our token colors).
     component NavGroupLabel : Item {
         id: grp
         property string text: ""
-        height: visible ? 26 : 0
+        height: visible ? 32 : 0
         width: parent.width
         Text {
-            x: 24; y: 12
+            x: 12; y: 12
             text: grp.text
             color: Theme.text3Color
-            font.pixelSize: 11
+            font.pixelSize: 12
             font.weight: Font.DemiBold
         }
     }
@@ -1010,14 +1016,21 @@ Window {
         property string itemKey: ""
         property string iconName: ""
         property string label: ""
-        property string badgeText: ""
+        // Count badge (FluBadge geometry, accent-tinted variant — see the
+        // pill below): int count, 0 auto-hides (FluBadge showZero=false),
+        // caps at "99+" (FluBadge max=99). Read-only bindings only — the
+        // roster/pack/model/asset counts come from the shared read APIs.
+        property int badgeCount: 0
         property string match: ""
 
         readonly property bool active: navPane.activeKey === itemKey
         readonly property bool hidden: match.length > 0
             && label.toLowerCase().indexOf(match) === -1
 
-        height: hidden ? 0 : 36
+        // FluNavigationView cellHeight as pinned by the prototype (34; Flu
+        // upstream default is 38 — the prototype overrode to the denser
+        // Fluent NavigationView spec value and that is the look we match).
+        height: hidden ? 0 : 34
         visible: !hidden
         width: parent.width
 
@@ -1054,21 +1067,26 @@ Window {
                     font.weight: item.active ? Font.DemiBold : Font.Normal
                 }
             }
+            // FluBadge pill geometry (width = text + 12, height 20, fully
+            // rounded r10) with an ACCENT-TINTED fill instead of Flu's
+            // alert-red solid: a translucent accent wash + accent-derived
+            // label keeps four count badges calm in both schemes. 0 hides.
             Rectangle {
-                visible: item.badgeText.length > 0
+                visible: item.badgeCount > 0
                 anchors.right: parent.right
                 anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
-                width: badgeTextItem.implicitWidth + 14
-                height: 17
-                radius: 9
-                color: Theme.accentColor
+                width: badgeTextItem.implicitWidth + 12
+                height: 20
+                radius: 10
+                color: Qt.alpha(Theme.accentColor, Theme.dark ? 0.30 : 0.16)
                 Text {
                     id: badgeTextItem
                     anchors.centerIn: parent
-                    text: item.badgeText
-                    color: Theme.accentTextColor
-                    font.pixelSize: 10
+                    text: item.badgeCount > 99 ? "99+" : item.badgeCount
+                    color: Theme.dark ? Qt.lighter(Theme.accentColor, 1.35)
+                                      : Qt.darker(Theme.accentColor, 1.2)
+                    font.pixelSize: 12
                     font.weight: Font.DemiBold
                 }
             }
@@ -1087,7 +1105,9 @@ Window {
         readonly property bool hidden: match.length > 0
             && instanceLabel.toLowerCase().indexOf(match) === -1
 
-        height: hidden ? 0 : 36
+        // same Flu cellHeight as NavItem — roster switcher rows keep the
+        // identical density
+        height: hidden ? 0 : 34
         visible: !hidden
         width: parent.width
 

@@ -51,7 +51,15 @@ QtObject {
 
     // ── Accent (style/system accent; FluentWinUI3 populates highlight) ───
     readonly property color accentColor:       sys.highlight
-    readonly property color accentHoverColor:  Qt.darker(sys.highlight, 1.15)
+    // FluFilledButton fill recipe (prototype/fluentui visual backport, ④):
+    // hover/press step the accent by the Flu source factors — LIGHTER in the
+    // light scheme, DARKER in dark (scheme-symmetric depth, 1.1 hover /
+    // 1.2 pressed, straight from FluFilledButton.qml's hoverColor/
+    // pressedColor). Consumed by the AppButton primary branch only.
+    readonly property color accentHoverColor:  dark ? Qt.darker(sys.highlight, 1.1)
+                                                    : Qt.lighter(sys.highlight, 1.1)
+    readonly property color accentPressedColor: dark ? Qt.darker(sys.highlight, 1.2)
+                                                     : Qt.lighter(sys.highlight, 1.2)
     // readable text ON an accent fill (Fluent pairs highlight/highlightedText)
     readonly property color accentTextColor:   sys.highlightedText
 

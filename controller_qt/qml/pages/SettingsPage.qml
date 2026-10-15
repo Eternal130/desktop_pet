@@ -116,23 +116,50 @@ Rectangle {
                         title: qsTr("开机自启动")
                         desc: qsTr("Windows 注册表 / Linux .desktop")
                         ToggleSwitch {
+                            id: autoLaunchSwitch
                             anchors.verticalCenter: parent.verticalCenter
                             property bool _syncing: true
+                            property bool _failed: false
                             Component.onCompleted: {
                                 checked = autoLaunch.isEnabled()
                                 _syncing = false
                             }
                             onToggled: {
                                 if (_syncing) return
+                                _failed = false
+                                // Persist the flag ONLY when the OS registration
+                                // actually succeeded — otherwise the switch would
+                                // claim an autostart that does not exist (PanelUiBoot
+                                // boot self-heal covers pre-existing drift).
                                 if (checked) {
-                                    autoLaunch.enable()
-                                    panelConfig.autoLaunchSystem = true
+                                    if (autoLaunch.enable()) {
+                                        panelConfig.autoLaunchSystem = true
+                                    } else {
+                                        _failed = true
+                                        _syncing = true
+                                        checked = false
+                                        _syncing = false
+                                    }
                                 } else {
-                                    autoLaunch.disable()
-                                    panelConfig.autoLaunchSystem = false
+                                    if (autoLaunch.disable()) {
+                                        panelConfig.autoLaunchSystem = false
+                                    } else {
+                                        _failed = true
+                                        _syncing = true
+                                        checked = true
+                                        _syncing = false
+                                    }
                                 }
                             }
                         }
+                    }
+                    Text {
+                        width: parent.width
+                        visible: autoLaunchSwitch._failed
+                        wrapMode: Text.WordWrap
+                        color: Theme.errorColor
+                        font.pixelSize: Theme.fontCaption
+                        text: qsTr("自启动注册失败：请检查系统权限（Windows 注册表 / Linux 自启动目录写入）后重试")
                     }
                     SettingRow {
                         width: parent.width

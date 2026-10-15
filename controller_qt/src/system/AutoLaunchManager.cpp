@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QProcess>
 #include <QSaveFile>
+#include <QStandardPaths>
 
 namespace {
 
@@ -23,20 +24,37 @@ const QString kDesktopFileName = QStringLiteral("desktop-pet.desktop");
 
 // --- Default suppliers (production paths) ---
 
-// The current binary's path. Used as the Run value's data and the .desktop
-// Exec= line. QCoreApplication::applicationFilePath uses '/' on every platform
-// (Qt-normalized); reg.exe accepts '/' in argument values (only '/' at arg
-// start is a switch), so no path escaping is needed.
+// The current binary's path ('/'-separated on every platform — Qt's
+// normalization). The platform writers escape as needed: enableWindows
+// converts to native separators and wraps the value in double quotes
+// (unquoted Run-key data splits at the first space); enableLinux quotes
+// it verbatim in the Exec= line.
 QString defaultAppPath()
 {
     return QCoreApplication::applicationFilePath();
 }
 
-// ~/.config/autostart — the XDG autostart directory. controller_qt convention
-// (Phase 0-4 ConfigDir) uses ~/.config on both Windows + Linux (NOT %APPDATA%).
+// The production linuxConfigDirSupplier — delegates to the public static
+// defaultAutostartDir() (single source of truth; the static is exposed so
+// tests can lock the $XDG_CONFIG_HOME precedence without writing into the
+// real home directory).
 QString defaultLinuxConfigDir()
 {
-    return QDir::homePath() + QStringLiteral("/.config/autostart");
+    return AutoLaunchManager::defaultAutostartDir();
+}
+
+// reg.exe program path. Resolved ONCE via QStandardPaths::findExecutable
+// (PATH lookup, .exe suffix handled by Qt on Windows); falls back to the
+// bare "reg" when the lookup comes up empty (reg.exe lives in System32,
+// which is always on PATH, so the fallback is belt-and-braces).
+QString regProgram()
+{
+    static const QString resolved = [] {
+        const QString found =
+            QStandardPaths::findExecutable(QStringLiteral("reg"));
+        return found.isEmpty() ? QStringLiteral("reg") : found;
+    }();
+    return resolved;
 }
 
 // Compile-time platform string. Mirrors Java's os.name detection.
@@ -67,7 +85,21 @@ AutoLaunchManager::RegResult defaultRegExecutor(const QString& program,
         LOG_WARN("AutoLaunch: failed to start '{}'", program.toStdString());
         return {-1, QString()};
     }
-    p.waitForFinished(10000);
+    if (!p.waitForFinished(5000)) {
+        // Timeout: QProcess's exitCode() still holds its initial 0 here —
+        // callers checking exitCode == 0 would see a FALSE success. Fail
+        // closed with -1 (every downstream check treats non-zero as
+        // failure) after reaping the straggler.
+        LOG_WARN("AutoLaunch: '{}' timed out", program.toStdString());
+        p.kill();
+        p.waitForFinished(1000);
+        return {-1, QString::fromLocal8Bit(p.readAll())};
+    }
+    if (p.exitStatus() != QProcess::NormalExit) {
+        // Crashed (exitStatus CrashExit) — same fail-closed contract.
+        LOG_WARN("AutoLaunch: '{}' crashed", program.toStdString());
+        return {-1, QString::fromLocal8Bit(p.readAll())};
+    }
     AutoLaunchManager::RegResult r;
     r.exitCode = p.exitCode();
     r.output = QString::fromLocal8Bit(p.readAll());
@@ -75,6 +107,22 @@ AutoLaunchManager::RegResult defaultRegExecutor(const QString& program,
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// Public static — production autostart dir (XDG-aware)
+// ---------------------------------------------------------------------------
+
+QString AutoLaunchManager::defaultAutostartDir()
+{
+    // XDG base-dir spec: $XDG_CONFIG_HOME only counts when set AND
+    // absolute; otherwise the default is ~/.config. '/autostart' is the
+    // XDG autostart-spec suffix.
+    const QString xdg = qEnvironmentVariable("XDG_CONFIG_HOME");
+    const QString base = (!xdg.isEmpty() && QDir::isAbsolutePath(xdg))
+        ? xdg
+        : QDir::homePath() + QStringLiteral("/.config");
+    return base + QStringLiteral("/autostart");
+}
 
 // ---------------------------------------------------------------------------
 // Constructors
@@ -134,25 +182,38 @@ bool AutoLaunchManager::disable()
 bool AutoLaunchManager::checkWindowsRegistry() const
 {
     const RegResult r = m_regExecutor(
-        QStringLiteral("reg"),
+        regProgram(),
         {QStringLiteral("query"), kRegKey,
          QStringLiteral("/v"), kRegValueName});
-    return r.exitCode == 0 && r.output.contains(kRegValueName);
+    // Require BOTH the value name and the REG_SZ type marker: a successful
+    // `reg query /v DesktopPet` prints "    DesktopPet    REG_SZ    <data>".
+    // The name alone can appear in unrelated output (e.g. the key path echo
+    // of a sibling-value listing), so the type marker is the cheap tighten.
+    return r.exitCode == 0 && r.output.contains(kRegValueName)
+        && r.output.contains(QLatin1String("REG_SZ"));
 }
 
 bool AutoLaunchManager::enableWindows()
 {
     const QString appPath = m_appPathSupplier();
+    // Store the value data as a QUOTED native-separator path: the Run-key
+    // launcher (Explorer/Userinit) splits UNQUOTED data at the first
+    // space — `C:\Program Files\...\app.exe` would execute `C:\Program`
+    // (the classic unquoted-CWE-428 breakage). Native separators because
+    // the value is consumed by the OS shell, not Qt (which normalizes
+    // paths to '/').
+    const QString quotedPath = QLatin1Char('"')
+        + QDir::toNativeSeparators(appPath) + QLatin1Char('"');
     const RegResult r = m_regExecutor(
-        QStringLiteral("reg"),
+        regProgram(),
         {QStringLiteral("add"), kRegKey,
          QStringLiteral("/v"), kRegValueName,
          QStringLiteral("/t"), QStringLiteral("REG_SZ"),
-         QStringLiteral("/d"), appPath,
+         QStringLiteral("/d"), quotedPath,
          QStringLiteral("/f")});
     if (r.exitCode == 0) {
         LOG_INFO("AutoLaunch enabled (Windows registry) path='{}'",
-                 appPath.toStdString());
+                 quotedPath.toStdString());
         return true;
     }
     LOG_WARN("AutoLaunch enable failed: reg exit code {}", r.exitCode);
@@ -162,7 +223,7 @@ bool AutoLaunchManager::enableWindows()
 bool AutoLaunchManager::disableWindows()
 {
     const RegResult r = m_regExecutor(
-        QStringLiteral("reg"),
+        regProgram(),
         {QStringLiteral("delete"), kRegKey,
          QStringLiteral("/v"), kRegValueName,
          QStringLiteral("/f")});
@@ -179,7 +240,7 @@ bool AutoLaunchManager::disableWindows()
 }
 
 // ---------------------------------------------------------------------------
-// Linux — atomic write/delete ~/.config/autostart/desktop-pet.desktop
+// Linux — atomic write/delete desktop-pet.desktop in the XDG autostart dir
 // ---------------------------------------------------------------------------
 
 bool AutoLaunchManager::checkLinuxDesktopFile() const
@@ -205,13 +266,18 @@ bool AutoLaunchManager::enableLinux()
     // Terminal=false). The Java reference uses Hidden=false instead of
     // Icon+Terminal; the C++ port follows the task spec for a more canonical
     // XDG entry. Exec + Icon both = appPath (single-binary distribution).
+    // Exec is wrapped in double quotes: the Exec field splits on UNQUOTED
+    // whitespace, so an install path containing a space would launch a
+    // nonexistent binary. Icon stays unquoted (the icon-spec has no
+    // quoting — a quoted value would break icon-name resolution).
+    const QString execValue = QLatin1Char('"') + appPath + QLatin1Char('"');
     const QByteArray content = QStringLiteral(
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Name=Desktop Pet\n"
         "Exec=%1\n"
-        "Icon=%1\n"
-        "Terminal=false\n").arg(appPath).toUtf8();
+        "Icon=%2\n"
+        "Terminal=false\n").arg(execValue, appPath).toUtf8();
 
     // QSaveFile = atomic write (MoveFileEx on Windows, rename(2) on POSIX),
     // mirroring the InstanceConfigManager::atomicWrite pattern from T20.

@@ -123,6 +123,28 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     // the one documented autoLaunch observability gap closes here).
     m_panelConfigController->setEventPublisher(m_app.eventApi());
 
+    // Startup self-heal (2026-10): the persisted autoLaunchSystem flag and
+    // the actual OS state (Run value / .desktop file) can drift — OS update
+    // wiped the key, user deleted the .desktop, or a pre-fix unquoted-path
+    // write never actually worked ("开机自启动疑似无效"). Reconcile ONCE at
+    // boot: flag on + OS state off → re-enable; if that fails → clear the
+    // persisted flag so the Settings checkbox reflects reality (persists +
+    // emits pet.panel.settings_changed via the normal setter). Runs after
+    // the event-publisher wiring above so the flag-clear emission lands.
+    // Deliberately on the GUI thread, once: reg query is normally instant
+    // and the Linux check is a stat() — the same cost class as the existing
+    // isEnabled()-at-page-load pattern in SettingsPage.
+    if (m_panelConfigController->autoLaunchSystem()
+        && !m_autoLaunchManager->isEnabled()) {
+        LOG_WARN("AutoLaunch: persisted flag is on but OS state is off — "
+                 "re-enabling at boot");
+        if (!m_autoLaunchManager->enable()) {
+            LOG_WARN("AutoLaunch: boot re-enable failed — clearing the "
+                     "persisted autoLaunchSystem flag");
+            m_panelConfigController->setAutoLaunchSystem(false);
+        }
+    }
+
     // v1.9: pet.panel.window_state emission. The root window does not
     // exist yet (loadFromModule runs after this boot) — attach in the
     // engine's objectCreated handler. Lifetime: heap child of this

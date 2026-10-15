@@ -6,22 +6,32 @@
 // (program, args) reg.exe invocation and return a canned exit code — NO real
 // registry mutation, NO real subprocess, NO touching ~/.config/autostart.
 //
-// 8 slots:
-//   Windows tier (4):
+// 11 slots:
+//   Windows tier (5):
 //     - testWindowsEnable:     captured command matches the exact `reg add`
-//                              argv shape; enable() returns true on exit 0.
-//     - testWindowsIsEnabled:  reg query exit 0 + "DesktopPet" in output →
-//                              true; exit 1 → false.
+//                              argv shape (QUOTED native-separator /d value);
+//                              enable() returns true on exit 0.
+//     - testWindowsEnablePathWithSpaces: a spacey install path is stored as
+//                              a quoted value (the unquoted-Run-key fix).
+//     - testWindowsIsEnabled:  reg query exit 0 + "DesktopPet" AND "REG_SZ"
+//                              in output → true; exit 1 → false; missing
+//                              REG_SZ type marker → false.
 //     - testWindowsDisable:    captured command is `reg delete ... /f`;
 //                              returns true.
 //     - testRegExeFails:       reg add exit non-zero → enable() returns
 //                              false, no throw.
-//   Linux tier (3):
+//   Linux tier (5):
 //     - testLinuxEnable:       .desktop file written under injected temp
-//                              autostart dir; content has Type/Name/Exec.
+//                              autostart dir; content has Type/Name/quoted
+//                              Exec.
+//     - testLinuxEnablePathWithSpaces: Exec="<path>" survives a spacey path.
 //     - testLinuxDisable:      file gone after disable(); re-disable is a
 //                              no-op (returns true).
 //     - testLinuxIsEnabled:    file exists → true; absent → false.
+//     - testLinuxXdgConfigHomeHonored: defaultAutostartDir() honors a set
+//                              AND absolute $XDG_CONFIG_HOME (relative /
+//                              unset fall back to ~/.config); the default
+//                              supplier writes into the temp dir.
 //   Unsupported platform (1):
 //     - testUnsupportedPlatform: platformSupplier returns "macos" → enable/
 //                              disable return false; isEnabled returns false.
@@ -37,6 +47,7 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -61,6 +72,17 @@ QString reconstructCommand(const QString& program, const QStringList& args)
     return program + QLatin1Char(' ') + args.join(QLatin1Char(' '));
 }
 
+// Mirror of the production reg.exe program resolution (QStandardPaths::
+// findExecutable + bare-"reg" fallback). The captured program string is
+// environment-dependent (System32 reg.exe resolves on Windows, the fallback
+// elsewhere), so tests compute the SAME answer instead of hardcoding "reg".
+QString expectedRegProgram()
+{
+    const QString found =
+        QStandardPaths::findExecutable(QStringLiteral("reg"));
+    return found.isEmpty() ? QStringLiteral("reg") : found;
+}
+
 } // namespace
 
 class AutoLaunchManagerTest : public QObject
@@ -70,21 +92,24 @@ class AutoLaunchManagerTest : public QObject
 private slots:
     // --- Windows ---
     void testWindowsEnable();
+    void testWindowsEnablePathWithSpaces();
     void testWindowsIsEnabled();
     void testWindowsDisable();
     void testRegExeFails();
 
     // --- Linux ---
     void testLinuxEnable();
+    void testLinuxEnablePathWithSpaces();
     void testLinuxDisable();
     void testLinuxIsEnabled();
+    void testLinuxXdgConfigHomeHonored();
 
     // --- Unsupported ---
     void testUnsupportedPlatform();
 };
 
 // ===========================================================================
-// Windows tier — all four use the fake regExecutor; ZERO real subprocess.
+// Windows tier — all five use the fake regExecutor; ZERO real subprocess.
 // ===========================================================================
 
 void AutoLaunchManagerTest::testWindowsEnable()
@@ -113,15 +138,54 @@ void AutoLaunchManagerTest::testWindowsEnable()
     // Then: enable() returned true (exit 0 path).
     QVERIFY2(ok, "enable() must return true when reg.exe exits 0");
 
-    // And: the captured command matches the exact expected shape. The /d value
-    // is the injected app path verbatim (reg.exe accepts '/' in argument
-    // values, so no escaping is needed).
+    // And: the captured command matches the exact expected shape. The /d
+    // value is the app path converted to native separators and wrapped in
+    // double quotes (the unquoted-Run-key fix — Explorer splits unquoted
+    // data at the first space). QDir::toNativeSeparators mirrors the
+    // production conversion so the assertion holds on every host OS.
+    const QString expectedValue = QLatin1Char('"')
+        + QDir::toNativeSeparators(kApp) + QLatin1Char('"');
     const QString cmd = reconstructCommand(cap.lastProgram, cap.lastArgs);
-    const QString expected =
-        QStringLiteral(
-            "reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run "
-            "/v DesktopPet /t REG_SZ /d %1 /f").arg(kApp);
+    const QString expected = expectedRegProgram() + QLatin1Char(' ')
+        + QStringLiteral(
+              "add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run "
+              "/v DesktopPet /t REG_SZ /d %1 /f").arg(expectedValue);
     QCOMPARE_EQ(cmd, expected);
+}
+
+void AutoLaunchManagerTest::testWindowsEnablePathWithSpaces()
+{
+    // Given: an install path containing spaces (e.g. "C:\Program
+    // Files\...") — the case the unquoted Run-key write broke (Explorer
+    // would launch "C:\Program").
+    RegCapture cap;
+    cap.cannedExitCode = 0;
+    const QString kApp =
+        QStringLiteral("C:/Program Files/Desktop Pet/desktop-pet.exe");
+
+    AutoLaunchManager mgr(
+        [&]() { return kApp; },
+        []() { return QStringLiteral("/tmp/unused-on-windows"); },
+        [&cap](const QString& program, const QStringList& args) {
+            cap.lastProgram = program;
+            cap.lastArgs = args;
+            return AutoLaunchManager::RegResult{cap.cannedExitCode,
+                                                cap.cannedOutput};
+        },
+        []() { return QStringLiteral("windows"); });
+
+    // When: enable() is called.
+    QVERIFY2(mgr.enable(), "enable() must return true when reg.exe exits 0");
+
+    // Then: the /d value is the QUOTED native-separator path.
+    const QString expectedValue = QLatin1Char('"')
+        + QDir::toNativeSeparators(kApp) + QLatin1Char('"');
+    const int dIndex = cap.lastArgs.indexOf(QStringLiteral("/d"));
+    QVERIFY2(dIndex >= 0 && dIndex + 1 < cap.lastArgs.size(),
+             "argv must contain a /d <value> pair");
+    QCOMPARE_EQ(cap.lastArgs.at(dIndex + 1), expectedValue);
+    QVERIFY2(!cap.lastArgs.contains(QDir::toNativeSeparators(kApp)),
+             "the UNQUOTED path must not appear anywhere in argv");
 }
 
 void AutoLaunchManagerTest::testWindowsIsEnabled()
@@ -152,6 +216,15 @@ void AutoLaunchManagerTest::testWindowsIsEnabled()
     cap.cannedOutput = QStringLiteral("ERROR: The system was unable to find...");
     QVERIFY2(!mgr.isEnabled(),
              "isEnabled must be false when reg query exits non-zero");
+
+    // When/Then (REG_SZ tighten): exit 0 + output naming the value but
+    // WITHOUT the REG_SZ type marker (e.g. the value exists with another
+    // type) → isEnabled false — the type marker is required.
+    cap.cannedExitCode = 0;
+    cap.cannedOutput = QStringLiteral(
+        "    DesktopPet    REG_DWORD    0x1\n");
+    QVERIFY2(!mgr.isEnabled(),
+             "isEnabled must be false when reg query output lacks REG_SZ");
 }
 
 void AutoLaunchManagerTest::testWindowsDisable()
@@ -177,12 +250,14 @@ void AutoLaunchManagerTest::testWindowsDisable()
     // Then: disable() returned true.
     QVERIFY2(ok, "disable() must return true on reg delete exit 0");
 
-    // And: the captured command is `reg delete HKCU\... /v DesktopPet /f`.
+    // And: the captured command is `<reg> delete HKCU\... /v DesktopPet /f`.
+    // (Program is the findExecutable-resolved reg.exe — see
+    // expectedRegProgram.)
     const QString cmd = reconstructCommand(cap.lastProgram, cap.lastArgs);
-    const QString expected =
-        QStringLiteral(
-            "reg delete HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run "
-            "/v DesktopPet /f");
+    const QString expected = expectedRegProgram() + QLatin1Char(' ')
+        + QStringLiteral(
+              "delete HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run "
+              "/v DesktopPet /f");
     QCOMPARE_EQ(cmd, expected);
 }
 
@@ -211,7 +286,8 @@ void AutoLaunchManagerTest::testRegExeFails()
 }
 
 // ===========================================================================
-// Linux tier — three slots using QTemporaryDir as the autostart dir.
+// Linux tier — five slots (three QTemporaryDir content/lifecycle + one
+// spacey-path + one XDG precedence lock).
 // ===========================================================================
 
 void AutoLaunchManagerTest::testLinuxEnable()
@@ -246,7 +322,8 @@ void AutoLaunchManagerTest::testLinuxEnable()
 
     // And: the content has the canonical XDG keys (Type/Name/Exec). Reading
     // raw text + substring-checking — no INI parser dependency, robust to
-    // trailing newline / key-order differences.
+    // trailing newline / key-order differences. Exec is QUOTED (the
+    // whitespace-splitting fix); Icon stays unquoted.
     QFile f(desktopFile);
     QVERIFY2(f.open(QIODevice::ReadOnly), "failed to open .desktop for read");
     const QString content = QString::fromUtf8(f.readAll());
@@ -256,8 +333,44 @@ void AutoLaunchManagerTest::testLinuxEnable()
              "content must contain Type=Application");
     QVERIFY2(content.contains(QStringLiteral("Name=Desktop Pet")),
              "content must contain Name=Desktop Pet");
-    QVERIFY2(content.contains(QStringLiteral("Exec=") + kApp),
-             "content must contain Exec=<appPath>");
+    QVERIFY2(content.contains(QStringLiteral("Exec=\"") + kApp
+                              + QLatin1Char('"')),
+             "content must contain Exec=\"<appPath>\" (quoted)");
+    QVERIFY2(content.contains(QStringLiteral("Icon=") + kApp),
+             "content must contain Icon=<appPath> (unquoted)");
+}
+
+void AutoLaunchManagerTest::testLinuxEnablePathWithSpaces()
+{
+    // Given: an install path containing spaces — the case the unquoted
+    // Exec= line broke (the desktop environment would try to launch the
+    // nonexistent prefix binary up to the first space).
+    QTemporaryDir tmp;
+    QVERIFY2(tmp.isValid(), "temporary directory creation failed");
+    const QString autostartDir = tmp.path() + QStringLiteral("/autostart");
+    const QString kApp = QStringLiteral("/opt/Desktop Pet/desktop-pet.sh");
+
+    AutoLaunchManager mgr(
+        [&]() { return kApp; },
+        [&]() { return autostartDir; },
+        [](const QString&, const QStringList&) {
+            // Linux path never invokes regExecutor; return a default.
+            return AutoLaunchManager::RegResult{};
+        },
+        []() { return QStringLiteral("linux"); });
+
+    // When: enable() is called.
+    QVERIFY2(mgr.enable(), "enable() must succeed for a spacey path");
+
+    // Then: Exec is the QUOTED path, and the unquoted form is absent.
+    QFile f(autostartDir + QStringLiteral("/desktop-pet.desktop"));
+    QVERIFY2(f.open(QIODevice::ReadOnly), "failed to open .desktop for read");
+    const QString content = QString::fromUtf8(f.readAll());
+    QVERIFY2(content.contains(QStringLiteral("Exec=\"") + kApp
+                              + QLatin1Char('"')),
+             "Exec must quote a path containing spaces");
+    QVERIFY2(!content.contains(QStringLiteral("Exec=") + kApp),
+             "the UNQUOTED Exec form must not appear");
 }
 
 void AutoLaunchManagerTest::testLinuxDisable()
@@ -323,6 +436,60 @@ void AutoLaunchManagerTest::testLinuxIsEnabled()
     // Then: isEnabled() returns true.
     QVERIFY2(mgr.isEnabled(),
              "isEnabled must be true after enable() writes the .desktop file");
+}
+
+void AutoLaunchManagerTest::testLinuxXdgConfigHomeHonored()
+{
+    // Locks the XDG fix: the production autostart-dir supplier honors
+    // $XDG_CONFIG_HOME when set AND absolute (XDG base-dir spec); relative
+    // and unset values fall back to ~/.config. defaultAutostartDir() is
+    // the public static the production constructor wires as its
+    // linuxConfigDirSupplier. Env is saved/restored so this slot cannot
+    // leak into the other slots (all in one process under QTEST_APPLESS).
+    QTemporaryDir tmp;
+    QVERIFY2(tmp.isValid(), "temporary directory creation failed");
+
+    const bool hadXdg = qEnvironmentVariableIsSet("XDG_CONFIG_HOME");
+    const QString origXdg = qEnvironmentVariable("XDG_CONFIG_HOME");
+
+    // When/Then: absolute $XDG_CONFIG_HOME wins.
+    qputenv("XDG_CONFIG_HOME", tmp.path().toUtf8());
+    QCOMPARE_EQ(AutoLaunchManager::defaultAutostartDir(),
+                tmp.path() + QStringLiteral("/autostart"));
+
+    // And: end-to-end with the default supplier — the .desktop lands under
+    // $XDG_CONFIG_HOME/autostart, NOT ~/.config/autostart.
+    {
+        AutoLaunchManager mgr(
+            []() { return QStringLiteral("/app"); },
+            []() { return AutoLaunchManager::defaultAutostartDir(); },
+            [](const QString&, const QStringList&) {
+                return AutoLaunchManager::RegResult{};
+            },
+            []() { return QStringLiteral("linux"); });
+        QVERIFY2(mgr.enable(),
+                 "enable() via the default dir supplier must succeed");
+        QVERIFY2(QFile::exists(tmp.path()
+                    + QStringLiteral("/autostart/desktop-pet.desktop")),
+                 "the .desktop must be written under $XDG_CONFIG_HOME");
+        QVERIFY2(mgr.disable(), "cleanup: disable() must succeed");
+    }
+
+    // When/Then: a RELATIVE $XDG_CONFIG_HOME is ignored (spec) → fallback.
+    qputenv("XDG_CONFIG_HOME", QStringLiteral("relative/config").toUtf8());
+    QCOMPARE_EQ(AutoLaunchManager::defaultAutostartDir(),
+                QDir::homePath() + QStringLiteral("/.config/autostart"));
+
+    // When/Then: unset → fallback.
+    qunsetenv("XDG_CONFIG_HOME");
+    QCOMPARE_EQ(AutoLaunchManager::defaultAutostartDir(),
+                QDir::homePath() + QStringLiteral("/.config/autostart"));
+
+    // Env hygiene: restore the pre-test state.
+    if (hadXdg)
+        qputenv("XDG_CONFIG_HOME", origXdg.toUtf8());
+    else
+        qunsetenv("XDG_CONFIG_HOME");
 }
 
 // ===========================================================================

@@ -11,9 +11,15 @@
 //   Windows: `reg.exe` add/delete/query on
 //            `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value
 //            'DesktopPet' via QProcess. HKCU is per-user — no UAC prompt.
-//   Linux:   atomic write / delete `~/.config/autostart/desktop-pet.desktop`
-//            (XDG autostart). QSaveFile mirrors the InstanceConfigManager
-//            atomic-write pattern (Phase 0-4).
+//            The stored value data is a QUOTED native-separator path (the
+//            Run-key launcher splits unquoted data at the first space).
+//   Linux:   atomic write / delete `desktop-pet.desktop` in the XDG
+//            autostart dir — `$XDG_CONFIG_HOME/autostart` when
+//            XDG_CONFIG_HOME is set AND absolute (XDG base-dir spec),
+//            else `~/.config/autostart`. QSaveFile mirrors the
+//            InstanceConfigManager atomic-write pattern (Phase 0-4).
+//            Exec is written quoted so spacey paths survive the field's
+//            whitespace splitting.
 //   macOS/other: enable()/disable() log WARN "not supported" + return false;
 //            isEnabled() returns false.
 //
@@ -23,7 +29,9 @@
 //                             .desktop Exec= line. Default:
 //                             QCoreApplication::applicationFilePath().
 //   - linuxConfigDirSupplier: the autostart directory (parent of the .desktop
-//                             file). Default: ~/.config/autostart.
+//                             file). Default: defaultAutostartDir() —
+//                             $XDG_CONFIG_HOME/autostart when set AND
+//                             absolute, else ~/.config/autostart.
 //   - regExecutor:            runs `reg.exe` synchronously, returns exit code
 //                             + combined stdout/stderr (so isEnabled can
 //                             verify 'DesktopPet' appears in `reg query`
@@ -36,7 +44,9 @@
 // Production use is zero-config: `new AutoLaunchManager(this)` constructs with
 // the real suppliers. Exposed as a QML context property 'autoLaunch' by
 // todo 15 (closeAction) — SettingsPage binds a Checkbox to isEnabled() and
-// calls enable()/disable().
+// calls enable()/disable(). PanelUiBoot additionally reconciles the persisted
+// PanelConfig.autoLaunchSystem flag against the live OS state ONCE at boot
+// (flag on + OS off → re-enable; enable failure → clear the flag).
 class AutoLaunchManager : public QObject
 {
     Q_OBJECT
@@ -62,6 +72,13 @@ public:
     // Production constructor — wires the real platform suppliers. Zero-config.
     explicit AutoLaunchManager(QObject* parent = nullptr);
 
+    // Production autostart dir (the linuxConfigDirSupplier default):
+    // $XDG_CONFIG_HOME/autostart when XDG_CONFIG_HOME is set AND absolute
+    // (XDG base-dir spec), else ~/.config/autostart. Public static — single
+    // source of truth for the default supplier; tests lock the precedence
+    // here without writing into the real home directory.
+    static QString defaultAutostartDir();
+
     // Test-injectable constructor. Every supplier has a documented default in
     // the production ctor above; tests pass fakes to capture commands and
     // isolate the filesystem / registry. See AutoLaunchManagerTest.
@@ -72,7 +89,8 @@ public:
                       QObject* parent = nullptr);
 
     // True if auto-launch is currently enabled on this platform.
-    //   Windows: `reg query` exits 0 AND output contains "DesktopPet".
+    //   Windows: `reg query` exits 0 AND output contains "DesktopPet" AND
+    //            "REG_SZ" (the type marker of a successful /v query).
     //   Linux:   the .desktop file exists.
     //   Other:   always false.
     // Never throws — all subprocess / filesystem failures return false + WARN.

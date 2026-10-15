@@ -216,13 +216,21 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 10
 
-                        // clickable avatar: image icon when set, emoji otherwise
+                        // clickable avatar: image icon when set, emoji otherwise.
+                        // 2026-10-15 backing fix: a custom icon image must
+                        // NOT sit on the accent-tinted disc — transparent-
+                        // background avatars blend straight into the page
+                        // (same rule as BubbleCard's avatar slot: backing is
+                        // fallback-state only, for glyph avatars). Border
+                        // drops with it — the image itself is the affordance.
                         Rectangle {
                             id: avatarButton
                             width: 36; height: 36
                             radius: 18
-                            color: Qt.alpha(Theme.accentColor, 0.14)
-                            border.width: 1
+                            color: avatarButton.iconUrl.length > 0
+                                   ? "transparent"
+                                   : Qt.alpha(Theme.accentColor, 0.14)
+                            border.width: avatarButton.iconUrl.length > 0 ? 0 : 1
                             border.color: Theme.borderColor
                             anchors.verticalCenter: parent.verticalCenter
 

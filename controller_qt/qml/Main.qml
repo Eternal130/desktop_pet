@@ -452,7 +452,12 @@ Window {
         // panel config is the guarded settings surface, so the pane always
         // starts EXPANDED per launch (documented trade-off).
         width: collapsed ? 52 : 256
+        // bootDone gates the animation: the --nav-collapsed QA seam (see
+        // the root Component.onCompleted) flips `collapsed` during boot —
+        // the rail must appear settled at 52px on frame 1, not spend the
+        // first 200ms animating from 256.
         Behavior on width {
+            enabled: navPane.bootDone
             NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
         }
         color: "transparent"
@@ -464,6 +469,10 @@ Window {
         // nav cell reads this to hide labels/badges/captions and to route
         // hover tooltips.
         property bool collapsed: false
+        // flipped true at the END of the root Component.onCompleted —
+        // everything before that point is boot (incl. the --nav-collapsed
+        // seam), and boot-time width changes must not animate
+        property bool bootDone: false
 
         // ── Shared collapsed-rail tooltip state ──────────────────────────
         // ONE tooltip instance (right below the hairlines) serves every
@@ -1083,6 +1092,15 @@ Window {
 
     Component.onCompleted: {
         console.log("COLD_START_MS=" + (Date.now() - coldStartT0Ms))
+        // Screenshot/QA seam (2026-10-15): --nav-collapsed boots the shell
+        // with the nav pane already in the 52px icon-rail mode, so
+        // screenshot QA can capture the collapsed state
+        // (`--screenshot --pages welcome --nav-collapsed`). Pure QML —
+        // Qt.application.arguments is readable anywhere. Set BEFORE
+        // show() and with the width Behavior still disabled (bootDone
+        // false), so the first frame is already the settled rail.
+        if (Qt.application.arguments.indexOf("--nav-collapsed") >= 0)
+            navPane.collapsed = true
         // Legacy "ask" close-action normalization (2026-10-15): the
         // 每次询问 option was folded into the 退出前确认 switch — a
         // persisted "ask" maps to 直接退出 + confirm ON, which is
@@ -1120,6 +1138,9 @@ Window {
         // Theme colors are system-palette driven now; the persisted panel
         // theme string (panelConfig.theme) is no longer consumed by QML —
         // kept for SDK/persistence compatibility only.
+        // Boot is over (pane collapsed-or-not applied, window shown):
+        // from here on width changes are user toggles and animate.
+        navPane.bootDone = true
     }
 
     // ── Inline components ───────────────────────────────────────────────
@@ -1252,17 +1273,17 @@ Window {
                 color: Theme.accentColor
             }
             Row {
-                // 2026-10-15 nav space fix: collapsed icon rail — label
-                // fades out, icon optically centers (content rect is
-                // pane-16 = 36px → icon x = 10). navScroll clips at the
-                // pane bounds, so the fading label never bleeds over the
-                // hairline mid-animation.
+                // 2026-10-15 nav space fix, rev2: the icon STAYS visible —
+                // it is the whole point of the rail. The fade lives on the
+                // Text, NEVER on the Row: the first cut bound opacity on
+                // the Row and dragged the icon down with the label
+                // (user-reported: collapsed rail showed only the badge
+                // dots). Row positioners skip invisible items, so once the
+                // label hides, the icon sits alone at x → optically
+                // centered (content rect is pane-16 = 36px → icon x = 10).
                 x: navPane.collapsed ? 10 : 12
                 y: (parent.height - height) / 2
                 spacing: 14
-                opacity: navPane.collapsed ? 0 : 1
-                Behavior on opacity { NumberAnimation { duration: 120 } }
-                visible: opacity > 0
                 // vector nav icon (was emoji text) — tint follows the
                 // selection like Fluent nav panes do
                 AppIcon {
@@ -1276,6 +1297,13 @@ Window {
                     color: Theme.textColor
                     font.pixelSize: 13
                     font.weight: item.active ? Font.DemiBold : Font.Normal
+                    // label-only fade: navScroll clips the fading text at
+                    // the pane bounds; settingsNavItem (outside the
+                    // scroll) finishes its 120ms fade well before the
+                    // width shrink can expose it past the hairline
+                    opacity: navPane.collapsed ? 0 : 1
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                    visible: opacity > 0
                 }
             }
             // collapsed rail: count → 7px accent status dot on the icon's
@@ -1351,14 +1379,13 @@ Window {
             color: _hover.hovered ? Qt.alpha(Theme.textColor, 0.05)
                                   : "transparent"
             Row {
-                // 2026-10-15 nav space fix: same collapsed icon-rail
-                // treatment as NavItem (fade + optical centering)
+                // 2026-10-15 nav space fix, rev2: same treatment as
+                // NavItem — icon always visible, label-only fade (the
+                // first cut bound opacity on the Row and hid the paw
+                // with the name)
                 x: navPane.collapsed ? 10 : 12
                 y: (parent.height - height) / 2
                 spacing: 14
-                opacity: navPane.collapsed ? 0 : 1
-                Behavior on opacity { NumberAnimation { duration: 120 } }
-                visible: opacity > 0
                 AppIcon {
                     name: "paw"
                     size: 16
@@ -1369,6 +1396,9 @@ Window {
                     text: iitem.instanceLabel
                     color: Theme.textColor
                     font.pixelSize: 13
+                    opacity: navPane.collapsed ? 0 : 1
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                    visible: opacity > 0
                 }
             }
             Rectangle {

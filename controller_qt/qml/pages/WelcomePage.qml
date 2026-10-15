@@ -333,14 +333,30 @@ Rectangle {
 
                         readonly property var _inst: instanceManager.instanceAt(index)
 
+                        // custom icon for the card avatar — same resolution
+                        // idiom as the detail-page header avatarButton
+                        // (assetManager context property, keyed by uuid).
+                        // Empty = no custom icon → the row-index gradient
+                        // disc + glyph fallback stays.
+                        readonly property string _iconUrl: model.uuid.length > 0
+                            ? assetManager.instanceIconUrl(model.uuid) : ""
+
                             Row {
                                 width: parent.width
                                 spacing: 14
                                 opacity: model.status === "stopped" ? 0.75 : 1.0
 
+                                // avatar slot (BubbleCard rule): custom icon
+                                // image when set — transparent backgrounds
+                                // show the card surface, no backing — else
+                                // the row-index gradient disc + glyph.
+                                // Exactly one of the two Row children is
+                                // visible; Row skips the hidden one, so
+                                // geometry is identical in both states.
                                 Rectangle {
                                     width: 64; height: 64; radius: 8
                                     anchors.verticalCenter: parent.verticalCenter
+                                    visible: _iconUrl.length === 0
                                     gradient: Gradient {
                                         GradientStop {
                                             position: 0
@@ -366,6 +382,14 @@ Rectangle {
                                             color: Theme.textColor
                                         }
                                     }
+                                }
+                                Image {
+                                    width: 64; height: 64
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: _iconUrl.length > 0
+                                    source: _iconUrl
+                                    fillMode: Image.PreserveAspectFit
+                                    asynchronous: true
                                 }
 
                                 Column {

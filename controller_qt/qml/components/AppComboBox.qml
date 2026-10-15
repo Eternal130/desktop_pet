@@ -75,11 +75,7 @@ ComboBox {
             radius: 4
             color: dlg.hovered ? Theme.hoverColor : "transparent"
         }
-        onClicked: {
-            root.currentIndex = dlg.index
-            root.popup.close()
-            root.activated(dlg.index)
-        }
+        onClicked: dlg.ListView.view.comboPick(dlg.index)
     }
     popup: Popup {
         y: root.height + 4
@@ -93,6 +89,18 @@ ComboBox {
             border.color: Theme.borderColor
         }
         contentItem: ListView {
+            // Scope note: ids from the component root are NOT resolvable
+            // inside delegate contexts instantiated via root.delegateModel
+            // (imperative JS blocks threw "ReferenceError: root is not
+            // defined", so activated() was never emitted — every combo
+            // write in the app silently no-op'd). The activation path
+            // therefore lives HERE, where root resolves; delegates reach
+            // it through the ListView attached property.
+            function comboPick(i) {
+                root.currentIndex = i
+                root.popup.close()
+                root.activated(i)
+            }
             clip: true
             implicitHeight: contentHeight
             model: root.popup.visible ? root.delegateModel : null

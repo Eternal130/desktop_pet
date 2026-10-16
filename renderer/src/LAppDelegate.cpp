@@ -214,25 +214,40 @@ void LAppDelegate::Release()
 
     if (_wsClient) { _wsClient->disconnect(); }
     delete _eventEmitter; _eventEmitter = nullptr;
+    LAppPal::PrintLogLn("[Shutdown] eventEmitter deleted");
     delete _messageHandler; _messageHandler = nullptr;
+    LAppPal::PrintLogLn("[Shutdown] messageHandler deleted");
     delete _wsClient; _wsClient = nullptr;
+    LAppPal::PrintLogLn("[Shutdown] wsClient deleted");
 
     // Models/Cubism must die BEFORE the graphics backend: SDK renderers issue
     // vkDestroy* calls in their destructors targeting the VkDevice owned by
     // the backend (destroying the device first was a latent use-after-free
     // masked only by driver tolerance).
     LAppLive2DManager::ReleaseInstance();
+    LAppPal::PrintLogLn("[Shutdown] Live2DManager released");
+
+    // The texture manager destroys GPU resources THROUGH the backend
+    // (GL: _backend->DeleteTexture; VK: vkDestroy* on the backend's device),
+    // so it must die while the backend object and its context/device are
+    // still alive. Deleting it after `delete _graphicsBackend` left `_backend`
+    // dangling — segfault on Linux, silently tolerated on Windows.
+    delete _textureManager;
+    LAppPal::PrintLogLn("[Shutdown] textureManager deleted");
 
     CubismFramework::Dispose();
+    LAppPal::PrintLogLn("[Shutdown] CubismFramework disposed");
 
     _graphicsBackend->ReleaseGraphics();
+    LAppPal::PrintLogLn("[Shutdown] graphics backend released");
     _windowManager->Release();
+    LAppPal::PrintLogLn("[Shutdown] window manager released");
 
     delete _graphicsBackend; _graphicsBackend = nullptr;
     delete _windowManager; _windowManager = nullptr;
 
-    delete _textureManager;
     delete _view;
+    LAppPal::PrintLogLn("[Shutdown] view deleted — shutdown complete");
 }
 
 void LAppDelegate::Run()

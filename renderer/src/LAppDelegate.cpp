@@ -138,7 +138,14 @@ bool LAppDelegate::Initialize()
     glfwSetWindowFocusCallback(window, EventHandler::OnWindowFocusCallback);
 
     _windowManager->GetWindowSize(_windowWidth, _windowHeight);
+#ifndef USE_VULKAN
     _graphicsBackend->BeginFrame(_windowWidth, _windowHeight);
+#else
+    // VK: no init-time BeginFrame — it would acquire a swapchain image that
+    // is never presented and corrupt the frames-in-flight fence bookkeeping.
+    // _imageIndex stays 0 for the init SetRenderTarget below; OnUpdate
+    // re-issues SetRenderTarget with the real acquired image every frame.
+#endif
 
 #ifdef USE_VULKAN
     // Phase 2.2: Inject Vulkan device info into CubismRenderer_Vulkan static state
@@ -210,6 +217,14 @@ void LAppDelegate::Release()
     delete _messageHandler; _messageHandler = nullptr;
     delete _wsClient; _wsClient = nullptr;
 
+    // Models/Cubism must die BEFORE the graphics backend: SDK renderers issue
+    // vkDestroy* calls in their destructors targeting the VkDevice owned by
+    // the backend (destroying the device first was a latent use-after-free
+    // masked only by driver tolerance).
+    LAppLive2DManager::ReleaseInstance();
+
+    CubismFramework::Dispose();
+
     _graphicsBackend->ReleaseGraphics();
     _windowManager->Release();
 
@@ -218,10 +233,6 @@ void LAppDelegate::Release()
 
     delete _textureManager;
     delete _view;
-
-    LAppLive2DManager::ReleaseInstance();
-
-    CubismFramework::Dispose();
 }
 
 void LAppDelegate::Run()
@@ -301,47 +312,60 @@ void LAppDelegate::Run()
 #endif
         _graphicsBackend->BeginFrame(_windowWidth, _windowHeight);
 
-        //描画更新
-        _view->Render();
-
-        if (!_isDragging && !_captured)
-        {
-#ifdef _WIN32
-            POINT cursorPos;
-            if (GetCursorPos(&cursorPos))
-            {
+#ifdef USE_VULKAN
+        // OUT_OF_DATE acquire: skip rendering/presenting against a stale image
+        // index; the head of the next loop iteration recreates the swapchain.
+        // The loop tail below (audio/motion/network polls, WaitEvents) still
+        // runs, keeping the process responsive during the recreate gap.
+        const bool frameOk =
+            !static_cast<VulkanBackend*>(_graphicsBackend)->IsSwapchainInvalid();
 #else
-            struct { int x, y; } cursorPos; // Mimics Win32 POINT so the shared code below stays unchanged
-            if (GetGlobalCursorPos(cursorPos.x, cursorPos.y))
-            {
+        const bool frameOk = true;
 #endif
-                int windowX, windowY;
-                _windowManager->GetWindowPosition(windowX, windowY);
-                int localX = cursorPos.x - windowX;
-                int localY = cursorPos.y - windowY;
+        if (frameOk)
+        {
+            //描画更新
+            _view->Render();
 
-                if (localX >= 0 && localX < _windowWidth && localY >= 0 && localY < _windowHeight)
+            if (!_isDragging && !_captured)
+            {
+#ifdef _WIN32
+                POINT cursorPos;
+                if (GetCursorPos(&cursorPos))
                 {
-                    bool isTransparent = _graphicsBackend->IsPixelTransparent(localX, localY, _windowHeight);
-                    if (isTransparent != _isClickThrough)
+#else
+                struct { int x, y; } cursorPos; // Mimics Win32 POINT so the shared code below stays unchanged
+                if (GetGlobalCursorPos(cursorPos.x, cursorPos.y))
+                {
+#endif
+                    int windowX, windowY;
+                    _windowManager->GetWindowPosition(windowX, windowY);
+                    int localX = cursorPos.x - windowX;
+                    int localY = cursorPos.y - windowY;
+
+                    if (localX >= 0 && localX < _windowWidth && localY >= 0 && localY < _windowHeight)
                     {
-                        _windowManager->SetMousePassthrough(isTransparent);
-                        _isClickThrough = isTransparent;
+                        bool isTransparent = _graphicsBackend->IsPixelTransparent(localX, localY, _windowHeight);
+                        if (isTransparent != _isClickThrough)
+                        {
+                            _windowManager->SetMousePassthrough(isTransparent);
+                            _isClickThrough = isTransparent;
+                        }
                     }
                 }
             }
-        }
-        else
-        {
-            if (_isClickThrough)
+            else
             {
-                _windowManager->SetMousePassthrough(false);
-                _isClickThrough = false;
+                if (_isClickThrough)
+                {
+                    _windowManager->SetMousePassthrough(false);
+                    _isClickThrough = false;
+                }
             }
-        }
 
-        // バッファの入れ替え
-        _graphicsBackend->EndFrame(_windowManager->GetWindow());
+            // バッファの入れ替え
+            _graphicsBackend->EndFrame(_windowManager->GetWindow());
+        }
 
         // Audio natural-completion poll (main thread): detects sounds whose
         // data ran out since last frame and fires audio_finished via the

@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <unordered_map>
+#include <array>
 
 // Merges VulkanManager + SwapchainManager from Cubism SDK Vulkan Demo.
 // Implements IGraphicsBackend for LAppDelegate.
@@ -63,8 +64,15 @@ private:
     VkQueue _graphicQueue = VK_NULL_HANDLE;
     VkQueue _presentQueue = VK_NULL_HANDLE;
     VkCommandPool _commandPool = VK_NULL_HANDLE;
-    VkSemaphore _imageAvailableSemaphore = VK_NULL_HANDLE;
-    VkFence _inFlightFence = VK_NULL_HANDLE;
+    // Frames-in-flight sync (2): per-frame acquire/present semaphores + fence.
+    // Acquire semaphore is signaled exactly once per use (fence-gated reuse);
+    // fences are created signaled so the very first BeginFrame wait passes.
+    static constexpr uint32_t kFramesInFlight = 2;
+    std::vector<VkSemaphore> _imageAvailableSemaphores;
+    std::vector<VkSemaphore> _renderFinishedSemaphores;
+    std::vector<VkFence> _inFlightFences;
+    std::vector<VkCommandBuffer> _tailCommandBuffers; // per-frame, reset after fence wait
+    uint64_t _frameCounter = 0; // advances only in EndFrame (completed frames)
     VkDebugUtilsMessengerEXT _debugMessenger = VK_NULL_HANDLE;
     VkFormat _depthFormat = VK_FORMAT_UNDEFINED;
     uint32_t _imageIndex = 0;
@@ -89,9 +97,21 @@ private:
 
     GLFWwindow* _window = nullptr;
 
-    // Pixel readback (click-through detection)
-    VkBuffer _readbackBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory _readbackBufferMemory = VK_NULL_HANDLE;
+    // Async pixel readback ring (click-through detection): the EndFrame tail
+    // copies 1px into the next slot; completion is tracked via the OWNING
+    // frame's fence and consumed one frame later (poll, never block).
+    static constexpr size_t kReadbackRingSize = 3; // > kFramesInFlight
+    struct ReadbackSlot {
+        VkBuffer buffer = VK_NULL_HANDLE;       // 4 bytes, TRANSFER_DST
+        VkDeviceMemory memory = VK_NULL_HANDLE; // HOST_VISIBLE|COHERENT
+        uint8_t* mapped = nullptr;              // persistent map
+        uint64_t ownerFrame = UINT64_MAX;       // frame whose tail fence covers the copy
+    };
+    std::array<ReadbackSlot, kReadbackRingSize> _readbackRing;
+    size_t _readbackWriteIndex = 0;
+    bool _readbackCachedResult = true; // last consumed alpha==0 (true = transparent)
+    bool _readbackHasResult = false;
+    struct { int32_t x = -1; int32_t y = -1; bool valid = false; } _pendingSample;
 
     // Sampled RGBA textures (uploads via staging buffer)
     struct TextureData {
@@ -119,6 +139,8 @@ private:
     void ChooseSupportedDepthFormat();
     void CreateCommandPool();
     void CreateSyncObjects();
+    void DestroySyncObjects();
+    void RecordSwapchainToPresentBarrier(VkCommandBuffer cmd);
     void CreateSwapchain();
     void CleanupSwapchain();
     void TransitionSwapchainLayouts();
@@ -133,10 +155,13 @@ private:
     VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& formats);
     VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& presentModes);
     VkExtent2D ChooseSwapExtent(GLFWwindow* window, const VkSurfaceCapabilitiesKHR& capabilities);
-    void QueuePresent();
+    uint32_t _currentFrame() const { return static_cast<uint32_t>(_frameCounter % kFramesInFlight); }
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-    void CreateReadbackBuffer();
-    void DestroyReadbackBuffer();
+    void CreateReadbackRing();
+    void DestroyReadbackRing();
+    bool PollReadbackRing();
+    ReadbackSlot& PickReadbackSlot();
+    void RecordReadbackCopy(VkCommandBuffer cmdBuf, int x, int y, VkBuffer dstBuffer);
 };
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(

@@ -69,7 +69,6 @@ private:
 #ifdef USE_VULKAN
     void BeginRendering(VkCommandBuffer cmdBuf, float r, float g, float b, float a, bool isClear);
     void EndRendering(VkCommandBuffer cmdBuf);
-    void ChangeEndLayout(VkCommandBuffer cmdBuf);
 #endif
 
     TouchManager_Common* _touchManager; ///< タッチマネージャー

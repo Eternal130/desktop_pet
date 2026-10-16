@@ -410,13 +410,10 @@ VkSurfaceFormatKHR VulkanBackend::ChooseSwapSurfaceFormat(const std::vector<VkSu
 
 VkPresentModeKHR VulkanBackend::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes)
 {
-    for (uint32_t i = 0; i < availablePresentModes.size(); i++)
-    {
-        if (availablePresentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR)
-        {
-            return availablePresentModes[i];
-        }
-    }
+    // Always-on desktop pet: FIFO (vsync-paced) is the right default — MAILBOX
+    // renders frames that are never displayed and, on drivers where it raises
+    // minImageCount, silently multiplies the Cubism per-drawable buffer sets.
+    (void)availablePresentModes;
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
@@ -452,7 +449,10 @@ void VulkanBackend::CreateSwapchain()
     VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
     _swapchainExtent = ChooseSwapExtent(_window, swapChainSupport.capabilities);
 
-    uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
+    // FIFO + >=3 images: with 2 frames in flight the presentation engine can
+    // hold 2 images (latched + queued) while a 3rd stays acquirable, so acquire
+    // paces at vsync instead of starving against vblank.
+    uint32_t imageCount = std::max(3u, swapChainSupport.capabilities.minImageCount + 1);
     if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)
     {
         imageCount = swapChainSupport.capabilities.maxImageCount;
@@ -503,6 +503,17 @@ void VulkanBackend::CreateSwapchain()
     vkGetSwapchainImagesKHR(_device, _swapchain, &imageCount, nullptr);
     _swapchainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(_device, _swapchain, &imageCount, _swapchainImages.data());
+
+    LAppPal::PrintLogLn("[VulkanBackend] swapchain: present=FIFO, images=%u (requested %u)",
+        imageCount, createInfo.minImageCount);
+    // Cubism s_bufferSetNum is fixed at the initial count via SetConstantSettings;
+    // a different actual count on recreate would desync the SDK's per-set arrays.
+    if (_swapchainImageCount != 0 && imageCount != _swapchainImageCount)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] WARNING: swapchain image count drifted on recreate: %u -> %u "
+            "(Cubism s_bufferSetNum is fixed; model reload required to fully resync)",
+            _swapchainImageCount, imageCount);
+    }
 
     _swapchainImageCount = imageCount;
     _swapchainImageFormat = surfaceFormat.format;
@@ -603,18 +614,50 @@ void VulkanBackend::CreateSyncObjects()
 {
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    if (vkCreateSemaphore(_device, &semaphoreInfo, nullptr, &_imageAvailableSemaphore) != VK_SUCCESS)
-    {
-        LAppPal::PrintLogLn("[VulkanBackend] failed to create semaphore!");
-    }
-
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    if (vkCreateFence(_device, &fenceInfo, nullptr, &_inFlightFence) != VK_SUCCESS)
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // begin-of-frame waits pass immediately
+
+    _imageAvailableSemaphores.resize(kFramesInFlight);
+    _renderFinishedSemaphores.resize(kFramesInFlight);
+    _inFlightFences.resize(kFramesInFlight);
+    _tailCommandBuffers.resize(kFramesInFlight, VK_NULL_HANDLE);
+
+    for (uint32_t i = 0; i < kFramesInFlight; i++)
     {
-        LAppPal::PrintLogLn("[VulkanBackend] failed to create in-flight fence!");
+        if (vkCreateSemaphore(_device, &semaphoreInfo, nullptr, &_imageAvailableSemaphores[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(_device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]) != VK_SUCCESS ||
+            vkCreateFence(_device, &fenceInfo, nullptr, &_inFlightFences[i]) != VK_SUCCESS)
+        {
+            LAppPal::PrintLogLn("[VulkanBackend] failed to create per-frame sync objects!");
+            continue;
+        }
+
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = _commandPool;
+        allocInfo.commandBufferCount = 1;
+        if (vkAllocateCommandBuffers(_device, &allocInfo, &_tailCommandBuffers[i]) != VK_SUCCESS)
+        {
+            LAppPal::PrintLogLn("[VulkanBackend] failed to allocate tail command buffer %u!", i);
+        }
     }
+}
+
+void VulkanBackend::DestroySyncObjects()
+{
+    for (uint32_t i = 0; i < kFramesInFlight && i < _imageAvailableSemaphores.size(); i++)
+        vkDestroySemaphore(_device, _imageAvailableSemaphores[i], nullptr);
+    for (uint32_t i = 0; i < kFramesInFlight && i < _renderFinishedSemaphores.size(); i++)
+        vkDestroySemaphore(_device, _renderFinishedSemaphores[i], nullptr);
+    for (uint32_t i = 0; i < kFramesInFlight && i < _inFlightFences.size(); i++)
+        vkDestroyFence(_device, _inFlightFences[i], nullptr);
+    // tail command buffers are freed with the command pool
+    _imageAvailableSemaphores.clear();
+    _renderFinishedSemaphores.clear();
+    _inFlightFences.clear();
+    _tailCommandBuffers.clear();
 }
 
 // --- Public IGraphicsBackend methods ---
@@ -635,11 +678,14 @@ bool VulkanBackend::InitializeGraphics(GLFWwindow* window)
     ChooseSupportedDepthFormat();
     CreateSwapchain();
     CreateCommandPool();
-    CreateReadbackBuffer();
-    if (_readbackBuffer == VK_NULL_HANDLE)
+    CreateReadbackRing();
+    for (const auto& slot : _readbackRing)
     {
-        LAppPal::PrintLogLn("[VulkanBackend] Failed to create readback buffer, initialization failed");
-        return false;
+        if (slot.buffer == VK_NULL_HANDLE)
+        {
+            LAppPal::PrintLogLn("[VulkanBackend] Failed to create readback ring, initialization failed");
+            return false;
+        }
     }
     TransitionSwapchainLayouts();
     CreateSyncObjects();
@@ -649,35 +695,97 @@ bool VulkanBackend::InitializeGraphics(GLFWwindow* window)
 
 void VulkanBackend::BeginFrame(int width, int height)
 {
-    // Cubism SDK Vulkan renderer submits commands via SubmitCommand() with
-    // vkQueueWaitIdle() synchronization, so our fence is never signaled by
-    // the rendering path. Use vkDeviceWaitIdle to ensure prior work completes
-    // before acquiring the next swapchain image.
-    vkDeviceWaitIdle(_device);
+    (void)width; (void)height;
+    const uint32_t f = _currentFrame();
+
+    // Wait for the frame that last used this slot (N-2) to finish before
+    // reusing its tail command buffer; replaces the old every-frame
+    // vkDeviceWaitIdle device-wide stall.
+    vkWaitForFences(_device, 1, &_inFlightFences[f], VK_TRUE, UINT64_MAX);
 
     VkResult result = vkAcquireNextImageKHR(_device, _swapchain, UINT64_MAX,
-        VK_NULL_HANDLE, VK_NULL_HANDLE, &_imageIndex);
+        _imageAvailableSemaphores[f], VK_NULL_HANDLE, &_imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
+        // Fence intentionally NOT reset and frame counter NOT advanced:
+        // the slot still logically belongs to the last completed frame.
         _isSwapchainInvalid = true;
         return;
     }
     else if (result == VK_SUBOPTIMAL_KHR)
     {
-        _isSwapchainInvalid = true;
+        _isSwapchainInvalid = true; // finish this frame, recreate on next loop
     }
     else if (result != VK_SUCCESS)
     {
         LAppPal::PrintLogLn("[VulkanBackend] failed to acquire swap chain image!");
+        return;
+    }
+
+    vkResetFences(_device, 1, &_inFlightFences[f]); // only after a successful acquire
+    if (_tailCommandBuffers[f] != VK_NULL_HANDLE)
+    {
+        vkResetCommandBuffer(_tailCommandBuffers[f], 0);
     }
 }
 
 void VulkanBackend::EndFrame(GLFWwindow* window)
 {
+    (void)window;
+    const uint32_t f = _currentFrame();
+
+    if (_tailCommandBuffers[f] == VK_NULL_HANDLE)
+    {
+        LAppPal::PrintLogLn("[VulkanBackend] EndFrame: no tail command buffer, skipping frame!");
+        return;
+    }
+
+    // Frame tail: swapchain -> PRESENT_SRC transition (readback copy joins
+    // here later). One submit signals the present semaphore AND arms the
+    // frame fence.
+    VkCommandBuffer cmd = _tailCommandBuffers[f];
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    RecordSwapchainToPresentBarrier(cmd);
+
+    if (_pendingSample.valid)
+    {
+        ReadbackSlot& slot = PickReadbackSlot();
+        RecordReadbackCopy(cmd, _pendingSample.x, _pendingSample.y, slot.buffer);
+        slot.ownerFrame = _frameCounter;
+        _pendingSample.valid = false;
+    }
+
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &_renderFinishedSemaphores[f];
+
+    // No wait semaphore and no drain needed: the SDK's last mid-frame
+    // vkQueueWaitIdle already made every draw complete and available, so this
+    // tail only performs the layout barrier before present.
+    if (vkQueueSubmit(_graphicQueue, 1, &submitInfo, _inFlightFences[f]) != VK_SUCCESS)
+    {
+        // Pathological (device lost). Force a swapchain recreate: sync objects
+        // are recreated signaled there, which also un-wedges this frame slot.
+        LAppPal::PrintLogLn("[VulkanBackend] failed to submit frame tail!");
+        _isSwapchainInvalid = true;
+        return;
+    }
+    _frameCounter++; // slot advances only on a completed frame
+
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = &_renderFinishedSemaphores[f]; // f, not _currentFrame()
     VkSwapchainKHR swapChains[] = {_swapchain};
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapChains;
@@ -695,26 +803,27 @@ void VulkanBackend::EndFrame(GLFWwindow* window)
     }
 }
 
-void VulkanBackend::QueuePresent()
+void VulkanBackend::RecordSwapchainToPresentBarrier(VkCommandBuffer cmd)
 {
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    // Moved verbatim from LAppView::ChangeEndLayout; runs inside the per-frame
+    // tail command buffer in EndFrame.
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask = 0;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.image = GetSwapchainImage();
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-    VkSwapchainKHR swapChains[] = {_swapchain};
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = swapChains;
-    presentInfo.pImageIndices = &_imageIndex;
-
-    VkResult result = vkQueuePresentKHR(_presentQueue, &presentInfo);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || _framebufferResized)
-    {
-        _framebufferResized = false;
-        _isSwapchainInvalid = true;
-    }
-    else if (result != VK_SUCCESS)
-    {
-        LAppPal::PrintLogLn("[VulkanBackend] failed to present swap chain image!");
-    }
+    vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier);
 }
 
 uint32_t VulkanBackend::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
@@ -733,51 +842,74 @@ uint32_t VulkanBackend::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlag
     return UINT32_MAX;
 }
 
-void VulkanBackend::CreateReadbackBuffer()
+void VulkanBackend::CreateReadbackRing()
 {
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = 4;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    if (vkCreateBuffer(_device, &bufferInfo, nullptr, &_readbackBuffer) != VK_SUCCESS)
+    for (size_t i = 0; i < kReadbackRingSize; i++)
     {
-        LAppPal::PrintLogLn("[VulkanBackend] Failed to create readback buffer");
-        return;
+        ReadbackSlot& slot = _readbackRing[i];
+
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = 4;
+        bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateBuffer(_device, &bufferInfo, nullptr, &slot.buffer) != VK_SUCCESS)
+        {
+            LAppPal::PrintLogLn("[VulkanBackend] Failed to create readback buffer %zu", i);
+            slot.buffer = VK_NULL_HANDLE;
+            continue;
+        }
+
+        VkMemoryRequirements memRequirements;
+        vkGetBufferMemoryRequirements(_device, slot.buffer, &memRequirements);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        if (vkAllocateMemory(_device, &allocInfo, nullptr, &slot.memory) != VK_SUCCESS)
+        {
+            LAppPal::PrintLogLn("[VulkanBackend] Failed to allocate readback memory %zu", i);
+            vkDestroyBuffer(_device, slot.buffer, nullptr);
+            slot.buffer = VK_NULL_HANDLE;
+            slot.memory = VK_NULL_HANDLE;
+            continue;
+        }
+
+        vkBindBufferMemory(_device, slot.buffer, slot.memory, 0);
+        if (vkMapMemory(_device, slot.memory, 0, 4, 0,
+                reinterpret_cast<void**>(&slot.mapped)) != VK_SUCCESS)
+        {
+            LAppPal::PrintLogLn("[VulkanBackend] Failed to map readback memory %zu", i);
+            slot.mapped = nullptr;
+        }
     }
-
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(_device, _readbackBuffer, &memRequirements);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-    if (vkAllocateMemory(_device, &allocInfo, nullptr, &_readbackBufferMemory) != VK_SUCCESS)
-    {
-        LAppPal::PrintLogLn("[VulkanBackend] Failed to allocate readback buffer memory");
-        vkDestroyBuffer(_device, _readbackBuffer, nullptr);
-        _readbackBuffer = VK_NULL_HANDLE;
-        return;
-    }
-
-    vkBindBufferMemory(_device, _readbackBuffer, _readbackBufferMemory, 0);
 }
 
-void VulkanBackend::DestroyReadbackBuffer()
+void VulkanBackend::DestroyReadbackRing()
 {
-    if (_readbackBuffer != VK_NULL_HANDLE)
+    for (size_t i = 0; i < kReadbackRingSize; i++)
     {
-        vkDestroyBuffer(_device, _readbackBuffer, nullptr);
-        _readbackBuffer = VK_NULL_HANDLE;
-    }
-    if (_readbackBufferMemory != VK_NULL_HANDLE)
-    {
-        vkFreeMemory(_device, _readbackBufferMemory, nullptr);
-        _readbackBufferMemory = VK_NULL_HANDLE;
+        ReadbackSlot& slot = _readbackRing[i];
+        if (slot.mapped)
+        {
+            vkUnmapMemory(_device, slot.memory);
+            slot.mapped = nullptr;
+        }
+        if (slot.buffer != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(_device, slot.buffer, nullptr);
+            slot.buffer = VK_NULL_HANDLE;
+        }
+        if (slot.memory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(_device, slot.memory, nullptr);
+            slot.memory = VK_NULL_HANDLE;
+        }
+        slot.ownerFrame = UINT64_MAX;
     }
 }
 
@@ -815,7 +947,7 @@ void VulkanBackend::SubmitCommand(VkCommandBuffer commandBuffer, bool isFirstDra
     if (isFirstDraw)
     {
         submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = &_imageAvailableSemaphore;
+        submitInfo.pWaitSemaphores = &_imageAvailableSemaphores[_currentFrame()];
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         submitInfo.pWaitDstStageMask = waitStages;
     }
@@ -825,6 +957,11 @@ void VulkanBackend::SubmitCommand(VkCommandBuffer commandBuffer, bool isFirstDra
         submitInfo.pWaitDstStageMask = waitStages;
     }
 
+    // Retained drain: (a) orders the clear's store before the SDK's first
+    // swapchain LOAD (whose own pre-barrier has srcAccessMask=NONE), and
+    // (b) guarantees the previous frame's tail is complete on model-less
+    // frames where no SDK drain exists. Nearly free: at this point the queue
+    // only holds the previous tail + this submission.
     vkQueueSubmit(_graphicQueue, 1, &submitInfo, VK_NULL_HANDLE);
     vkQueueWaitIdle(_graphicQueue);
     vkFreeCommandBuffers(_device, _commandPool, 1, &commandBuffer);
@@ -850,9 +987,21 @@ void VulkanBackend::CleanupSwapchain()
 void VulkanBackend::RecreateSwapchain()
 {
     vkDeviceWaitIdle(_device);
+    // Sync objects may carry pending signal/wait state across swapchain death;
+    // recreating them (fences created signaled) keeps the frame slots valid.
+    DestroySyncObjects();
     CleanupSwapchain();
+    // Ring results referenced the OLD swapchain's images — drop them rather
+    // than answering click-through with stale pixels.
+    for (auto& slot : _readbackRing)
+    {
+        slot.ownerFrame = UINT64_MAX;
+    }
+    _readbackHasResult = false;
+    _pendingSample.valid = false;
     CreateSwapchain();
     TransitionSwapchainLayouts();
+    CreateSyncObjects();
 }
 
 void VulkanBackend::ReleaseGraphics()
@@ -860,7 +1009,7 @@ void VulkanBackend::ReleaseGraphics()
     vkDeviceWaitIdle(_device); // BUG FIX: first line must be vkDeviceWaitIdle
 
     CleanupSwapchain();
-    DestroyReadbackBuffer();
+    DestroyReadbackRing();
 
     for (auto& [id, tex] : _textureMap)
     {
@@ -870,8 +1019,7 @@ void VulkanBackend::ReleaseGraphics()
     }
     _textureMap.clear();
 
-    vkDestroyFence(_device, _inFlightFence, nullptr);
-    vkDestroySemaphore(_device, _imageAvailableSemaphore, nullptr);
+    DestroySyncObjects();
 
     if (_enableValidationLayers)
     {
@@ -1147,13 +1295,77 @@ void VulkanBackend::DeleteTexture(uint64_t handle)
 
 bool VulkanBackend::IsPixelTransparent(int x, int y, int windowHeight)
 {
-    VkImage swapchainImage = GetSwapchainImage();
-    if (swapchainImage == VK_NULL_HANDLE || _readbackBuffer == VK_NULL_HANDLE)
+    (void)windowHeight; // preserved: the old implementation did not flip Y either
+
+    // Consume the newest finished slot (non-blocking); its fence is the tail
+    // fence of the frame that issued the copy — typically last frame's pixel,
+    // i.e. one frame of latency, acceptable for cursor hit testing.
+    PollReadbackRing();
+
+    // Stash this frame's sample; the EndFrame tail performs the GPU copy as
+    // part of the frame's single tail submit (no extra submit, no drain).
+    _pendingSample.x = x;
+    _pendingSample.y = y;
+    _pendingSample.valid = true;
+
+    return _readbackHasResult ? _readbackCachedResult : true; // pre-first-sample: passthrough
+}
+
+bool VulkanBackend::PollReadbackRing()
+{
+    // Newest-first: iterate from the slot before the write index backwards.
+    for (size_t n = 0; n < kReadbackRingSize; ++n)
     {
+        const size_t idx = (_readbackWriteIndex + kReadbackRingSize - n) % kReadbackRingSize;
+        ReadbackSlot& slot = _readbackRing[idx];
+        if (slot.ownerFrame == UINT64_MAX || slot.mapped == nullptr)
+        {
+            continue;
+        }
+        // Fence-reuse guard: the owner's fence is only meaningful while the
+        // owner is one of the last kFramesInFlight frames.
+        if (_frameCounter - slot.ownerFrame >= kFramesInFlight)
+        {
+            slot.ownerFrame = UINT64_MAX;
+            continue;
+        }
+        if (vkGetFenceStatus(_device, _inFlightFences[slot.ownerFrame % kFramesInFlight]) != VK_SUCCESS)
+        {
+            continue; // copy still in flight
+        }
+        _readbackCachedResult = (slot.mapped[3] == 0); // alpha==0 => transparent (same predicate as before)
+        _readbackHasResult = true;
+        slot.ownerFrame = UINT64_MAX;
         return true;
     }
+    return false;
+}
 
-    VkCommandBuffer cmdBuf = BeginSingleTimeCommands();
+VulkanBackend::ReadbackSlot& VulkanBackend::PickReadbackSlot()
+{
+    _readbackWriteIndex = (_readbackWriteIndex + 1) % kReadbackRingSize;
+    ReadbackSlot& slot = _readbackRing[_readbackWriteIndex];
+    if (slot.ownerFrame != UINT64_MAX)
+    {
+        // Ring overrun: argued unreachable (poll-every-frame + SDK mid-frame
+        // drains), but be robust — drain once so the slot's copy is complete.
+        if (vkGetFenceStatus(_device, _inFlightFences[slot.ownerFrame % kFramesInFlight]) != VK_SUCCESS)
+        {
+            LAppPal::PrintLogLn("[VulkanBackend] readback ring overrun, draining queue");
+            vkQueueWaitIdle(_graphicQueue);
+        }
+        slot.ownerFrame = UINT64_MAX;
+    }
+    return slot;
+}
+
+void VulkanBackend::RecordReadbackCopy(VkCommandBuffer cmdBuf, int x, int y, VkBuffer dstBuffer)
+{
+    // Barrier/copy math preserved verbatim from the old synchronous
+    // IsPixelTransparent; the caller guarantees the swapchain image is in
+    // PRESENT_SRC layout when this runs (right after the to-present barrier
+    // in the same command buffer).
+    VkImage swapchainImage = GetSwapchainImage();
 
     VkImageMemoryBarrier preCopyBarrier{};
     preCopyBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1188,7 +1400,7 @@ bool VulkanBackend::IsPixelTransparent(int x, int y, int windowHeight)
 
     vkCmdCopyImageToBuffer(cmdBuf, swapchainImage,
         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        _readbackBuffer, 1, &region);
+        dstBuffer, 1, &region);
 
     VkImageMemoryBarrier postCopyBarrier = preCopyBarrier;
     postCopyBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -1200,19 +1412,6 @@ bool VulkanBackend::IsPixelTransparent(int x, int y, int windowHeight)
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
         0, nullptr, 0, nullptr, 1, &postCopyBarrier);
-
-    SubmitCommand(cmdBuf);
-
-    uint8_t* data = nullptr;
-    vkMapMemory(_device, _readbackBufferMemory, 0, 4, 0, reinterpret_cast<void**>(&data));
-    uint8_t alpha = 0;
-    if (data)
-    {
-        alpha = data[3];
-        vkUnmapMemory(_device, _readbackBufferMemory);
-    }
-
-    return (alpha == 0);
 }
 
 #endif // USE_VULKAN

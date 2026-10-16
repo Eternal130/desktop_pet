@@ -67,30 +67,6 @@ void LAppView::EndRendering(VkCommandBuffer cmdBuf)
 {
     vkCmdEndRendering(cmdBuf);
 }
-
-void LAppView::ChangeEndLayout(VkCommandBuffer cmdBuf)
-{
-    auto* vkBackend = static_cast<VulkanBackend*>(
-        LAppDelegate::GetInstance()->GetGraphicsBackend());
-
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    barrier.dstAccessMask = 0;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    barrier.image = vkBackend->GetSwapchainImage();
-    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-    vkCmdPipelineBarrier(
-        cmdBuf,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier);
-}
 #endif
 
 void LAppView::Render()
@@ -106,14 +82,11 @@ void LAppView::Render()
     vkBackend->SubmitCommand(cmdBuf, true);
 
     // Step 2: Live2D model rendering
+    // (The layout transition to PRESENT_SRC_KHR moved into
+    // VulkanBackend::EndFrame's per-frame tail command buffer.)
     LAppLive2DManager* live2DManager = LAppLive2DManager::GetInstance();
     live2DManager->SetViewMatrix(_viewMatrix);
     live2DManager->OnUpdate();
-
-    // Step 3: Layout transition to PRESENT_SRC_KHR
-    cmdBuf = vkBackend->BeginSingleTimeCommands();
-    ChangeEndLayout(cmdBuf);
-    vkBackend->SubmitCommand(cmdBuf);
 #else
     LAppLive2DManager* live2DManager = LAppLive2DManager::GetInstance();
     live2DManager->SetViewMatrix(_viewMatrix);

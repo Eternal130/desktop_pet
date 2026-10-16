@@ -16,6 +16,7 @@
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |:---|:---|:---:|:---|:---|
 | `model_path` | string | ✓ | — | 模型短名称（如 `"Hiyori"`），渲染器内部构造完整路径 `Resources/<name>/<name>.model3.json` |
+| `path` | string | ✗ | — | （v1.13 资源隔离）插件数据域模型的**绝对物理路径**（`<dataDir>/PluginData/<插件Id>/Models/<名称>/<名称>.model3.json`，由控制面板解析）。仅在控制面板以插件域作用域加载模型且解析命中时携带；携带时渲染器跳过短名称解析、直接按该路径加载。`model_path` 始终保持**逻辑名称**不变（`model_loaded.model_id` 回显之）；`path` 缺省时维持既有的短名称解析（宿主域行为不变，负载与 v1.13 之前逐字节一致） |
 
 **示例**：
 
@@ -28,12 +29,32 @@
 }
 ```
 
+插件域作用域加载示例（`path` 仅在命中时出现）：
+
+```json
+{
+  "type": "command", "action": "load_model",
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "payload": { "model_path": "Hiyori",
+               "path": "/home/user/.local/share/desktop-pet/PluginData/com.example.pet/Models/Hiyori/Hiyori.model3.json" },
+  "timestamp": 1710000000000
+}
+```
+
 **渲染器处理流程**：
+
+**路径模式**（v1.13，payload 携带非空 `path` 时）：
+1. 校验 `model_path` 非空、`path` 为以 `.model3.json` 结尾的**绝对路径**且不含 `..`，否则返回错误 `1001`（跳过短名称校验与 `Resources/` 预检）
+2. 校验 `path` 指向的文件存在，否则返回错误 `1001`（`"Model path not found: <path>"`）
+
+**短名称模式**（`path` 缺省或为空 — v1.13 之前唯一模式）：
 1. 校验 `model_path` 非空，否则返回错误 `1001`
 2. 验证模型路径 `Resources/<model_path>/` 是否存在，否则返回错误 `1001`
-3. 执行模型切换（卸载旧模型 → 加载新模型）
-4. 发送 Response（`success: true`）
-5. 发送 `model_loaded` 事件
+
+两种模式随后共用同一尾部：
+1. 执行模型切换（卸载旧模型 → 加载新模型）
+2. 发送 Response（`success: true`）
+3. 发送 `model_loaded` 事件
 
 **成功 Response**：
 

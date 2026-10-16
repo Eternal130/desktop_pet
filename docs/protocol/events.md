@@ -110,6 +110,7 @@
 
 | 字段 | 类型 | 说明 |
 |:---|:---|:---|
+| `model_id` | string | 回显失败加载的**逻辑名称**（即 `load_model` 负载的 `model_path`）。v1.13 起渲染器**总是**携带该字段（此前的实现仅在部分路径携带）；唯一例外是 `model_path` 本身为空的畸形请求边缘，此时为 `""`。控制面板的回滚匹配以此字段为准 |
 | `error_code` | int | 错误码（见 [错误码](./error-codes.md)） |
 | `error_message` | string | 错误描述 |
 

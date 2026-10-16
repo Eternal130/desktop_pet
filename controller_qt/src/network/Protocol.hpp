@@ -40,7 +40,14 @@ namespace Protocol {
 
 // §A.1 — load/replace model. modelPath is the short name ("Hiyori"); the
 // renderer constructs Resources/<name>/<name>.model3.json internally.
-Envelope buildLoadModel(const QString& modelPath);
+// v1.13 (resource isolation): the optional absPath is the ABSOLUTE
+// physical path of a plugin-domain <Name>.model3.json, sent ONLY when
+// non-empty — the payload then carries `model_path` = the LOGICAL name
+// (unchanged; model_loaded.model_id echoes it) plus `path` = absPath, and
+// the renderer bypasses its Resources/ short-name resolution. Empty
+// absPath produces the byte-identical legacy payload (model_path only).
+Envelope buildLoadModel(const QString& modelPath,
+                        const QString& absPath = QString());
 
 // §A.2 — window top-left in screen pixels (origin top-left, Y down).
 Envelope buildSetPosition(int x, int y);

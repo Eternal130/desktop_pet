@@ -30,6 +30,7 @@ private slots:
 
     // ── Per-builder payload matches interface.md §5 / fixture ───────────
     void testLoadModel();
+    void testLoadModelScopedPathVariant(); // v1.13 optional `path` field
     void testSetPosition();
     void testSetSize();
     void testSetOpacity();
@@ -130,6 +131,48 @@ void ProtocolFactoryTest::verifyCommand(const QString& action, const Envelope& e
 void ProtocolFactoryTest::testLoadModel() {
     verifyCommand(QStringLiteral("load_model"),
                   Protocol::buildLoadModel(QStringLiteral("Hiyori")));
+}
+
+// v1.13 (resource isolation): the optional `path` variant. model_path
+// stays the LOGICAL name; `path` (the absolute plugin-domain
+// .model3.json) is added ONLY when non-empty. The empty-absPath call is
+// byte-identical to the legacy single-key payload (covered by
+// testLoadModel against the fixture); this slot locks the scoped shape
+// WITHOUT mutating the canonical fixture (ProtocolFixturesTest's
+// catalog-integrity expectations keep describing the host form).
+void ProtocolFactoryTest::testLoadModelScopedPathVariant() {
+    const QString abs = QStringLiteral(
+        "/data/PluginData/com.example.pet/Models/X/X.model3.json");
+    const Envelope env = Protocol::buildLoadModel(
+        QStringLiteral("Hiyori"), abs);
+
+    // Cross-cutting invariants (the verifyCommand tail minus the fixture
+    // payload equality, which by design differs for the scoped variant).
+    QCOMPARE(env.type, QStringLiteral("command"));
+    QCOMPARE(env.action, QStringLiteral("load_model"));
+    const QJsonObject root = serialize(env).object();
+    QCOMPARE(root.value("type").toString(), QStringLiteral("command"));
+    QCOMPARE(root.value("action").toString(), QStringLiteral("load_model"));
+    QVERIFY2(!env.id.isEmpty(), "id must be non-empty");
+    QVERIFY2(!root.contains(QStringLiteral("success")),
+             "command must not carry 'success'");
+    QVERIFY2(!root.contains(QStringLiteral("error_code")),
+             "command must not carry 'error_code'");
+    QVERIFY2(!root.contains(QStringLiteral("error_message")),
+             "command must not carry 'error_message'");
+
+    // Payload: exactly {model_path, path} with the documented semantics.
+    QCOMPARE(env.payload.size(), 2);
+    QCOMPARE(env.payload.value(QStringLiteral("model_path")).toString(),
+             QStringLiteral("Hiyori"));
+    QCOMPARE(env.payload.value(QStringLiteral("path")).toString(), abs);
+
+    // Explicit empty absPath → single-key payload, byte-identical to the
+    // fixture's load_model case.
+    const Envelope host = Protocol::buildLoadModel(
+        QStringLiteral("Hiyori"), QString());
+    QCOMPARE(host.payload, fixturePayload(QStringLiteral("load_model")));
+    QCOMPARE(host.payload.size(), 1);
 }
 
 void ProtocolFactoryTest::testSetPosition() {

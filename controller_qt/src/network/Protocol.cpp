@@ -7,9 +7,13 @@ namespace Protocol {
 
 // ── Startup salvo ──────────────────────────────────────────────────────────
 
-Envelope buildLoadModel(const QString& modelPath) {
+Envelope buildLoadModel(const QString& modelPath, const QString& absPath) {
     QJsonObject p;
     p.insert(QStringLiteral("model_path"), modelPath);
+    // v1.13: `path` rides along ONLY for scoped (plugin-domain) loads —
+    // the host-domain single-key payload is byte-identical to pre-v1.13.
+    if (!absPath.isEmpty())
+        p.insert(QStringLiteral("path"), absPath);
     return createCommand(QLatin1String("load_model"), p);
 }
 

@@ -14,7 +14,7 @@
 #   3. GLFW 3.4     : downloads and extracts to Samples/OpenGL/thirdParty/glfw
 #
 # Environment overrides:
-#   CUBISM_SDK_VERSION  SDK version to fetch (default: 5-r.5-beta.3.1 - MUST
+#   CUBISM_SDK_VERSION  SDK version to fetch (default: 5-r.5 - MUST
 #                       match the submodule tag in .gitmodules)
 #   CUBISM_SDK_URL      Full zip URL override (e.g. a local mirror)
 #   FORCE=1             Re-fetch Cubism Core even if already populated
@@ -101,7 +101,7 @@ function(bs_fetch_cubism_core)
     if(DEFINED ENV{CUBISM_SDK_VERSION} AND NOT "$ENV{CUBISM_SDK_VERSION}" STREQUAL "")
         set(_version "$ENV{CUBISM_SDK_VERSION}")
     else()
-        set(_version "5-r.5-beta.3.1")
+        set(_version "5-r.5")
     endif()
     if(DEFINED ENV{CUBISM_SDK_URL} AND NOT "$ENV{CUBISM_SDK_URL}" STREQUAL "")
         set(_url "$ENV{CUBISM_SDK_URL}")

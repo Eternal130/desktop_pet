@@ -178,7 +178,11 @@ LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(
 
     // Create ImageView + Sampler
     textureImage.CreateView(device, format, VK_IMAGE_ASPECT_COLOR_BIT, _mipLevels);
-    textureImage.CreateSampler(device, anisotropy, _mipLevels);
+    // Cubism SDK 5-r.5: unified sampler settings API. CLAMP_TO_EDGE + LINEAR
+    // preserves the pre-5-r.5 hardcoded sampler behavior for sprite textures.
+    textureImage.CreateSampler(device, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        anisotropy, _mipLevels);
     _textures.PushBack(textureImage);
 
     // Create TextureInfo

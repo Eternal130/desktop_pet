@@ -111,7 +111,7 @@
 
 | 组件 | 语言 | 版本 | 关键依赖 | 阶段 |
 |:---|:---|:---|:---|:---|
-| 渲染引擎 | C++17 | GCC ≥ 11.4 / MinGW-w64 (GCC 13+) / CMake ≥ 3.22 | Cubism Native SDK 5-r.5-beta.3.1（兼容 Cubism 5/5.3）、GLFW 3.4、GLEW 2.2.0（OpenGL 后端）、Vulkan SDK（Vulkan 后端） | ✅ MVP + Phase 2.x |
+| 渲染引擎 | C++17 | GCC ≥ 11.4 / MinGW-w64 (GCC 13+) / CMake ≥ 3.22 | Cubism Native SDK 5-r.5（兼容 Cubism 5/5.3）、GLFW 3.4、GLEW 2.2.0（OpenGL 后端）、Vulkan SDK（Vulkan 后端） | ✅ MVP + Phase 2.x |
 | 通信模块（渲染引擎端） | C++ | 同上 | IXWebSocket 11.4.6（Client）、nlohmann/json 3.12.0 | ✅ Phase 1 |
 | 音频模块（渲染器侧） | C++ | 同上 | miniaudio（single-header vendored）、libogg 1.3.5 + libvorbis 1.3.7（CMake FetchContent） | ✅ Phase 3b 渲染器侧已实现，控制器侧待实现 |
 | 控制面板（Qt 6） | C++17 | Qt 6.10 / MinGW 13.1.0 / CMake ≥ 3.22 / Ninja | Qt6（Core, Gui, Widgets, Network, WebSockets, Qml, Quick, QuickControls2, Concurrent, Charts, Test）、spdlog 1.15.0（CMake FetchContent） | ✅ Phase 5-9 已完成（controller_qt） |

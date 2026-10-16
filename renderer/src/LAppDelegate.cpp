@@ -144,7 +144,9 @@ bool LAppDelegate::Initialize()
     // Phase 2.2: Inject Vulkan device info into CubismRenderer_Vulkan static state
     {
         auto* vkBackend = static_cast<VulkanBackend*>(_graphicsBackend);
-        Live2D::Cubism::Framework::Rendering::CubismRenderer_Vulkan::InitializeConstantSettings(
+        // Cubism SDK 5-r.5: InitializeConstantSettings renamed to SetConstantSettings
+        // (Vulkan renderer moved from singletons to CubismDeviceInfo_Vulkan)
+        Live2D::Cubism::Framework::Rendering::CubismRenderer_Vulkan::SetConstantSettings(
             vkBackend->GetDevice(),
             vkBackend->GetPhysicalDevice(),
             vkBackend->GetCommandPool(),

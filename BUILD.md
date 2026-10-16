@@ -24,7 +24,7 @@ cd renderer     && cmake --workflow --preset linux-gl-release # Windows 用 win-
 | 依赖 | 说明 |
 |:---|:---|
 | CMake ≥ 3.25 | Linux: `sudo apt install cmake`（发行版版本过旧时用 [Kitware 官方 apt 源](https://apt.kitware.com/)）；Windows: 官方安装器或 Qt Maintenance Tool |
-| git submodule | `third_party/CubismSdkForNative`（固定于 tag `5-r.5-beta.3.1`，Core 二进制不在 repo 内，由 Bootstrap.cmake 下载） |
+| git submodule | `third_party/CubismSdkForNative`（固定于 tag `5-r.5`，Core 二进制不在 repo 内，由 Bootstrap.cmake 下载） |
 | Ninja | Linux 必装（`sudo apt install ninja-build`，两组件 Linux preset 均为 Ninja generator）。Windows 无需单独安装：两组件 win preset 均用 Qt 自带 Ninja（toolchain 钉死） |
 
 ### Renderer（C++ 渲染引擎）

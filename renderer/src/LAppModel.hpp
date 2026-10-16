@@ -22,6 +22,8 @@
 
 namespace Network { class EventEmitter; }
 
+namespace Live2D { namespace Cubism { namespace Framework { class CubismLookUpdater; } } }
+
 /**
  * @brief ユーザーが実際に使用するモデルの実装クラス<br>
  *         モデル生成、機能コンポーネント生成、更新処理とレンダリングの呼び出しを行う。
@@ -249,6 +251,15 @@ private:
     const Csm::CubismId* _idParamBodyAngleX; ///< パラメータID: ParamBodyAngleX
     const Csm::CubismId* _idParamEyeBallX; ///< パラメータID: ParamEyeBallX
     const Csm::CubismId* _idParamEyeBallY; ///< パラメータID: ParamEyeBallXY
+
+    // Cubism SDK 5-r.5 replacements for removed CubismUserModel members:
+    // - _dragX/_dragY -> CubismLook + CubismLookUpdater (registered in the
+    //   base-class CubismUpdateScheduler during SetupModel)
+    // - _lipSync      -> local gate for the dual-source lip sync block
+    //   (voice-pack timeline Set / wav RMS Add; the official single-source
+    //   CubismLipSyncUpdater only supports the Add(0.8) style)
+    Csm::CubismLookUpdater* _lookUpdater = nullptr; ///< Look更新器（CubismUpdateScheduler注册）
+    bool _lipSyncEnabled = true; ///< リップシンク適用の有効フラグ
 
     LAppWavFileHandler_Common _wavFileHandler; ///< wavファイルハンドラ
 

@@ -78,7 +78,14 @@ private:
 
     bool _isSwapchainInvalid = false;
     bool _framebufferResized = false;
+    // Validation layers are debug-only: the Khronos validation stack costs
+    // ~150-400MB RSS and floods the log every frame. Release builds (NDEBUG)
+    // must ship without it.
+#ifdef NDEBUG
+    bool _enableValidationLayers = false;
+#else
     bool _enableValidationLayers = true;
+#endif
 
     GLFWwindow* _window = nullptr;
 

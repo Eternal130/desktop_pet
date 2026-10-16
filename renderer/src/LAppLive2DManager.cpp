@@ -17,7 +17,7 @@
 #include "network/EventEmitter.hpp"
 
 #ifdef USE_VULKAN
-#include <Rendering/Vulkan/CubismOffscreenManager_Vulkan.hpp>
+#include <Rendering/Vulkan/CubismDeviceInfo_Vulkan.hpp>
 #include <Rendering/Vulkan/CubismRenderer_Vulkan.hpp>
 #include "graphics/VulkanBackend.hpp"
 #endif
@@ -71,7 +71,8 @@ LAppLive2DManager::LAppLive2DManager()
 LAppLive2DManager::~LAppLive2DManager()
 {
 #ifdef USE_VULKAN
-    Csm::Rendering::CubismOffscreenManager_Vulkan::ReleaseInstance();
+    // Cubism SDK 5-r.5: per-device CubismDeviceInfo_Vulkan replaces the offscreen singleton
+    Csm::Rendering::CubismDeviceInfo_Vulkan::ReleaseAllDeviceInfo();
 #endif
     ReleaseAllModel();
     delete _viewMatrix;
@@ -209,11 +210,11 @@ const std::vector<std::string>& LAppLive2DManager::GetHitAreaNames() const
 void LAppLive2DManager::OnUpdate() const
 {
 #ifdef USE_VULKAN
-    Csm::Rendering::CubismOffscreenManager_Vulkan::GetInstance()->BeginFrameProcess();
-
     {
         auto* vkBackend = static_cast<VulkanBackend*>(
             LAppDelegate::GetInstance()->GetGraphicsBackend());
+        Csm::Rendering::CubismDeviceInfo_Vulkan::GetDeviceInfo(vkBackend->GetDevice())
+            ->GetOffscreenManager()->BeginFrameProcess();
         Live2D::Cubism::Framework::Rendering::CubismRenderer_Vulkan::SetRenderTarget(
             vkBackend->GetSwapchainImage(),
             vkBackend->GetSwapchainImageView(),
@@ -257,8 +258,14 @@ void LAppLive2DManager::OnUpdate() const
     }
 
 #ifdef USE_VULKAN
-    Csm::Rendering::CubismOffscreenManager_Vulkan::GetInstance()->EndFrameProcess();
-    Csm::Rendering::CubismOffscreenManager_Vulkan::GetInstance()->ReleaseStaleRenderTextures();
+    {
+        auto* vkBackend = static_cast<VulkanBackend*>(
+            LAppDelegate::GetInstance()->GetGraphicsBackend());
+        auto* offscreenManager = Csm::Rendering::CubismDeviceInfo_Vulkan::GetDeviceInfo(
+            vkBackend->GetDevice())->GetOffscreenManager();
+        offscreenManager->EndFrameProcess();
+        offscreenManager->ReleaseStaleRenderTextures();
+    }
 #endif
 }
 

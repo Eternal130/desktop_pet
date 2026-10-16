@@ -22,6 +22,8 @@
 #include <Utils/CubismString.hpp>
 #include <Id/CubismIdManager.hpp>
 #include <Motion/CubismMotionQueueEntry.hpp>
+#include <Effect/CubismLook.hpp>
+#include <Motion/CubismLookUpdater.hpp>
 #include "LAppDefine.hpp"
 #include "LAppPal.hpp"
 #include "LAppTextureManager.hpp"
@@ -53,6 +55,11 @@ LAppModel::LAppModel()
 
 LAppModel::~LAppModel()
 {
+    // Unregister + free the Look updater (scheduler holds a raw pointer and
+    // does not own it; _look itself is owned/deleted by CubismUserModel).
+    CSM_DELETE(_lookUpdater);
+    _lookUpdater = nullptr;
+
     ReleaseMotions();
     ReleaseExpressions();
 
@@ -248,6 +255,24 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         }
     }
 
+    // Cubism SDK 5-r.5: drag→parameter mapping moved from manual _dragX/_dragY
+    // math to CubismLook. Factors match the previous manual multipliers exactly
+    // (AngleX×30, AngleY×30, AngleZ×XY−30, BodyAngleX×10, EyeBall×1).
+    {
+        _look = CubismLook::Create();
+        csmVector<CubismLook::LookParameterData> lookParameters;
+        lookParameters.PushBack(CubismLook::LookParameterData(_idParamAngleX, 30.0f));
+        lookParameters.PushBack(CubismLook::LookParameterData(_idParamAngleY, 0.0f, 30.0f));
+        lookParameters.PushBack(CubismLook::LookParameterData(_idParamAngleZ, 0.0f, 0.0f, -30.0f));
+        lookParameters.PushBack(CubismLook::LookParameterData(_idParamBodyAngleX, 10.0f));
+        lookParameters.PushBack(CubismLook::LookParameterData(_idParamEyeBallX, 1.0f));
+        lookParameters.PushBack(CubismLook::LookParameterData(_idParamEyeBallY, 0.0f, 1.0f));
+        _look->SetParameters(lookParameters);
+
+        _lookUpdater = CSM_NEW CubismLookUpdater(*_look, *_dragManager);
+        _updateScheduler.AddUpdatableList(_lookUpdater);
+    }
+
     if (_modelSetting == NULL || _modelMatrix == NULL)
     {
         LAppPal::PrintLogLn("Failed to SetupModel().");
@@ -359,8 +384,6 @@ void LAppModel::Update()
     _userTimeSeconds += deltaTimeSeconds;
 
     _dragManager->Update(deltaTimeSeconds);
-    _dragX = _dragManager->GetX();
-    _dragY = _dragManager->GetY();
 
     // モーションによるパラメータ更新の有無
     csmBool motionUpdated = false;
@@ -393,17 +416,9 @@ void LAppModel::Update()
     }
 
     //ドラッグによる変化
-    //ドラッグによる顔の向きの調整
-    _model->AddParameterValue(_idParamAngleX, _dragX * 30); // -30から30の値を加える
-    _model->AddParameterValue(_idParamAngleY, _dragY * 30);
-    _model->AddParameterValue(_idParamAngleZ, _dragX * _dragY * -30);
-
-    //ドラッグによる体の向きの調整
-    _model->AddParameterValue(_idParamBodyAngleX, _dragX * 10); // -10から10の値を加える
-
-    //ドラッグによる目の向きの調整
-    _model->AddParameterValue(_idParamEyeBallX, _dragX); // -1から1の値を加える
-    _model->AddParameterValue(_idParamEyeBallY, _dragY);
+    // Cubism SDK 5-r.5: drag-driven face/body/eye parameters are applied by the
+    // CubismLookUpdater registered in SetupModel (reads _dragManager directly).
+    _updateScheduler.OnLateUpdate(_model, deltaTimeSeconds);
 
     // 呼吸など
     if (_breath != NULL)
@@ -418,7 +433,7 @@ void LAppModel::Update()
     }
 
     // リップシンクの設定
-    if (_lipSync)
+    if (_lipSyncEnabled)
     {
         csmFloat32 value = 0.0f;
 

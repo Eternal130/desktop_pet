@@ -466,4 +466,22 @@ if(BUILD_TESTS)
 
     include(GoogleTest)
     gtest_discover_tests(renderer_tests)
+
+    # WebSocket lifecycle smoke test: real renderer + minimal WS controller
+    # (salvo_server.py) replaying load_model x2 and shutdown. Regression guard
+    # for the model reload/destruction path (e.g. the CubismLookUpdater double
+    # free) that the gtest suite cannot reach — it never links the Framework
+    # or instantiates LAppModel. Self-skips (exit 77) without python3 or a
+    # display; bash+python3 are not assumed on Windows, hence the guard.
+    if(NOT WIN32)
+        add_test(
+            NAME WebSocketSmokeTest
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/websocket_smoke_test.sh
+                    $<TARGET_FILE:desktop-pet-renderer> Hiyori)
+        set_tests_properties(WebSocketSmokeTest PROPERTIES
+            LABELS "REQUIRES_RENDERER"
+            TIMEOUT 90
+            SKIP_RETURN_CODE 77
+            WORKING_DIRECTORY $<TARGET_FILE_DIR:desktop-pet-renderer>)
+    endif()
 endif()

@@ -1,82 +1,74 @@
 #!/bin/bash
-# WebSocket Integration Smoke Test
-# Tests end-to-end WebSocket communication with the renderer
-
-set -e
+# WebSocket lifecycle smoke test (ctest-registered; label: REQUIRES_RENDERER)
+#
+# Spins up a minimal WS "controller" (salvo_server.py) that replays the
+# startup salvo's load_model N times and then sends shutdown — exercising
+# the model reload/destruction path end-to-end (the class of bug behind the
+# CubismLookUpdater double free) plus graceful teardown. The gtest suite
+# never instantiates LAppModel/LAppDelegate, so this is the only automated
+# coverage for that path.
+#
+# Args: $1 = renderer binary (injected by CTest), $2 = model name
+# Skips (exit 77) without python3 or a display; fails (exit 1) on crash,
+# corruption signatures, missing reloads, or a non-graceful exit.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RENDERER_BIN="$SCRIPT_DIR/../../build/bin/desktop-pet-renderer/desktop-pet-renderer"
-EVIDENCE_DIR="$SCRIPT_DIR/../../../.sisyphus/evidence"
-mkdir -p "$EVIDENCE_DIR"
+RENDERER_BIN="${1:?usage: websocket_smoke_test.sh <renderer-binary> [model]}"
+MODEL="${2:-Hiyori}"
+RELOADS=2
+PORT=19876
 
-echo "=== WebSocket Integration Smoke Test ==="
-echo "Renderer: $RENDERER_BIN"
+echo "=== WebSocket lifecycle smoke test ==="
+echo "renderer: $RENDERER_BIN  model: $MODEL  reloads: $RELOADS"
 
-# Check renderer binary exists
-if [ ! -f "$RENDERER_BIN" ]; then
-    echo "ERROR: Renderer binary not found at $RENDERER_BIN"
-    echo "Run: cmake --build renderer/build"
-    exit 1
+[ -x "$RENDERER_BIN" ] || { echo "FAIL: renderer binary not found/executable: $RENDERER_BIN"; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "SKIP: python3 not available"; exit 77; }
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    echo "SKIP: no display (DISPLAY/WAYLAND_DISPLAY unset) — headless environment"
+    exit 77
 fi
 
-# Check websocat availability
-if ! command -v websocat &>/dev/null; then
-    echo "SKIP: websocat not found. Install with: cargo install websocat"
-    echo "      or: apt install websocat"
-    echo "SMOKE_TEST_RESULT: SKIP (websocat not available)"
+SRV_LOG="$(mktemp /tmp/opencode/ws-smoke-srv.XXXXXX.log)"
+RENDERER_LOG="$(mktemp /tmp/opencode/ws-smoke-renderer.XXXXXX.log)"
+SRV_PID=""
+trap '[ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null; rm -f "$SRV_LOG" "$RENDERER_LOG"' EXIT
+
+python3 "$SCRIPT_DIR/salvo_server.py" "$PORT" "$MODEL" "$RELOADS" >"$SRV_LOG" 2>&1 &
+SRV_PID=$!
+for _ in $(seq 1 50); do
+    grep -q listening "$SRV_LOG" 2>/dev/null && break
+    sleep 0.1
+done
+grep -q listening "$SRV_LOG" || { echo "FAIL: salvo server did not start"; cat "$SRV_LOG"; exit 1; }
+
+# cwd must contain Resources/ (CTest WORKING_DIRECTORY = binary output dir).
+timeout 45 "$RENDERER_BIN" --port "$PORT" --model "$MODEL" --width 300 --height 400 >"$RENDERER_LOG" 2>&1
+RC=$?
+
+echo "--- server log ---"
+cat "$SRV_LOG"
+echo "--- renderer tail ---"
+tail -5 "$RENDERER_LOG"
+
+FAIL=0
+if [ "$RC" -ne 0 ]; then
+    echo "FAIL: renderer exit code $RC (expected graceful 0; 124 = shutdown ignored/never arrived)"
+    FAIL=1
+fi
+grep -q 'handshake done' "$SRV_LOG" || { echo "FAIL: renderer never completed the WS handshake"; FAIL=1; }
+LOADS=$(grep -c 'load model setting' "$RENDERER_LOG" || true)
+EXPECTED=$((RELOADS + 1))
+if [ "${LOADS:-0}" -lt "$EXPECTED" ]; then
+    echo "FAIL: expected >= $EXPECTED model loads (startup + $RELOADS reloads), saw ${LOADS:-0}"
+    FAIL=1
+fi
+if grep -qaE 'double free|corruption|Segmentation fault|SIGABRT|Assertion' "$RENDERER_LOG"; then
+    echo "FAIL: memory-corruption signature in renderer output"
+    FAIL=1
+fi
+
+if [ "$FAIL" -eq 0 ]; then
+    echo "=== SMOKE_TEST_RESULT: PASS (loads=$LOADS, graceful exit=$RC) ==="
     exit 0
 fi
-
-echo "websocat found: $(which websocat)"
-
-# Test 1: Standalone mode (no --ws-url)
-echo ""
-echo "--- Test 1: Standalone mode ---"
-timeout 3 "$RENDERER_BIN" 2>&1 | head -5 || true
-echo "STANDALONE: OK (renderer ran without crash)"
-
-# Test 2: --help flag
-echo ""
-echo "--- Test 2: --help flag ---"
-"$RENDERER_BIN" --help 2>&1 | tee /tmp/smoke-help.txt
-if grep -q "ws-url" /tmp/smoke-help.txt; then
-    echo "HELP: PASS"
-else
-    echo "HELP: FAIL (--ws-url not in help output)"
-    exit 1
-fi
-
-# Test 3: WebSocket connection and ready event
-echo ""
-echo "--- Test 3: WebSocket ready event ---"
-WS_OUTPUT="/tmp/smoke-ws-output.txt"
-rm -f "$WS_OUTPUT"
-
-# Start websocat server
-websocat -s 19876 > "$WS_OUTPUT" 2>/dev/null &
-WS_PID=$!
-sleep 1
-
-# Start renderer with ws-url (may fail in headless env)
-RENDERER_EXIT=0
-timeout 5 "$RENDERER_BIN" --ws-url ws://localhost:19876 2>&1 || RENDERER_EXIT=$?
-
-# Stop websocat
-kill $WS_PID 2>/dev/null || true
-sleep 0.5
-
-# Check for ready event OR headless failure
-if grep -q '"action":"ready"' "$WS_OUTPUT" 2>/dev/null; then
-    echo "READY_EVENT: PASS"
-elif [ -z "$(cat "$WS_OUTPUT" 2>/dev/null)" ]; then
-    echo "READY_EVENT: SKIP_NO_DISPLAY (renderer likely failed to initialize display)"
-else
-    echo "READY_EVENT: FAIL"
-    echo "WS output was:"
-    cat "$WS_OUTPUT" 2>/dev/null || echo "(empty)"
-    exit 1
-fi
-
-echo ""
-echo "=== SMOKE_TEST_RESULT: PASS ==="
-echo "All smoke tests passed!"
+exit 1

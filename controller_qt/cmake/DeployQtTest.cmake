@@ -87,8 +87,8 @@ function(_pet_deploy_qt_impl _pet_target _pet_comment)
     # when the target relinks.
     add_custom_command(TARGET "${_pet_target}" POST_BUILD
         COMMAND "${CMAKE_COMMAND}"
-                -DDEPLOY_TOOL="${PET_WINDEPLOYQT_EXE}"
-                -DDEPLOY_LOCK_FILE="${CMAKE_BINARY_DIR}/.pet-windeployqt.lock"
+                -DDEPLOY_TOOL=${PET_WINDEPLOYQT_EXE}
+                -DDEPLOY_LOCK_FILE=${CMAKE_BINARY_DIR}/.pet-windeployqt.lock
                 "-DDEPLOY_ARGS=${ARGN}"
                 -P "${_PET_DEPLOYQT_CMAKE_DIR}/DeployQtLocked.cmake"
         VERBATIM

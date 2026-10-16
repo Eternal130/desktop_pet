@@ -19,6 +19,17 @@
 #         -P DeployQtLocked.cmake
 # -----------------------------------------------------------------------------
 
+# Defensive normalization: inner quotes around -D values on the Windows
+# cmd.exe command line survive into the VALUE (\" → literal " through the
+# CRT arg parser) and mangle absolute paths into garbage like
+#   <cwd>"D:/abs/path"  →  "directory creation failed".
+# Strip any stray quotes, then re-anchor to absolute (script-mode cwd is
+# the CALLER's working directory, not the binary dir).
+foreach(_var DEPLOY_TOOL DEPLOY_LOCK_FILE)
+    string(REPLACE "\"" "" "${_var}" "${${_var}}")
+    get_filename_component("${_var}" "${${_var}}" ABSOLUTE)
+endforeach()
+
 file(LOCK "${DEPLOY_LOCK_FILE}" GUARD PROCESS)
 
 execute_process(

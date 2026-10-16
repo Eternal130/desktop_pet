@@ -72,8 +72,20 @@ function(_pet_deploy_qt_impl _pet_target _pet_comment)
         return()
     endif()
     set_target_properties("${_pet_target}" PROPERTIES PET_QT_DEPLOY_DONE TRUE)
+    # Serialized invocation: ninja links test targets in parallel and every
+    # POST_BUILD windeployqt deploys into the SAME binary dir — two of them
+    # racing on the same Qt DLL abort the build ("Destination file exists",
+    # CI 2026-10-16). The wrapper takes a process-guarded file lock, so the
+    # deploys run one at a time (first copies, the rest are quick "up to
+    # date" scans). Incremental semantics unchanged: POST_BUILD re-runs only
+    # when the target relinks.
     add_custom_command(TARGET "${_pet_target}" POST_BUILD
-        COMMAND "${PET_WINDEPLOYQT_EXE}" ${ARGN}
+        COMMAND "${CMAKE_COMMAND}"
+                -DDEPLOY_TOOL="${PET_WINDEPLOYQT_EXE}"
+                -DDEPLOY_LOCK_FILE="${CMAKE_BINARY_DIR}/.pet-windeployqt.lock"
+                "-DDEPLOY_ARGS=${ARGN}"
+                -P "${CMAKE_CURRENT_LIST_DIR}/DeployQtLocked.cmake"
+        VERBATIM
         COMMENT "${_pet_comment}")
 endfunction()
 

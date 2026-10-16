@@ -55,11 +55,10 @@ LAppModel::LAppModel()
 
 LAppModel::~LAppModel()
 {
-    // Unregister + free the Look updater (scheduler holds a raw pointer and
-    // does not own it; _look itself is owned/deleted by CubismUserModel).
-    CSM_DELETE(_lookUpdater);
-    _lookUpdater = nullptr;
-
+    // NOTE: the Look updater registered in SetupModel is OWNED by the base
+    // CubismUpdateScheduler — its destructor CSM_DELETEs every registered
+    // updater, so it must NOT be freed here (double free => heap corruption).
+    // _look itself is owned/deleted by the CubismUserModel base.
     ReleaseMotions();
     ReleaseExpressions();
 
@@ -269,9 +268,12 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         lookParameters.PushBack(CubismLook::LookParameterData(_idParamEyeBallY, 0.0f, 1.0f));
         _look->SetParameters(lookParameters);
 
-        _lookUpdater = CSM_NEW CubismLookUpdater(*_look, *_dragManager);
-        _updateScheduler.AddUpdatableList(_lookUpdater);
+        // Ownership: CubismUpdateScheduler deletes registered updaters in its
+        // own destructor — never free this pointer elsewhere.
+        _updateScheduler.AddUpdatableList(CSM_NEW CubismLookUpdater(*_look, *_dragManager));
     }
+
+    _updateScheduler.SortUpdatableList();
 
     if (_modelSetting == NULL || _modelMatrix == NULL)
     {

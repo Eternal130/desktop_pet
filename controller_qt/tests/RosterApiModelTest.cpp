@@ -103,6 +103,11 @@ public:
     {
         return pet::PluginError::Ok;
     }
+    // v1.11 tail append — keeps the fake concrete (not a bridge surface).
+    pet::PluginError setAvatar(const QString&, const QString&) override
+    {
+        return pet::PluginError::Ok;
+    }
 
     pet::InstanceSpec lastSpec;
     QString lastRemovedUuid;

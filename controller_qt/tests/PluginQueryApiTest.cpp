@@ -204,6 +204,8 @@ void PluginQueryApiTest::testGatingMatrix()
         QCOMPARE(control->restart(QStringLiteral("nope")), pet::PluginError::Capability);
         QCOMPARE(control->loadModel(QStringLiteral("nope"), QStringLiteral("M")),
                  pet::PluginError::Capability);
+        QCOMPARE(control->setAvatar(QStringLiteral("nope"), QStringLiteral("🐶")),
+                 pet::PluginError::Capability);
         QCOMPARE(mgr.rowCount(), before); // stub never touched the roster
         writeSwitch = true;
     }
@@ -219,6 +221,8 @@ void PluginQueryApiTest::testGatingMatrix()
         pet::InstanceSpec spec;
         spec.label = QStringLiteral("X");
         QCOMPARE(control->create(spec, nullptr), pet::PluginError::Capability);
+        QCOMPARE(control->setAvatar(QStringLiteral("nope"), QStringLiteral("🐶")),
+                 pet::PluginError::Capability);
         QCOMPARE(mgr.rowCount(), 1);
     }
 
@@ -254,6 +258,8 @@ void PluginQueryApiTest::testGatingMatrix()
         pet::InstanceSpec spec;
         spec.label = QStringLiteral("X");
         QCOMPARE(control->create(spec, nullptr), pet::PluginError::Capability);
+        QCOMPARE(control->setAvatar(QStringLiteral("nope"), QStringLiteral("🐶")),
+                 pet::PluginError::Capability);
     }
 }
 

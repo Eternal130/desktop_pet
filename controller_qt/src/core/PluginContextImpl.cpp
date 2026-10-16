@@ -483,6 +483,41 @@ pet::PluginError InstanceControlApiImpl::loadModel(const QString& uuid,
     return pet::PluginError::Ok;
 }
 
+pet::PluginError InstanceControlApiImpl::setAvatar(const QString& uuid,
+                                                   const QString& avatar)
+{
+    // v1.11 tail append. Argument guard BEFORE the roster lookup (the
+    // loadModel ordering): empty avatar → InvalidArgument even for an
+    // unknown uuid — no silent coercion back to the 🐱 default (the
+    // setGraphicsBackend empty-string precedent).
+    if (avatar.isEmpty()) {
+        LOG_WARN("[plugin-api] instanceControlApi().setAvatar('{}') with empty "
+                 "avatar — ERR_INVALID_ARGUMENT", uuid.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    InstanceSession* s = sessionForUuid(uuid);
+    if (s == nullptr)
+        return pet::PluginError::NotFound;
+    if (s->isDeletePending()) {
+        LOG_WARN("[plugin-api] instanceControlApi().setAvatar('{}') — pending "
+                 "delete, ERR_BUSY", uuid.toStdString());
+        return pet::PluginError::Busy;
+    }
+    // Manager-level write: persists via the session's save-first-then-
+    // apply setter and emits dataChanged(AvatarRole) → roster fanout
+    // (rosterChanged). A same-value call is an accepted no-op inside the
+    // manager; a false return = persist failure (both the disk row and
+    // the live snapshot keep the old avatar) → Generic.
+    if (!m_instanceManager->setAvatar(uuid, avatar)) {
+        LOG_ERROR("[plugin-api] instanceControlApi().setAvatar('{}') — persist "
+                  "failed, avatar unchanged", uuid.toStdString());
+        return pet::PluginError::Generic;
+    }
+    LOG_INFO("[plugin-api] instanceControlApi().setAvatar('{}') accepted",
+             uuid.toStdString());
+    return pet::PluginError::Ok;
+}
+
 // ── TuningApiImpl (S5, v1.3) ─────────────────────────────────────────────────
 
 TuningApiImpl::TuningApiImpl(InstanceManager* instanceManager, QObject* parent)

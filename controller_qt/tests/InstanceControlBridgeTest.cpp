@@ -89,6 +89,11 @@ public:
     pet::PluginError loadModel(const QString& uuid, const QString& modelName) override
     { ++calls; lastOp = QStringLiteral("loadModel"); lastUuid = uuid;
       lastModel = modelName; return answer; }
+    // v1.11 tail append — same record-and-answer shape (not a bridge
+    // surface today; keeps the fake concrete).
+    pet::PluginError setAvatar(const QString& uuid, const QString& avatar) override
+    { ++calls; lastOp = QStringLiteral("setAvatar"); lastUuid = uuid;
+      lastModel = avatar; return answer; }
 };
 
 // Programmable fake layout API (v1.8): records the last call + answers

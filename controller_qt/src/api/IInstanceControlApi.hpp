@@ -33,9 +33,12 @@
 
 namespace pet {
 
-// apiId + per-family version for queryApi(). Version 1 = the six lifecycle
-// ops below. minVersion > this → queryApi returns nullptr ("feature
-// absent", never an error).
+// apiId + per-family version for queryApi(). Version 1 = the lifecycle
+// ops below (v1.2: the original six; v1.11 tail-appended setAvatar —
+// following the v1.10 setGraphicsBackend precedent the FAMILY version
+// does not bump: a stage-1 tail append is additive and kApiMinor alone
+// carries the change). minVersion > this → queryApi returns nullptr
+// ("feature absent", never an error).
 inline constexpr char kInstanceControlApiId[] = "pet.instance_control";
 inline constexpr int kInstanceControlApiVersion = 1;
 
@@ -69,6 +72,22 @@ public:
     // persists the choice for the next start — same semantics as the
     // model-library page's switch. modelName must be non-empty.
     virtual PluginError loadModel(const QString& uuid, const QString& modelName) = 0;
+
+    // v1.11 TAIL APPEND: switch the instance's avatar glyph (the
+    // single-glyph identity shown on the sidebar roster / instance
+    // cards). Persisted to InstanceConfig.avatar via the host's
+    // save-first-then-apply path (a failed persist keeps BOTH the disk
+    // row and the live snapshot on the old avatar → Generic).
+    // Contract:
+    //   - avatar must be non-empty (empty → InvalidArgument, checked
+    //     BEFORE the roster lookup — the setGraphicsBackend empty-string
+    //     precedent: no silent coercion back to the 🐱 default);
+    //   - a same-value call is an accepted no-op (Ok — no write, no
+    //     roster fanout);
+    //   - observability rides the roster model's dataChanged(AvatarRole)
+    //     → rosterChanged fanout (coarse by design — InstanceRuntime
+    //     carries no avatar field; roster re-read sees the new value).
+    virtual PluginError setAvatar(const QString& uuid, const QString& avatar) = 0;
 };
 
 } // namespace pet

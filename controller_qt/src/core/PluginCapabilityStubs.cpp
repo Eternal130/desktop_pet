@@ -99,6 +99,16 @@ pet::PluginError InstanceControlApiStub::loadModel(const QString& uuid,
     return pet::PluginError::Capability;
 }
 
+pet::PluginError InstanceControlApiStub::setAvatar(const QString& uuid,
+                                                   const QString& avatar)
+{
+    LOG_WARN("[plugin-api] instanceControlApi().setAvatar('{}', '{}') without "
+             "the 'instance_lifecycle' capability or with plugin writes "
+             "disabled — ERR_CAPABILITY",
+             uuid.toStdString(), avatar.toStdString());
+    return pet::PluginError::Capability;
+}
+
 // ── TuningApiStub (S5: loud failure, zero silent behavior) ─────────────────
 
 pet::PluginError TuningApiStub::setOpacity(const QString& uuid, double opacity)

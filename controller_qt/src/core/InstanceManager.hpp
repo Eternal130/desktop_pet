@@ -140,6 +140,18 @@ public:
     // instance (no live process) takes the immediate path exactly as before.
     Q_INVOKABLE void deleteInstance(const QString& uuid);
 
+    // v1.11 (IInstanceControlApi::setAvatar host half): update ONE row's
+    // avatar. Locates the session (rowForUuid), delegates to the
+    // session's save-first-then-apply setter, and — on a REAL change —
+    // emits dataChanged(AvatarRole). A same-observable call
+    // short-circuits to true WITHOUT emitting (nothing changed — no
+    // write, no fanout). Returns false when the uuid is unknown or the
+    // persist failed. Plain C++ (NOT Q_INVOKABLE): host writes arrive
+    // exclusively through the shared pet::IInstanceControlApi
+    // (InstanceControlApiImpl) — the api-boundary gate's QML_PW family
+    // stays out of scope (the setEventPublisher discipline).
+    bool setAvatar(const QString& uuid, const QString& avatar);
+
     // ── Access / routing ─────────────────────────────────────────────────────
     // Q_INVOKABLE: Main.qml's selectInstance(row, uuid) calls this to bind the
     // detail page's `instance` property. Without it, QML sees `undefined`,

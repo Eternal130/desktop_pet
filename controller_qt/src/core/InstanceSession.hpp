@@ -358,6 +358,21 @@ public slots:
     // (silent-persistence-failure fix, exp-4 root cause #2).
     Q_INVOKABLE bool setGraphicsBackend(const QString& backend);
 
+    // v1.11 (IInstanceControlApi::setAvatar host half): persist the
+    // avatar glyph. Same save-first-then-apply shape as
+    // setGraphicsBackend (same-value no-op → true; a CHANGED value
+    // returns true only when the config row was persisted — a failed
+    // save leaves BOTH the disk row and m_config on the old avatar).
+    // Deliberately a PLAIN C++ method, NOT a Q_INVOKABLE / Q_PROPERTY
+    // WRITE: host writes arrive exclusively through
+    // InstanceManager::setAvatar ← the shared pet::IInstanceControlApi,
+    // so the api-boundary gate's pattern table stays untouched (the
+    // setEventPublisher / setDialogueSink discipline). The avatar
+    // Q_PROPERTY stays CONSTANT (no NOTIFY) — the roster-level
+    // dataChanged(AvatarRole) emission lives in InstanceManager::
+    // setAvatar, the manager being the one place that knows the row.
+    bool setAvatar(const QString& avatar);
+
     // ── Phase-5 Wave 8 todo 18 (monitor UI helper) ───────────────────────────
     // Returns the per-session MonitorDataModel as a QObject* so QML can bind
     // its Q_INVOKABLE accessors (latestRendererCpuPercent / isStaleNow /

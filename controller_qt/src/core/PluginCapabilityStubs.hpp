@@ -56,6 +56,7 @@ public:
     pet::PluginError stop(const QString& uuid) override;
     pet::PluginError restart(const QString& uuid) override;
     pet::PluginError loadModel(const QString& uuid, const QString& modelName) override;
+    pet::PluginError setAvatar(const QString& uuid, const QString& avatar) override;
 };
 
 // S5 (v1.3): ITuningApi capability stub — handed out when the manifest

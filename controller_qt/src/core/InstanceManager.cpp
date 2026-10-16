@@ -249,6 +249,42 @@ void InstanceManager::onSessionStopFinished(InstanceSession* session)
     }
 }
 
+// ── v1.11 avatar write (roster row update) ───────────────────────────────────
+
+bool InstanceManager::setAvatar(const QString& uuid, const QString& avatar)
+{
+    const int row = rowForUuid(uuid);
+    if (row < 0) {
+        LOG_WARN("InstanceManager::setAvatar: uuid=\"{}\" not in roster (no-op)",
+                 uuid.toStdString());
+        return false;
+    }
+    InstanceSession* session = m_sessions.at(row);
+    // Same-observable no-op: Ok WITHOUT a dataChanged emission (the
+    // roster observable is unchanged — nothing to write or fan out; the
+    // session setter would no-op the same way, but short-circuiting here
+    // keeps the emission decision in one place). avatar() (not the raw
+    // config field) is the compare base: it is exactly what the roster
+    // renders, fallback glyph included.
+    if (session->avatar() == avatar)
+        return true;
+    if (!session->setAvatar(avatar)) {
+        LOG_ERROR("InstanceManager::setAvatar: uuid=\"{}\" persist failed — "
+                  "avatar unchanged", uuid.toStdString());
+        return false;
+    }
+    // This manager's FIRST dataChanged emission (roster changes were
+    // previously only insert/remove/reset). AvatarRole-only so views
+    // re-evaluate just the avatar delegate. The emission is the
+    // observability hinge: InstanceApiImpl subscribes dataChanged →
+    // fanoutRosterChanged, so plugin observers (rosterChanged) AND
+    // RosterApiModel (reset → re-read) see the flip with zero new seams.
+    emit dataChanged(index(row, 0), index(row, 0), {AvatarRole});
+    LOG_INFO("InstanceManager: avatar updated for uuid=\"{}\" (row={})",
+             uuid.toStdString(), row);
+    return true;
+}
+
 // ── Access / routing ─────────────────────────────────────────────────────────
 
 InstanceSession* InstanceManager::instanceAt(int row) const

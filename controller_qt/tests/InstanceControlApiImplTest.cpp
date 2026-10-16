@@ -17,11 +17,17 @@
 //      InstanceRuntime snapshot on a property NOTIFY (targetFpsChanged via
 //      setFps) and the modelLoadFailed callback on the session's failure
 //      signal; unsubscribeInstances stops the fanout.
-//   5. testRemoveRunningIsTwoPhase + Busy (POSIX fake-sleeper renderer):
+//   5. testRemoveRunningIsTwoPhaseAndBusy (POSIX fake-sleeper renderer):
 //      remove of a running instance returns immediately (row survives),
 //      start/restart during the pending delete → Busy, and the real removal
 //      completes via the async stop (QTRY); after removal every op →
 //      NotFound.
+//   6. testSetAvatar (v1.11): success persists (live session field + the
+//      config row) and fans out rosterChanged via the manager's FIRST
+//      dataChanged(AvatarRole) emission; same-value second call → Ok
+//      no-op (no re-write, no fanout); empty avatar → InvalidArgument
+//      (before the roster lookup); unknown uuid → NotFound;
+//      pending-delete → Busy with the value left intact.
 //
 // QTEST_MAIN (NOT APPLESS): the two-phase slot pumps the event loop via
 // QTRY_COMPARE_WITH_TIMEOUT (ProcessManager's async stop state machine).
@@ -118,6 +124,7 @@ private slots:
     void testLifecycleForwarding();
     void testObserverStateFanout();
     void testRemoveRunningIsTwoPhaseAndBusy();
+    void testSetAvatar();
 };
 
 void InstanceControlApiImplTest::initTestCase()
@@ -432,6 +439,77 @@ void InstanceControlApiImplTest::testRemoveRunningIsTwoPhaseAndBusy()
 
     server.close();
 #endif
+}
+
+// ── 6. setAvatar (v1.11 tail append) ─────────────────────────────────────────
+
+void InstanceControlApiImplTest::testSetAvatar()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& cfg) {
+                            PanelStateManager(base.path()).save(cfg);
+                        });
+    core::InstanceApiImpl rosterApi(&mgr, nullptr);
+    core::InstanceControlApiImpl api(&mgr, nullptr);
+
+    // Empty avatar → InvalidArgument BEFORE the roster lookup (the
+    // setGraphicsBackend empty-string "no silent coercion" precedent) —
+    // even for an unknown uuid.
+    QCOMPARE(api.setAvatar(QStringLiteral("no-such-uuid"), QString()),
+             pet::PluginError::InvalidArgument);
+
+    pet::InstanceSpec spec;
+    spec.label = QStringLiteral("AvatarPet");
+    QString uuid;
+    QCOMPARE(api.create(spec, &uuid), pet::PluginError::Ok);
+
+    // Observer attached BEFORE the write — the dataChanged(AvatarRole)
+    // emission must fan out to rosterChanged synchronously.
+    RecordingObserver observer;
+    rosterApi.subscribeInstances(&observer);
+    const int rosterBaseline = observer.rosterChanges;
+
+    // Success: Ok + live session field + PERSISTED config row (double
+    // assertion — the loadModel persistence pattern).
+    QCOMPARE(api.setAvatar(uuid, QStringLiteral("🐼")), pet::PluginError::Ok);
+    InstanceSession* session = mgr.instanceAt(0);
+    QVERIFY(session != nullptr);
+    QCOMPARE(session->avatar(), QStringLiteral("🐼"));
+    const auto loaded = InstanceConfigManager(base.path()).load(uuid);
+    QVERIFY(loaded.has_value());
+    QCOMPARE(loaded->avatar, QStringLiteral("🐼"));
+
+    // The manager's first dataChanged drove the roster fanout (plugin
+    // observers; RosterApiModel resets on the same signal upstream).
+    QVERIFY(observer.rosterChanges > rosterBaseline);
+    const int afterChange = observer.rosterChanges;
+
+    // The UI roster read surface (AvatarRole data()) reflects the flip.
+    QCOMPARE(mgr.data(mgr.index(0, 0), InstanceManager::AvatarRole).toString(),
+             QStringLiteral("🐼"));
+
+    // Same value → Ok no-op: no write, no dataChanged, no fanout.
+    QCOMPARE(api.setAvatar(uuid, QStringLiteral("🐼")), pet::PluginError::Ok);
+    QCOMPARE(observer.rosterChanges, afterChange);
+
+    // Unknown uuid (non-empty avatar) → NotFound.
+    QCOMPARE(api.setAvatar(QStringLiteral("no-such-uuid"), QStringLiteral("🐼")),
+             pet::PluginError::NotFound);
+
+    // Pending-delete window → Busy, value left intact. setDeletePending()
+    // is the exact mark deleteInstance stamps in phase 1 of a running
+    // instance's two-phase removal (the full async window is covered by
+    // testRemoveRunningIsTwoPhaseAndBusy above); stamping it directly
+    // keeps this case deterministic and cross-platform.
+    session->setDeletePending();
+    QCOMPARE(api.setAvatar(uuid, QStringLiteral("🐧")), pet::PluginError::Busy);
+    QCOMPARE(session->avatar(), QStringLiteral("🐼"));
+
+    rosterApi.unsubscribeInstances(&observer);
 }
 
 QTEST_MAIN(InstanceControlApiImplTest)

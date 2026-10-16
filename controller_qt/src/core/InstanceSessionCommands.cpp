@@ -180,6 +180,35 @@ bool InstanceSession::setGraphicsBackend(const QString& backend)
     return true;
 }
 
+bool InstanceSession::setAvatar(const QString& avatar)
+{
+    // v1.11 avatar write (IInstanceControlApi::setAvatar tail append):
+    // same-value no-op; otherwise save-first-then-apply (the exact
+    // setGraphicsBackend template above). Validation lives at the API
+    // layer (InstanceControlApiImpl: empty → InvalidArgument); the
+    // session applies verbatim.
+    if (m_config.avatar == avatar)
+        return true; // accepted no-op: value already current, nothing to save
+    LOG_INFO("InstanceSession[{}]: avatar \"{}\" -> \"{}\"",
+             m_instanceId, m_config.avatar.toStdString(),
+             avatar.toStdString());
+    // Save-first-then-apply (all-or-nothing): persist a mutated copy and
+    // only then flip the live snapshot. A failed save returns false with
+    // BOTH the disk row and m_config still on the old avatar. NO NOTIFY —
+    // the avatar Q_PROPERTY is CONSTANT; the roster-level
+    // dataChanged(AvatarRole) emission is InstanceManager::setAvatar's
+    // job (the manager knows the row; the session does not).
+    InstanceConfig next = m_config;
+    next.avatar = avatar;
+    if (!m_configManager.save(next)) {
+        LOG_ERROR("InstanceSession[{}]: failed to persist avatar=\"{}\"",
+                  m_instanceId, avatar.toStdString());
+        return false;
+    }
+    m_config.avatar = avatar;
+    return true;
+}
+
 // ── Voice-pack mount (todo 21) ───────────────────────────────────────────
 
 bool InstanceSession::mountVoicePack(const QString& packPath)

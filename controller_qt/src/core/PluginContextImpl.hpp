@@ -112,6 +112,7 @@ public:
     pet::PluginError stop(const QString& uuid) override;
     pet::PluginError restart(const QString& uuid) override;
     pet::PluginError loadModel(const QString& uuid, const QString& modelName) override;
+    pet::PluginError setAvatar(const QString& uuid, const QString& avatar) override;
 
 private:
     // Locate the session whose uuid() == uuid (linear scan over the

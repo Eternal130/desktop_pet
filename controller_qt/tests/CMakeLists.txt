@@ -900,6 +900,22 @@ pet_deploy_qt_test(PluginManagerTest)
 
 add_test(NAME PluginManagerTest COMMAND PluginManagerTest)
 
+# DynamicPluginSourceTest (stage-2 host channel, 2026-10-16): drop-in
+# discovery over the injected ILibraryLoader seam — fake handles feed
+# metaData/instance and count instance() calls externally (the "zero
+# library code on rejection" invariant). Covers the full accept chain
+# (register-then-backfill factory + prevent-unload), the gate matrix
+# (iid / abi / api_version / duplicate static id / uncastable root),
+# silent missing directories, and exe-dir-over-data-dir priority.
+# QTEST_APPLESS_MAIN — pure logic + QObject fakes over injected search
+# dirs, no event loop needed.
+qt_add_executable(DynamicPluginSourceTest DynamicPluginSourceTest.cpp)
+target_link_libraries(DynamicPluginSourceTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(DynamicPluginSourceTest)
+
+add_test(NAME DynamicPluginSourceTest COMMAND DynamicPluginSourceTest)
+
 # PluginPageModelTest (§B.5/§B.6): nav rows — qrc-only qmlUrl, (order,title)
 # sort, duplicate rejection, boot-window closure, per-row bridge.
 qt_add_executable(PluginPageModelTest PluginPageModelTest.cpp)

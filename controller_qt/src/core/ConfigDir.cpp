@@ -86,6 +86,15 @@ QString logsDir()
     return configDir() + QStringLiteral("logs/");
 }
 
+QString pluginsDir()
+{
+    // User drop-in target (stage 2) — deliberately under dataDir (machine-
+    // local, user-writable), NOT configDir: a plugin binary is not config
+    // state. See the header note distinguishing this from
+    // IPluginContext::pluginConfigDir().
+    return dataDir() + QStringLiteral("plugins/");
+}
+
 bool migrateLegacyIfNeeded(const QString& legacyBase, const QString& newBase)
 {
 #ifndef Q_OS_WIN

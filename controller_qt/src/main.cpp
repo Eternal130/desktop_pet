@@ -25,6 +25,7 @@
 #include "app/PanelUiBoot.hpp"
 #include "app/ScreenshotRunner.hpp"
 #include "core/ConfigDir.hpp"
+#include "core/DynamicPluginSource.hpp"
 #include "core/PluginHost.hpp"
 #include "core/StaticPluginBootstrap.hpp"
 // spdlog MUST be included before logging/Logging.hpp — the Fix-1 guard
@@ -224,6 +225,15 @@ int main(int argc, char* argv[])
     // (static_plugins.cpp, exe-linked) into the registry — after the
     // service tree exists, before the UI boot mounts the page model.
     pet_register_static_plugins(panelApp.pluginRegistry());
+
+    // Stage 2 (2026-10-16): drop-in dynamic plugin discovery. Runs AFTER
+    // the static table (static-first: a dynamic file colliding with a
+    // static id is rejected as a duplicate, never the other way around).
+    // The source is a stack object HERE deliberately: it owns the loaded
+    // QPluginLoader handles (PreventUnload — §A.4 no-unload discipline),
+    // so it must outlive the shutdownAll() call near the end of main().
+    core::DynamicPluginSource dynamicPluginSource;
+    dynamicPluginSource.discover(panelApp.pluginRegistry());
 
     QQmlApplicationEngine engine;
 

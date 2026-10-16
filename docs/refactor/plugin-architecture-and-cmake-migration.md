@@ -96,6 +96,8 @@
 
 **开启阶段 2 的判据（v2 扩为四条，全满足才动）**: ① 出现第一个不同仓构建的插件需求；② SDK 接口经 ≥1 个真实插件打磨后冻结（v2 量化: API 无 breaking 变更连续 ≥3 个月）；③ 团队接受发 SDK + abi 维护税，且 Qt/MinGW 升级节奏稳定；④ 团队接受进程内能力门控仅为建议性约束（§B.4 v2 修正）。在此之前 SHARED 化是纯预付成本。阶段 1 唯一不能省的前置投资 = 接口纪律按阶段 2 标准执行，保证未来切换是"换加载器"而非"改接口"。
 
+> **2026-10-16 状态更新**: 阶段 2 的**宿主加载通道**已开启（同仓同工具链约束下）——`IPluginFactory` 工厂协议（`src/api/IPluginFactory.hpp`，SDK v1.12，模块内 create/destroy，P6a 第 5 判据落地）+ `core::DynamicPluginSource` 双目录发现（`<exeDir>/plugins/` 优先、`dataDir()/plugins/` 次之，同名文件 exeDir 胜、缺失目录静默跳过）+ abi 硬校验（`PluginRegistry::addDynamicPlugin` 首次真调用 `validateAbi`，宿主基准 = CMake 生成的 `core::hostAbiBlock()`）+ `PreventUnloadHint` 永不卸载纪律（§A.4）。上表"开启判据"四条指向的是**面向第三方开放**；当前开启的是宿主侧接收能力，第三方发布链（SDK 安装包 + abi 注入模板）仍为后续工作。
+
 ### A.4 热卸载: 明确禁止
 
 加载单向；禁用/启用 = 写配置 + 提示重启生效（Qt Creator/OBS/KDE 一致结论: unload + 活信号连接/QML 实例 = 悬挂指针）。静态阶段本无卸载概念，此纪律为阶段 2 预立。
@@ -182,6 +184,8 @@ IDownloadApi（宿主咽喉点，全异步）
 │    // Listener: onProgress / onFinished / onError（GUI 线程）
 ├─ cancel(JobId)
 ├─ installArchive(JobId, InstallSpec{targetDir})  // 校验→解压→zip-slip 防护→原子落盘
+│    // targetDir 白名单: "voicePacks" | "models" 两个逻辑目标
+│    // 哨兵: voicePacks=<包名>/meta.mko; models=<名>/<名>.model3.json（恰好一个顶层目录）
 │    // 与 start 分离: 下载完成 ≠ 安装（用户确认在中间）
 
 IUiApi
@@ -200,7 +204,7 @@ IUiApi
 | 咽喉点审计 | 全进程**唯一合法** QNetworkAccessManager 在 DownloadService；manifest `network` capability 决定 downloadApi 可用性（无则 stub，调用返回 ERR_CAPABILITY）。**v2 诚实度修正**: capability = 用户同意展示 + 审计清单 + 第一方 review 门禁，对第三方是**建议性约束非执行机制**（进程内 C++ 可自开 socket）；对第一方插件吊销网络有唯一开关，对第三方的硬吊销需回到方案 C 进程边界——如实写进 SDK README |
 | A 特有 | 进程边界不提供能力隔离（A.1），能力边界由 API 面提供**合法路径与审计**〔v2 修正: 原稿"必须由 API 面提供"暗示强制力，属过度声明〕 |
 
-管线（全宿主受测代码）: `url → QNAM(HTTPS) → .part 流式落盘+sha256 实时计算 → 校验 → 解压到临时目录（逐文件原子写） → cleanPath 规范化 + 前缀检查（拒 ../绝对路径/盘符） → 移动到 Resources/VoicePacks/<名>/ → meta.mko 哨兵就位 → refreshScan()`
+管线（全宿主受测代码）: `url → QNAM(HTTPS) → .part 流式落盘+sha256 实时计算 → 校验 → 解压到临时目录（逐文件原子写） → cleanPath 规范化 + 前缀检查（拒 ../绝对路径/盘符） → 按 targetDir 分派落点与哨兵: "voicePacks" → <用户语音包目录>/<名>/（哨兵 <包名>/meta.mko，成功后 packInstalled → refreshScan）; "models" → <渲染器>/Resources/Models/<名>/（哨兵 <名>/<名>.model3.json，成功后 modelInstalled → 模型库 rescan）`
 
 ### B.5 插件 QML 页面注册: 宿主引擎 + Loader，不用 engine->load
 
@@ -221,7 +225,7 @@ IUiApi
 | `entry.qml` / `title` / `icon` / `order` | UI 注册。**资源布局（v2 新增）**: 插件 QML/icon 经各自 `qt_add_qml_module` 打 qrc 进插件 STATIC 库，`qmlUrl`/`iconUrl` 用 `qrc:/` URL——不依赖文件系统部署路径，规避 PathResolve 布局敏感性（F7）；阶段 2 独立 dll 再评估文件系统布局 |
 | `min_host_version` / `vendor` / `signature`（阶段 2） | 门控与发布安全 |
 
-**发现目录**: 阶段 1 唯一来源 `controller_qt/plugins/`（CMake 收集）；阶段 2 增加 `<exeDir>/plugins/` + `AppDataLocation/plugins/`（OBS 布局 `<Name>/bin+data`）。
+**发现目录**: 阶段 1 唯一来源 `controller_qt/plugins/`（CMake 收集）；阶段 2 增加 `<exeDir>/plugins/` + `AppDataLocation/plugins/`（OBS 布局 `<Name>/bin+data`）→ **已实装（2026-10-16）**: `core::DynamicPluginSource` 启动时扫描 `<exeDir>/plugins/` 与 `dataDir()/plugins/`（Linux `~/.local/share/desktop-pet/plugins/`、Windows `%LOCALAPPDATA%\desktop-pet\plugins\`），同名文件 exeDir 优先、低优先级副本跳过记日志，目录缺失静默跳过（不创建）；Linux 匹配 `*.so`、Windows 匹配 `*.dll`。使用文档见 `docs/system/plugins.md`。
 
 **状态机（阶段 1 简化）**: `Discovered → Validated → Registered → Started → (Stopped | Failed)`；Failed 带错误码进 Settings 新增的插件管理节（启用/禁用/状态/错误；禁用 = 配置位 + 重启提示）。阶段 2 增补 `Loaded/Crashed` 前置语义。
 

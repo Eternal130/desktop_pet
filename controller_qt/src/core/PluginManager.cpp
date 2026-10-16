@@ -1,7 +1,12 @@
 #include "core/PluginManager.hpp"
 
+#include <QDesktopServices>
+#include <QDir>
+#include <QUrl>
+
 #include <spdlog/spdlog.h>
 
+#include "core/ConfigDir.hpp"
 #include "core/DatabaseManager.hpp"
 #include "logging/Logging.hpp"
 
@@ -42,6 +47,8 @@ QVariant PluginManager::data(const QModelIndex& index, int role) const
     case EnabledRole:      return enabledAtStart(e.manifest.id);
     case OrderRole:        return e.manifest.order;
     case CapabilitiesRole: return e.manifest.capabilities;
+    case SourceRole:       return e.source;
+    case PathRole:         return e.libraryPath;
     default:               return {};
     }
     return {};
@@ -56,8 +63,10 @@ QHash<int, QByteArray> PluginManager::roleNames() const
         {StatusRole,       "status"},
         {ErrorMessageRole, "errorMessage"},
         {EnabledRole,      "enabled"},
-        {OrderRole,        "order"},
-        {CapabilitiesRole, "capabilities"},
+        {OrderRole,         "order"},
+        {CapabilitiesRole,  "capabilities"},
+        {SourceRole,        "source"},
+        {PathRole,          "path"},
     };
 }
 
@@ -112,6 +121,22 @@ bool PluginManager::restartPending(const QString& pluginId) const
     if (e->status == PluginStatus::Registered)
         return enabled;
     return false;
+}
+
+void PluginManager::openPluginsDir()
+{
+    // v1.12 (stage 2): "open plugin directory" convenience for the
+    // management page. Targets the USER drop-in dir (writable; the exe-dir
+    // half of the scan ships with the app and is not user-editable).
+    // Never-throws (Blueprint §9.5): every failure path logs WARN only.
+    const QString dir = ConfigDir::pluginsDir();
+    if (!QDir().mkpath(dir)) {
+        LOG_WARN("PluginManager: cannot create plugins dir '{}' — not opening",
+                 dir.toStdString());
+        return;
+    }
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(dir)))
+        LOG_WARN("PluginManager: opening plugins dir '{}' failed", dir.toStdString());
 }
 
 } // namespace core

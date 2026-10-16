@@ -86,8 +86,22 @@ namespace pet {
 // setDefaultGraphicsBackend (5th whitelisted write), and the
 // InstanceSpec.graphicsBackend tail member (create() backend override).
 // No existing signature changed; InstanceSpec grew at the TAIL only.
+// v1.11 (2026-10-16): minor bumped for the additive avatar-write
+// expansion — the IInstanceControlApi tail append setAvatar (7th
+// lifecycle op: persist InstanceConfig.avatar, empty → InvalidArgument,
+// same-value accepted no-op; the roster change is observable via the
+// manager's first dataChanged emission → rosterChanged fanout). No
+// existing signature changed.
+// v1.12 (2026-10-16): minor bumped for the additive stage-2 host loading
+// channel — the new IPluginFactory header (api/IPluginFactory.hpp:
+// module-side create/destroy root protocol for drop-in plugins, iid
+// "org.desktop-pet.PanelPluginFactory/1.0"), PluginRegistry::
+// addDynamicPlugin (hard abi gate on the dynamic path, host baseline =
+// CMake-generated core::hostAbiBlock()), DynamicPluginSource dual-
+// directory discovery, and the optional manifest "qml_url" key. No
+// existing signature changed.
 constexpr int kApiMajor = 1;
-constexpr int kApiMinor = 10;
+constexpr int kApiMinor = 12;
 
 // ── Capability vocabulary (manifest "capabilities" entries; §B.4) ───────────
 // The exact, case-sensitive strings the host parses from plugin manifests
@@ -303,7 +317,7 @@ struct DownloadRequest {
 // zip-slip + allow-list rules by the host pipeline (§B.4); plugins never
 // touch the file system during install.
 struct InstallSpec {
-    QString targetDir;   // logical destination (e.g. "voicePacks")
+    QString targetDir;   // logical destination ("voicePacks" | "models")
 };
 
 // IUiApi::registerPage() argument. One navigation entry in the panel sidebar.

@@ -4,6 +4,7 @@
     "api_version": "1.0",
     "capabilities": [],
     "entry.qml": "SamplePage.qml",
+    "qml_url": "qrc:/qt/qml/SamplePlugin/SamplePage.qml",
     "title": "示例插件",
     "icon": "🧩",
     "order": 100,

@@ -195,6 +195,7 @@ Window {
             "voicepack": voicePackPageComp,
             "models":    modelLibraryPageComp,
             "assets":    assetPageComp,
+            "plugins":   pluginsPageComp,
             "settings":  settingsPageComp
         }[name] ?? welcomePageComp
     }
@@ -388,6 +389,7 @@ Window {
                     "voicepack": qsTr("语音包"),
                     "models":    qsTr("模型库"),
                     "assets":    qsTr("资源管理"),
+                    "plugins":   qsTr("插件管理"),
                     "settings":  qsTr("设置")
                 }
                 if (root.currentInstance && root.currentPage === "instance")
@@ -791,6 +793,17 @@ Window {
                     badgeCount: assetManager.assetCount()
                     match: navPane.searchFilter
                 }
+                // 插件管理 (v1.12 drop-in stage): the standalone management
+                // page over pluginManager — the page-sized upgrade of
+                // SettingsPage's pluginsCard (which stays). Badge = the
+                // registry count, same read-only pattern as the pack/model
+                // badges above.
+                NavItem {
+                    itemKey: "plugins"
+                    iconName: "puzzle"; label: qsTr("插件管理")
+                    badgeCount: pluginManager.count
+                    match: navPane.searchFilter
+                }
 
                 // P4 (§B.6): dynamic plugin pages — appended after every
                 // built-in item, sorted by the manifest order the host
@@ -956,6 +969,7 @@ Window {
             onRequestSwitchPage: (name) => root.switchPage(name)
         }
     }
+    Component { id: pluginsPageComp;        PluginManagerPage {} }
     Component { id: settingsPageComp;       SettingsPage { initialAnchor: root.settingsInitialAnchor } }
 
     // ── Dialogs ─────────────────────────────────────────────────────────

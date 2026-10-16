@@ -40,6 +40,8 @@ public:
         EnabledRole,
         OrderRole,
         CapabilitiesRole, // QStringList
+        SourceRole,       // v1.12 TAIL APPEND: "static" | "dynamic"
+        PathRole,         // v1.12 TAIL APPEND: dynamic .so/.dll path ("" static)
     };
 
     explicit PluginManager(PluginRegistry& registry, DatabaseManager* database,
@@ -62,6 +64,11 @@ public:
     // differs from the plugin's runtime state (started-but-now-disabled
     // or disabled-but-started) — i.e. a restart would change behavior.
     Q_INVOKABLE bool restartPending(const QString& pluginId) const;
+
+    // v1.12 (stage 2): open the user drop-in plugin directory in the OS
+    // file manager (creates it first — it is not part of the
+    // ensureDirectories scaffold). Never-throws: failures log WARN only.
+    Q_INVOKABLE void openPluginsDir();
 
 signals:
     void countChanged();

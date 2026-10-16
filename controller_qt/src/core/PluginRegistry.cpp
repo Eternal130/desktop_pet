@@ -130,6 +130,14 @@ std::optional<PluginManifest> PluginRegistry::parseManifest(const QString& manif
         return std::nullopt;
     }
 
+    // v1.12 (stage 2) TAIL APPEND: optional "qml_url" (snake_case) —
+    // dynamic manifests carry their own page URL because the host has no
+    // build-time injection for drop-in files. Static manifests have no
+    // such key (their qrc:/ URL is CMake-injected through
+    // addStaticPlugin's qmlUrl parameter, which overrides this when
+    // non-empty) — zero impact on the static path.
+    m.qmlUrl = obj.value(QStringLiteral("qml_url")).toString().trimmed();
+
     return m;
 }
 
@@ -303,6 +311,98 @@ void PluginRegistry::addStaticPlugin(const QString& manifestJson, CreateFn creat
              e.manifest.id.toStdString(), e.manifest.version.toStdString(),
              e.manifest.apiMajor, e.manifest.apiMinor, e.manifest.order,
              e.manifest.capabilities.join(QLatin1Char(',')).toStdString());
+    m_entries.append(e);
+}
+
+void PluginRegistry::addDynamicPlugin(const QString& manifestJson,
+                                      pet::IPluginFactory* factory,
+                                      const QString& libraryPath,
+                                      const QString& abiJson)
+{
+    PluginEntry e;
+    e.create = nullptr;
+    e.source = QStringLiteral("dynamic");
+    e.abiExempt = false; // §A.2 asymmetry: runtime-loaded code is abi-GATED
+    e.factory = factory;
+    e.libraryPath = libraryPath;
+
+    // Parse + api_version gate: same shape/order as the static path.
+    QString parseError;
+    auto manifest = parseManifest(manifestJson, &parseError);
+    if (!manifest.has_value()) {
+        // Failed entries stay visible for the management UI (§B.6: never
+        // silently drop a broken plugin) — id recovery mirrors
+        // addStaticPlugin.
+        if (manifestJson.isEmpty()) {
+            e.manifest.id = QStringLiteral("<unknown>");
+        } else {
+            const auto doc = QJsonDocument::fromJson(manifestJson.toUtf8());
+            if (doc.isObject())
+                e.manifest.id = doc.object().value(QStringLiteral("id")).toString(
+                    QStringLiteral("<invalid-manifest>"));
+            else
+                e.manifest.id = QStringLiteral("<invalid-manifest>");
+        }
+        e.status = PluginStatus::Failed;
+        e.errorMessage = parseError;
+        LOG_ERROR("PluginRegistry: dynamic manifest rejected for '{}': {}",
+                  e.manifest.id.toStdString(), parseError.toStdString());
+        m_entries.append(e);
+        return;
+    }
+    e.manifest = *manifest;
+
+    QString versionError;
+    if (!validateApiVersion(e.manifest.apiMajor, e.manifest.apiMinor, &versionError)) {
+        e.status = PluginStatus::Failed;
+        e.errorMessage = versionError;
+        LOG_ERROR("PluginRegistry: api_version gate rejected '{}': {}",
+                  e.manifest.id.toStdString(), versionError.toStdString());
+        m_entries.append(e);
+        return;
+    }
+
+    // Dynamic-only gate 1: id uniqueness across BOTH sources. A duplicate
+    // (a static plugin or an earlier dynamic file) appends a Failed entry
+    // — the existing entry is never overwritten (static-first discovery
+    // order makes static ids unshadowable).
+    if (entry(e.manifest.id) != nullptr) {
+        e.status = PluginStatus::Failed;
+        e.errorMessage = QStringLiteral("duplicate plugin id");
+        LOG_ERROR("PluginRegistry: dynamic plugin '{}' rejected — duplicate id "
+                  "(existing entry kept)",
+                  e.manifest.id.toStdString());
+        m_entries.append(e);
+        return;
+    }
+
+    // Dynamic-only gate 2: the HARD abi gate — validateAbi's first
+    // production caller. The host baseline comes from the CMake-generated
+    // hostAbiBlock() (lockstep with the static rows' generator); a
+    // missing/empty plugin block fails closed inside validateAbi.
+    QString abiError;
+    const QJsonObject hostAbi =
+        QJsonDocument::fromJson(hostAbiBlock().toUtf8()).object();
+    const QJsonObject pluginAbi =
+        QJsonDocument::fromJson(abiJson.toUtf8()).object();
+    if (!validateAbi(pluginAbi, hostAbi, &abiError)) {
+        e.status = PluginStatus::Failed;
+        e.errorMessage = abiError;
+        LOG_ERROR("PluginRegistry: abi gate rejected dynamic plugin '{}': {}",
+                  e.manifest.id.toStdString(), abiError.toStdString());
+        m_entries.append(e);
+        return;
+    }
+
+    // Static plugins compress Discovered→Validated→Registered at
+    // registration; dynamic ones do the same (discovery IS registration —
+    // the gates above all ran on metadata before any library code).
+    e.status = PluginStatus::Registered;
+    LOG_INFO("PluginRegistry: registered dynamic '{}' v{} (api {}.{}, order {}, "
+             "library: {})",
+             e.manifest.id.toStdString(), e.manifest.version.toStdString(),
+             e.manifest.apiMajor, e.manifest.apiMinor, e.manifest.order,
+             e.libraryPath.toStdString());
     m_entries.append(e);
 }
 

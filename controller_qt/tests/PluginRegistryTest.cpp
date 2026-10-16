@@ -3,6 +3,7 @@
 // configure-time CMake check is field-existence only; every rule below is
 // THIS class's contract.
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QTest>
 
@@ -49,6 +50,15 @@ private slots:
     void testAddStaticPluginFailedEntryStaysVisible();
     void testAddStaticPluginRejectsTooHighApiVersion();
     void testOrderedEntriesSortByManifestOrder();
+    // Stage 2 (2026-10-16): the dynamic registration path — abi gate
+    // forced, static path exempt (the §A.2 asymmetry), duplicate ids
+    // never overwrite, qml_url manifest key.
+    void testAddDynamicPluginRegistersWithHostAbi();
+    void testAddDynamicPluginRejectsAbiMismatch();
+    void testAddDynamicPluginRejectsMissingAbiBlock();
+    void testAddDynamicPluginDuplicateIdNeverOverwrites();
+    void testAddStaticPluginIsAbiExempt();
+    void testParseManifestReadsQmlUrl();
 };
 
 void PluginRegistryTest::testParseValidManifest()
@@ -238,6 +248,113 @@ void PluginRegistryTest::testOrderedEntriesSortByManifestOrder()
     QCOMPARE(ordered.at(0).manifest.id, QStringLiteral("org.desktop-pet.a"));
     QCOMPARE(ordered.at(1).manifest.id, QStringLiteral("org.desktop-pet.b"));
     QCOMPARE(ordered.at(2).manifest.id, QStringLiteral("org.desktop-pet.c"));
+}
+
+void PluginRegistryTest::testAddDynamicPluginRegistersWithHostAbi()
+{
+    PluginRegistry reg;
+    // The plugin side of the abi comparison is the host's own generated
+    // block (same-repo same-toolchain build) — must pass by construction.
+    reg.addDynamicPlugin(manifest(), nullptr,
+                         QStringLiteral("/fake/libsample.so"),
+                         core::hostAbiBlock());
+    QCOMPARE(reg.size(), 1);
+    const auto* e = reg.entry(QStringLiteral("org.desktop-pet.sample"));
+    QVERIFY(e != nullptr);
+    QCOMPARE(e->status, PluginStatus::Registered);
+    QCOMPARE(e->source, QStringLiteral("dynamic"));
+    QVERIFY(!e->abiExempt);
+    QCOMPARE(e->libraryPath, QStringLiteral("/fake/libsample.so"));
+    QVERIFY(e->create == nullptr);
+}
+
+void PluginRegistryTest::testAddDynamicPluginRejectsAbiMismatch()
+{
+    PluginRegistry reg;
+    QJsonObject abi = QJsonDocument::fromJson(
+        core::hostAbiBlock().toUtf8()).object();
+    abi["compiler_version"] = abi.value(QStringLiteral("compiler_version"))
+                                  .toString() + QStringLiteral("x");
+    reg.addDynamicPlugin(manifest(), nullptr, QStringLiteral("/fake/x.so"),
+                         QString::fromUtf8(
+                             QJsonDocument(abi).toJson(QJsonDocument::Compact)));
+    QCOMPARE(reg.size(), 1);
+    QCOMPARE(reg.orderedEntries().first().status, PluginStatus::Failed);
+    QVERIFY(reg.orderedEntries().first().errorMessage.contains(
+        QStringLiteral("abi")));
+}
+
+void PluginRegistryTest::testAddDynamicPluginRejectsMissingAbiBlock()
+{
+    PluginRegistry reg;
+    // Empty abiJson → empty object → validateAbi fails closed (missing
+    // field): the dynamic path REQUIRES the block, unlike static.
+    reg.addDynamicPlugin(manifest(), nullptr, QStringLiteral("/fake/x.so"),
+                         QString());
+    QCOMPARE(reg.size(), 1);
+    QCOMPARE(reg.orderedEntries().first().status, PluginStatus::Failed);
+    QVERIFY(reg.orderedEntries().first().errorMessage.contains(
+        QStringLiteral("abi")));
+}
+
+void PluginRegistryTest::testAddDynamicPluginDuplicateIdNeverOverwrites()
+{
+    PluginRegistry reg;
+    reg.addStaticPlugin(manifest(), nullptr); // id org.desktop-pet.sample
+    QVERIFY(reg.entry(QStringLiteral("org.desktop-pet.sample"))->abiExempt);
+
+    reg.addDynamicPlugin(manifest(), nullptr, QStringLiteral("/fake/x.so"),
+                         core::hostAbiBlock());
+
+    // The existing (static) entry is untouched; a visible Failed duplicate
+    // was appended — never silently dropped, never overwriting.
+    QCOMPARE(reg.size(), 2);
+    const auto* original = reg.entry(QStringLiteral("org.desktop-pet.sample"));
+    QVERIFY(original != nullptr);
+    QCOMPARE(original->source, QStringLiteral("static"));
+    QCOMPARE(original->status, PluginStatus::Registered);
+    QVERIFY(original->abiExempt);
+    const auto ordered = reg.orderedEntries(); // same order 100 → id tie
+    int failedDuplicates = 0;
+    for (const auto& e : ordered) {
+        if (e.source == QStringLiteral("dynamic")) {
+            QCOMPARE(e.status, PluginStatus::Failed);
+            QVERIFY(e.errorMessage.contains(QStringLiteral("duplicate")));
+            ++failedDuplicates;
+        }
+    }
+    QCOMPARE(failedDuplicates, 1);
+}
+
+void PluginRegistryTest::testAddStaticPluginIsAbiExempt()
+{
+    PluginRegistry reg;
+    // §A.2 asymmetry: a MISMATCHING abi block on the static path is
+    // provenance only — the entry still registers. The dynamic path
+    // (tests above) rejects the very same block.
+    reg.addStaticPlugin(manifest(), nullptr,
+                        QStringLiteral("{\"compiler\":\"OTHER\"}"));
+    QCOMPARE(reg.size(), 1);
+    QCOMPARE(reg.orderedEntries().first().status, PluginStatus::Registered);
+    QVERIFY(reg.orderedEntries().first().abiExempt);
+}
+
+void PluginRegistryTest::testParseManifestReadsQmlUrl()
+{
+    // v1.12 optional key: dynamic manifests carry their own page URL.
+    // Absent key → empty (static manifests are unaffected).
+    QString err;
+    const auto withUrl = PluginRegistry::parseManifest(QStringLiteral(
+        R"json({"id":"org.desktop-pet.sample","version":"0.1.0",
+          "api_version":"1.0","qml_url":"qrc:/qt/qml/SamplePlugin/SamplePage.qml"})json"),
+        &err);
+    QVERIFY2(withUrl.has_value(), qPrintable("parse failed: " + err));
+    QCOMPARE(withUrl->qmlUrl,
+             QStringLiteral("qrc:/qt/qml/SamplePlugin/SamplePage.qml"));
+
+    const auto withoutUrl = PluginRegistry::parseManifest(manifest(), &err);
+    QVERIFY2(withoutUrl.has_value(), qPrintable("parse failed: " + err));
+    QCOMPARE(withoutUrl->qmlUrl, QString());
 }
 
 QTEST_APPLESS_MAIN(PluginRegistryTest)

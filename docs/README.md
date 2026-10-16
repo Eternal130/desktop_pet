@@ -223,6 +223,7 @@ MVP 阶段渲染引擎作为独立可执行程序运行，自行完成全部功�
 | [日志体系](./system/logging.md) | 日志框架、级别、文件管理 | ✅ MVP/Phase 2 已实现 |
 | [启动流程](./system/startup.md) | MVP 和控制面板启动/关闭流程、多实例管理 | ✅ 已实现 |
 | [扩展性预留](./system/extensibility.md) | 插件系统、状态系统预留 | 架构预留 |
+| [动态插件加载](./system/plugins.md) | 阶段 2 宿主加载通道：目录约定、plugin.json 动态字段（qml_url/abi）、安装与禁用流程、同工具链约束（SDK v1.12） | ✅ 宿主加载通道已实现 |
 | [外置语音包挂载](./system/voice-pack-mounting.md) | 语音包与模型解耦挂载设计、事件映射、口型同步 | ✅ Phase 3a 已实现（控制面板侧 + 渲染器侧） |
 | [通知流（气泡信息流）](./system/notification-stream.md) | 桌面级气泡通知流架构、对话包格式与触发器、配置（取代原字幕系统） | ✅ 已实现 |
 | [工程化](./engineering/README.md) | 工程化概述索引 | ✅ 持续更新 |

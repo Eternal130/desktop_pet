@@ -48,6 +48,8 @@ private slots:
     void testDisabledPluginSkippedAtBoot();
     void testRestartPendingSemantics();
     void testNullDatabaseDegradesToEnabled();
+    // Stage 2 (2026-10-16): source/path roles for the management UI.
+    void testSourceAndPathRoles();
 };
 
 void PluginManagerTest::testDefaultsAndRoles()
@@ -151,6 +153,34 @@ void PluginManagerTest::testNullDatabaseDegradesToEnabled()
     PluginManager manager(reg, nullptr); // degraded mode
     manager.setEnabled(QStringLiteral("org.test.a"), false); // no crash
     QVERIFY(manager.enabledAtStart(QStringLiteral("org.test.a"))); // stays default
+}
+
+void PluginManagerTest::testSourceAndPathRoles()
+{
+    PluginRegistry reg;
+    // Static entry: source "static", no library path.
+    reg.addStaticPlugin(manifestFor("org.test.static"), &createNoop);
+    // Dynamic entry (registered directly — the loader is not this model's
+    // concern): source "dynamic" + the discovered .so path.
+    reg.addDynamicPlugin(manifestFor("org.test.dyn"), nullptr,
+                         QStringLiteral("/fake/libdyn.so"), core::hostAbiBlock());
+
+    PluginManager manager(reg, nullptr);
+    QCOMPARE(manager.rowCount(), 2);
+
+    const auto ordered = reg.orderedEntries(); // both order 100 → id asc:
+    // org.test.dyn < org.test.static
+    const QModelIndex dyn = manager.index(0, 0);
+    const QModelIndex stat = manager.index(1, 0);
+    QCOMPARE(ordered.at(0).manifest.id, QStringLiteral("org.test.dyn"));
+    QCOMPARE(manager.data(dyn, PluginManager::SourceRole).toString(),
+             QStringLiteral("dynamic"));
+    QCOMPARE(manager.data(dyn, PluginManager::PathRole).toString(),
+             QStringLiteral("/fake/libdyn.so"));
+    QCOMPARE(manager.data(stat, PluginManager::SourceRole).toString(),
+             QStringLiteral("static"));
+    QCOMPARE(manager.data(stat, PluginManager::PathRole).toString(),
+             QString());
 }
 
 QTEST_MAIN(PluginManagerTest)

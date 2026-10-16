@@ -2,7 +2,7 @@
 
 第一方插件 SDK 接口头集合（P4 落地，P6a 冻结点前允许演进，冻结后变更走版本化）。
 设计合同: `docs/refactor/plugin-architecture-and-cmake-migration.md` §A/§B.3。
-**当前版本: API 1.10**（2026-10-13，见文末「版本历史」）。
+**当前版本: API 1.12**（2026-10-16，见文末「版本历史」）。
 
 ## 组成
 
@@ -10,9 +10,10 @@
 |---|---|
 | `PluginTypes.hpp` | POD/Qt 值类型（InstanceInfo / PackInfo / DownloadRequest / InstallSpec / PageDescriptor / v1.2: InstanceSpec / InstanceRuntime / v1.3: ModelSummary / **v1.4: MonitorSample / MonitorSubscription** / **v1.8: LayoutInfo + MonitorSample.rendererFps 尾部追加** / **v1.10: InstanceSpec.graphicsBackend 尾部追加**）+ PluginError / PluginLogLevel / 宿主 API 版本常量 + 能力词表常量（v1.1: `kCapabilityNetwork` / `kCapabilityVoicepacksInstall` / `kCapabilityInstanceLifecycle` / `kCapabilityInstanceTuning` / `kCapabilitySettingsWrite`，拼写与 manifest 解析逐字一致） |
 | `IPanelPlugin.hpp` | 插件唯一入口：`initialize(IPluginContext&)` / `shutdown()`；iid `org.desktop-pet.PanelPlugin/1.0` |
+| `IPluginFactory.hpp` | **v1.12（阶段 2 宿主加载通道）** 动态插件加载根协议：`create()` / `destroy(IPanelPlugin*)`——插件实例的构造与销毁都在**插件模块内**经工厂完成（P6a 第 5 判据：跨模块 delete 是 UB，宿主永不直接 delete 动态实例）；iid `org.desktop-pet.PanelPluginFactory/1.0`（minor 跟随 kApiMajor，同 IPanelPlugin 规则）；静态插件不经此接口（同二进制内宿主侧构造/销毁安全） |
 | `IPluginContext.hpp` | 宿主服务面：instanceApi / voicePackApi / uiApi / downloadApi / pluginConfigDir / log + **v1.1 尾部追加 `queryApi`（阶段 2 后新接口族的唯一暴露通道）**；内含 `IExtApi` 标记接口 |
 | `IInstanceApi.hpp` | 只读实例花名册 + `IRosterObserver` 纯虚订阅（**禁 std::function**）。只读 = 接口形状保持（v1.0 vtable 布局不动）；「插件永不写实例」的只读**承诺**已被 2026-09-21 决策推翻，写能力走 S2 `IInstanceControlApi`（`queryApi` 暴露，`instance_lifecycle`/`instance_tuning` 能力门控）。v1.2 追加 `IInstanceObserver` + `subscribeInstances`/`unsubscribeInstances` 尾追（实例级状态观察） |
-| `IInstanceControlApi.hpp` | **v1.2 (S2)** 实例生命周期写族: create / remove / start / stop / restart / loadModel。继承 `IExtApi` 经 `queryApi` 获取；`instance_lifecycle` 能力 + 宿主 `plugin_write_enabled` 开关门控，未授权为 stub；同步返回=受理，结果经 `IInstanceObserver` |
+| `IInstanceControlApi.hpp` | **v1.2 (S2)** 实例生命周期写族: create / remove / start / stop / restart / loadModel / **v1.11: setAvatar**（实例头像持久化写，空 avatar → InvalidArgument、同值 Ok no-op、花名册变化经 dataChanged → rosterChanged 扇出）。继承 `IExtApi` 经 `queryApi` 获取；`instance_lifecycle` 能力 + 宿主 `plugin_write_enabled` 开关门控，未授权为 stub；同步返回=受理，结果经 `IInstanceObserver` |
 | `ITuningApi.hpp` | **v1.3 (S5)** 实例调参写族: setOpacity / setVolume / setMuted / setFps / playMotion / setExpression / triggerHitArea / mountVoicePack / unmountVoicePack / **v1.10: setGraphicsBackend**（渲染后端选择器，"opengl"/"vulkan" 大小写不敏感、离线持久化、下次启动生效）。继承 `IExtApi` 经 `queryApi` 获取；`instance_tuning` 能力 + 宿主开关门控；mount 的 packId 是**目录名**（宿主解析为绝对路径，未知包→NotFound） |
 | `IModelApi.hpp` | **v1.3 (S5)** 模型库只读族: availableModels / refreshScan / modelInfo（ModelSummary）。经 `queryApi` 获取；**只读不门控**（不受能力与写开关约束），未接线→nullptr |
 | `ISettingsApi.hpp` | **v1.3 (S6)** 面板设置写族（类型化方法，禁 QJsonObject 逃生舱）: setCloseAction / setConfirmOnExit / setStartMinimized / setDefaultModelName / **v1.10: setDefaultGraphicsBackend**（新建实例默认渲染后端，"opengl"/"vulkan" 大小写不敏感归一小写）。`settings_write` 能力 + 宿主开关门控；**刻意不含 autoLaunchSystem**（宿主外壳能力不进插件 API） |
@@ -156,7 +157,10 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
 - **阶段 1（当前）**: 编译期静态插件——`plugins/<name>/` 源码目录 → STATIC 库链进
   exe，CMake 生成工厂表（`static_plugins.cpp`），同一次编译，ABI 风险为零。
 - **阶段 2（开启判据见 §A.3 四条）**: 独立 dll + QPluginLoader + abi 门控。接口
-  已按阶段 2 标准设计，届时"换加载器"而非"改接口"。
+  已按阶段 2 标准设计，届时"换加载器"而非"改接口"。**宿主加载通道已开启**
+  （2026-10-16，SDK v1.12: `IPluginFactory` 工厂协议 + `DynamicPluginSource`
+  双目录发现 + abi 硬校验 + PreventUnload；同仓同工具链约束）——面向第三方的
+  发布链（SDK 安装包 + abi 注入模板）仍为后续工作。
 - **阶段 2 所有权前提（P6a 评审结论）**: 当前"宿主 create / 宿主 delete"（含
   defaulted 虚析构豁免）仅对阶段 1 同二进制成立；开启阶段 2 的附加判据（第 5
   条）= 工厂接口增加 `destroy(IPanelPlugin*)` 并由 PluginHost 切换为插件模块
@@ -174,6 +178,78 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
 `qrc:/` URL（§B.6）。
 
 ## 版本历史
+
+### v1.12（2026-10-16，kApiMajor=1 / kApiMinor=12）— 阶段 2 宿主动态加载通道
+
+全部为**加法**变更（一个新接口头 + 宿主侧加载/生命周期/管理面接线），零既有签名/顺序
+改动；`IPluginContext` 尾追特权未使用。
+
+1. **`kApiMinor` 11 → 12**。
+2. **`IPluginFactory`**（新头 `api/IPluginFactory.hpp`，iid
+   `org.desktop-pet.PanelPluginFactory/1.0`——拼写单源化为宏
+   `PET_PLUGIN_FACTORY_IID`（同头定义; `Q_DECLARE_INTERFACE` / 插件侧
+   `Q_PLUGIN_METADATA(IID ...)` / 宿主 `DynamicPluginSource` iid 门共用一处
+   拼写，纯单源化无新面、不随版本 bump）: 动态插件的加载根协议——模块根
+   QObject 经 `Q_PLUGIN_METADATA` + `Q_INTERFACES` 暴露，`create()` 模块内构造、
+   `destroy(IPanelPlugin*)` 模块内销毁（P6a 第 5 判据: 跨模块 delete 是 UB，宿主
+   永不直接 delete 动态实例）。静态插件不经此接口。
+3. **宿主加载通道**: `PluginRegistry::addDynamicPlugin`（parseManifest →
+   api_version 门 → id 查重〔含静态，Failed 条目绝不覆盖〕→ **abi 硬校验**——
+   动态路径首次真调用 `validateAbi`，宿主基准 = CMake 生成的
+   `core::hostAbiBlock()`〔`generated/host_abi.cpp`，与静态插件 abi 行逐字同源〕）；
+   新 `core::DynamicPluginSource`（`ILibraryLoader`/`ILibraryHandle` 注入 seam，
+   生产实现包 QPluginLoader + `PreventUnloadHint`）扫描 `<exeDir>/plugins/` 与
+   `dataDir()/plugins/`（同名文件 exeDir 优先、目录缺失静默跳过不创建）；
+   **metaData 全程先于 instance()**——任何校验失败零库代码执行，Failed 条目
+   照常进管理列表（绝不静默丢弃）; manifest 可选键 `qml_url`（snake_case）自带
+   页面 URL（宿主无构建期注入; 静态路径忽略此键，其 URL 仍由 CMake 注入）。
+4. **生命周期接线**: `PluginHost::initializeAll` 动态条目经 `factory->create()`
+   （与静态同款 try/catch 隔离）; `shutdownAll` 动态条目经 `factory->destroy()`
+   （try/catch 包住，禁止宿主直接 delete），静态照旧宿主 delete。
+5. **管理面**: `PluginManager` 增 `SourceRole`/`PathRole`（"source"/"path"，尾部
+   追加）+ `Q_INVOKABLE openPluginsDir()`（创建并打开 `<dataDir>/plugins/`，
+   never-throw）; `PluginEntry` 尾追 `factory`/`libraryPath` 字段。
+6. **模板**: `plugins/sdk-template` 增 `PET_BUILD_SDK_TEMPLATE_DYNAMIC` 选项
+   （默认 OFF）——MODULE 变体（`SamplePluginFactory` 根对象），产物投放
+   `<exeDir>/plugins/` 或 `dataDir()/plugins/` 后重启面板即装; 不 PARENT_SCOPE
+   导出（不进 exe）。`ConfigDir` 增 `pluginsDir()`（= `dataDir() + "plugins/"`，
+   与 `IPluginContext::pluginConfigDir()`〔插件私有配置区〕是两回事）。
+7. **测试**: 新 `DynamicPluginSourceTest`（8 用例: 合法全链路回填/iid 不符零
+   instance/abi 不匹配/api 过新/撞静态 id/根对象不可 cast/目录缺失/双目录同名
+   优先级）; `PluginHostTest` 增动态工厂生命周期用例（create 经工厂、shutdown
+   destroy 被调且宿主未直接 delete、禁用跳过、工厂抛异常隔离）;
+   `PluginRegistryTest` 增 addDynamicPlugin 直测 + 静态豁免/动态强制对称;
+   `PluginManagerTest` 增 SourceRole/PathRole 断言。
+
+### v1.11（2026-10-16，kApiMajor=1 / kApiMinor=11）— 实例头像写操作
+
+全部为**加法**变更（一个既有写族的尾部追加 + 宿主写面接线），零既有签名/顺序改动；
+`IPluginContext` 尾追特权未使用。
+
+1. **`kApiMinor` 10 → 11**。
+2. **`IInstanceControlApi` 第 7 个生命周期操作 `setAvatar(uuid, avatar)`**（族版本
+   不变，尾部追加——照 v1.10 setGraphicsBackend 先例不升族版本）: 持久化
+   `InstanceConfig.avatar`。空 avatar → InvalidArgument（先于 locate，照 loadModel
+   次序；setGraphicsBackend 空串先例「无静默纠偏」——不悄悄回退 🐱 缺省）；同值 →
+   Ok no-op（不写不发）；save-first-then-apply（持久化失败 → Generic，内存与磁盘
+   都留旧值）。NotFound/Busy 照 locateAlive 先例（pending-delete 期间 Busy）。
+   可观察性: 花名册 dataChanged(AvatarRole) → rosterChanged 粗粒度扇出
+   （InstanceRuntime 刻意不含 avatar 字段——粗粒度足够，最小加法）。
+3. **宿主接线**: InstanceSession 增普通 C++ `setAvatar`（照 setGraphicsBackend
+   save-first-then-apply 模板: 同值 no-op / save 失败 false / 成功翻 m_config、
+   无 NOTIFY——avatar Q_PROPERTY 保持 CONSTANT；非 Q_INVOKABLE、非 WRITE，门禁
+   零维护，setEventPublisher 先例）; InstanceManager 增普通 C++
+   `setAvatar(uuid, avatar)`（rowForUuid → session 写 → **dataChanged(AvatarRole)，
+   本项目第一个 dataChanged 用户**，驱动 InstanceApiImpl rosterChanged 扇出 +
+   RosterApiModel 重置；同值短路不发射——发射决策单点在 manager）;
+   InstanceControlApiImpl 真实现 + InstanceControlApiStub 补 Capability 桩
+   （queryApi 路由/能力/开关矩阵不变，只是接口多一方法）。
+4. **测试**: InstanceControlApiImplTest 增 testSetAvatar（成功双持久断言〔session
+   字段 + config 行〕+ rosterChanged 扇出 + UI AvatarRole 读面 + 同值 no-op 不扇出
+   + 空 avatar/未知 uuid/Busy 值不变）; PluginQueryApiTest 门控矩阵三分支
+   （switch off / not granted / degraded）各补 setAvatar Capability 断言;
+   InstanceControlBridgeTest/RosterApiModelTest 的 FakeControlApi 各补尾追桩
+   （保持具体类可编译）。
 
 ### v1.10（2026-10-13，kApiMajor=1 / kApiMinor=10）— 渲染后端选择器与面板默认后端
 

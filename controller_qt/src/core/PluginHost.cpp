@@ -201,13 +201,38 @@ void PluginHost::initializeAll()
             continue;
         }
         PluginEntry* entry = m_registry.entry(e.manifest.id);
-        if (entry == nullptr || entry->create == nullptr) {
+        // Stage-1 static entries create through the CMake factory table;
+        // stage-2 dynamic entries through the module-side IPluginFactory
+        // (either missing → the same Failed path).
+        if (entry == nullptr ||
+            (entry->source == QStringLiteral("static") &&
+             entry->create == nullptr) ||
+            (entry->source == QStringLiteral("dynamic") &&
+             entry->factory == nullptr)) {
             m_registry.transition(e.manifest.id, PluginStatus::Failed,
                                   QStringLiteral("no factory function"));
             continue;
         }
         try {
-            entry->instance = entry->create();
+            // Static: host-binary create() (safe — same binary). Dynamic:
+            // construction INSIDE the plugin module via factory->create()
+            // (the host must never construct plugin code across the module
+            // boundary); same try/catch isolation as everything below.
+            entry->instance = entry->source == QStringLiteral("dynamic")
+                ? entry->factory->create()
+                : entry->create();
+            // P0-1: a factory (static CreateFn or dynamic IPluginFactory)
+            // returning null must fail the entry cleanly — no context
+            // construction, no initialize() on a null this-pointer.
+            if (entry->instance == nullptr) {
+                m_registry.transition(e.manifest.id, PluginStatus::Failed,
+                                      QStringLiteral("factory returned null "
+                                                     "instance"));
+                LOG_ERROR("PluginHost: plugin '{}' factory returned a null "
+                          "instance — marking Failed",
+                          e.manifest.id.toStdString());
+                continue;
+            }
             // S3 roster dogfooding: prefer the SHARED InstanceApiImpl from
             // the service tree (PanelApplication) so plugins and the panel's
             // own RosterApiModel observe the same object. Degraded wiring
@@ -289,6 +314,10 @@ void PluginHost::initializeAll()
             m_contexts.append(ctx);
             const pet::PluginError err = entry->instance->initialize(*ctx);
             if (err != pet::PluginError::Ok) {
+                // P1-3: the instance dies NOW (exactly-once destroy
+                // contract) — destroy first, then record the failure
+                // reason, so a throwing destroy cannot mask it.
+                destroyInstanceNow(*entry);
                 m_registry.transition(entry->manifest.id, PluginStatus::Failed,
                                       QStringLiteral("initialize returned error %1")
                                           .arg(static_cast<int>(err)));
@@ -308,6 +337,12 @@ void PluginHost::initializeAll()
                               core::makePluginLifecyclePayload(
                                   entry->manifest.id));
         } catch (const std::exception& ex) {
+            // P1-3: same immediate teardown when initialize() THREW (the
+            // instance exists unless the throw came from create() itself —
+            // destroyInstanceNow null-checks). Destroy before the Failed
+            // transition so the recorded reason stays the original throw.
+            if (entry != nullptr && entry->instance != nullptr)
+                destroyInstanceNow(*entry);
             m_registry.transition(e.manifest.id, PluginStatus::Failed,
                                   QStringLiteral("initialize threw: %1")
                                       .arg(QString::fromUtf8(ex.what())));
@@ -315,6 +350,8 @@ void PluginHost::initializeAll()
                       "continuing): {}",
                       e.manifest.id.toStdString(), ex.what());
         } catch (...) {
+            if (entry != nullptr && entry->instance != nullptr)
+                destroyInstanceNow(*entry);
             m_registry.transition(e.manifest.id, PluginStatus::Failed,
                                   QStringLiteral("initialize threw an unknown exception"));
             LOG_ERROR("PluginHost: plugin '{}' initialize threw an UNKNOWN "
@@ -396,8 +433,13 @@ void PluginHost::shutdownAll()
                 }
             }
         }
-        delete entry->instance; // host-owned (stage 1: same binary, safe)
-        entry->instance = nullptr;
+        // Ownership (stage 2, P6a criterion 5): a DYNAMIC plugin's
+        // instance is destroyed INSIDE its module via factory->destroy() —
+        // the host must never delete across the module boundary (UB).
+        // Static plugins share the host binary; direct delete stays safe.
+        // (P1-3: single-sourced with the initialize-failure paths in
+        // destroyInstanceNow.)
+        destroyInstanceNow(*entry);
         m_registry.transition(*it, PluginStatus::Stopped);
         ++shutDown;
         LOG_INFO("PluginHost: plugin '{}' Stopped", it->toStdString());
@@ -421,6 +463,37 @@ int PluginHost::failedCount() const
             ++failed;
     }
     return failed;
+}
+
+void PluginHost::destroyInstanceNow(PluginEntry& entry)
+{
+    if (entry.instance == nullptr)
+        return;
+
+    if (entry.source == QStringLiteral("dynamic")) {
+        if (entry.factory != nullptr) {
+            try {
+                entry.factory->destroy(entry.instance);
+            } catch (const std::exception& ex) {
+                LOG_WARN("PluginHost: plugin '{}' destroy threw (isolated): {}",
+                         entry.manifest.id.toStdString(), ex.what());
+            } catch (...) {
+                LOG_WARN("PluginHost: plugin '{}' destroy threw an unknown "
+                         "exception (isolated)",
+                         entry.manifest.id.toStdString());
+            }
+        } else {
+            // Unreachable from initializeAll/shutdownAll entry states
+            // (both require a factory); leak + WARN rather than a
+            // cross-module delete.
+            LOG_WARN("PluginHost: dynamic plugin '{}' has no factory at "
+                     "teardown — instance leaked (never cross-module delete)",
+                     entry.manifest.id.toStdString());
+        }
+    } else {
+        delete entry.instance; // host-owned (stage 1: same binary, safe)
+    }
+    entry.instance = nullptr;
 }
 
 void PluginHost::bridgeNotify(const QString& pluginId, const QString& title,

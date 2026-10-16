@@ -174,6 +174,15 @@ public:
     static NotificationStreamController* notificationStream() { return s_stream; }
 
 private:
+    // Per-source instance teardown (stage-2 review P1-3): dynamic entries
+    // die INSIDE their module via factory->destroy() (never a cross-module
+    // delete), static entries via host delete. Used by BOTH shutdownAll
+    // and the initialize-failure paths so the exactly-once destroy
+    // contract holds on every path that created an instance. Isolated
+    // (a throwing destroy is logged, never rethrown) and nulls
+    // entry.instance.
+    void destroyInstanceNow(PluginEntry& entry);
+
     PluginRegistry& m_registry;
     InstanceManager* m_instanceManager = nullptr;
     InstanceApiImpl* m_instanceApi = nullptr; // shared (service tree), not owned

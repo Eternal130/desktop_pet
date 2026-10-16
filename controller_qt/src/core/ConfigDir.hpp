@@ -23,6 +23,8 @@
 //   - config managers (each takes an injectable base path for testing)
 //   - T2 Logging (logsDir() provides the rotating-file-sink root)
 //   - DownloadService (downloadsDir() staging / userVoicePacksDir() installs)
+//   - DynamicPluginSource + PluginManager (pluginsDir() drop-in scan target,
+//     stage-2 host channel 2026-10-16)
 //
 // Migration (Windows only): the legacy layout rooted everything at
 // %USERPROFILE%\.config\desktop-pet\. migrateLegacyIfNeeded() copies that
@@ -61,6 +63,17 @@ QString instancesDir();
 
 // Returns the logs subdirectory: <configDir>/logs/
 QString logsDir();
+
+// Returns the user drop-in PLUGIN directory: <dataDir>/plugins/ (stage-2
+// dynamic discovery, 2026-10-16; the lower-priority half of
+// DynamicPluginSource's scan — <exeDir>/plugins/ wins on same-name
+// collisions). Created on demand by its owners (PluginManager::
+// openPluginsDir), NOT by ensureDirectories().
+//
+// NOT to be confused with IPluginContext::pluginConfigDir() — that is the
+// per-plugin PRIVATE config area <configDir>/plugins/<id>/ (a different
+// root and a different purpose despite the shared "plugins" segment).
+QString pluginsDir();
 
 // One-time legacy-config migration (Windows only — see the header block
 // comment; on any other platform this is a compile-time no-op returning

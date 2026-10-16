@@ -464,6 +464,15 @@ qt_add_library(pet_panel_core STATIC
     src/core/PluginContextImpl.hpp
     src/core/PluginCapabilityStubs.cpp
     src/core/PluginCapabilityStubs.hpp
+    # Stage 2 (2026-10-16, SDK v1.12): drop-in dynamic plugin discovery —
+    # the ILibraryLoader/ILibraryHandle injection seams (production halves
+    # wrap QPluginLoader + PreventUnloadHint) and the dual-directory scan
+    # (<exeDir>/plugins then ConfigDir::pluginsDir) feeding
+    # PluginRegistry::addDynamicPlugin. metaData() always precedes
+    # instance(); rejected files execute zero library code. The .hpp is
+    # listed so AUTOMOC processes its Q_OBJECT metadata.
+    src/core/DynamicPluginSource.cpp
+    src/core/DynamicPluginSource.hpp
     # P5 §B.4 host download pipeline: the process-wide download chokepoint
     # (one QNetworkAccessManager inside the production reply factory; the
     # factory is the injectable test seam for offline/error paths).
@@ -650,6 +659,7 @@ qml/pages/MonitorPage.qml
 qml/pages/VoicePackPage.qml
 qml/pages/AssetPage.qml
 qml/pages/ModelLibraryPage.qml
+qml/pages/PluginManagerPage.qml
 qml/BubbleStreamWindow.qml
 qml/components/BubbleCard.qml
 )
@@ -666,6 +676,22 @@ qml/components/BubbleCard.qml
 # §A.2 abi block (compiler/qt/build_type) generated from THIS build's
 # toolchain, never hand-written. Compile-time plugins are abi-EXEMPT at
 # runtime (§A.2) — the embedded abi documents the build, ready for stage 2.
+#
+# §A.2 abi block — computed ONCE here (P2-1 single-sourcing, 2026-10-16
+# review round) and referenced by every generator below (the static rows
+# in BOTH passes + the host_abi.cpp baseline). All three expressions must
+# stay verbatim-identical; the shared variable makes that structural.
+# plugins/sdk-template's dynamic variant recomputes the same expression
+# in ITS scope (add_subdirectory does not inherit normal variables down)
+# — see the lockstep note there.
+if(MINGW)
+    set(_abi_qt_build "mingw_64")
+elseif(MSVC)
+    set(_abi_qt_build "msvc_64")
+else()
+    set(_abi_qt_build "linux_gcc_64")
+endif()
+set(_abi_json "{\"compiler\":\"${CMAKE_CXX_COMPILER_ID}\",\"compiler_version\":\"${CMAKE_CXX_COMPILER_VERSION}\",\"qt_version\":\"${Qt6_VERSION}\",\"qt_build\":\"${_abi_qt_build}\",\"build_type\":\"${CMAKE_BUILD_TYPE}\"}")
 set(_plugin_targets "")
 set(_plugin_safes "")
 file(GLOB _plugin_manifests "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*/plugin.json")
@@ -713,16 +739,8 @@ foreach(_manifest ${_plugin_manifests})
     # The plugin's qml module registers its qrc through a generated static
     # plugin (<target>plugin) — the EXE must link it too (P2c mechanism).
     list(APPEND _plugin_targets ${${_safe}_EXTRA_TARGETS})
-    # (3) factory declaration + row. The §A.2 abi block is generated from
-    #     THIS build's toolchain, never hand-written.
-    if(MINGW)
-        set(_abi_qt_build "mingw_64")
-    elseif(MSVC)
-        set(_abi_qt_build "msvc_64")
-    else()
-        set(_abi_qt_build "linux_gcc_64")
-    endif()
-    set(_abi_json "{\"compiler\":\"${CMAKE_CXX_COMPILER_ID}\",\"compiler_version\":\"${CMAKE_CXX_COMPILER_VERSION}\",\"qt_version\":\"${Qt6_VERSION}\",\"qt_build\":\"${_abi_qt_build}\",\"build_type\":\"${CMAKE_BUILD_TYPE}\"}")
+    # (3) factory declaration + row. The §A.2 abi block is the shared
+    #     configure-time computation at the top of this section (_abi_json).
     file(APPEND "${_static_plugins_file}"
 "pet::IPanelPlugin* pet_plugin_create_${_safe}();
 ")
@@ -734,19 +752,12 @@ void pet_register_static_plugins(core::PluginRegistry& registry)
 ")
 # Rows in a second pass over the manifests (same order as above): appended
 # as single quoted arguments — semicolons in generated code stay intact.
+# The abi block reuses the single configure-time computation (_abi_json).
 foreach(_manifest ${_plugin_manifests})
     get_filename_component(_plugdir "${_manifest}" DIRECTORY)
     get_filename_component(_dirname "${_plugdir}" NAME)
     string(REGEX REPLACE "[^A-Za-z0-9]" "_" _safe "${_dirname}")
     file(READ "${_manifest}" _raw)
-    if(MINGW)
-        set(_abi_qt_build "mingw_64")
-    elseif(MSVC)
-        set(_abi_qt_build "msvc_64")
-    else()
-        set(_abi_qt_build "linux_gcc_64")
-    endif()
-    set(_abi_json "{\"compiler\":\"${CMAKE_CXX_COMPILER_ID}\",\"compiler_version\":\"${CMAKE_CXX_COMPILER_VERSION}\",\"qt_version\":\"${Qt6_VERSION}\",\"qt_build\":\"${_abi_qt_build}\",\"build_type\":\"${CMAKE_BUILD_TYPE}\"}")
     file(APPEND "${_static_plugins_file}"
 "    registry.addStaticPlugin(QStringLiteral(R\"json(
 ${_raw})json\"),
@@ -760,6 +771,35 @@ file(APPEND "${_static_plugins_file}"
 ")
 # Re-run configure when manifests change (CMake only tracks CMakeLists).
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_plugin_manifests}")
+
+# ── Stage-2 host abi baseline (generated/host_abi.cpp) ─────────────────────
+# core::hostAbiBlock(): the §A.2 five-field single-line JSON compared
+# against every drop-in plugin's abi block by PluginRegistry::
+# addDynamicPlugin → validateAbi. Reuses the SAME configure-time
+# computation as the static plugin abi rows above (_abi_json, P2-1) —
+# the two generators share one variable, so they cannot drift. Lives in
+# pet_panel_core so the exe and every test binary link one baseline.
+set(_host_abi_file "${CMAKE_CURRENT_BINARY_DIR}/generated/host_abi.cpp")
+file(WRITE "${_host_abi_file}"
+"// GENERATED by controller_qt/CMakeLists.txt (stage-2 host abi baseline)
+// — DO NOT EDIT. core::hostAbiBlock(): the five-field §A.2 JSON compared
+// against every drop-in plugin's abi block by PluginRegistry::validateAbi.
+// Must stay in lockstep with the static plugin abi generator above (same
+// source variables, same field order and spelling).
+#include <QString>
+
+#include \"core/PluginRegistry.hpp\"
+
+namespace core {
+
+QString hostAbiBlock()
+{
+    return QStringLiteral(R\"abi(${_abi_json})abi\");
+}
+
+} // namespace core
+")
+target_sources(pet_panel_core PRIVATE "${_host_abi_file}")
 
 # ── exe shell ───────────────────────────────────────────────────────────────
 # Composition root (P3). M1: the visual-QA modes (--screenshot/--bubble) are

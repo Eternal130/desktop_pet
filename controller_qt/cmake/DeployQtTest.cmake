@@ -30,6 +30,12 @@
 
 include_guard(GLOBAL)
 
+# Capture THIS file's directory at include time — CMAKE_CURRENT_LIST_DIR
+# inside the function bodies resolves to the CALLER's directory (e.g.
+# tests/), not to cmake/ where DeployQtLocked.cmake actually lives.
+set(_PET_DEPLOYQT_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL
+    "dir of DeployQtTest.cmake (holds DeployQtLocked.cmake)")
+
 # One-shot windeployqt lookup shared by both wrappers below. Sets the
 # PET_WINDEPLOYQT_EXE cache variable; prints a single STATUS note when the
 # tool cannot be found.
@@ -84,7 +90,7 @@ function(_pet_deploy_qt_impl _pet_target _pet_comment)
                 -DDEPLOY_TOOL="${PET_WINDEPLOYQT_EXE}"
                 -DDEPLOY_LOCK_FILE="${CMAKE_BINARY_DIR}/.pet-windeployqt.lock"
                 "-DDEPLOY_ARGS=${ARGN}"
-                -P "${CMAKE_CURRENT_LIST_DIR}/DeployQtLocked.cmake"
+                -P "${_PET_DEPLOYQT_CMAKE_DIR}/DeployQtLocked.cmake"
         VERBATIM
         COMMENT "${_pet_comment}")
 endfunction()

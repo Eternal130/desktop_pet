@@ -24,10 +24,11 @@
 
 namespace {
 
-// 23 fields (the 7 subtitle_* fields were removed in the bubble-stream
-// switch, dialogue_pack in the dialogue-pack-system removal; legacy keys in
-// existing files are silently ignored).
-constexpr int kFieldCount = 23;
+// 25 fields (the 7 subtitle_* fields were removed in the bubble-stream
+// switch, dialogue_pack in the dialogue-pack-system removal; v1.13 added
+// model_scope + voice_pack_scope; legacy keys in existing files are
+// silently ignored).
+constexpr int kFieldCount = 25;
 
 // Build a config where EVERY field carries a distinctive, non-default value.
 // Used by the round-trip test so a single missed field surfaces immediately.
@@ -41,6 +42,7 @@ InstanceConfig makeFullyPopulated()
     c.rendererPath = QStringLiteral("/opt/desktop-pet/renderer.exe");
     c.graphicsBackend = QStringLiteral("vulkan");
     c.modelName = QStringLiteral("giwa-idol2023");
+    c.modelScope = QStringLiteral("com.example.pet");
     c.modelScale = 1.5;
     c.windowX = 100;
     c.windowY = 200;
@@ -53,6 +55,7 @@ InstanceConfig makeFullyPopulated()
     c.autoStart = true;
     c.currentExpression = QStringLiteral("F05");
     c.voicePack = QStringLiteral("锦瑟-锦瑟-中文-voice");
+    c.voicePackScope = QStringLiteral("com.example.voice");
     c.volume = 0.4;
     c.muted = true;
     c.layoutOffsetX = -12.5;
@@ -69,6 +72,7 @@ class InstanceConfigTest : public QObject
 
 private slots:
     void testRoundTripAllFields();
+    void testScopeFieldsSerde();
     void testMissingFieldsMergeFromDefaults();
     void testSnakeCaseMapping();
     void testUnknownFieldsIgnored();
@@ -85,7 +89,7 @@ void InstanceConfigTest::testRoundTripAllFields()
     const QJsonObject json = instanceConfigToJson(original);
     const InstanceConfig roundTripped = instanceConfigFromJson(json);
 
-    // Then: every field survived intact. operator== is member-wise (24 fields),
+    // Then: every field survived intact. operator== is member-wise (25 fields),
     // so a single dropped or mis-typed field fails here.
     QCOMPARE(roundTripped, original);
     // Belt-and-suspenders: explicitly check the trickiest fields that defaults
@@ -93,6 +97,54 @@ void InstanceConfigTest::testRoundTripAllFields()
     QCOMPARE(roundTripped.voicePack, QStringLiteral("锦瑟-锦瑟-中文-voice"));
     QCOMPARE(roundTripped.autoStart, true);
     QCOMPARE(roundTripped.layoutOffsetX, -12.5);
+    // v1.13: the resource-domain scopes round-trip as plain strings.
+    QCOMPARE(roundTripped.modelScope, QStringLiteral("com.example.pet"));
+    QCOMPARE(roundTripped.voicePackScope, QStringLiteral("com.example.voice"));
+}
+
+// v1.13 (resource isolation): model_scope / voice_pack_scope serde — snake_case
+// keys, plain-string form ("" = host domain), missing key → empty default
+// (pre-v1.13 files read back as host-domain configs).
+void InstanceConfigTest::testScopeFieldsSerde()
+{
+    // toJson writes both scope keys with plain string values.
+    InstanceConfig c = makeFullyPopulated();
+    const QJsonObject json = instanceConfigToJson(c);
+    QVERIFY2(json.contains(QStringLiteral("model_scope")),
+             "modelScope must serialize as 'model_scope'");
+    QVERIFY2(json.contains(QStringLiteral("voice_pack_scope")),
+             "voicePackScope must serialize as 'voice_pack_scope'");
+    QCOMPARE(json.value(QStringLiteral("model_scope")).toString(),
+             QStringLiteral("com.example.pet"));
+    QCOMPARE(json.value(QStringLiteral("voice_pack_scope")).toString(),
+             QStringLiteral("com.example.voice"));
+
+    // A default config writes EMPTY strings (host domain) — never null.
+    const QJsonObject defJson = instanceConfigToJson(InstanceConfig{});
+    QCOMPARE(defJson.value(QStringLiteral("model_scope")).toString(),
+             QString());
+    QCOMPARE(defJson.value(QStringLiteral("voice_pack_scope")).toString(),
+             QString());
+
+    // fromJson: explicit keys honored; missing keys → empty default.
+    QJsonObject in;
+    in.insert(QStringLiteral("id"), QStringLiteral("scope-id"));
+    in.insert(QStringLiteral("model_scope"), QStringLiteral("plug.a"));
+    in.insert(QStringLiteral("voice_pack_scope"), QStringLiteral("plug.b"));
+    const InstanceConfig parsed = instanceConfigFromJson(in);
+    QCOMPARE(parsed.modelScope, QStringLiteral("plug.a"));
+    QCOMPARE(parsed.voicePackScope, QStringLiteral("plug.b"));
+
+    QJsonObject legacy;
+    legacy.insert(QStringLiteral("id"), QStringLiteral("legacy-id"));
+    const InstanceConfig fromLegacy = instanceConfigFromJson(legacy);
+    QCOMPARE(fromLegacy.modelScope, QString()); // host domain default
+    QCOMPARE(fromLegacy.voicePackScope, QString());
+
+    // Wrong types fall back to the default (readString discipline).
+    QJsonObject wrong;
+    wrong.insert(QStringLiteral("model_scope"), 42);
+    QCOMPARE(instanceConfigFromJson(wrong).modelScope, QString());
 }
 
 void InstanceConfigTest::testMissingFieldsMergeFromDefaults()
@@ -125,6 +177,8 @@ void InstanceConfigTest::testMissingFieldsMergeFromDefaults()
     QCOMPARE(cfg.autoStart, false);
     QCOMPARE(cfg.currentExpression, QStringLiteral("F01"));
     QCOMPARE(cfg.voicePack, QString());          // empty = not mounted
+    QCOMPARE(cfg.modelScope, QString());         // v1.13: empty = host domain
+    QCOMPARE(cfg.voicePackScope, QString());     // v1.13: empty = host domain
     QCOMPARE(cfg.volume, 1.0);
     QCOMPARE(cfg.muted, false);
     QCOMPARE(cfg.layoutScale, 1.0);
@@ -255,8 +309,8 @@ void InstanceConfigTest::testKeyCount()
     const InstanceConfig cfg;
     // When: serialize.
     const QJsonObject json = instanceConfigToJson(cfg);
-    // Then: exactly one JSON key per field (23 after the dialogue_pack
-    // removal).
+    // Then: exactly one JSON key per field (25 — v1.13 added model_scope +
+    // voice_pack_scope).
     QCOMPARE(json.size(), kFieldCount);
 }
 

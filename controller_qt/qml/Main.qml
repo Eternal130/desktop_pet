@@ -759,9 +759,14 @@ Window {
                         required property string label
                         required property string uuid
                         required property bool connected
+                        // v1.13: plugin domain that summoned this instance
+                        // ("" = host-created). Read-only marker role — the
+                        // badge renders only for non-empty scopes.
+                        required property string pluginScope
                         required property int index
                         instanceLabel: instNav.label
                         live: instNav.connected
+                        pluginScope: instNav.pluginScope
                         match: navPane.searchFilter
                         visible: root.currentPage === "instance"
                         onClicked: root.selectInstance(instNav.index, instNav.uuid)
@@ -1373,6 +1378,9 @@ Window {
         id: iitem
         property string instanceLabel: ""
         property bool live: false
+        // v1.13: plugin domain that summoned this instance ("" = host-
+        // created). Drives the PluginScopeBadge marker — "打标记不隐藏".
+        property string pluginScope: ""
         property string match: ""
         signal clicked()
 
@@ -1386,6 +1394,7 @@ Window {
         width: parent.width
 
         Rectangle {
+            id: rowBg
             x: 8; y: 2
             width: parent.width - 16
             height: parent.height - 4
@@ -1413,16 +1422,43 @@ Window {
                     opacity: navPane.collapsed ? 0 : 1
                     Behavior on opacity { NumberAnimation { duration: 120 } }
                     visible: opacity > 0
+                    // While the plugin-scope badge shares the row, elide
+                    // before it instead of sliding underneath. Host rows
+                    // (badge hidden) keep the exact unconstrained label of
+                    // today — width falls back to implicitWidth, where
+                    // elide is a no-op.
+                    elide: Text.ElideRight
+                    width: scopeBadge.visible
+                        ? Math.min(implicitWidth,
+                                   rowBg.width - 12 - 16 - 14 // x + paw + gap
+                                   - 12 - scopeBadge.width - 14)
+                        : implicitWidth
                 }
             }
             Rectangle {
-                // live dot, expanded layout — right-aligned
+                // live dot, expanded layout — right-aligned; shifts left
+                // when the plugin-scope badge shares the row (host rows
+                // keep the exact 12px margin of today)
                 visible: iitem.live && !navPane.collapsed
                 anchors.right: parent.right
-                anchors.rightMargin: 12
+                anchors.rightMargin: 12 + (scopeBadge.visible
+                    ? scopeBadge.width + 6 : 0)
                 anchors.verticalCenter: parent.verticalCenter
                 width: 8; height: 8; radius: 4
                 color: Theme.successColor
+            }
+            PluginScopeBadge {
+                id: scopeBadge
+                // v1.13 plugin-scope marker ("打标记不隐藏"): right-aligned
+                // like the nav count badges; hidden on the collapsed rail
+                // (52px icon-only) — there the shared pane tooltip carries
+                // the plugin id instead (see the HoverHandler below).
+                active: !navPane.collapsed
+                pluginId: iitem.pluginScope
+                showText: true
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
             }
             Rectangle {
                 // live dot, collapsed rail — rides the paw icon's
@@ -1437,12 +1473,24 @@ Window {
             HoverHandler {
                 id: _hover
                 // collapsed rail: instance rows are paw-icon-only — the
-                // shared pane tooltip carries the instance name (no-op
-                // when expanded — showNavTip guards on navPane.collapsed)
-                onHoveredChanged: hovered
-                    ? navPane.showNavTip(iitem.instanceLabel,
-                          iitem.mapToItem(navPane, 0, 0).y + 17)
-                    : navPane.hideNavTip(iitem.instanceLabel)
+                // shared pane tooltip carries the instance name, plus the
+                // owning plugin id for scoped rows (the badge itself is
+                // rail-hidden). Expanded rows keep the label-only tip;
+                // there the badge's own tooltip reveals the id — so the
+                // collapsed guard inside showNavTip enforces the split and
+                // host rows never grow a tooltip.
+                onHoveredChanged: {
+                    const scoped = iitem.pluginScope.length > 0
+                                   && navPane.collapsed
+                    const tip = scoped
+                        ? iitem.instanceLabel + " · "
+                          + qsTr("插件实例：") + iitem.pluginScope
+                        : iitem.instanceLabel
+                    hovered
+                        ? navPane.showNavTip(tip,
+                              iitem.mapToItem(navPane, 0, 0).y + 17)
+                        : navPane.hideNavTip(tip)
+                }
             }
             TapHandler { onTapped: iitem.clicked() }
         }

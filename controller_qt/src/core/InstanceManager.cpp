@@ -68,6 +68,11 @@ QVariant InstanceManager::data(const QModelIndex& index, int role) const
         case ConnectedRole: return session->connected();
         case UuidRole:      return session->config().id;
         case AvatarRole:    return session->avatar();
+        // v1.13: the resource DOMAIN of the session's model ("" = host).
+        // Read-only projection of InstanceConfig.modelScope — same byte
+        // spelling as RosterApiModel's role so QML delegates bind
+        // identically on both models.
+        case PluginScopeRole: return session->modelScope();
     }
     return {};
 }
@@ -81,6 +86,7 @@ QHash<int, QByteArray> InstanceManager::roleNames() const
         {ConnectedRole, "connected"},
         {UuidRole,      "uuid"},
         {AvatarRole,    "avatar"},
+        {PluginScopeRole, "pluginScope"},
     };
 }
 
@@ -90,6 +96,17 @@ QString InstanceManager::createInstance(const QString& label,
                                         const QString& avatar,
                                         const QString& modelName,
                                         const QString& graphicsBackend)
+{
+    // v1.13: the legacy QML/API surface — host domain (no scope stamp).
+    return createInstanceScoped(label, avatar, modelName, graphicsBackend,
+                                QString());
+}
+
+QString InstanceManager::createInstanceScoped(const QString& label,
+                                              const QString& avatar,
+                                              const QString& modelName,
+                                              const QString& graphicsBackend,
+                                              const QString& modelScope)
 {
     // defaultInstanceConfig mints a fresh UUID as the persistence primary key.
     InstanceConfig cfg = defaultInstanceConfig();
@@ -104,6 +121,11 @@ QString InstanceManager::createInstance(const QString& label,
     // InstanceConfig default ("opengl"); empty keeps it.
     if (!graphicsBackend.isEmpty())
         cfg.graphicsBackend = graphicsBackend;
+    // v1.13 resource-isolation stamp: a non-empty scope (a plugin id from
+    // InstanceControlApiImpl::createAs) pins the instance's model to that
+    // plugin's data domain; empty keeps the host-domain default.
+    if (!modelScope.isEmpty())
+        cfg.modelScope = modelScope;
 
     if (!m_configManager.save(cfg)) {
         LOG_ERROR("InstanceManager::createInstance: failed to persist \"{}\"; aborting row insert",
@@ -369,6 +391,25 @@ void InstanceManager::setDialogueSink(std::function<void(const QString&,
     for (InstanceSession* session : m_sessions)
         wireSession(session);
 }
+void InstanceManager::setModelPathResolver(
+    std::function<QString(const QString&, const QString&)> resolver)
+{
+    // v1.13 (rev2 §3.4): store + re-apply — PanelApplication installs this
+    // AFTER construction created the disk-loaded roster, so a store-only
+    // setter would leave those sessions on the fallback resolver (same
+    // sequencing note as setDialogueSink).
+    m_modelPathResolver = std::move(resolver);
+    for (InstanceSession* session : m_sessions)
+        session->setModelPathResolver(m_modelPathResolver);
+}
+
+QString InstanceManager::modelScopeForUuid(const QString& uuid) const
+{
+    // Plain read ("" on unknown — feeds a display role, never an error).
+    const int row = rowForUuid(uuid);
+    return row >= 0 ? m_sessions.at(row)->modelScope() : QString();
+}
+
 void InstanceManager::wireSession(InstanceSession* session)
 {
     // Shared-db injection (silent-persistence-failure fix): when the
@@ -387,6 +428,13 @@ void InstanceManager::wireSession(InstanceSession* session)
     // are cheap handles; empty ones no-op inside the session.
     if (m_dialogueSink)
         session->setDialogueSink(m_dialogueSink);
+
+    // v1.13: forward the model-path resolver the same way — every session
+    // (disk-loaded or freshly created) resolves scoped models through the
+    // shared ModelApiImpl union index; an empty seam keeps the session's
+    // built-in pure directory-scan fallback (rev2 §3.2c).
+    if (m_modelPathResolver)
+        session->setModelPathResolver(m_modelPathResolver);
 
     // S4: route every session's stop completion into the manager's two-phase
     // delete + stopAll accounting. Direct connection on the GUI thread — the

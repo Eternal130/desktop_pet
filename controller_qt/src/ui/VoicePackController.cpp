@@ -32,9 +32,20 @@ void VoicePackController::rescan() {
     // Dual source (storage-layout revision): bundled renderer packs + user
     // packs under ConfigDir::userVoicePacksDir() (downloads install there;
     // user packs win name collisions — see VoicePackScanner.hpp).
-    const QStringList dirs =
-        core::scanAvailableVoicePacks(rendererBaseDir(),
-                                      ConfigDir::userVoicePacksDir());
+    // v1.13 (rev2 §3.2b): the scan is the SCOPED one (host + plugin data
+    // domains), but the PAGE LIST keeps only HOST entries (owner "")
+    // — plugin-domain packs are managed by their owning plugin, never
+    // offered for host mounting from this page. Reads only; no write
+    // patterns (api-boundary gate stays clean).
+    const auto scoped = core::scanVoicePacksScoped(
+        rendererBaseDir(), ConfigDir::userVoicePacksDir(),
+        ConfigDir::pluginDataRoot());
+    QStringList dirs;
+    dirs.reserve(scoped.size());
+    for (const core::ScannedPack& p : scoped) {
+        if (p.owner.isEmpty())
+            dirs.append(p.dirPath);
+    }
     // Display dir: the first discovered pack's parent; when nothing is
     // found, show the conventional location for the empty-state hint.
     m_voicePackDir = dirs.isEmpty()

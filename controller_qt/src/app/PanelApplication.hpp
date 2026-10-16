@@ -25,6 +25,7 @@ class InstanceControlApiImpl;
 class LayoutApiImpl;
 class ModelApiImpl;
 class MonitorApiImpl;
+class ResourceScopeApiImpl;
 class RuleApiImpl;
 class RuleEngineService;
 class SettingsApiImpl;
@@ -206,6 +207,15 @@ public:
     // destructor silently cancels active jobs — the exit path never blocks.
     core::DownloadService* downloadService();
 
+    // v1.13 (rev2 §3.3): THE shared pet::IResourceScopeApi implementation —
+    // the union resource scans (models + voice packs over the renderer tree
+    // + <dataDir>/PluginData/). Served to plugins through PluginHost →
+    // queryApi("pet.resource_scope") (per-context caller-stamping proxy;
+    // ungated — the impl's owner check is the boundary). Same lifetime
+    // discipline as modelApi(); cross-wired to it (resourceScope refresh
+    // rides the shared model cache).
+    core::ResourceScopeApiImpl* resourceScopeApi();
+
     // Snapshot loaded once at construction (the old `const PanelConfig
     // panelCfg = psm.load();` local in main), consumed for the initial*
     // context properties.
@@ -289,6 +299,7 @@ private:
     core::VoicePackApiImpl* m_voicePackApi = nullptr;
     core::MonitorApiImpl* m_monitorApi = nullptr; // S7 (v1.4)
     core::LayoutApiImpl* m_layoutApi = nullptr;   // v1.8
+    core::ResourceScopeApiImpl* m_resourceScopeApi = nullptr; // v1.13
     // S8e: rule-engine host service (see ruleEngineService()); registered
     // after m_monitorApi → destroyed after it (Qt ≥ 6.6 registration
     // order); its dtor calls earlier-registered APIs (the exit-path UAF)

@@ -5,7 +5,10 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QString>
+#include <QStringList>
 #include <QStandardPaths>
+
+#include <algorithm>
 
 // spdlog MUST be included before logging/Logging.hpp — Logging.hpp references
 // the SPDLOG_* macros but does NOT include spdlog headers itself (T5 finding
@@ -93,6 +96,102 @@ QString pluginsDir()
     // state. See the header note distinguishing this from
     // IPluginContext::pluginConfigDir().
     return dataDir() + QStringLiteral("plugins/");
+}
+
+QString pluginDataRoot()
+{
+    // v1.13 resource isolation (rev2 §2): per-plugin DATA domains. Mixed
+    // case "PluginData" — see the header's three-way distinction note
+    // (binary dir plugins/ vs SDK config plugins/<id>/ vs this data root).
+    return dataDir() + QStringLiteral("PluginData/");
+}
+
+QString pluginModelsDir(const QString& pluginId)
+{
+    // Empty = host domain (caller error); charset-invalid = traversal
+    // attempt (e.g. "a.b\..\.." on Windows). Both return empty — the id
+    // is never concatenated into a path.
+    if (!isValidPluginDataOwnerId(pluginId)) {
+        if (!pluginId.isEmpty()) {
+            LOG_WARN("ConfigDir: rejected invalid plugin id \"{}\" for "
+                     "pluginModelsDir (charset [A-Za-z0-9.-])",
+                     pluginId.toStdString());
+        }
+        return {};
+    }
+    return pluginDataRoot() + pluginId + QStringLiteral("/Models/");
+}
+
+QString pluginVoicePacksDir(const QString& pluginId)
+{
+    // Same gate as pluginModelsDir — see that accessor's comment.
+    if (!isValidPluginDataOwnerId(pluginId)) {
+        if (!pluginId.isEmpty()) {
+            LOG_WARN("ConfigDir: rejected invalid plugin id \"{}\" for "
+                     "pluginVoicePacksDir (charset [A-Za-z0-9.-])",
+                     pluginId.toStdString());
+        }
+        return {};
+    }
+    return pluginDataRoot() + pluginId + QStringLiteral("/VoicePacks/");
+}
+
+bool isValidPluginDataOwnerId(const QString& id)
+{
+    // v1.13 hardening (oracle follow-up Should#1): the ONE charset gate
+    // shared by manifest ids (§B.6) and PluginData domain owners. Dot-only
+    // ids are rejected explicitly — '.' and '..' pass a naive charset test
+    // yet are the canonical path-traversal names.
+    if (id.isEmpty() || id == QLatin1String(".") || id == QLatin1String(".."))
+        return false;
+    for (const QChar& c : id) {
+        const char16_t u = c.unicode();
+        const bool allowed = (u >= u'a' && u <= u'z')
+            || (u >= u'A' && u <= u'Z')
+            || (u >= u'0' && u <= u'9')
+            || u == u'.' || u == u'-';
+        if (!allowed)
+            return false;
+    }
+    return true;
+}
+
+QStringList pluginDataOwners(const QString& root)
+{
+    // §3.2c: PURE directory traversal — never the plugin registry. Missing
+    // root → empty list; hidden dirs skipped (same discipline as the
+    // scanners); case-insensitive sort for deterministic UI/ordering.
+    // v1.13 hardening: entries outside the documented id charset are
+    // skipped with a WARN — a hostile directory name (spaces, separators,
+    // traversal fragments) can never surface as an owner id.
+    // Test seam: an injected root replaces pluginDataRoot() (the
+    // ensureDirectories basePath discipline) so the filter is testable
+    // without touching the user's real data dir.
+    const QString effectiveRoot = root.isEmpty() ? pluginDataRoot() : root;
+    const QDir dir(effectiveRoot);
+    if (!dir.exists())
+        return {};
+    QStringList owners = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    owners.erase(std::remove_if(owners.begin(), owners.end(),
+                                [](const QString& name) {
+                                    if (name.startsWith(QLatin1Char('.')))
+                                        return true; // hidden (unchanged rule)
+                                    if (!isValidPluginDataOwnerId(name)) {
+                                        LOG_WARN("ConfigDir: skipping "
+                                                 "hostile plugin-data owner "
+                                                 "dir \"{}\" (charset "
+                                                 "[A-Za-z0-9.-])",
+                                                 name.toStdString());
+                                        return true;
+                                    }
+                                    return false;
+                                }),
+                 owners.end());
+    std::sort(owners.begin(), owners.end(),
+              [](const QString& a, const QString& b) {
+                  return a.compare(b, Qt::CaseInsensitive) < 0;
+              });
+    return owners;
 }
 
 bool migrateLegacyIfNeeded(const QString& legacyBase, const QString& newBase)

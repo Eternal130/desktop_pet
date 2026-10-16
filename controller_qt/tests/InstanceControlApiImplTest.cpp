@@ -125,6 +125,7 @@ private slots:
     void testObserverStateFanout();
     void testRemoveRunningIsTwoPhaseAndBusy();
     void testSetAvatar();
+    void testScopeStampingSeams();
 };
 
 void InstanceControlApiImplTest::initTestCase()
@@ -510,6 +511,78 @@ void InstanceControlApiImplTest::testSetAvatar()
     QCOMPARE(session->avatar(), QStringLiteral("🐼"));
 
     rosterApi.unsubscribeInstances(&observer);
+}
+
+// ── v1.13 scope stamping (createAs / loadModelAs host-internal seams) ─────
+//
+// The per-context InstanceControlApiProxy (api_version ≥ 1.13 plugin
+// contexts) forwards create/loadModel here with callerId = the plugin
+// id; the host channel keeps scope "" everywhere. An OFFLINE session
+// persists the switch without resolving (no command) — the assertions
+// read the live config + the persisted row.
+void InstanceControlApiImplTest::testScopeStampingSeams()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& cfg) {
+                            PanelStateManager(base.path()).save(cfg);
+                        });
+    core::InstanceControlApiImpl api(&mgr, nullptr);
+
+    // Plugin-context create → initial modelScope stamped into the config
+    // (live snapshot + persisted row).
+    pet::InstanceSpec spec;
+    spec.label = QStringLiteral("ScopedPet");
+    QString uuidScoped;
+    QCOMPARE(api.createAs(QStringLiteral("org.a"), spec, &uuidScoped),
+             pet::PluginError::Ok);
+    QVERIFY(!uuidScoped.isEmpty());
+    QCOMPARE(mgr.instanceAt(0)->config().modelScope, QStringLiteral("org.a"));
+    const auto rowScoped = InstanceConfigManager(base.path()).load(uuidScoped);
+    QVERIFY(rowScoped.has_value());
+    QCOMPARE(rowScoped->modelScope, QStringLiteral("org.a"));
+
+    // Host-context create (the plain surface) → no scope.
+    QString uuidHost;
+    QCOMPARE(api.create(spec, &uuidHost), pet::PluginError::Ok);
+    QVERIFY(mgr.instanceAt(1)->config().modelScope.isEmpty());
+    const auto rowHost = InstanceConfigManager(base.path()).load(uuidHost);
+    QVERIFY(rowHost.has_value());
+    QVERIFY(rowHost->modelScope.isEmpty());
+
+    // Plugin-context loadModel on the OFFLINE session → modelName AND
+    // modelScope persisted (the wave-1 scoped switch); the host channel
+    // flips the scope back to "".
+    QCOMPARE(api.loadModelAs(QStringLiteral("org.a"), uuidScoped,
+                             QStringLiteral("AModel")),
+             pet::PluginError::Ok);
+    QCOMPARE(mgr.instanceAt(0)->modelName(), QStringLiteral("AModel"));
+    QCOMPARE(mgr.instanceAt(0)->config().modelScope, QStringLiteral("org.a"));
+    const auto rowSwitch = InstanceConfigManager(base.path()).load(uuidScoped);
+    QVERIFY(rowSwitch.has_value());
+    QCOMPARE(rowSwitch->modelScope, QStringLiteral("org.a"));
+    QCOMPARE(rowSwitch->modelName, QStringLiteral("AModel"));
+
+    QCOMPARE(api.loadModel(uuidScoped, QStringLiteral("Hiyori")),
+             pet::PluginError::Ok);
+    QVERIFY(mgr.instanceAt(0)->config().modelScope.isEmpty()); // host domain
+
+    // The roster surfaces the scope through the v1.13 PluginScopeRole /
+    // modelScopeForUuid (both models share the "pluginScope" spelling).
+    QCOMPARE(mgr.modelScopeForUuid(uuidScoped), QString());
+    QCOMPARE(mgr.modelScopeForUuid(uuidHost), QString());
+    QCOMPARE(mgr.data(mgr.index(1, 0), InstanceManager::PluginScopeRole),
+             QVariant(QString()));
+    // A scoped instance (createAs + scoped loadModel) reports its domain.
+    api.loadModelAs(QStringLiteral("org.b"), uuidHost, QStringLiteral("BModel"));
+    QCOMPARE(mgr.modelScopeForUuid(uuidHost), QStringLiteral("org.b"));
+    QCOMPARE(mgr.data(mgr.index(1, 0), InstanceManager::PluginScopeRole),
+             QVariant(QStringLiteral("org.b")));
+    QCOMPARE(mgr.data(mgr.index(0, 0), InstanceManager::PluginScopeRole),
+             QVariant(QString()));
 }
 
 QTEST_MAIN(InstanceControlApiImplTest)

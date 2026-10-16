@@ -88,6 +88,10 @@ private slots:
     void testDualDirUserWinsCollision();
     void testDualDirMissingUserDirFallsBackToBuiltin();
     void testSingleArgOverloadMatchesDualWithEmptyUserDir();
+
+    // ── v1.13 scoped scan (resource isolation, rev2 §3.2a) ─────────────
+    void testScopedScanOwnerNameKey();
+    void testScopedScanMissingRootHostOnly();
 };
 
 void VoicePackScannerTest::testScanFindsSinglePack()
@@ -296,6 +300,117 @@ void VoicePackScannerTest::testSingleArgOverloadMatchesDualWithEmptyUserDir()
     // the dual one with an empty user source.
     QCOMPARE(single, dual);
     QCOMPARE(single.size(), 1);
+}
+
+// ── v1.13 scoped scan (resource isolation, rev2 §3.2a) ──────────────────
+
+namespace {
+
+// Create <pluginDataRoot>/<owner>/VoicePacks/<packName>/meta.mko — the
+// plugin-domain layout (rev2 §2).
+bool createPluginVoicePack(const QString& pluginDataRoot,
+                           const QString& owner, const QString& packName)
+{
+    const QString packDir = QDir(pluginDataRoot).absoluteFilePath(
+        QStringLiteral("%1/VoicePacks/%2").arg(owner, packName));
+    if (!QDir().mkpath(packDir))
+        return false;
+    return touchFile(packDir, QStringLiteral("meta.mko"));
+}
+
+} // namespace
+
+// The (owner, name) KEY rule: the SAME pack name in TWO plugin domains is
+// returned TWICE (distinct dirPaths), and a plugin pack never shadows — nor
+// is shadowed by — a host pack. The host dual-source user-wins rule keeps
+// applying WITHIN the host domain only.
+void VoicePackScannerTest::testScopedScanOwnerNameKey()
+{
+    QTemporaryDir rendererDir;
+    QTemporaryDir userPacksDir;
+    QTemporaryDir pluginRoot;
+    QVERIFY2(rendererDir.isValid() && userPacksDir.isValid()
+                 && pluginRoot.isValid(),
+             "temporary directory creation failed");
+
+    // Host: a built-in "Shared" pack that the USER copy shadows (user-wins
+    // within host), plus a plain host pack.
+    QVERIFY2(createVoicePackDir(rendererDir.path(),
+                                QStringLiteral("Shared")),
+             "precondition: failed to create builtin Shared fixture");
+    QVERIFY2(createUserVoicePack(userPacksDir.path(),
+                                 QStringLiteral("Shared")),
+             "precondition: failed to create user Shared fixture");
+    QVERIFY2(createUserVoicePack(userPacksDir.path(),
+                                QStringLiteral("HostOnly")),
+             "precondition: failed to create HostOnly fixture");
+
+    // Two plugin domains, BOTH carrying a pack named "Shared" (same name
+    // as the host pack).
+    QVERIFY2(createPluginVoicePack(pluginRoot.path(), QStringLiteral("plugA"),
+                                   QStringLiteral("Shared")),
+             "precondition: failed to create plugA Shared fixture");
+    QVERIFY2(createPluginVoicePack(pluginRoot.path(), QStringLiteral("plugB"),
+                                   QStringLiteral("Shared")),
+             "precondition: failed to create plugB Shared fixture");
+
+    const QVector<core::ScannedPack> result = core::scanVoicePacksScoped(
+        rendererDir.path(), userPacksDir.path(), pluginRoot.path());
+
+    // 1 host "Shared" (the USER twin — user-wins) + 1 HostOnly + 2 plugin
+    // "Shared" entries = 4 total. The plugin entries NEVER replace the host
+    // one or each other (rev2 §3.2a).
+    QCOMPARE(result.size(), 4);
+
+    const QString hostShared =
+        QDir(userPacksDir.path()).absoluteFilePath(QStringLiteral("Shared"));
+    int hostSharedCount = 0, hostOnlyCount = 0;
+    int plugASharedCount = 0, plugBSharedCount = 0;
+    for (const core::ScannedPack& p : result) {
+        if (p.owner.isEmpty()) {
+            if (p.dirPath == hostShared)
+                ++hostSharedCount;
+            else if (p.dirPath.endsWith(QLatin1String("/HostOnly")))
+                ++hostOnlyCount;
+        } else if (p.owner == QLatin1String("plugA")) {
+            ++plugASharedCount;
+            QVERIFY2(p.dirPath.endsWith(QStringLiteral("/plugA/VoicePacks/Shared")),
+                     qPrintable(QStringLiteral("plugA dirPath wrong: %1").arg(p.dirPath)));
+        } else if (p.owner == QLatin1String("plugB")) {
+            ++plugBSharedCount;
+            QVERIFY2(p.dirPath.endsWith(QStringLiteral("/plugB/VoicePacks/Shared")),
+                     qPrintable(QStringLiteral("plugB dirPath wrong: %1").arg(p.dirPath)));
+        }
+    }
+    QCOMPARE(hostSharedCount, 1); // user twin won the WITHIN-host collision
+    QCOMPARE(hostOnlyCount, 1);
+    QCOMPARE(plugASharedCount, 1);
+    QCOMPARE(plugBSharedCount, 1);
+
+    // Host block first (owner "" sorts before non-empty owners).
+    QCOMPARE(result.first().owner, QString());
+}
+
+// Missing pluginDataRoot → host-only contribution; empty root is the
+// explicit host-only form. Both never throw.
+void VoicePackScannerTest::testScopedScanMissingRootHostOnly()
+{
+    QTemporaryDir rendererDir;
+    QVERIFY2(rendererDir.isValid(), "temporary directory creation failed");
+    QVERIFY2(createVoicePackDir(rendererDir.path(),
+                                QStringLiteral("Solo")),
+             "precondition: failed to create Solo fixture");
+
+    const QVector<core::ScannedPack> missing = core::scanVoicePacksScoped(
+        rendererDir.path(), QString(),
+        QDir(rendererDir.path()).absoluteFilePath(QStringLiteral("NoSuchRoot")));
+    QCOMPARE(missing.size(), 1);
+    QCOMPARE(missing.at(0).owner, QString());
+
+    const QVector<core::ScannedPack> emptyRoot = core::scanVoicePacksScoped(
+        rendererDir.path(), QString(), QString());
+    QCOMPARE(emptyRoot.size(), 1);
+    QCOMPARE(emptyRoot.at(0).owner, QString());
 }
 
 QTEST_APPLESS_MAIN(VoicePackScannerTest)

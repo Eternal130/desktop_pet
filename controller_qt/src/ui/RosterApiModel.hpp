@@ -30,6 +30,8 @@
 #include <QHash>
 #include <QVector>
 
+#include <functional>
+
 #include "api/IInstanceApi.hpp"
 #include "api/IInstanceControlApi.hpp"
 
@@ -52,6 +54,8 @@ public:
         ModelNameRole,
         StatusRole,
         ConnectedRole,
+        PluginScopeRole, // v1.13: model resource domain ("" = host) — name
+                         // mirrors InstanceManager's role byte-for-byte
     };
     Q_ENUM(Roles)
 
@@ -80,6 +84,18 @@ public:
 
     int count() const { return m_rows.size(); }
 
+    // ── v1.13 roster scope provider (host-internal READ seam) ───────────
+    // pet::InstanceInfo is frozen (no scope field), so the pluginScope
+    // role is served by an injected host provider: uuid → the session's
+    // InstanceConfig.modelScope (PanelUiBoot binds it to
+    // InstanceManager::modelScopeForUuid). Default (unset) → every row
+    // reports "" — the SDK snapshot alone stays sufficient for
+    // scope-agnostic consumers. api/ + Qt only: std::function never
+    // crosses the plugin boundary.
+    void setScopeProvider(
+        std::function<QString(const QString& uuid)> provider)
+    { m_scopeProvider = std::move(provider); }
+
     // ── S2 write bridge (dogfooding the plugin write API from the UI) ────────
     // Error reporting: the Q_INVOKABLE returns the pet::PluginError code
     // as a plain int (0 = Ok, 4 = NotFound, 5 = Busy, ...) — the simplest
@@ -107,4 +123,5 @@ private:
     pet::IInstanceApi* m_api;               // not owned (service tree / test fake)
     pet::IInstanceControlApi* m_controlApi; // not owned (S2; service tree / fake)
     QVector<pet::InstanceInfo> m_rows; // last snapshot, roster order
+    std::function<QString(const QString&)> m_scopeProvider; // v1.13, may be empty
 };

@@ -230,7 +230,12 @@ PanelApplication::PanelApplication(QObject* parent)
     // settings impl, which is harmless: ~SettingsApiImpl never calls
     // the publisher).
     m_settingsApi->setEventPublisher(m_eventApi);
-    m_voicePackApi = new core::VoicePackApiImpl(/*refresh=*/{}, this);
+    // v1.13: no pluginId/domainRouting — the SHARED host instance keeps
+    // the legacy installPath (per-user packs dir); plugin contexts see it
+    // only through their per-context VoicePackApiProxy, which recomputes
+    // installPath from the api_version gate.
+    m_voicePackApi = new core::VoicePackApiImpl(/*refresh=*/{}, /*pluginId=*/{},
+                                                /*domainRouting=*/false, this);
     // S7 (v1.4): shared monitor read family — wraps the sessions'
     // MonitorDataModel rings (registered after m_voicePackApi → dies
     // after it, Qt ≥ 6.6 registration order; the InstanceManager dies
@@ -246,6 +251,44 @@ PanelApplication::PanelApplication(QObject* parent)
     // after m_monitorApi → dies AFTER it (Qt ≥ 6.6 registration order);
     // no destructor cross-calls — safe.
     m_layoutApi = new core::LayoutApiImpl(m_instanceManager, this);
+
+    // ── Shared resource-scope family (v1.13, rev2 §3.3) ───────────────
+    // ONE ResourceScopeApiImpl for the whole panel, same discipline as
+    // the shared ModelApiImpl above: the union resource scans (renderer
+    // tree + <dataDir>/PluginData/) serve queryApi("pet.resource_scope")
+    // through per-context caller-stamping proxies. The renderer-dir seam
+    // mirrors the DownloadService modelsInstallRoot convention
+    // (applicationDirPath — build/bin places the controller and renderer
+    // exes side-by-side; PanelUiBoot injects the SAME dir into the
+    // ModelController/ModelApi seam). Cross-wired to the shared model
+    // cache: a resource refresh/keep-consistent rides m_modelApi.
+    m_resourceScopeApi = new core::ResourceScopeApiImpl(this);
+    m_resourceScopeApi->setRendererDir(QCoreApplication::applicationDirPath());
+    m_resourceScopeApi->setModelApi(m_modelApi);
+
+    // v1.13 (rev2 §3.4): bind every session's model-path resolver to the
+    // shared ModelApiImpl union index — scoped (plugin-domain) loadModel
+    // switches resolve strictly inside the owning domain, miss → local
+    // failure, never a host fallback. Re-applies to the disk-loaded
+    // roster (setDialogueSink store-AND-re-apply pattern) and to every
+    // session created later (InstanceManager::wireSession).
+    //
+    // LIFETIME CAUTION (same class as the setDialogueSink/setEventPublisher
+    // sites — see the class comment's DESTRUCTION-ORDER FACT): the lambda
+    // captures `this` and dereferences m_modelApi. It is safe ONLY under
+    // the current teardown order: the resolver lives inside
+    // m_instanceManager (sessions invoke it exclusively from live-session
+    // code paths — no destructor calls it), and m_modelApi (registered
+    // AFTER the manager) dies LATER under the Qt ≥ 6.6 forward cascade —
+    // plus ~PanelApplication() deletes m_instanceManager explicitly while
+    // every child is still alive. If you ever add a resolver call site
+    // that can fire during teardown (e.g. from ~InstanceSession or a
+    // shutdown sweep), revisit this binding or the exit path WILL
+    // use-after-free — m_modelApi's death precedes any post-manager code.
+    m_instanceManager->setModelPathResolver(
+        [this](const QString& name, const QString& scope) {
+            return m_modelApi->resolveModelPath(name, scope);
+        });
 
     // ── Rule-engine host service (S8e) ────────────────────────────────────
     // The RuleEngine core's bus/db wiring. Constructed after every API it
@@ -362,6 +405,7 @@ PanelApplication::PanelApplication(QObject* parent)
     // per manifest capability + the live write switch.
     m_pluginHost->setTuningApi(m_tuningApi);
     m_pluginHost->setModelApi(m_modelApi);
+    m_pluginHost->setResourceScopeApi(m_resourceScopeApi); // v1.13
     m_pluginHost->setSettingsApi(m_settingsApi);
     m_pluginHost->setVoicePackApi(m_voicePackApi);
     m_pluginHost->setMonitorApi(m_monitorApi); // S7 (v1.4)
@@ -505,6 +549,11 @@ core::PluginHost* PanelApplication::pluginHost()
 core::DownloadService* PanelApplication::downloadService()
 {
     return m_downloadService;
+}
+
+core::ResourceScopeApiImpl* PanelApplication::resourceScopeApi()
+{
+    return m_resourceScopeApi;
 }
 
 // Moved from main() (P3/M4). Construction + wiring statements are verbatim;

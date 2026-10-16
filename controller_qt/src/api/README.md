@@ -2,7 +2,7 @@
 
 第一方插件 SDK 接口头集合（P4 落地，P6a 冻结点前允许演进，冻结后变更走版本化）。
 设计合同: `docs/refactor/plugin-architecture-and-cmake-migration.md` §A/§B.3。
-**当前版本: API 1.12**（2026-10-16，见文末「版本历史」）。
+**当前版本: API 1.13**（2026-10-16，见文末「版本历史」）。
 
 ## 组成
 
@@ -21,7 +21,8 @@
 | `IEventApi.hpp` | **v1.5 (S8a)** 事件总线族: Event/EventPriority/IEventListener + subscribe/unsubscribe/publish（**同步分发**——publish 返回时整链已跑完、cancelled 已终值）。经 `queryApi` 获取；**无能力门控、不受写开关**（通知通道而非宿主状态写），未接线→nullptr；插件拿到的是 per-context 代理（发布强制 `plugin.<ownId>.*` 前缀 + publisherId 盖戳，防伪造）；重入深度上限 8（超限 Busy）；宿主通道 ID 词表 + 载荷字段表冻结在 `EventIds.hpp`（目录即契约：字段只加不删不改名，可选值用 -1/"" 哨兵，事件 ID 永不改名移除）；**v1.7 (S9) 目录扩至 21 通道**（+6 `pet.instance.*`、+3 `pet.panel.*` 面板级首启；`kAllEventIds` 完整性数组 + 守卫测试根治「常量加了、词表漏配」缺口）；**v1.8 目录扩至 23 通道**（+`pet.instance.expression_applied` / `pet.instance.motion_progress` 渲染器事件桥接）；**v1.9 目录扩至 26 通道**（+`pet.panel.window_state` / `pet.panel.tray_activated` 面板级窗口/托盘可观察性 + `pet.instance.focus_changed`〔WS `window_focus` 桥接〕，autoLaunchSystem 翻转并入 `settings_changed` 字段集） |
 | `IRuleApi.hpp` | **v1.6 (S8f)** 规则注册族: registerRule/unregisterRule（规则 JSON schema 见 `docs/rules.md`）。经 `queryApi` 获取；**注册是惰性动作——无能力词、queryApi 时不查写开关**，owner 门控在**动作发射时活查**（插件规则的 play_motion/set_expression 现查 owner 的 `instance_tuning` 能力 + `plugin_write_enabled`，滞留规则面无法超越其授权存活；notify_bubble/play_pack_audio/publish_event 按设计不门控）；插件拿到的是 per-context 代理（存储 id 强制 `plugin.<ownId>.` 前缀 + `RuleScope::Plugin` 盖戳，只能注册/注销/替换自己的）；schema 校验失败→InvalidArgument（原因经 context log）引擎不变；未接线→nullptr；规则不持久化（随注册存活，卸载清扫兜底） |
 | `ILayoutApi.hpp` | **v1.8** 布局族: getLayout（**配置快照**读——InstanceConfig 窗口几何 + 布局缩放投影为 `LayoutInfo`，非实时；实时经 `pet.instance.layout_changed`/`window_resized` 事件观察）+ resetLayout / setAutoStart（受理语义，转调既有 InstanceSession 面）。`instance_tuning` 能力 + 宿主开关门控（照 `pet.instance_tuning` 写族矩阵），未授权/未接线→stub；宿主详情页的自动启动开关与重置布局按钮已换绑到本族（门禁允许清单对应条目随之删除） |
-| `IVoicePackApi.hpp` | 语音包发现（listPacks / refreshScan / installPath）+ **v1.3 追加 `IPackListObserver` + subscribePackList/unsubscribePackList**（包列表变化观察；挂载写走 ITuningApi） |
+| `IVoicePackApi.hpp` | 语音包发现（listPacks / refreshScan / installPath）+ **v1.3 追加 `IPackListObserver` + subscribePackList/unsubscribePackList**（包列表变化观察；挂载写走 ITuningApi）；**v1.13: installPath 按 api_version 门逐上下文通告**（manifest ≥ 1.13 且有自身插件 id → `ConfigDir::pluginVoicePacksDir(<id>)`，否则保持每用户包目录不变；插件上下文经 per-context 代理，宿主共享实例保持 legacy 路径） |
+| `IResourceScopeApi.hpp` | **v1.13（资源隔离，rev2 §3.3）** 资源域族: scopedModels / scopedPacks（ScopedModelInfo / ScopedPackInfo 行类型，联合扫描的属主过滤投影）+ refreshScan / removeScoped（自己域内递归删除、通穿名拒绝）。经 `queryApi("pet.resource_scope")` 获取；**无能力词、不受写开关——属主校验即边界**（pet.rules 先例: per-context 代理盖 callerId，Impl 校验 `ownerId == callerId` 且均非空；外来/空 → 读空 / InvalidArgument）；未接线→nullptr |
 | `IDownloadApi.hpp` | 宿主下载咽喉点（start / cancel / installArchive + DownloadListener 纯虚回调）；manifest 未授 `network` capability 时为 stub（§B.4） |
 | `IUiApi.hpp` | 页面注册 + 气泡通知；**无 unregisterPage/页面生命周期（刻意 YAGNI，防 P6a 重议）** |
 
@@ -109,18 +110,19 @@ capability stub（每个方法返回 `PluginError::Capability`，响亮失败）
 "翻转即吊销"需 per-call 门控代理（见"阶段路线"的阶段 2 候选）。只读族（`pet.model`、
 `pet.monitor`、voicePackApi、instanceApi）不受其约束。
 
-族 × 能力 × 开关总表（v1.10 全景，queryApi 通道八族——v1.10 零新族，仅既有族加法扩员）:
+族 × 能力 × 开关总表（v1.13 全景，queryApi 通道九族）:
 
 | apiId | 接口 | 能力门控 | 写开关 | 未接线时 |
 |---|---|---|---|---|
 | `pet.instance_control` | IInstanceControlApi | `instance_lifecycle` | 受控 | capability stub |
 | `pet.instance_tuning` | ITuningApi | `instance_tuning` | 受控 | capability stub |
-| `pet.model` | IModelApi | 无（只读） | 不受控 | nullptr |
+| `pet.model` | IModelApi | 无（只读；**v1.13 投影收窄为宿主域**） | 不受控 | nullptr |
 | `pet.settings` | ISettingsApi | `settings_write` | 受控 | capability stub |
 | `pet.monitor` | IMonitorApi | 无（只读） | 不受控 | nullptr |
 | `pet.events` | IEventApi | 无（通知通道） | 不受控 | nullptr |
 | `pet.rules` | IRuleApi | 无（注册惰性） | 不受控（发射时活查） | nullptr |
 | `pet.layout` | ILayoutApi | `instance_tuning` | 受控 | capability stub |
+| `pet.resource_scope` | IResourceScopeApi | 无（属主校验即边界） | 不受控 | nullptr |
 
 `pet.rules` 的门控列语义与其它写族不同（S8f 设计裁决）: 注册/查询时不门控——门控发生在
 **动作发射时**，规则引擎对插件规则的 play_motion/set_expression 每次发射现查 owner 的
@@ -178,6 +180,58 @@ QSaveFile 原子写 + snake_case 键**——禁止裸 QFile::write 持久化（�
 `qrc:/` URL（§B.6）。
 
 ## 版本历史
+
+### v1.13（2026-10-16，kApiMajor=1 / kApiMinor=13）— 资源隔离（插件数据域 + api_version 域路由）
+
+全部为**加法**变更（一个经 queryApi 暴露的新接口族 + 两个新 SDK POD + 宿主侧域路由接线），零既有签名/顺序改动；
+`IPluginContext` 尾追特权未使用。
+
+1. **`kApiMinor` 12 → 13**。
+2. **`IResourceScopeApi`**（新头 `api/IResourceScopeApi.hpp`，apiId `pet.resource_scope`，族版本 1）:
+   插件资源域族——`scopedModels(ownerId)` / `scopedPacks(ownerId)`（行类型为新 POD
+   `ScopedModelInfo` / `ScopedPackInfo`，字段类型逐字镜像 ModelSummary / PackInfo；数据面是
+   `scanModelsScoped` / `scanVoicePacksScoped` 联合扫描——渲染器树 + `<dataDir>/PluginData/`，
+   纯目录遍历、永不咨询插件注册表）+ `refreshScan()`（连带刷新共享 pet.model 缓存）+
+   `removeScoped(ownerId, name, isModel)`（自己域内递归删除；名字为空或含 `/` / `\` / `..` →
+   InvalidArgument；目录缺失 → NotFound；规范化路径必须落在域根之内——纵深防御）。
+3. **门控语义: 无能力词；属主校验即边界**（pet.rules 先例）: 本族查询既不要能力词也不查
+   `plugin_write_enabled`；per-context 代理（`ResourceScopeApiProxy`）对每次调用盖
+   `callerId = 自身插件 id`，共享 Impl 校验 `ownerId == callerId`（均非空）——外来/空 ownerId
+   读返回空、removeScoped 返回 InvalidArgument（冻结枚举无 PermissionDenied，循 RuleApi 跨
+   owner 先例取 InvalidArgument——对该调用方即非法参数）。宿主域不可经插件通道寻址；宿主内部
+   调用走 `*As(callerId, ...)` 显式身份 seam。
+4. **manifest api_version ≥ 1.13 → 域路由；< 1.13 → owner="" 旧径一切照旧**（rev2 §3.1/§3.5；
+   PluginRegistry 解析的 `apiMajor`/`apiMinor` 经 PluginContextImpl 构造函数尾参进入每个上下文）:
+   - `downloadApi().installArchive()`: ≥ 1.13 转调三参 owner 作用域 DownloadService 重载
+     （安装落 `<dataDir>/PluginData/<id>/`）；< 1.13 保持宿主旧安装根，逐字节一致；
+   - `voicePackApi().installPath()` 通告: ≥ 1.13 → `ConfigDir::pluginVoicePacksDir(<id>)`；
+     < 1.13 → 每用户包目录（插件上下文经 per-context 代理；宿主共享实例保持 legacy 路径）；
+   - `pet.instance_control` / `pet.instance_tuning`: ≥ 1.13 上下文获得 per-context 作用域盖戳代理
+     （`InstanceControlApiProxy` / `TuningApiProxy`）——create 盖初始 `InstanceConfig.modelScope`、
+     loadModel 走严格域 scoped 切换、mountVoicePack 的 packId 按「自身域优先、次宿主域」匹配
+     （跨插件域不可见）且会话持久化 `voicePackScope`；< 1.13 上下文仍持裸共享实现（指针同一性
+     不变，能力/开关门控矩阵原样；宿主 UI 桥恒持裸实现）。
+5. **`pet.model` 投影收窄为宿主域**: `availableModels()` / `modelInfo()` 只答 owner=="" 条目
+   （插件域资源面唯一出口是 pet.resource_scope）——宿主页面与旧插件对插件域资源自动隔离；Impl
+   内部缓存改联合扫描并新增宿主内部 `resolveModelPath(name, scope)` 严格域 seam
+   （InstanceSession 的 ModelPathResolverFn 绑定于此；scope 空 / 域内未命中 → QString()，
+   永不回退宿主域）。
+6. **持久化**: `InstanceConfig` 增 `model_scope` / `voice_pack_scope` 字段（空 = 宿主域，与
+   v1.13 前逐字节一致；scoped loadModel/mount 自动落盘）。花名册新增只读 `pluginScope` 角色
+   （InstanceManager / RosterApiModel 拼写一致；后者经注入的宿主 provider 供给，SDK 快照不动）。
+7. **向后兼容**: manifest api_version < 1.13 的插件看到**与 v1.12 完全相同的面**（安装根、
+   installPath、control/tuning 裸实现、pet.model 宿主域、空 scope）；PluginHost 卸载路径**刻意
+   不做资源清扫**（插件数据域跨卸载/重载持久，rev2 §3.2d——删除只能是显式 removeScoped）。
+   指针同一性注记（v1.13 复审补充）: control/tuning 的裸共享实现在 < 1.13 上下文里指针不变
+   （上文）；而固定 accessor `IPluginContext::voicePackApi()` 在 v1.13 起**所有 api_version 的
+   插件上下文都改收 per-context `VoicePackApiProxy`**——代理对其余成员逐字转发（listPacks /
+   refreshScan / 订阅对，< 1.13 行为逐字节一致），仅 `installPath()` 咨询 api_version 门
+   （≥ 1.13 且有自身插件 id → 插件域包目录，否则 legacy 每用户目录）。依赖指针比较
+   `voicePackApi() == 宿主共享实例` 的代码需改为语义比较（v1.0 起无此依赖，SDK 面不变）。
+8. **已知刻意语义——宿主 UI 切换模型会解除插件域**（maintainer decision, oracle 复审
+   Should#5）: 宿主详情页的 loadModel 走裸实现、以 scope "" 落盘，因此**会把插件域实例转为
+   本体域**（`InstanceConfig.modelScope` 清空）。"宿主看见宿主域"是双向的：花名册上的
+   PluginScopeBadge 徽章翻转为宿主即这一转换的可见信号；插件可随后再以自身域 loadModel 切回。
 
 ### v1.12（2026-10-16，kApiMajor=1 / kApiMinor=12）— 阶段 2 宿主动态加载通道
 

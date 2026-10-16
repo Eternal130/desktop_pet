@@ -72,8 +72,10 @@ void PluginHost::setInstanceControlApi(InstanceControlApiImpl* instanceControlAp
     m_instanceControlApi = instanceControlApi;
 }
 
-void PluginHost::setTuningApi(pet::ITuningApi* tuningApi)
+void PluginHost::setTuningApi(TuningApiImpl* tuningApi)
 {
+    // v1.13: concrete type — the per-context TuningApiProxy needs the
+    // mountVoicePackAs scope-stamping seam the pet:: interface lacks.
     m_tuningApi = tuningApi;
 }
 
@@ -110,6 +112,12 @@ void PluginHost::setEventApi(EventApiImpl* eventApi)
 void PluginHost::setRuleApi(RuleApiImpl* ruleApi)
 {
     m_ruleApi = ruleApi;
+}
+
+void PluginHost::setResourceScopeApi(ResourceScopeApiImpl* resourceScopeApi)
+{
+    // v1.13: shared resource-scope family seam (the setRuleApi shape).
+    m_resourceScopeApi = resourceScopeApi;
 }
 
 void PluginHost::setWriteEnabledProvider(std::function<bool()> provider)
@@ -179,6 +187,20 @@ void PluginHost::initializeAll()
     }
     RuleApiImpl* const ruleApi =
         m_ruleApi != nullptr ? m_ruleApi : m_ruleApiFallback;
+
+    // v1.13: resolve the resource-scope API the same way — the per-host
+    // fallback over the DEFAULT roots (applicationDirPath renderer
+    // convention + ConfigDir::userVoicePacksDir() +
+    // ConfigDir::pluginDataRoot()) covers a host without the
+    // PanelApplication service tree. Created BEFORE any context is
+    // built → registered earlier as a host child → destroyed after every
+    // context (registration-reverse), so the injected/borrowed pointer
+    // outlives each context's proxy.
+    if (m_resourceScopeApi == nullptr)
+        m_resourceScopeApiFallback = new ResourceScopeApiImpl(this);
+    ResourceScopeApiImpl* const resourceScopeApi =
+        m_resourceScopeApi != nullptr ? m_resourceScopeApi
+                                      : m_resourceScopeApiFallback;
 
     const QList<PluginEntry> entries = m_registry.orderedEntries();
     LOG_INFO("PluginHost: initializing {} plugin(s) in manifest order",
@@ -256,7 +278,9 @@ void PluginHost::initializeAll()
             // (registration-reverse), so the injected pointers outlive
             // every context that holds them. The voice-pack family keeps
             // its per-context impl when no shared one is injected.
-            pet::ITuningApi* tuningApi = m_tuningApi;
+            // v1.13: concrete type — the context proxy needs the
+            // mountVoicePackAs seam.
+            TuningApiImpl* tuningApi = m_tuningApi;
             if (tuningApi == nullptr)
                 tuningApi = new TuningApiImpl(m_instanceManager, this);
             pet::IModelApi* modelApi = m_modelApi;
@@ -293,7 +317,13 @@ void PluginHost::initializeAll()
                                               m_pageModel, m_notificationStream,
                                               m_configRoot, m_downloadService,
                                               entry->manifest.capabilities,
-                                              m_voicePackRefresh, this);
+                                              m_voicePackRefresh, this,
+                                              // v1.13: the manifest's
+                                              // parsed api_version reaches
+                                              // the context for the
+                                              // domain-routing gate.
+                                              entry->manifest.apiMajor,
+                                              entry->manifest.apiMinor);
             // v1.3 shared-family injection (post-construction seam keeps
             // the frozen ctor signature for the direct-construction tests).
             ctx->setTuningApi(tuningApi);
@@ -309,6 +339,9 @@ void PluginHost::initializeAll()
             // (owner-prefix + scope stamping live in the proxy + the
             // shared impl's plugin seam — see RuleApiProxy).
             ctx->setRuleApi(ruleApi);
+            // v1.13: resource-scope family (ungated read-style routing;
+            // the per-context proxy stamps callerId).
+            ctx->setResourceScopeApi(resourceScopeApi);
             if (m_voicePackApi != nullptr)
                 ctx->setVoicePackApi(m_voicePackApi);
             m_contexts.append(ctx);
@@ -421,6 +454,13 @@ void PluginHost::shutdownAll()
         // stored under its owner prefix BEFORE the delete; a non-zero
         // count is WARNed (the plugin should have cleaned up itself —
         // the sweep is the safety net, not the contract).
+        //
+        // v1.13 DELIBERATE ABSENCE — no resource sweep here: plugin data
+        // domains (<dataDir>/PluginData/<id>/) PERSIST across plugin
+        // unload/reload by design (rev2 §3.2d — a reinstalled plugin
+        // finds its models/packs where it left them; deletion is an
+        // explicit pet.resource_scope removeScoped call, never an
+        // unload side effect).
         {
             RuleApiImpl* const ruleApi =
                 m_ruleApi != nullptr ? m_ruleApi : m_ruleApiFallback;

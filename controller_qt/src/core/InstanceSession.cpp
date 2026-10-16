@@ -9,9 +9,11 @@
 
 #include <spdlog/spdlog.h>
 #include "api/EventIds.hpp"
+#include "core/ConfigDir.hpp"
 #include "core/EventCatalog.hpp"
 #include "core/MetaMkoParser.hpp"
 #include "core/ModelInfoParser.hpp"
+#include "core/ModelScanner.hpp"
 #include "core/PathResolve.hpp"
 #include "logging/Logging.hpp"
 #include "network/PendingRequests.hpp"
@@ -31,12 +33,16 @@ constexpr const char* kStatusError      = "error";
 // M1 fix: map the InstanceConfig to the InstanceConfigLike view that
 // StartupSalvo::sendSalvo consumes. InstanceConfigLike is NOT implicitly
 // convertible from InstanceConfig (different struct types), so this explicit
-// field-by-field copy is required. The 12 fields are exactly the overlap: the
-// salvo's 7 commands read these and nothing else from the config.
+// field-by-field copy is required. The salvo's 7 commands read these and
+// nothing else from the config.
+// v1.13: modelScope is copied for provenance; resolvedModelPath is NOT
+// filled here (the caller resolves it through the session's seam — see the
+// ready handler — because the free function has no access to the seam).
 InstanceConfigLike toInstanceConfigLike(const InstanceConfig& cfg)
 {
     InstanceConfigLike v;
     v.modelName         = cfg.modelName;
+    v.modelScope        = cfg.modelScope;
     v.windowX           = cfg.windowX;
     v.windowY           = cfg.windowY;
     v.windowWidth       = cfg.windowWidth;
@@ -331,12 +337,23 @@ void InstanceSession::start()
     // after the renderer signals readiness. sendSalvo pushes load_model,
     // set_position, set_size, set_opacity, set_fps, set_volume, set_layout —
     // in that exact order.
+    // v1.13 (rev2 §3.4): when the persisted config carries a modelScope,
+    // resolve the ABSOLUTE plugin-domain .model3.json path NOW (ready-time,
+    // through the seam/directory-scan fallback — NO plugin host needed,
+    // §3.2c restart-restore) and hand it to the salvo so the first command
+    // carries `path`. A miss sends the plain logical name (the renderer
+    // then reports model_load_failed — the startup-failure guard leaves
+    // the config untouched, same as a host-domain startup miss).
     m_dispatcher.registerEventHandler(
         QStringLiteral("ready"), [this](const Envelope& env) {
             LOG_INFO("InstanceSession[{}]: ready → running + salvo", m_instanceId);
             setStatus(kStatusRunning);
             setConnected(true);
-            m_salvo.sendSalvo(toInstanceConfigLike(m_config));
+            InstanceConfigLike view = toInstanceConfigLike(m_config);
+            view.resolvedModelPath =
+                resolveScopedModel(m_config.modelName, m_config.modelScope);
+            m_currentModelJsonPath = view.resolvedModelPath;
+            m_salvo.sendSalvo(view);
             // Wave 8 todo 18: arm the 2s monitor poller now that the renderer
             // is up. Each tick: collect controller stats + send get_stats; the
             // response arrives via the stats_state EVENT handler registered
@@ -367,13 +384,18 @@ void InstanceSession::start()
 
                 // Prefer cached hitAreas (todo 10); fall back to parsed + cache
                 // the result so the next switch to this model reuses them.
+                // v1.13: the cache key is (scope, name) — host entries keep
+                // the legacy bare-name key; a plugin-domain model with the
+                // SAME name as a host model caches separately.
                 QStringList hitAreas;
-                const auto cached = m_hitAreaCache.get(m_config.modelName);
+                const auto cached =
+                    m_hitAreaCache.get(m_config.modelName, m_config.modelScope);
                 if (cached.has_value()) {
                     hitAreas = *cached;
                 } else {
                     hitAreas = info->hitAreas;
-                    m_hitAreaCache.put(m_config.modelName, hitAreas);
+                    m_hitAreaCache.put(m_config.modelName, m_config.modelScope,
+                                       hitAreas);
                 }
 
                 sendCommand(Protocol::buildSetHitAreas(
@@ -554,8 +576,20 @@ void InstanceSession::start()
 
     // Launch the renderer. The renderer connects back to 127.0.0.1:kWsPort with
     // ?instance_id=<id>&token=<token>; WsServer's 3-gate handshake validates it.
+    // v1.13 (rev2 §3.4): a scoped model that RESOLVES launches with the
+    // ABSOLUTE .model3.json path as --model (the renderer accepts a path);
+    // a miss or the host domain keeps the legacy short name — the renderer's
+    // own Resources/ resolution. Resolution here uses the same seam +
+    // directory-scan fallback as the ready-salvo (no plugin host needed).
+    QString modelArg = m_config.modelName;
+    if (!m_config.modelScope.isEmpty()) {
+        const QString resolved =
+            resolveScopedModel(m_config.modelName, m_config.modelScope);
+        if (!resolved.isEmpty())
+            modelArg = resolved;
+    }
     m_processManager.startRenderer(
-        *path, port, m_instanceId, m_token, m_config.modelName,
+        *path, port, m_instanceId, m_token, modelArg,
         m_config.windowX, m_config.windowY,
         m_config.windowWidth, m_config.windowHeight);
 
@@ -661,20 +695,31 @@ void InstanceSession::onProcessStopFinished(bool clean)
     }
 }
 
-void InstanceSession::loadModel(const QString& modelName)
+void InstanceSession::loadModel(const QString& modelName,
+                                const QString& scope)
 {
-    LOG_INFO("InstanceSession::loadModel instanceId={} model=\"{}\" connected={}",
-             m_instanceId, modelName.toStdString(), m_connected);
+    LOG_INFO("InstanceSession::loadModel instanceId={} model=\"{}\" scope=\"{}\" "
+             "connected={}",
+             m_instanceId, modelName.toStdString(), scope.toStdString(),
+             m_connected);
     // Rollback bookkeeping (silent-failure fix): remember the pre-switch
     // name while the switch awaits its verdict (model_loaded = confirmed,
     // model_load_failed = rejected → handleModelLoadFailedEvent rolls back
     // to this value). Only the FIRST unconfirmed switch of a chain records
     // — see the member comment. Set in BOTH branches (online + offline):
     // an offline switch's verdict arrives at the next start()'s salvo.
-    if (!m_modelSwitchInFlight)
+    // v1.13: the pre-switch SCOPE and the pre-switch m_currentModelJsonPath
+    // are captured alongside — a rejected scoped switch restores the
+    // previous domain AND its resolved path (hit-area resolution keeps
+    // working after a scoped→scoped rollback).
+    if (!m_modelSwitchInFlight) {
         m_modelNameBeforeSwitch = m_config.modelName;
+        m_modelScopeBeforeSwitch = m_config.modelScope;
+        m_modelJsonPathBeforeSwitch = m_currentModelJsonPath;
+    }
     m_modelSwitchInFlight = true;
     m_config.modelName = modelName;
+    m_config.modelScope = scope;
     // Persist ALWAYS (offline + online): start() launches the renderer with
     // --model m_config.modelName, so without the persist an offline switch
     // would silently revert on the next launch. QSaveFile-backed atomic
@@ -697,7 +742,31 @@ void InstanceSession::loadModel(const QString& modelName)
                  m_instanceId);
         return;
     }
-    sendCommand(Protocol::buildLoadModel(modelName));
+    // v1.13 (rev2 §3.4): strict domain resolution. A scoped switch that
+    // does NOT resolve in its plugin domain fails LOCALLY — no command
+    // goes out (the renderer could only miss too), and the existing
+    // model-load-failure handling (rollback + observability + bus event)
+    // runs against a synthesized miss. A host-domain switch (scope empty)
+    // keeps the byte-identical legacy wire behavior.
+    QString resolvedPath;
+    if (!scope.isEmpty()) {
+        resolvedPath = resolveScopedModel(modelName, scope);
+        if (resolvedPath.isEmpty()) {
+            LOG_WARN("InstanceSession[{}]: scoped model \"{}\" not found in "
+                     "domain \"{}\" — applying local load-failure handling",
+                     m_instanceId, modelName.toStdString(),
+                     scope.toStdString());
+            applyModelLoadFailure(
+                1001,
+                QStringLiteral("model '%1' not found in plugin domain '%2'")
+                    .arg(modelName, scope));
+            return;
+        }
+    }
+    // The path actually sent (empty for host domain → renderer-dir
+    // fallback in resolveModel3JsonPath, rev2 §3.4a).
+    m_currentModelJsonPath = resolvedPath;
+    sendCommand(Protocol::buildLoadModel(modelName, resolvedPath));
 }
 
 void InstanceSession::onMessage(const Envelope& env)
@@ -811,6 +880,14 @@ QString InstanceSession::generateToken()
 
 QString InstanceSession::resolveModel3JsonPath() const
 {
+    // v1.13 (rev2 §3.4a): a scoped load carries its own absolute path —
+    // prefer the LAST path actually put on the wire. Empty (host domain,
+    // or a startup-failure clear — a rejected user switch RESTORES the
+    // pre-switch path instead) falls through to the renderer-dir
+    // resolution below, byte-identical to pre-v1.13.
+    if (!m_currentModelJsonPath.isEmpty())
+        return m_currentModelJsonPath;
+
     // The renderer ships Resources/Models/<modelName>/<modelName>.model3.json
     // next to its exe (architecture-blueprint.md §3.4). m_rendererDir is the
     // resolved renderer directory stored in start(); the model3.json lives
@@ -818,4 +895,76 @@ QString InstanceSession::resolveModel3JsonPath() const
     return QDir(m_rendererDir).absoluteFilePath(
         QStringLiteral("Resources/Models/%1/%1.model3.json")
             .arg(m_config.modelName));
+}
+
+QString InstanceSession::resolveScopedModel(const QString& modelName,
+                                            const QString& scope) const
+{
+    // Host domain: no absolute path exists by contract (the renderer does
+    // its own Resources/ short-name resolution).
+    if (scope.isEmpty())
+        return {};
+    // Injected seam first (tests / wave-2 wiring); the built-in fallback is
+    // the PURE directory-scan resolution (rev2 §3.2c) over the real plugin
+    // data root — no plugin registry, works before initializeAll().
+    if (m_modelPathResolver)
+        return m_modelPathResolver(modelName, scope);
+    return core::resolvePluginModelPath(ConfigDir::pluginDataRoot(), scope,
+                                        modelName);
+}
+
+void InstanceSession::applyModelLoadFailure(int errorCode,
+                                            const QString& message)
+{
+    // Shared failure tail — extracted verbatim from the renderer-event path
+    // (handleModelLoadFailedEvent) so the v1.13 scoped resolver-miss path
+    // reuses the SAME rollback + observability + bus emission instead of a
+    // duplicate. Order preserved: record/bump/clear → modelLoadFailed emit
+    // (QML handlers read the FAILED name at signal time) → durable rollback
+    // (name AND scope) → bus publish. Never throws.
+    m_lastModelLoadError = message.isEmpty()
+        ? QStringLiteral("model load failed (no error_message)")
+        : message;
+    ++m_modelLoadFailureRevision;
+    setModelLoaded(false);
+    // A locally-failed scoped switch never put a path on the wire — clear
+    // the tracked path so hit-area resolution cannot point at the missed
+    // file (rev2 §3.4a "cleared on rollback"). When a confirmed switch
+    // rolls back below, the pre-switch path is RESTORED over this clear
+    // (scoped→scoped rollback keeps hit-area resolution on the last
+    // confirmed scoped model).
+    m_currentModelJsonPath.clear();
+    LOG_WARN("InstanceSession[{}]: model load failure rev={} error=\"{}\"",
+             m_instanceId, m_modelLoadFailureRevision,
+             m_lastModelLoadError.toStdString());
+    emit modelLoadFailed(m_lastModelLoadError);
+    if (m_modelSwitchInFlight) {
+        m_modelSwitchInFlight = false;
+        if (m_config.modelName != m_modelNameBeforeSwitch ||
+            m_config.modelScope != m_modelScopeBeforeSwitch) {
+            LOG_INFO("InstanceSession[{}]: rolling modelName back to \"{}\" "
+                     "(scope \"{}\") — switch rejected",
+                     m_instanceId, m_modelNameBeforeSwitch.toStdString(),
+                     m_modelScopeBeforeSwitch.toStdString());
+            m_config.modelName = m_modelNameBeforeSwitch;
+            m_config.modelScope = m_modelScopeBeforeSwitch;
+            // v1.13 (oracle follow-up Nice#7): the tracked wire path rolls
+            // back with the name/scope — the pre-switch path (empty for a
+            // host-domain previous model, so host-bound rollbacks keep the
+            // clear above's behavior byte-identically).
+            m_currentModelJsonPath = m_modelJsonPathBeforeSwitch;
+            if (!m_configManager.save(m_config)) {
+                LOG_ERROR("InstanceSession[{}]: failed to persist modelName "
+                          "rollback to \"{}\"",
+                          m_instanceId, m_modelNameBeforeSwitch.toStdString());
+            }
+            emit modelNameChanged();
+        }
+    }
+    // S8a (v1.5): post-commit publish — same point in the sequence as the
+    // renderer-event path (after the revision bump, the modelLoaded flip,
+    // the modelLoadFailed signal and the gated rollback). "" is the
+    // bus-side sentinel for "no wire message" (locally-synthesized miss).
+    publishHostEvent(pet::kEventModelLoadFailed, /*cancellable=*/false,
+                     core::makeModelLoadFailedPayload(errorCode, message));
 }

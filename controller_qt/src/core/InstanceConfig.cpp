@@ -60,6 +60,10 @@ QJsonObject instanceConfigToJson(const InstanceConfig& cfg)
     obj.insert(QStringLiteral("renderer_path"), cfg.rendererPath);
     obj.insert(QStringLiteral("graphics_backend"), cfg.graphicsBackend);
     obj.insert(QStringLiteral("current_model_name"), cfg.modelName);
+    // v1.13: resource-domain scopes. Plain strings ("" = host domain) —
+    // never null: a missing key in a pre-v1.13 file reads back as the
+    // empty default via readString, which IS the host domain.
+    obj.insert(QStringLiteral("model_scope"), cfg.modelScope);
     obj.insert(QStringLiteral("model_scale"), cfg.modelScale);
     obj.insert(QStringLiteral("window_x"), cfg.windowX);
     obj.insert(QStringLiteral("window_y"), cfg.windowY);
@@ -76,6 +80,7 @@ QJsonObject instanceConfigToJson(const InstanceConfig& cfg)
     obj.insert(QStringLiteral("voice_pack"),
                cfg.voicePack.isEmpty() ? QJsonValue(QJsonValue::Null)
                                        : QJsonValue(cfg.voicePack));
+    obj.insert(QStringLiteral("voice_pack_scope"), cfg.voicePackScope);
     obj.insert(QStringLiteral("volume"), cfg.volume);
     obj.insert(QStringLiteral("muted"), cfg.muted);
     obj.insert(QStringLiteral("layout_offset_x"), cfg.layoutOffsetX);
@@ -98,6 +103,7 @@ InstanceConfig instanceConfigFromJson(const QJsonObject& json)
     cfg.rendererPath = readString(json, QLatin1String("renderer_path"), cfg.rendererPath);
     cfg.graphicsBackend = readString(json, QLatin1String("graphics_backend"), cfg.graphicsBackend);
     cfg.modelName = readString(json, QLatin1String("current_model_name"), cfg.modelName);
+    cfg.modelScope = readString(json, QLatin1String("model_scope"), cfg.modelScope);
     cfg.modelScale = readDouble(json, QLatin1String("model_scale"), cfg.modelScale);
     cfg.windowX = readInt(json, QLatin1String("window_x"), cfg.windowX);
     cfg.windowY = readInt(json, QLatin1String("window_y"), cfg.windowY);
@@ -110,6 +116,7 @@ InstanceConfig instanceConfigFromJson(const QJsonObject& json)
     cfg.autoStart = readBool(json, QLatin1String("auto_start"), cfg.autoStart);
     cfg.currentExpression = readString(json, QLatin1String("current_expression"), cfg.currentExpression);
     cfg.voicePack = readString(json, QLatin1String("voice_pack"), cfg.voicePack);
+    cfg.voicePackScope = readString(json, QLatin1String("voice_pack_scope"), cfg.voicePackScope);
     cfg.volume = readDouble(json, QLatin1String("volume"), cfg.volume);
     cfg.muted = readBool(json, QLatin1String("muted"), cfg.muted);
     cfg.layoutOffsetX = readDouble(json, QLatin1String("layout_offset_x"), cfg.layoutOffsetX);

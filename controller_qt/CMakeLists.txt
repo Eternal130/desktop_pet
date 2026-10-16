@@ -651,6 +651,7 @@ qml/components/Segmented.qml
 qml/components/SettingRow.qml
 qml/components/Sparkline.qml
 qml/components/StatusPill.qml
+qml/components/PluginScopeBadge.qml
 qml/components/ToggleSwitch.qml
 qml/pages/WelcomePage.qml
 qml/pages/InstanceDetailPage.qml

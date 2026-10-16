@@ -132,6 +132,9 @@ private slots:
     void testCreateForwardsToControlApi();
     void testDeleteForwardsToControlApi();
     void testNullControlApiReturnsGeneric();
+
+    // ── v1.13 roster scope role (injected host provider; SDK untouched) ──
+    void testPluginScopeRole();
 };
 
 void RosterApiModelTest::testInitialLoad()
@@ -212,7 +215,11 @@ void RosterApiModelTest::testRoleDataAndNames()
              QByteArrayLiteral("status"));
     QCOMPARE(names.value(RosterApiModel::ConnectedRole),
              QByteArrayLiteral("connected"));
-    QCOMPARE(names.size(), 5);
+    // v1.13: +pluginScope (served by the injected host provider; the
+    // frozen pet::InstanceInfo carries no scope field).
+    QCOMPARE(names.value(RosterApiModel::PluginScopeRole),
+             QByteArrayLiteral("pluginScope"));
+    QCOMPARE(names.size(), 6);
 
     const QModelIndex row = model.index(0, 0);
     QCOMPARE(model.data(row, RosterApiModel::LabelRole).toString(),
@@ -323,6 +330,55 @@ void RosterApiModelTest::testNullControlApiReturnsGeneric()
     QCOMPARE(model.deleteInstance(QStringLiteral("uuid")),
              static_cast<int>(pet::PluginError::Generic));
     QCOMPARE(model.rowCount(), 0); // read side unaffected
+}
+
+// ── v1.13: pluginScope role ────────────────────────────────────────────────
+//
+// pet::InstanceInfo is frozen (no scope field) — the role is served by
+// the injected host provider (uuid → InstanceConfig.modelScope via
+// InstanceManager::modelScopeForUuid in production). Without a provider
+// every row reports "" (the pre-v1.13 observable); the role NAME mirrors
+// InstanceManager's byte-for-byte so QML delegates bind identically.
+void RosterApiModelTest::testPluginScopeRole()
+{
+    FakeInstanceApi api;
+    api.setRows({info(QStringLiteral("u1"), QStringLiteral("A"),
+                     QStringLiteral("Hiyori"), QStringLiteral("stopped"), false),
+                 info(QStringLiteral("u2"), QStringLiteral("B"),
+                     QStringLiteral("AModel"), QStringLiteral("running"), true)});
+
+    // Default (no provider): every row reports the host domain ("").
+    RosterApiModel bare(&api, nullptr);
+    const int bareRole = bare.roleNames().key(QByteArrayLiteral("pluginScope"));
+    QVERIFY(bareRole > 0);
+    QCOMPARE(bare.data(bare.index(0, 0), bareRole), QVariant(QString()));
+    QCOMPARE(bare.data(bare.index(1, 0), bareRole), QVariant(QString()));
+
+    // Injected provider: populated for known uuids, "" for unknown ones
+    // (a provider miss is a display-only "" — never an error), and the
+    // reset re-queries the provider live.
+    RosterApiModel model(&api, nullptr);
+    model.setScopeProvider([](const QString& uuid) {
+        return uuid == QLatin1String("u2") ? QStringLiteral("org.plugin.b")
+                                           : QString();
+    });
+    const int role = model.roleNames().key(QByteArrayLiteral("pluginScope"));
+    QVERIFY(role > 0);
+    QCOMPARE(model.data(model.index(0, 0), role), QVariant(QString()));
+    QCOMPARE(model.data(model.index(1, 0), role),
+             QVariant(QStringLiteral("org.plugin.b")));
+    // Out-of-range / invalid-parent safety (same shape as the other roles).
+    QCOMPARE(model.data(model.index(9, 0), role), QVariant());
+
+    // A provider flip is observed on the NEXT reset (rosterChanged).
+    api.setRows({info(QStringLiteral("u2"), QStringLiteral("B"),
+                     QStringLiteral("AModel"), QStringLiteral("running"), true)});
+    model.setScopeProvider([](const QString& uuid) {
+        return uuid == QLatin1String("u2") ? QStringLiteral("org.other") : QString();
+    });
+    api.emitRosterChanged();
+    QCOMPARE(model.data(model.index(0, 0), role),
+             QVariant(QStringLiteral("org.other")));
 }
 
 QTEST_APPLESS_MAIN(RosterApiModelTest)

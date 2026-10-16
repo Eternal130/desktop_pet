@@ -35,6 +35,15 @@ struct InstanceConfig {
     // ── model + window ─────────────────────────────────────────────────────
     QString graphicsBackend = QStringLiteral("opengl"); // "opengl" | "vulkan"
     QString modelName = QStringLiteral("Hiyori");        // current model short name
+    // v1.13 (resource isolation, rev2 §4): the resource DOMAIN the model is
+    // resolved in. Empty = HOST domain (the renderer's Resources/Models —
+    // the only behavior before v1.13, byte-identical when empty). Non-empty
+    // = a plugin id: the model is resolved STRICTLY inside that plugin's
+    // data domain <dataDir>/PluginData/<id>/Models/ (no host fallback).
+    // 已知且刻意的语义（maintainer decision, oracle follow-up Should#5）:
+    // 宿主 UI（详情页模型库）切换模型走裸实现的 scope "" 落盘 —— 会把
+    // 插件域实例转回本体域（花名册徽章翻转为宿主即其可见信号）。
+    QString modelScope;
     double modelScale = 1.0;
     int windowX = 1200;
     int windowY = 600;
@@ -51,6 +60,12 @@ struct InstanceConfig {
     // ── expression / audio ──────────────────────────────────────────────────
     QString currentExpression = QStringLiteral("F01");
     QString voicePack;                     // empty = no voice pack mounted
+    // v1.13 (rev2 §4): the resource DOMAIN of the mounted voice pack.
+    // Empty = HOST domain (the absolute voicePack path resolves in the
+    // host's dual-source scan). Non-empty = plugin id whose data domain
+    // owns the pack. The voicePack ABS-path semantics are unchanged —
+    // this field only records the owning domain.
+    QString voicePackScope;
     double volume = 1.0;                   // 0.0–1.0
     bool muted = false;
 
@@ -68,6 +83,7 @@ struct InstanceConfig {
             && rendererPath == other.rendererPath
             && graphicsBackend == other.graphicsBackend
             && modelName == other.modelName
+            && modelScope == other.modelScope
             && modelScale == other.modelScale
             && windowX == other.windowX
             && windowY == other.windowY
@@ -80,6 +96,7 @@ struct InstanceConfig {
             && autoStart == other.autoStart
             && currentExpression == other.currentExpression
             && voicePack == other.voicePack
+            && voicePackScope == other.voicePackScope
             && volume == other.volume
             && muted == other.muted
             && layoutOffsetX == other.layoutOffsetX
@@ -91,7 +108,8 @@ struct InstanceConfig {
 // Serialize an InstanceConfig to a QJsonObject with snake_case keys
 // (configuration.md §5). Every field is written; voice_pack is written
 // as JSON null when empty and a string otherwise. The result always has
-// exactly one key per field (23).
+// exactly one key per field (25 — v1.13 added model_scope +
+// voice_pack_scope).
 QJsonObject instanceConfigToJson(const InstanceConfig& cfg);
 
 // Deserialize a QJsonObject into an InstanceConfig. Missing fields are merged

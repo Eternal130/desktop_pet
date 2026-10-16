@@ -27,6 +27,7 @@
 #include "api/IModelApi.hpp"
 #include "api/IMonitorApi.hpp"
 #include "api/IPluginContext.hpp"
+#include "api/IResourceScopeApi.hpp"
 #include "api/IRuleApi.hpp"
 #include "api/ISettingsApi.hpp"
 #include "api/ITuningApi.hpp"
@@ -114,6 +115,22 @@ public:
     pet::PluginError loadModel(const QString& uuid, const QString& modelName) override;
     pet::PluginError setAvatar(const QString& uuid, const QString& avatar) override;
 
+    // ── v1.13 host/plugin-internal scope-stamping seams (deliberately
+    // NOT on the pet:: interface — the SDK InstanceSpec stays frozen;
+    // the per-context InstanceControlApiProxy calls these with
+    // callerId = its plugin id. callerId "" = the host channel,
+    // byte-identical to the pre-v1.13 surface) ────────────────────────
+    // create() + stamp the initial InstanceConfig.modelScope = callerId
+    // (a plugin-created instance resolves its model in the plugin's
+    // data domain from the first boot).
+    pet::PluginError createAs(const QString& callerId,
+                              const pet::InstanceSpec& spec, QString* outUuid);
+    // loadModel() + scope: forwards to InstanceSession::loadModel(name,
+    // callerId) — the wave-1 scoped switch (strict-domain resolution,
+    // persist model_scope).
+    pet::PluginError loadModelAs(const QString& callerId, const QString& uuid,
+                                 const QString& modelName);
+
 private:
     // Locate the session whose uuid() == uuid (linear scan over the
     // manager's public roster surface — sidebar-sized N). Null when the
@@ -139,12 +156,17 @@ public:
     // it; null is tolerated → every op returns NotFound, degraded wiring).
     TuningApiImpl(InstanceManager* instanceManager, QObject* parent);
 
-    // Test seam for the mount packId resolution scan: overrides the two
+    // Test seam for the mount packId resolution scan: overrides the
     // scan sources (renderer base dir + user packs dir). Empty values
     // (production default) resolve to defaultRendererDir() +
     // ConfigDir::userVoicePacksDir() — the same sources the voice-pack
     // page and the plugin voicePackApi use.
-    void setPackScanDirs(const QString& rendererDir, const QString& userPacksDir);
+    // v1.13: optional third seam — the plugin DATA root for the union
+    // pack scan (mountVoicePackAs domain matching). Empty (the default)
+    // resolves to ConfigDir::pluginDataRoot(); a non-existent injected
+    // path simply contributes no plugin-domain packs.
+    void setPackScanDirs(const QString& rendererDir, const QString& userPacksDir,
+                         const QString& pluginDataRoot = QString());
 
     pet::PluginError setOpacity(const QString& uuid, double opacity) override;
     pet::PluginError setVolume(const QString& uuid, double volume) override;
@@ -162,6 +184,19 @@ public:
     pet::PluginError setGraphicsBackend(const QString& uuid,
                                         const QString& backend) override;
 
+    // ── v1.13 host/plugin-internal scope-stamping seam (per-context
+    // TuningApiProxy calls this with callerId = its plugin id; the raw
+    // pet:: surface keeps the legacy host-domain contract) ───────────
+    // mountVoicePack() + scope: packId resolves against the UNION scan
+    // (caller's OWN domain first, then the host domain — a plugin never
+    // sees another plugin's packs), and the session mount persists
+    // InstanceConfig.voicePackScope = the DOMAIN THE PACK ACTUALLY
+    // RESOLVED IN (the caller's id on an own-domain hit; "" on a
+    // host-domain pass-2 fallback — the session seam then sees ""). The
+    // stamp mirrors the physical mount, not the caller identity.
+    pet::PluginError mountVoicePackAs(const QString& callerId, const QString& uuid,
+                                      const QString& packId);
+
 private:
     // Shared prelude: NotFound for unknown uuids, Busy while a delete is
     // pending. Returns Ok with *out set to the session on success.
@@ -169,14 +204,23 @@ private:
     // Linear scan over the manager's PUBLIC roster surface (same access
     // QML uses; sidebar-sized N).
     InstanceSession* sessionForUuid(const QString& uuid) const;
-    // packId (directory name) → absolute pack dir via the host's own
-    // dual-source pack scan; empty when unknown.
-    QString resolvePackDir(const QString& packId) const;
+    // packId (directory name) → absolute pack dir via the host's UNION
+    // pack scan (scanVoicePacksScoped): the caller's OWN plugin domain
+    // wins, then the host domain (owner="" — the dual-source user-wins
+    // merge, byte-identical to the pre-v1.13 resolution for callerId
+    // ""). Domains other than the caller's are NEVER matched; empty when
+    // unknown. When non-null, *matchedOwner receives the owner of the
+    // winning domain — callerId on an own-domain hit, "" on a host-domain
+    // fallback — so the caller can stamp scope DOMAIN-CORRECTLY (a pack
+    // that resolved in the host domain must persist "").
+    QString resolvePackDir(const QString& callerId, const QString& packId,
+                           QString* matchedOwner = nullptr) const;
 
     InstanceManager* m_instanceManager; // not owned (service tree)
     // Pack-resolution scan sources (empty = production defaults; test seam).
     QString m_packRendererDir;
     QString m_packUserDir;
+    QString m_packPluginDataRoot; // v1.13 (empty = ConfigDir::pluginDataRoot())
 };
 
 // S5 (v1.3): real model-library read API — the pet::IModelApi behind
@@ -186,6 +230,16 @@ private:
 // capability- or switch-gated; a host without the shared impl wired
 // answers queryApi with nullptr (no stub — there is no capability story
 // to report for a read).
+//
+// v1.13 (resource isolation): the cache is now the UNION scan
+// (scanModelsScoped over the renderer tree + ConfigDir::pluginDataRoot()
+// — or the injected test root). The pet.model PROJECTION stays
+// host-domain-only (availableModels()/modelInfo() answer owner==""
+// entries exclusively — SDK semantics narrowed to the host domain, which
+// auto-isolates the host pages AND keeps legacy plugins seeing exactly
+// the pre-v1.13 surface). The union half feeds the host-internal
+// resolveModelPath() seam: PanelApplication binds every session's
+// ModelPathResolverFn to it (strict-domain resolution, miss → QString()).
 class ModelApiImpl : public QObject, public pet::IModelApi
 {
     Q_OBJECT
@@ -198,6 +252,12 @@ public:
     // availableModels() call.
     void setRendererDir(const QString& dir);
 
+    // v1.13 test seam: the plugin DATA root for the union scan. Empty
+    // (the default / production) resolves to ConfigDir::pluginDataRoot()
+    // at scan time; tests inject a QTemporaryDir path so resolveModelPath
+    // is verifiable without touching the real <dataDir>/PluginData/.
+    void setPluginDataRoot(const QString& root);
+
     QVector<pet::ModelSummary> availableModels() override;
     void refreshScan() override;
     pet::PluginError modelInfo(const QString& name, pet::ModelSummary* out) override;
@@ -207,12 +267,29 @@ public:
     // page header hint + empty state).
     QString modelsDir() const { return m_modelsDir; }
 
+    // ── v1.13 host-internal seam (strict-domain resolution, rev2
+    // §3.4): absolute .model3.json path for (name, scope) out of the
+    // union side index. scope empty → QString() (host domain — the
+    // renderer's own Resources/ short-name resolution applies); scoped
+    // miss → QString() (NEVER a host-domain fallback). ─────────────────
+    QString resolveModelPath(const QString& name, const QString& scope) const;
+
 private:
     void rescan();
 
+    // One union-scan entry (host + every plugin data domain).
+    struct Entry {
+        QString name;
+        QString owner;         // "" = host domain; else the plugin id
+        QString modelJsonPath; // absolute <Name>.model3.json path
+        pet::ModelSummary summary;
+    };
+
     QString m_rendererDir;
     QString m_modelsDir;
-    QList<pet::ModelSummary> m_models; // scan cache, scan order
+    QString m_pluginDataRoot;      // empty → ConfigDir::pluginDataRoot()
+    QList<pet::ModelSummary> m_models; // HOST-domain projection (owner=="")
+    QList<Entry> m_union;              // full union (resolveModelPath index)
 };
 
 // S6 (v1.3): real panel-settings write API — the pet::ISettingsApi
@@ -358,21 +435,30 @@ private:
 // plugin's manifest grants the "network" capability; without the grant
 // every method fails with PluginError::Capability (§B.4 capability gate —
 // the pre-P5 permanent stub is now CONDITIONAL, same loud-failure shape).
+//
+// v1.13 (rev2 §3.1/§3.5 api_version routing gate): the adapter receives
+// the plugin's MANIFEST api_version. ≥ 1.13 → installArchive forwards to
+// the 3-arg DownloadService overload with owner = the plugin id (installs
+// land in the plugin's data domain); < 1.13 → owner "" (the legacy host
+// install roots, byte-identical to the pre-v1.13 behavior). Host-internal
+// callers of the raw DownloadService always use the legacy channel.
 class DownloadApiAdapter final : public QObject, public pet::IDownloadApi
 {
     Q_OBJECT
 public:
     DownloadApiAdapter(QString pluginId, bool networkGranted,
-                       DownloadService* service, QObject* parent);
+                        int manifestApiMajor, int manifestApiMinor,
+                        DownloadService* service, QObject* parent);
 
     pet::JobId start(const pet::DownloadRequest& request,
-                     pet::DownloadListener* listener) override;
+                      pet::DownloadListener* listener) override;
     void cancel(pet::JobId job) override;
     pet::PluginError installArchive(pet::JobId job, const pet::InstallSpec& spec) override;
 
 private:
     QString m_pluginId;
     bool m_networkGranted = false;
+    bool m_domainRouting = false; // v1.13: manifest api_version ≥ 1.13
     DownloadService* m_service = nullptr; // null in degraded wiring → stub semantics
 };
 
@@ -554,6 +640,167 @@ private:
     std::function<void(pet::PluginLogLevel, const QString&)> m_log;
 };
 
+// v1.13: the per-plugin instance-control proxy served through
+// queryApi("pet.instance_control") for api_version ≥ 1.13 plugin
+// contexts. The shared InstanceControlApiImpl serves the HOST channel
+// (the panel's own RosterApiModel/InstanceControlBridge hold the raw
+// impl — host UI stays ungated + unscoped by design); the proxy adds
+// ONLY scope stamping on the two resource-bearing ops: create stamps the
+// initial InstanceConfig.modelScope and loadModel routes through the
+// scoped session switch. Capability + write-switch gating are unchanged
+// (the route still falls back to the stub exactly as before — the proxy
+// only wraps the REAL impl). Plain class (no QObject) — built by
+// PluginContextImpl when domain routing is on. For < 1.13 manifests the
+// context keeps serving the RAW impl (byte-identical legacy).
+class InstanceControlApiProxy final : public pet::IInstanceControlApi
+{
+public:
+    InstanceControlApiProxy(const QString& pluginId,
+                            InstanceControlApiImpl* shared);
+
+    pet::PluginError create(const pet::InstanceSpec& spec, QString* outUuid) override;
+    pet::PluginError remove(const QString& uuid) override;
+    pet::PluginError start(const QString& uuid) override;
+    pet::PluginError stop(const QString& uuid) override;
+    pet::PluginError restart(const QString& uuid) override;
+    pet::PluginError loadModel(const QString& uuid,
+                               const QString& modelName) override;
+    pet::PluginError setAvatar(const QString& uuid, const QString& avatar) override;
+
+private:
+    QString m_pluginId;
+    InstanceControlApiImpl* m_shared = nullptr; // not owned; null-safe
+};
+
+// v1.13: the per-plugin tuning proxy served through
+// queryApi("pet.instance_tuning") for api_version ≥ 1.13 plugin
+// contexts. Same shape as InstanceControlApiProxy: the host UI
+// (VoicePackController / InstanceControlBridge) keeps the raw impl; the
+// proxy stamps callerId on mountVoicePack only (the one resource-bearing
+// tuning op — packId resolves against the union scan with the caller's
+// OWN domain first, and the session persists voicePackScope). The other
+// nine ops forward verbatim.
+class TuningApiProxy final : public pet::ITuningApi
+{
+public:
+    TuningApiProxy(const QString& pluginId, TuningApiImpl* shared);
+
+    pet::PluginError setOpacity(const QString& uuid, double opacity) override;
+    pet::PluginError setVolume(const QString& uuid, double volume) override;
+    pet::PluginError setMuted(const QString& uuid, bool muted) override;
+    pet::PluginError setFps(const QString& uuid, int fps) override;
+    pet::PluginError playMotion(const QString& uuid, const QString& group,
+                                int index) override;
+    pet::PluginError setExpression(const QString& uuid,
+                                   const QString& expressionId) override;
+    pet::PluginError triggerHitArea(const QString& uuid,
+                                    const QString& areaId) override;
+    pet::PluginError mountVoicePack(const QString& uuid,
+                                    const QString& packId) override;
+    pet::PluginError unmountVoicePack(const QString& uuid) override;
+    pet::PluginError setGraphicsBackend(const QString& uuid,
+                                        const QString& backend) override;
+
+private:
+    QString m_pluginId;
+    TuningApiImpl* m_shared = nullptr; // not owned; null-safe
+};
+
+// v1.13 (rev2 §3.3): shared resource-scope family — the pet::
+// IResourceScopeApi behind queryApi(kResourceScopeApiId). Constructed
+// ONCE in the PanelApplication service tree (same sharing pattern as
+// ModelApiImpl) and injected into every plugin context (via PluginHost).
+// Plugins never see THIS object directly — queryApi hands each context a
+// per-plugin ResourceScopeApiProxy that stamps callerId; the owner check
+// (ownerId == callerId, both non-empty) is the family's ONLY boundary
+// (无能力词，属主校验即边界 — the pet.rules precedent). Backing data is the
+// PURE directory-traversal union scans (scanModelsScoped /
+// scanVoicePacksScoped) — never the plugin registry (rev2 §3.2c).
+// Reads scan lazily per call (the VoicePackApiImpl::listPacks cost
+// class); refreshScan() re-runs the wired ModelApiImpl cache alongside.
+class ResourceScopeApiImpl : public QObject, public pet::IResourceScopeApi
+{
+    Q_OBJECT
+public:
+    ResourceScopeApiImpl(QObject* parent = nullptr);
+
+    // Injection seam mirroring ModelApiImpl's: the renderer BASE dir
+    // (Resources/{Models,VoicePacks} appended internally). Empty (the
+    // default) resolves to QCoreApplication::applicationDirPath() at
+    // scan time — the DownloadService modelsInstallRoot convention.
+    void setRendererDir(const QString& dir);
+
+    // Test seam: overrides all three scan roots at once (renderer base
+    // dir + user packs dir + plugin DATA root). Empty values resolve to
+    // the production defaults (applicationDirPath() /
+    // ConfigDir::userVoicePacksDir() / ConfigDir::pluginDataRoot()).
+    void setScanDirs(const QString& rendererDir, const QString& userPacksDir,
+                     const QString& pluginDataRoot);
+
+    // Cross-wiring seam (PanelApplication): refreshScan() also refreshes
+    // the shared ModelApiImpl cache so the pet.model family and the
+    // library page observe resource removals/installs. Null (default) =
+    // resource refreshes stay local.
+    void setModelApi(ModelApiImpl* modelApi) { m_modelApi = modelApi; }
+
+    // pet::IResourceScopeApi — the HOST channel. The host domain is not
+    // addressable here: ownerId "" fails the owner check (reads come
+    // back empty, removeScoped → InvalidArgument). Host-internal
+    // callers use the *As seams with an explicit callerId.
+    QVector<pet::ScopedModelInfo> scopedModels(const QString& ownerId) override;
+    QVector<pet::ScopedPackInfo> scopedPacks(const QString& ownerId) override;
+    pet::PluginError refreshScan() override;
+    pet::PluginError removeScoped(const QString& ownerId, const QString& name,
+                                  bool isModel) override;
+
+    // ── Host/plugin-internal seams (explicit caller identity — the
+    // EventApiImpl::subscribeAs discipline) ──────────────────────────
+    QVector<pet::ScopedModelInfo> scopedModelsAs(const QString& callerId,
+                                                 const QString& ownerId);
+    QVector<pet::ScopedPackInfo> scopedPacksAs(const QString& callerId,
+                                               const QString& ownerId);
+    pet::PluginError removeScopedAs(const QString& callerId, const QString& ownerId,
+                                    const QString& name, bool isModel);
+
+private:
+    // Effective scan roots (empty members → production defaults).
+    QString rendererDirOrDefault() const;
+    QString userPacksDirOrDefault() const;
+    QString pluginDataRootOrDefault() const;
+    // <pluginDataRoot>/<ownerId>/Models|VoicePacks (derived from the
+    // INJECTED root so tests never touch the real ConfigDir paths; in
+    // production the root IS ConfigDir::pluginDataRoot()).
+    QString domainModelsDir(const QString& ownerId) const;
+    QString domainPacksDir(const QString& ownerId) const;
+
+    QString m_rendererDir;      // empty → applicationDirPath()
+    QString m_userPacksDir;     // empty → ConfigDir::userVoicePacksDir()
+    QString m_pluginDataRoot;   // empty → ConfigDir::pluginDataRoot()
+    ModelApiImpl* m_modelApi = nullptr; // not owned (cross-refresh)
+};
+
+// v1.13: the per-plugin resource-scope proxy served through
+// queryApi("pet.resource_scope"). Forwards with callerId = the context's
+// plugin id (the anti-forgery rule the shared Impl cannot enforce — it
+// serves every context). Ungated read-family routing: null impl →
+// nullptr ("feature absent"). Plain class (no QObject) — a value member
+// of PluginContextImpl (EventApiProxy pattern).
+class ResourceScopeApiProxy final : public pet::IResourceScopeApi
+{
+public:
+    ResourceScopeApiProxy(const QString& pluginId, ResourceScopeApiImpl* shared);
+
+    QVector<pet::ScopedModelInfo> scopedModels(const QString& ownerId) override;
+    QVector<pet::ScopedPackInfo> scopedPacks(const QString& ownerId) override;
+    pet::PluginError refreshScan() override;
+    pet::PluginError removeScoped(const QString& ownerId, const QString& name,
+                                  bool isModel) override;
+
+private:
+    QString m_pluginId;
+    ResourceScopeApiImpl* m_shared = nullptr; // not owned; null-safe
+};
+
 class PluginContextImpl : public QObject, public pet::IPluginContext
 {
     Q_OBJECT
@@ -576,6 +823,15 @@ public:
     // capabilities is the plugin's manifest whitelist (gates downloadApi
     // + instance control); voicePackRefresh is the host's P5 seam into
     // VoicePackController::rescan.
+    //
+    // v1.13 (rev2 §3.1/§3.5): manifestApiMajor/manifestApiMinor carry the
+    // plugin's MANIFEST api_version (PluginRegistry's parsed fields) into
+    // the context. ≥ 1.13 → domain routing (download install owner,
+    // voicePackApi installPath advertisement, instance-control/tuning
+    // scope stamping via the per-context proxies); < 1.13 (the DEFAULT —
+    // direct-construction tests, legacy manifests) → owner=""/host
+    // domain everywhere, byte-identical to pre-v1.13. Appended AFTER
+    // parent with defaults so every existing call site keeps compiling.
     PluginContextImpl(const QString& pluginId,
                       InstanceApiImpl* sharedInstanceApi,
                       InstanceControlApiImpl* sharedInstanceControlApi,
@@ -586,14 +842,21 @@ public:
                       DownloadService* downloadService,
                       const QStringList& capabilities,
                       std::function<void()> voicePackRefresh,
-                      QObject* parent);
+                      QObject* parent,
+                      int manifestApiMajor = 0,
+                      int manifestApiMinor = 0);
 
     // pet::IPluginContext
     pet::IInstanceApi& instanceApi() override { return *m_instanceApi; }
     pet::IVoicePackApi& voicePackApi() override
     {
-        return m_sharedVoicePackApi != nullptr ? *m_sharedVoicePackApi
-                                               : m_voicePackApi;
+        // v1.13: an injected shared impl is served through the per-context
+        // proxy so installPath() honors THIS context's api_version gate;
+        // without one, the per-context fallback impl (constructed with the
+        // same gate) keeps serving.
+        if (m_sharedVoicePackApi != nullptr && m_voicePackProxy != nullptr)
+            return *m_voicePackProxy;
+        return m_voicePackApi;
     }
     pet::IUiApi& uiApi() override { return m_uiApi; }
     pet::IDownloadApi& downloadApi() override { return m_downloadApi; }
@@ -608,10 +871,10 @@ public:
     // and settings degrade to their capability stubs, the model family
     // answers nullptr ("feature absent"), the voice-pack family keeps
     // the per-context scan-everything impl.
-    void setTuningApi(pet::ITuningApi* tuningApi) { m_tuningApi = tuningApi; }
+    void setTuningApi(TuningApiImpl* tuningApi); // v1.13: concrete type — the proxy needs mountVoicePackAs
     void setModelApi(pet::IModelApi* modelApi) { m_modelApi = modelApi; }
     void setSettingsApi(pet::ISettingsApi* settingsApi) { m_settingsApi = settingsApi; }
-    void setVoicePackApi(pet::IVoicePackApi* voicePackApi) { m_sharedVoicePackApi = voicePackApi; }
+    void setVoicePackApi(pet::IVoicePackApi* voicePackApi);
     // ── v1.4 (S7) shared-implementation injection ─────────────────────
     // Same seam + semantics as the model family (a read): null → queryApi
     // answers nullptr ("feature absent"); injected → the shared impl.
@@ -638,6 +901,14 @@ public:
     // the capability stub semantics (the frozen-ctor-signature
     // discipline of the v1.3/v1.4 setters).
     void setLayoutApi(pet::ILayoutApi* layoutApi) { m_layoutApi = layoutApi; }
+    // ── v1.13 shared-implementation injection ───────────────────────────
+    // The SHARED ResourceScopeApiImpl served through
+    // queryApi("pet.resource_scope") — never raw: the context builds its
+    // per-plugin ResourceScopeApiProxy from (m_pluginId, shared) so every
+    // read/write is caller-stamped and owner-checked. Null (the default)
+    // → queryApi answers nullptr ("feature absent"); injected → the
+    // proxy. Ungated read-family routing (the pet.model precedent).
+    void setResourceScopeApi(ResourceScopeApiImpl* resourceScopeApi);
 
 private:
     QString m_pluginId;
@@ -654,19 +925,33 @@ private:
     UiApiImpl m_uiApi;
     VoicePackApiImpl m_voicePackApi;          // per-context fallback
     pet::IVoicePackApi* m_sharedVoicePackApi = nullptr; // v1.3 shared, not owned
+    std::unique_ptr<class VoicePackApiProxy> m_voicePackProxy; // v1.13 installPath gate
     DownloadApiAdapter m_downloadApi;
     // v1.3 (S5/S6): shared tuning/model/settings implementations (service
     // tree / host fallback), not owned; null → stub (tuning, settings) or
     // nullptr (model). Tuning/settings are ALSO capability-gated
     // (precomputed below, same discipline as instance_lifecycle); the
-    // model family is a read → ungated.
-    pet::ITuningApi* m_tuningApi = nullptr;
+    // model family is a read → ungated. v1.13: m_tuningApi is the
+    // CONCRETE impl (the per-context TuningApiProxy needs the
+    // mountVoicePackAs seam).
+    TuningApiImpl* m_tuningApi = nullptr;
     pet::IModelApi* m_modelApi = nullptr;
     pet::ISettingsApi* m_settingsApi = nullptr;
     TuningApiStub m_tuningStub;
     SettingsApiStub m_settingsStub;
     bool m_instanceTuningGranted = false;
     bool m_settingsWriteGranted = false;
+    // v1.13 (rev2 §3.1): manifest api_version ≥ 1.13 → per-context scope-
+    // stamping proxies wrap the shared control/tuning impls; below → the
+    // raw impls (byte-identical legacy routing). Set in the ctor body.
+    bool m_domainRouting = false;
+    std::unique_ptr<InstanceControlApiProxy> m_instanceControlProxy;
+    std::unique_ptr<TuningApiProxy> m_tuningProxy;
+    // v1.13: shared resource-scope implementation, not owned. Plugins are
+    // served through m_resourceScopeProxy (caller stamping + owner
+    // check); null → nullptr ("feature absent").
+    ResourceScopeApiImpl* m_resourceScopeApi = nullptr;
+    std::unique_ptr<ResourceScopeApiProxy> m_resourceScopeProxy;
     // v1.4 (S7): shared monitor read implementation, not owned; null →
     // nullptr ("feature absent" — a read family has no capability story).
     pet::IMonitorApi* m_monitorApi = nullptr;

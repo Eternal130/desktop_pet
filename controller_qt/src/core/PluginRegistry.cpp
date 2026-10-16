@@ -11,6 +11,7 @@
 #include <spdlog/spdlog.h>
 
 #include "api/PluginTypes.hpp"
+#include "core/ConfigDir.hpp" // isValidPluginDataOwnerId — shared id charset gate
 #include "logging/Logging.hpp"
 
 // Manifest schema (§B.6): the authoritative field/type rules. The
@@ -68,12 +69,17 @@ std::optional<PluginManifest> PluginRegistry::parseManifest(const QString& manif
     if (!requireString(obj, "id", &m.id, error, ctx))
         return std::nullopt;
     // Reverse-domain shape: at least one dot, [A-Za-z0-9.-] only (§B.6).
-    if (!m.id.contains(QLatin1Char('.')) ||
-        m.id.contains(QLatin1Char(' ')) ||
-        m.id.contains(QLatin1Char('/'))) {
+    // v1.13 hardening: the charset is enforced by the SHARED
+    // ConfigDir::isValidPluginDataOwnerId gate (manifest ids and PluginData
+    // domain owners are the same namespace) — closes the Windows
+    // backslash-traversal hole ("a.b\..\.." used to pass: only '/' and
+    // spaces were checked).
+    if (!m.id.contains(QLatin1Char('.'))
+        || !ConfigDir::isValidPluginDataOwnerId(m.id)) {
         if (error)
             *error = QStringLiteral("%1: id '%2' must be reverse-domain "
-                                    "(contain '.'; no spaces or path separators)")
+                                    "(contain '.'; chars [A-Za-z0-9.-] "
+                                    "only — no spaces or path separators)")
                          .arg(ctx, m.id);
         return std::nullopt;
     }

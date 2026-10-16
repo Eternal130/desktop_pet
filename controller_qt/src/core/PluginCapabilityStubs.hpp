@@ -134,7 +134,17 @@ public:
     // refresh: P5 host seam — invoked by refreshScan() so the panel's pack
     // list (VoicePackController) re-scans after installs. Empty = log-only
     // (pre-P5 wiring / tests); listPacks() always re-scans regardless.
+    //
+    // v1.13 (rev2 §3.5 installPath gate): pluginId + domainRouting carry
+    // the per-context api_version decision into installPath() —
+    // domainRouting (manifest api_version ≥ 1.13) with a non-empty
+    // plugin id advertises the plugin's OWN data-domain packs dir
+    // (ConfigDir::pluginVoicePacksDir); otherwise the per-user packs dir
+    // (the pre-v1.13 behavior, byte-identical). The SHARED host instance
+    // (PanelApplication) is constructed with the defaults → legacy path.
     explicit VoicePackApiImpl(std::function<void()> refresh = {},
+                              const QString& pluginId = QString(),
+                              bool domainRouting = false,
                               QObject* parent = nullptr);
     ~VoicePackApiImpl() override = default;
 
@@ -157,6 +167,34 @@ private:
     std::function<void()> m_refresh;
     std::function<QVector<pet::PackInfo>()> m_packSource; // v1.3 host scan seam
     QVector<pet::IPackListObserver*> m_packObservers;
+    QString m_pluginId;          // v1.13: "" = host/shared instance
+    bool m_domainRouting = false; // v1.13: manifest api_version ≥ 1.13
+};
+
+// v1.13: the per-plugin voice-pack proxy served through
+// PluginContextImpl::voicePackApi() when a SHARED VoicePackApiImpl is
+// injected. Everything forwards to the shared single-scan impl (one
+// scan, one observer registry — the v1.3 sharing discipline); ONLY
+// installPath() is computed per-context from the api_version gate
+// (≥ 1.13 + own plugin id → the plugin's data-domain packs dir; else the
+// legacy per-user packs dir). Plain class (no QObject) — owned by the
+// context via unique_ptr (EventApiProxy pattern).
+class VoicePackApiProxy final : public pet::IVoicePackApi
+{
+public:
+    VoicePackApiProxy(pet::IVoicePackApi* shared, const QString& pluginId,
+                      bool domainRouting);
+
+    QVector<pet::PackInfo> listPacks() override;
+    void refreshScan() override;
+    QString installPath() override;
+    void subscribePackList(pet::IPackListObserver* observer) override;
+    void unsubscribePackList(pet::IPackListObserver* observer) override;
+
+private:
+    pet::IVoicePackApi* m_shared = nullptr; // not owned; null-safe
+    QString m_pluginId;
+    bool m_domainRouting = false;
 };
 
 } // namespace core

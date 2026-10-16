@@ -100,8 +100,17 @@ namespace pet {
 // CMake-generated core::hostAbiBlock()), DynamicPluginSource dual-
 // directory discovery, and the optional manifest "qml_url" key. No
 // existing signature changed.
+// v1.13 (2026-10-16): minor bumped for the additive resource-isolation
+// expansion — the new IResourceScopeApi family (api/IResourceScopeApi.hpp:
+// queryApi "pet.resource_scope", ScopedModelInfo/ScopedPackInfo PODs,
+// scopedModels/scopedPacks/refreshScan/removeScoped; 无能力词，属主校验
+// 即边界), manifest api_version ≥ 1.13 domain routing (install owner /
+// installPath / model-scope / pack-scope stamping; < 1.13 keeps the
+// legacy host-domain owner="" everywhere), and the InstanceConfig
+// model_scope / voice_pack_scope persistence halves. No existing
+// signature changed.
 constexpr int kApiMajor = 1;
-constexpr int kApiMinor = 12;
+constexpr int kApiMinor = 13;
 
 // ── Capability vocabulary (manifest "capabilities" entries; §B.4) ───────────
 // The exact, case-sensitive strings the host parses from plugin manifests

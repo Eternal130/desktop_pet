@@ -58,6 +58,23 @@ bool writeModel(const QString& rendererRoot, const QString& name,
     return true;
 }
 
+// Write a PLUGIN data-domain model: <pluginDataRoot>/<owner>/Models/<Name>/
+// <Name>.model3.json (the v1.13 resource-isolation layout).
+bool writePluginDomainModel(const QString& pluginDataRoot, const QString& owner,
+                            const QString& name)
+{
+    const QString dir = QDir(pluginDataRoot).absoluteFilePath(
+        owner + QStringLiteral("/Models/") + name);
+    if (!QDir().mkpath(dir))
+        return false;
+    QFile f(QDir(dir).absoluteFilePath(name + QStringLiteral(".model3.json")));
+    if (!f.open(QIODevice::WriteOnly))
+        return false;
+    f.write(model3Json(1, 1));
+    f.close();
+    return true;
+}
+
 } // namespace
 
 class ModelApiImplTest : public QObject
@@ -69,6 +86,8 @@ private slots:
     void testRefreshScanPicksUpNewModels();
     void testCorruptModel3JsonDegrades();
     void testEmptyRendererDir();
+    void testHostOnlyProjectionWithPluginDomains();
+    void testResolveModelPathStrictDomain();
 };
 
 void ModelApiImplTest::testScanPopulatesSummaries()
@@ -166,6 +185,82 @@ void ModelApiImplTest::testEmptyRendererDir()
              pet::PluginError::NotFound);
     api.refreshScan(); // safe no-op
     QVERIFY(api.availableModels().isEmpty());
+}
+
+// v1.13: the scan cache is the UNION (host + plugin data domains), but
+// the pet.model PROJECTION stays host-domain-only — plugin-domain
+// fixtures present on disk never leak into availableModels()/modelInfo.
+void ModelApiImplTest::testHostOnlyProjectionWithPluginDomains()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    const QString rendererRoot = base.path();
+    const QString pluginDataRoot =
+        QDir(base.path()).filePath(QStringLiteral("PluginData"));
+    QVERIFY(writeModel(rendererRoot, QStringLiteral("Hiyori"), model3Json(2, 1)));
+    QVERIFY(writePluginDomainModel(pluginDataRoot, QStringLiteral("org.a"),
+                                   QStringLiteral("AModel")));
+    QVERIFY(writePluginDomainModel(pluginDataRoot, QStringLiteral("org.b"),
+                                   QStringLiteral("Hiyori"))); // same NAME, other domain
+
+    core::ModelApiImpl api;
+    api.setRendererDir(rendererRoot);
+    api.setPluginDataRoot(pluginDataRoot);
+
+    // Host-only projection: the host Hiyori, nothing from any plugin
+    // domain — auto-isolation for the host pages AND byte-identical
+    // legacy surface for pre-v1.13 plugins.
+    const QVector<pet::ModelSummary> models = api.availableModels();
+    QCOMPARE(models.size(), 1);
+    QCOMPARE(models.at(0).name, QStringLiteral("Hiyori"));
+    QCOMPARE(models.at(0).hitAreas.size(), 2); // parsed from the HOST copy
+
+    pet::ModelSummary out;
+    QCOMPARE(api.modelInfo(QStringLiteral("AModel"), &out),
+             pet::PluginError::NotFound); // plugin domain invisible here
+    QCOMPARE(api.modelInfo(QStringLiteral("Hiyori"), &out),
+             pet::PluginError::Ok); // the host entry, not org.b's
+}
+
+// v1.13 host-internal seam: strict-domain resolution over the union side
+// index (scope empty → QString() — host domain needs no absolute path;
+// scoped miss → QString() — NEVER a host fallback).
+void ModelApiImplTest::testResolveModelPathStrictDomain()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    const QString rendererRoot = base.path();
+    const QString pluginDataRoot =
+        QDir(base.path()).filePath(QStringLiteral("PluginData"));
+    QVERIFY(writeModel(rendererRoot, QStringLiteral("Hiyori"), model3Json(1, 1)));
+    QVERIFY(writePluginDomainModel(pluginDataRoot, QStringLiteral("org.a"),
+                                   QStringLiteral("AModel")));
+
+    core::ModelApiImpl api;
+    api.setRendererDir(rendererRoot);
+    api.setPluginDataRoot(pluginDataRoot);
+
+    // Scoped hit → the ABSOLUTE .model3.json inside that domain.
+    QCOMPARE(api.resolveModelPath(QStringLiteral("AModel"),
+                                  QStringLiteral("org.a")),
+             QDir(pluginDataRoot).absoluteFilePath(
+                 QStringLiteral("org.a/Models/AModel/AModel.model3.json")));
+    // Host-domain name (scope empty) → QString() by contract.
+    QVERIFY(api.resolveModelPath(QStringLiteral("Hiyori"), QString()).isEmpty());
+    // Scoped miss → QString(), NEVER the host-domain fallback.
+    QVERIFY(api.resolveModelPath(QStringLiteral("Hiyori"),
+                                 QStringLiteral("org.a")).isEmpty());
+    QVERIFY(api.resolveModelPath(QStringLiteral("Nobody"),
+                                 QStringLiteral("org.a")).isEmpty());
+    QVERIFY(api.resolveModelPath(QString(), QStringLiteral("org.a")).isEmpty());
+    // A model dropped after the scan appears only after refreshScan().
+    QVERIFY(writePluginDomainModel(pluginDataRoot, QStringLiteral("org.a"),
+                                   QStringLiteral("Second")));
+    QVERIFY(api.resolveModelPath(QStringLiteral("Second"),
+                                 QStringLiteral("org.a")).isEmpty());
+    api.refreshScan();
+    QVERIFY(!api.resolveModelPath(QStringLiteral("Second"),
+                                  QStringLiteral("org.a")).isEmpty());
 }
 
 QTEST_APPLESS_MAIN(ModelApiImplTest)

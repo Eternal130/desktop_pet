@@ -43,6 +43,7 @@
 #include "core/InstanceConfigManager.hpp"
 #include "core/InstanceSession.hpp"
 #include "core/EventBus.hpp"
+#include "core/ModelScanner.hpp"
 #include "core/PathResolve.hpp"
 #include "core/PluginContextImpl.hpp"
 #include "network/Envelope.hpp"
@@ -199,6 +200,18 @@ private slots:
     // back — both headless (fake exe + synthetic ready/model_load_failed).
     void testConnectedLoadModelSendsCommand();
     void testModelLoadFailedRollsBackPersistedModel();
+
+    // ── v1.13 scoped model pipeline (resource isolation, rev2 §3.4) ─────
+    // All headless: fake renderer exe + synthetic ready / WS client capture.
+    void testScopedLoadModelSendsPath();            // resolver hit → path on wire
+    void testScopedLoadModelResolverMissFailsLocally(); // no cmd + rollback + event
+    void testOfflineScopedLoadModelPersists();      // config-only, scope included
+    void testHitAreaUsesSentPath();                 // model_loaded parses plugin-domain json
+    void testStartPassesModelAbsPath();             // --model <absPath> (POSIX)
+    void testScopedRestoreWithDirectoryScanResolver(); // salvo path, no plugin host
+    // Oracle follow-up Nice#7: a rejected scoped→scoped switch restores the
+    // pre-switch SENT path — hit-area resolution keeps working post-rollback.
+    void testScopedRollbackRestoresSentPath();
     // Silent-persistence-failure fix (exp-4 root cause #2): the backend
     // selector must REPORT persist failures (bool) and write through the
     // injectable shared DatabaseManager — all headless.
@@ -657,6 +670,550 @@ void InstanceSessionTest::testModelLoadFailedRollsBackPersistedModel()
     QCOMPARE(nameSpy.count(), 2); // no extra modelNameChanged
 
     QVERIFY2(stopAndWait(session, 3000), "session did not finish stopping");
+    server.close();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// v1.13 scoped model pipeline (resource isolation, rev2 §3.4) — headless
+// ────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+// Write a plugin-domain model fixture:
+// <pluginDataRoot>/<owner>/Models/<name>/<name>.model3.json.
+bool writePluginModel3Json(const QString& pluginDataRoot,
+                           const QString& owner, const QString& name,
+                           const QByteArray& json)
+{
+    const QString dir = QDir(pluginDataRoot).absoluteFilePath(
+        QStringLiteral("%1/Models/%2").arg(owner, name));
+    if (!QDir().mkpath(dir))
+        return false;
+    QFile f(QDir(dir).absoluteFilePath(
+        QStringLiteral("%1.model3.json").arg(name)));
+    if (!f.open(QIODevice::WriteOnly))
+        return false;
+    f.write(json);
+    f.close();
+    return true;
+}
+
+// Find the payload object of the FIRST captured wire message with `action`.
+QJsonObject firstCapturedPayload(const QSignalSpy& spy, const char* action)
+{
+    for (int i = spy.count() - 1; i >= 0; --i) {
+        const QJsonObject obj =
+            QJsonDocument::fromJson(spy.at(i).at(0).toString().toUtf8()).object();
+        if (obj.value(QStringLiteral("action")).toString()
+                == QLatin1String(action)) {
+            return obj.value(QStringLiteral("payload")).toObject();
+        }
+    }
+    return {};
+}
+
+} // namespace
+
+// A connected session's SCOPED loadModel (resolver hit) must dispatch a
+// load_model whose payload carries BOTH model_path (the logical name) and
+// path (the resolved absolute plugin-domain .model3.json). Captured on the
+// real wire via the fake-renderer socket handshake (the same pattern as
+// testPackIdleSchedulerHeadless).
+void InstanceSessionTest::testScopedLoadModelSendsPath()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+    QVERIFY2(makeFakeRendererExe(dir), "precondition: fake renderer exe");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.rendererPath = dir.path();
+    cfg.graphicsBackend = QStringLiteral("opengl");
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    const QString resolved =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("PluginData/p1/Models/M/M.model3.json"));
+    session.setModelPathResolver(
+        [&resolved](const QString& name, const QString& scope) {
+            if (name == QLatin1String("M") && scope == QLatin1String("p1"))
+                return resolved;
+            return QString();
+        });
+    session.start();
+
+    // Fake-renderer socket: known token + handshake (sendText then really
+    // delivers to this socket).
+    const QString knownToken = QStringLiteral("scoped123");
+    server.registerToken(session.instanceId(), knownToken);
+    QWebSocket client;
+    QSignalSpy msgSpy(&client, &QWebSocket::textMessageReceived);
+    client.open(QUrl(QStringLiteral("ws://127.0.0.1:%1/?instance_id=%2&token=%3")
+                         .arg(server.serverPort())
+                         .arg(session.instanceId())
+                         .arg(knownToken)));
+    QElapsedTimer t;
+    t.start();
+    while (!t.hasExpired(5000) && !session.connected())
+        QTest::qWait(25);
+    QVERIFY2(session.connected(), "fake renderer socket did not connect");
+
+    session.loadModel(QStringLiteral("M"), QStringLiteral("p1"));
+
+    QVERIFY2(msgSpy.wait(3000), "no load_model reached the renderer socket");
+    const QJsonObject payload =
+        firstCapturedPayload(msgSpy, "load_model");
+    QCOMPARE(payload.value(QStringLiteral("model_path")).toString(),
+             QStringLiteral("M"));
+    QCOMPARE(payload.value(QStringLiteral("path")).toString(), resolved);
+    QCOMPARE(session.modelName(), QStringLiteral("M"));
+    QCOMPARE(session.config().modelScope, QStringLiteral("p1"));
+
+    client.close();
+    QVERIFY2(stopAndWait(session, 5000), "session did not finish stopping");
+    server.close();
+}
+
+// A scoped loadModel whose resolution MISSES must fail LOCALLY: no
+// load_model command is dispatched (nothing on the wire / no commandSent),
+// the existing model-load-failure handling runs (rollback of name AND
+// scope, re-persist, modelLoadFailed emission + revision bump).
+void InstanceSessionTest::testScopedLoadModelResolverMissFailsLocally()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+    QVERIFY2(makeFakeRendererExe(dir), "precondition: fake renderer exe");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.rendererPath = dir.path();
+    cfg.graphicsBackend = QStringLiteral("opengl");
+    const QString before = cfg.modelName; // a host model to roll back TO
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    session.setModelPathResolver([](const QString&, const QString&) {
+        return QString(); // every scoped lookup misses
+    });
+    session.start();
+    session.onMessage(syntheticEvent(QStringLiteral("ready")));
+    QVERIFY(session.connected());
+
+    QSignalSpy cmdSpy(&session, &InstanceSession::commandSent);
+    QSignalSpy nameSpy(&session, &InstanceSession::modelNameChanged);
+    QSignalSpy failedSpy(&session, &InstanceSession::modelLoadFailed);
+    QVERIFY(cmdSpy.isValid() && nameSpy.isValid() && failedSpy.isValid());
+
+    const int revisionBefore = session.modelLoadFailureRevision();
+    session.loadModel(QStringLiteral("Nope"), QStringLiteral("p1"));
+
+    // NO command went out (cmdSpy sees only the pre-ready stream — which
+    // the spies above were created AFTER, so anything captured here is a
+    // violation).
+    QCOMPARE(cmdSpy.count(), 0);
+    // Failure surfaced exactly like a renderer rejection...
+    QCOMPARE(failedSpy.count(), 1);
+    QVERIFY2(session.lastModelLoadError().contains(QStringLiteral("p1")),
+             qPrintable(session.lastModelLoadError()));
+    QCOMPARE(session.modelLoadFailureRevision(), revisionBefore + 1);
+    QVERIFY(!session.modelLoaded());
+    // ...and the rollback restored BOTH the name and the scope.
+    QCOMPARE(session.modelName(), before);
+    QCOMPARE(session.config().modelScope, QString());
+    QCOMPARE(nameSpy.count(), 2); // switch flip + rollback flip
+
+    // Durable: a fresh manager reads the pre-switch (name, host scope).
+    InstanceConfigManager persisted(dir.path());
+    const auto reloaded = persisted.load(cfg.id);
+    QVERIFY2(reloaded.has_value(), "config row missing after local failure");
+    QCOMPARE(reloaded->modelName, before);
+    QCOMPARE(reloaded->modelScope, QString());
+
+    QVERIFY2(stopAndWait(session, 3000), "session did not finish stopping");
+    server.close();
+}
+
+// Oracle follow-up Nice#7: the failure-rollback tail restores the
+// pre-switch m_currentModelJsonPath alongside the name/scope. Scenario:
+// a CONFIRMED scoped model (Good/p1 — path on the wire, hit areas parsed
+// from the plugin-domain json) → a second scoped switch whose resolution
+// MISSES → after the rollback, a fresh model_loaded must still resolve
+// hit areas against Good's plugin-domain path. Without the restore the
+// tracked path stays cleared and the post-rollback model_loaded would
+// parse the nonexistent renderer-dir fallback (parse fails → NO
+// set_hit_areas sent at all).
+void InstanceSessionTest::testScopedRollbackRestoresSentPath()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+    QVERIFY2(makeFakeRendererExe(dir), "precondition: fake renderer exe");
+
+    // The confirmed plugin-domain model, with a distinctive HitArea set.
+    const QString pluginRoot =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("PluginData"));
+    QVERIFY2(writePluginModel3Json(pluginRoot, QStringLiteral("p1"),
+                                   QStringLiteral("Good"),
+                                   QByteArrayLiteral(
+                                       "{\"Version\":3,\"FileReferences\":{},"
+                                       "\"HitAreas\":[{\"Name\":\"KeptScoped\"}]}")),
+              "precondition: failed to write plugin-domain model3.json");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.rendererPath = dir.path();
+    cfg.graphicsBackend = QStringLiteral("opengl");
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    const QString goodPath = QDir(pluginRoot).absoluteFilePath(
+        QStringLiteral("p1/Models/Good/Good.model3.json"));
+    session.setModelPathResolver(
+        [&goodPath](const QString& name, const QString& scope) {
+            return (name == QLatin1String("Good")
+                    && scope == QLatin1String("p1"))
+                ? goodPath : QString();
+        });
+    session.start();
+
+    // Fake-renderer socket (the testScopedLoadModelSendsPath pattern).
+    const QString knownToken = QStringLiteral("rollpath123");
+    server.registerToken(session.instanceId(), knownToken);
+    QWebSocket client;
+    QSignalSpy msgSpy(&client, &QWebSocket::textMessageReceived);
+    client.open(QUrl(QStringLiteral("ws://127.0.0.1:%1/?instance_id=%2&token=%3")
+                         .arg(server.serverPort())
+                         .arg(session.instanceId())
+                         .arg(knownToken)));
+    QElapsedTimer t;
+    t.start();
+    while (!t.hasExpired(5000) && !session.connected())
+        QTest::qWait(25);
+    QVERIFY2(session.connected(), "fake renderer socket did not connect");
+
+    QSignalSpy cmdSpy(&session, &InstanceSession::commandSent);
+    QVERIFY(cmdSpy.isValid());
+    const auto hitAreaCmdCount = [&cmdSpy]() {
+        // commandSent carries the ACTION NAME only (single-arg signal);
+        // the JSON-payload pattern belongs to the socket spy below.
+        int n = 0;
+        for (int i = 0; i < cmdSpy.count(); ++i) {
+            if (cmdSpy.at(i).at(0).toString()
+                    == QLatin1String("set_hit_areas"))
+                ++n;
+        }
+        return n;
+    };
+
+    // 1) Confirmed scoped switch: load_model carries the path, the verdict
+    //    (model_loaded) parses the plugin-domain json, ONE set_hit_areas.
+    session.loadModel(QStringLiteral("Good"), QStringLiteral("p1"));
+    QVERIFY2(msgSpy.wait(3000), "no load_model reached the renderer socket");
+    const QJsonObject loadPayload =
+        firstCapturedPayload(msgSpy, "load_model");
+    QCOMPARE(loadPayload.value(QStringLiteral("path")).toString(), goodPath);
+    session.onMessage(createEvent(QStringLiteral("model_loaded")));
+    QVERIFY(session.modelLoaded());
+    QCOMPARE(session.hitAreaNames(),
+             QStringList{QStringLiteral("KeptScoped")});
+    const int confirmedHitCmds = hitAreaCmdCount();
+    QCOMPARE(confirmedHitCmds, 1);
+
+    // 2) Failing scoped switch (resolver miss) → local failure; the
+    //    rollback restores name AND scope (asserted in detail by
+    //    testScopedLoadModelResolverMissFailsLocally).
+    session.loadModel(QStringLiteral("Nope"), QStringLiteral("p2"));
+    QVERIFY(!session.modelLoaded());
+    QCOMPARE(session.modelName(), QStringLiteral("Good"));
+    QCOMPARE(session.config().modelScope, QStringLiteral("p1"));
+
+    // 3) A post-rollback model_loaded must parse the RESTORED path — a
+    //    second set_hit_areas goes out carrying KeptScoped. (The
+    //    (Good,p1) cache entry would serve the right names, but it is
+    //    only reached AFTER a successful parse of resolveModel3JsonPath()
+    //    — the parse is the behavioral probe of the restored path.)
+    session.onMessage(createEvent(QStringLiteral("model_loaded")));
+    QCOMPARE(hitAreaCmdCount(), confirmedHitCmds + 1);
+    QCOMPARE(session.hitAreaNames(),
+             QStringList{QStringLiteral("KeptScoped")});
+
+    client.close();
+    QVERIFY2(stopAndWait(session, 5000), "session did not finish stopping");
+    server.close();
+}
+
+// Offline scoped switch: config-only persist of name AND scope, no command
+// (the exact offline discipline of the host path, scope included).
+void InstanceSessionTest::testOfflineScopedLoadModelPersists()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    WsServer server;
+    PendingRequests pending;
+    InstanceSession session(defaultInstanceConfig(), server, pending,
+                            dir.path());
+    session.setModelPathResolver([](const QString&, const QString&) {
+        return QString(); // even a miss must NOT fail an OFFLINE switch
+    });
+    QVERIFY(!session.connected());
+
+    QSignalSpy cmdSpy(&session, &InstanceSession::commandSent);
+    session.loadModel(QStringLiteral("M"), QStringLiteral("p1"));
+
+    QCOMPARE(cmdSpy.count(), 0);
+    QCOMPARE(session.modelName(), QStringLiteral("M"));
+    QCOMPARE(session.config().modelScope, QStringLiteral("p1"));
+
+    InstanceConfigManager persisted(dir.path());
+    const auto reloaded = persisted.load(session.uuid());
+    QVERIFY2(reloaded.has_value(), "config row missing after offline switch");
+    QCOMPARE(reloaded->modelName, QStringLiteral("M"));
+    QCOMPARE(reloaded->modelScope, QStringLiteral("p1"));
+}
+
+// Hit-area resolution must PREFER the path that was actually sent: with a
+// scoped config + resolver hit pointing at a plugin-domain .model3.json
+// (distinctive HitAreas), the ready salvo carries the path and the
+// model_loaded handler parses THAT file — not the renderer-dir layout.
+void InstanceSessionTest::testHitAreaUsesSentPath()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+    QVERIFY2(makeFakeRendererExe(dir), "precondition: fake renderer exe");
+
+    // Plugin-domain model with a UNIQUE hit-area set. A same-named HOST
+    // model exists too with a DIFFERENT set — proving the scoped path won.
+    const QString pluginRoot =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("PluginData"));
+    QVERIFY2(writePluginModel3Json(pluginRoot, QStringLiteral("p1"),
+                                   QStringLiteral("Twin"),
+                                   QByteArrayLiteral(
+                                       "{\"Version\":3,\"FileReferences\":{},"
+                                       "\"HitAreas\":[{\"Name\":\"ScopedHead\"},"
+                                       "{\"Name\":\"ScopedBody\"}]}")),
+             "precondition: failed to write plugin-domain model3.json");
+    QVERIFY2(writeModel3Json(dir.path(), QStringLiteral("Twin"),
+                             QByteArrayLiteral(
+                                 "{\"Version\":3,\"FileReferences\":{},"
+                                 "\"HitAreas\":[{\"Name\":\"HostOnlyArea\"}]}")),
+             "precondition: failed to write host twin model3.json");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.rendererPath = dir.path();
+    cfg.graphicsBackend = QStringLiteral("opengl");
+    cfg.modelName = QStringLiteral("Twin");
+    cfg.modelScope = QStringLiteral("p1");
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    const QString pluginRootConst = pluginRoot;
+    session.setModelPathResolver(
+        [&pluginRootConst](const QString& name, const QString& scope) {
+            return core::resolvePluginModelPath(pluginRootConst, scope, name);
+        });
+    session.start();
+    session.setStopTimeoutMs(300);
+
+    QSignalSpy cmdSpy(&session, &InstanceSession::commandSent);
+    QVERIFY(cmdSpy.isValid());
+
+    // ready fires the salvo (first command = scoped load_model with path),
+    // model_loaded then parses via the SENT path.
+    session.onMessage(syntheticEvent(QStringLiteral("ready")));
+    QVERIFY(session.connected());
+    bool sawScopedLoad = false;
+    for (int i = 0; i < cmdSpy.count(); ++i) {
+        if (cmdSpy.at(i).at(0).toString() == QLatin1String("load_model"))
+            sawScopedLoad = true;
+    }
+    QVERIFY2(sawScopedLoad, "salvo did not carry a load_model");
+
+    session.onMessage(createEvent(QStringLiteral("model_loaded")));
+    QVERIFY(session.modelLoaded());
+    QVERIFY(session.modelInfo().has_value());
+    const QStringList names = session.hitAreaNames();
+    QVERIFY2(names.contains(QStringLiteral("ScopedHead"))
+                 && names.contains(QStringLiteral("ScopedBody")),
+             qPrintable(QStringLiteral("hit areas not from the plugin-domain "
+                                       "fixture: %1")
+                            .arg(names.join(QStringLiteral(",")))));
+    QVERIFY2(!names.contains(QStringLiteral("HostOnlyArea")),
+             "hit areas came from the HOST twin — the sent path was ignored");
+
+    QVERIFY2(stopAndWait(session, 5000), "session did not finish stopping");
+    server.close();
+}
+
+// start() must launch the renderer with --model <absPath> for a scoped
+// config whose model resolves (renderer accepts a path since v1.13).
+// POSIX-only: the fake renderer is a shell script that dumps its argv.
+void InstanceSessionTest::testStartPassesModelAbsPath()
+{
+#ifdef Q_OS_WIN
+    QSKIP("argv-dumping fake renderer is POSIX-only");
+#else
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    // Fake renderer dir + a script that writes "$@" to <dir>/args.txt.
+    const QString rendererDir =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("renderer"));
+    QVERIFY2(QDir().mkpath(rendererDir), "failed to create renderer dir");
+    const QString exe =
+        QDir(rendererDir).absoluteFilePath(QStringLiteral("desktop-pet-renderer"));
+    {
+        QFile f(exe);
+        QVERIFY2(f.open(QIODevice::WriteOnly | QIODevice::Truncate),
+                 "failed to create fake renderer script");
+        f.write(QStringLiteral("#!/bin/sh\nprintf '%s\\n' \"$@\" > '%1'\nexec sleep 30\n")
+                    .arg(QDir(dir.path()).absoluteFilePath(
+                        QStringLiteral("args.txt")))
+                    .toUtf8());
+        f.close();
+    }
+    QVERIFY2(QFile::setPermissions(
+                 exe, QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                          | QFileDevice::ExeOwner | QFileDevice::ReadGroup
+                          | QFileDevice::ExeGroup | QFileDevice::ReadOther
+                          | QFileDevice::ExeOther),
+             "failed to chmod fake renderer");
+
+    const QString pluginRoot =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("PluginData"));
+    QVERIFY2(writePluginModel3Json(pluginRoot, QStringLiteral("p1"),
+                                   QStringLiteral("Spawn"),
+                                   QByteArrayLiteral(
+                                       "{\"Version\":3,\"FileReferences\":{},"
+                                       "\"HitAreas\":[]}")),
+             "precondition: failed to write plugin-domain model3.json");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.rendererPath = rendererDir;
+    cfg.graphicsBackend = QStringLiteral("opengl");
+    cfg.modelName = QStringLiteral("Spawn");
+    cfg.modelScope = QStringLiteral("p1");
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    const QString pluginRootConst = pluginRoot;
+    session.setModelPathResolver(
+        [&pluginRootConst](const QString& name, const QString& scope) {
+            return core::resolvePluginModelPath(pluginRootConst, scope, name);
+        });
+    session.setStopTimeoutMs(300);
+    session.start();
+
+    // Wait for the argv dump, then assert the --model value is the
+    // ABSOLUTE plugin-domain path (not the short name).
+    const QString argsPath =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("args.txt"));
+    QElapsedTimer t;
+    t.start();
+    while (!t.hasExpired(5000) && !QFile::exists(argsPath))
+        QTest::qWait(25);
+    QVERIFY2(QFile::exists(argsPath), "fake renderer never dumped its argv");
+    QFile argsFile(argsPath);
+    QVERIFY(argsFile.open(QIODevice::ReadOnly));
+    const QStringList argv = QString::fromUtf8(argsFile.readAll())
+                                 .split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    const int idx = argv.indexOf(QStringLiteral("--model"));
+    QVERIFY2(idx >= 0, "no --model argument in the renderer argv");
+    QCOMPARE(argv.at(idx + 1),
+             core::resolvePluginModelPath(pluginRoot, QStringLiteral("p1"),
+                                          QStringLiteral("Spawn")));
+
+    QVERIFY2(stopAndWait(session, 5000), "session did not finish stopping");
+    server.close();
+#endif
+}
+
+// Restart-restore with NO plugin host and NO custom resolver beyond the
+// PURE directory-scan function: a persisted scoped config resolves at
+// ready-time and the SALVO's first load_model carries `path` (rev2
+// §3.2c). The resolver here IS core::resolvePluginModelPath over a temp
+// root — exactly the shape of the session's built-in fallback.
+void InstanceSessionTest::testScopedRestoreWithDirectoryScanResolver()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+    QVERIFY2(makeFakeRendererExe(dir), "precondition: fake renderer exe");
+
+    const QString pluginRoot =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("PluginData"));
+    QVERIFY2(writePluginModel3Json(pluginRoot, QStringLiteral("p1"),
+                                   QStringLiteral("Restore"),
+                                   QByteArrayLiteral(
+                                       "{\"Version\":3,\"FileReferences\":{},"
+                                       "\"HitAreas\":[{\"Name\":\"R\"}]}")),
+             "precondition: failed to write plugin-domain model3.json");
+
+    WsServer server;
+    QVERIFY2(server.listen(0), "WsServer failed to listen on port 0");
+    PendingRequests pending;
+
+    InstanceConfig cfg = defaultInstanceConfig();
+    cfg.rendererPath = dir.path();
+    cfg.graphicsBackend = QStringLiteral("opengl");
+    cfg.modelName = QStringLiteral("Restore");
+    cfg.modelScope = QStringLiteral("p1");
+
+    InstanceSession session(cfg, server, pending, dir.path());
+    const QString pluginRootConst = pluginRoot;
+    session.setModelPathResolver(
+        [&pluginRootConst](const QString& name, const QString& scope) {
+            return core::resolvePluginModelPath(pluginRootConst, scope, name);
+        });
+    session.start();
+    session.setStopTimeoutMs(300);
+
+    // Fake-renderer socket for salvo capture.
+    const QString knownToken = QStringLiteral("restore123");
+    server.registerToken(session.instanceId(), knownToken);
+    QWebSocket client;
+    QSignalSpy msgSpy(&client, &QWebSocket::textMessageReceived);
+    client.open(QUrl(QStringLiteral("ws://127.0.0.1:%1/?instance_id=%2&token=%3")
+                         .arg(server.serverPort())
+                         .arg(session.instanceId())
+                         .arg(knownToken)));
+    QElapsedTimer t;
+    t.start();
+    while (!t.hasExpired(5000) && !session.connected())
+        QTest::qWait(25);
+    QVERIFY2(session.connected(), "fake renderer socket did not connect");
+    msgSpy.clear(); // drop the (empty) pre-ready stream
+
+    // ready → salvo: FIRST command is the path-bearing load_model.
+    session.onMessage(syntheticEvent(QStringLiteral("ready")));
+    QVERIFY2(msgSpy.wait(3000), "salvo never reached the renderer socket");
+    const QJsonObject first =
+        QJsonDocument::fromJson(msgSpy.at(0).at(0).toString().toUtf8()).object();
+    QCOMPARE(first.value(QStringLiteral("action")).toString(),
+             QStringLiteral("load_model"));
+    const QJsonObject payload = first.value(QStringLiteral("payload")).toObject();
+    QCOMPARE(payload.value(QStringLiteral("model_path")).toString(),
+             QStringLiteral("Restore"));
+    QCOMPARE(payload.value(QStringLiteral("path")).toString(),
+             core::resolvePluginModelPath(pluginRoot, QStringLiteral("p1"),
+                                          QStringLiteral("Restore")));
+
+    // And the model_loaded flow parses the plugin-domain fixture.
+    session.onMessage(createEvent(QStringLiteral("model_loaded")));
+    QVERIFY(session.hitAreaNames().contains(QStringLiteral("R")));
+
+    client.close();
+    QVERIFY2(stopAndWait(session, 5000), "session did not finish stopping");
     server.close();
 }
 

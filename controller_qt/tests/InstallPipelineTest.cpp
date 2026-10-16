@@ -17,8 +17,15 @@
 #include <algorithm>
 
 #include "core/DownloadService.hpp"
+#include "core/InstanceConfig.hpp"
+#include "core/InstanceManager.hpp"
 #include "core/ModelScanner.hpp"
+#include "core/PanelConfig.hpp"
+#include "core/PanelStateManager.hpp"
+#include "core/PluginContextImpl.hpp"
 #include "core/VoicePackScanner.hpp"
+#include "network/PendingRequests.hpp"
+#include "network/WsServer.hpp"
 
 using core::DownloadService;
 using core::scanAvailableModels;
@@ -193,6 +200,14 @@ private slots:
     void testDisallowedTargetDirRejected();
     void testReinstallReplacesExistingPack();
     void testReinstallReplacesExistingModel();
+
+    // ── v1.13 owner-scoped install (resource isolation, rev2 §3) ───────
+    void testOwnerScopedPackInstallLandsInPluginDomain();
+    void testOwnerScopedModelInstallLandsInPluginDomain();
+    void testOwnerScopedInstallStillValidatesSentinels();
+
+    // ── v1.13 api_version routing gate (rev2 §3.1/§3.5) ─────────────────
+    void testDownloadAdapterApiVersionRoutingGate();
 
 private:
     QTemporaryDir m_tmp;
@@ -633,6 +648,258 @@ void InstallPipelineTest::testReinstallReplacesExistingModel()
     QVERIFY(!QFile::exists(QDir(installDir).filePath(QStringLiteral("stale.txt"))));
     QVERIFY(QFile::exists(QDir(installDir).filePath(
         QStringLiteral("Haru2.model3.json"))));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// v1.13 owner-scoped install (resource isolation, rev2 §3)
+// ────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+// Shared owner-scoped harness tail: install an ALREADY-FINISHED job with a
+// non-empty ownerPluginId. The plugin-owner roots are overridden to temp
+// dirs by the caller (the setPluginOwnerRootsForTest seam) so nothing ever
+// touches the real <dataDir>/PluginData/.
+pet::PluginError ownerInstallFinished(DownloadService& service,
+                                      pet::JobId job,
+                                      const QString& targetDir,
+                                      const QString& owner)
+{
+    pet::InstallSpec spec;
+    spec.targetDir = targetDir;
+    return service.installArchive(job, spec, owner);
+}
+
+} // namespace
+
+// An owner-scoped PACK install lands in the plugin's DATA domain root with
+// the VoicePackScanner sentinel layout; the HOST roots stay untouched, and
+// the 2-arg host install of the SAME job still lands in the ctor root
+// (byte-identical legacy behavior).
+void InstallPipelineTest::testOwnerScopedPackInstallLandsInPluginDomain()
+{
+    const QString zipPath = m_tmp.filePath(QStringLiteral("owner-pack.zip"));
+    QVERIFY2(buildGoodPackZip(zipPath, QStringLiteral("OwnerPack")),
+             "fixture build failed");
+    const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-owner-pack"));
+    const QString pluginPacksRoot =
+        m_tmp.filePath(QStringLiteral("PluginData/com.example.pet/VoicePacks"));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl-owner-pack")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
+    service.setPluginOwnerRootsForTest(
+        m_tmp.filePath(QStringLiteral("PluginData/com.example.pet/Models")),
+        pluginPacksRoot);
+    int packSignals = 0;
+    QObject::connect(&service, &DownloadService::packInstalled,
+                     [&packSignals](const QString&) { ++packSignals; });
+    RecordingListener listener;
+    pet::DownloadRequest req;
+    req.url = fileUrl(zipPath);
+    req.destName = QStringLiteral("owner-pack.zip");
+    const pet::JobId job = service.start(req, &listener);
+    QVERIFY(job != 0);
+    QTRY_VERIFY_WITH_TIMEOUT(listener.finishedJob == job, 5000);
+
+    QCOMPARE(ownerInstallFinished(service, job, QStringLiteral("voicePacks"),
+                                  QStringLiteral("com.example.pet")),
+             pet::PluginError::Ok);
+    QCOMPARE(packSignals, 1); // post-install signal contract unchanged
+    const QString landed =
+        QDir(pluginPacksRoot).filePath(QStringLiteral("OwnerPack"));
+    QTRY_COMPARE(listener.finishedPath, landed);
+    QVERIFY(QFile::exists(QDir(landed).filePath(QStringLiteral("meta.mko"))));
+
+    // Host roots untouched: the scanner over the renderer base sees nothing.
+    QVERIFY(scanAvailableVoicePacks(rendererBase).isEmpty());
+    // Host-domain install of the SAME job goes to the ctor root.
+    pet::InstallSpec hostSpec;
+    hostSpec.targetDir = QStringLiteral("voicePacks");
+    QCOMPARE(service.installArchive(job, hostSpec), pet::PluginError::Ok);
+    QTRY_COMPARE(listener.finishedPath,
+                 QDir(rendererBase).filePath(
+                     QStringLiteral("Resources/VoicePacks/OwnerPack")));
+}
+
+// An owner-scoped MODEL install lands in the plugin's Models/ domain root
+// with the ModelScanner sentinel layout; the host scanner sees nothing.
+void InstallPipelineTest::testOwnerScopedModelInstallLandsInPluginDomain()
+{
+    const QString zipPath = m_tmp.filePath(QStringLiteral("owner-model.zip"));
+    QVERIFY2(buildGoodModelZip(zipPath, QStringLiteral("OwnerModel")),
+             "fixture build failed");
+    const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-owner-model"));
+    const QString pluginModelsRoot =
+        m_tmp.filePath(QStringLiteral("PluginData/com.example.pet/Models"));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl-owner-model")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
+    service.setPluginOwnerRootsForTest(pluginModelsRoot,
+        m_tmp.filePath(QStringLiteral("PluginData/com.example.pet/VoicePacks")));
+    RecordingListener listener;
+    pet::DownloadRequest req;
+    req.url = fileUrl(zipPath);
+    req.destName = QStringLiteral("owner-model.zip");
+    const pet::JobId job = service.start(req, &listener);
+    QVERIFY(job != 0);
+    QTRY_VERIFY_WITH_TIMEOUT(listener.finishedJob == job, 5000);
+
+    QCOMPARE(ownerInstallFinished(service, job, QStringLiteral("models"),
+                                  QStringLiteral("com.example.pet")),
+             pet::PluginError::Ok);
+    const QString landed =
+        QDir(pluginModelsRoot).filePath(QStringLiteral("OwnerModel"));
+    QTRY_COMPARE(listener.finishedPath, landed);
+    QVERIFY(QFile::exists(QDir(landed).filePath(
+        QStringLiteral("OwnerModel.model3.json"))));
+    QVERIFY(scanAvailableModels(rendererBase).isEmpty());
+}
+
+// The owner redirection does NOT weaken validation: a wrong-sentinel
+// archive is rejected with InvalidArgument and leaves the plugin domain
+// empty (zero on-disk traces).
+void InstallPipelineTest::testOwnerScopedInstallStillValidatesSentinels()
+{
+    // A MODEL-shaped archive (missing <Pack>/meta.mko) offered to the
+    // voicePacks target under an owner.
+    const QString zipPath = m_tmp.filePath(QStringLiteral("owner-bad.zip"));
+    QVERIFY2(buildGoodModelZip(zipPath, QStringLiteral("WrongShape")),
+             "fixture build failed");
+    const QString pluginPacksRoot =
+        m_tmp.filePath(QStringLiteral("PluginData/com.example.bad/VoicePacks"));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl-owner-bad")),
+                            m_tmp.filePath(QStringLiteral("host-packs")),
+                            m_tmp.filePath(QStringLiteral("host-models")));
+    service.setPluginOwnerRootsForTest(
+        m_tmp.filePath(QStringLiteral("PluginData/com.example.bad/Models")),
+        pluginPacksRoot);
+    RecordingListener listener;
+    pet::DownloadRequest req;
+    req.url = fileUrl(zipPath);
+    req.destName = QStringLiteral("owner-bad.zip");
+    const pet::JobId job = service.start(req, &listener);
+    QVERIFY(job != 0);
+    QTRY_VERIFY_WITH_TIMEOUT(listener.finishedJob == job, 5000);
+
+    QCOMPARE(ownerInstallFinished(service, job, QStringLiteral("voicePacks"),
+                                  QStringLiteral("com.example.bad")),
+             pet::PluginError::InvalidArgument);
+    QVERIFY2(listener.errorMessage.contains(QStringLiteral("sentinel")),
+             qPrintable(listener.errorMessage));
+    QCOMPARE(fileCountUnder(m_tmp.filePath(
+                 QStringLiteral("PluginData/com.example.bad"))),
+             0);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// v1.13 api_version routing gate (rev2 §3.1/§3.5): the DownloadApiAdapter
+// inside a plugin context routes installArchive by the plugin's MANIFEST
+// api_version — ≥ 1.13 → the 3-arg owner-scoped overload (the plugin's
+// data domain), < 1.13 → owner "" (the legacy host install roots). The
+// manifest api_version reaches the context through the ctor's trailing
+// (major, minor) params.
+// ────────────────────────────────────────────────────────────────────────────
+void InstallPipelineTest::testDownloadAdapterApiVersionRoutingGate()
+{
+    const QString zipPath = m_tmp.filePath(QStringLiteral("gate-pack.zip"));
+    QVERIFY2(buildGoodPackZip(zipPath, QStringLiteral("GatePack")),
+             "fixture build failed");
+    const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-gate"));
+    const QString legacyRoot =
+        QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks"));
+    const QString pluginPacksRoot = m_tmp.filePath(
+        QStringLiteral("PluginData/org.gate.route/VoicePacks"));
+
+    WsServer server;
+    PendingRequests pending;
+    InstanceManager mgr(m_tmp.filePath(QStringLiteral("cfg-gate")), server,
+                        pending, [](const PanelConfig&) {});
+    core::InstanceApiImpl rosterApi(&mgr, nullptr);
+    core::InstanceControlApiImpl controlApi(&mgr, nullptr);
+    const QStringList networkGranted{QStringLiteral("network")};
+
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl-gate")),
+                            legacyRoot,
+                            QDir(rendererBase).filePath(
+                                QStringLiteral("Resources/Models")));
+    service.setPluginOwnerRootsForTest(
+        m_tmp.filePath(QStringLiteral("PluginData/org.gate.route/Models")),
+        pluginPacksRoot);
+
+    auto makeContext = [&](const QString& id, int major, int minor) {
+        return std::unique_ptr<core::PluginContextImpl>(
+            new core::PluginContextImpl(
+                id, &rosterApi, &controlApi, []() { return true; },
+                /*pageModel=*/nullptr, /*stream=*/nullptr,
+                m_tmp.filePath(QStringLiteral("cfg-gate")), &service,
+                networkGranted, /*voicePackRefresh=*/{},
+                /*parent=*/nullptr, major, minor));
+    };
+
+    pet::InstallSpec spec;
+    spec.targetDir = QStringLiteral("voicePacks");
+
+    // ── ≥ 1.13 manifest → owner routing: the install lands in the
+    // plugin's data domain; the legacy root stays untouched.
+    {
+        RecordingListener listener;
+        pet::DownloadRequest req;
+        req.url = fileUrl(zipPath);
+        req.destName = QStringLiteral("gate-pack-new.zip");
+        const pet::JobId job = service.start(req, &listener);
+        QVERIFY(job != 0);
+        QTRY_VERIFY_WITH_TIMEOUT(listener.finishedJob == job, 5000);
+
+        const auto ctx = makeContext(QStringLiteral("org.gate.route"), 1, 13);
+        pet::IDownloadApi& dl = ctx->downloadApi();
+        QCOMPARE(dl.installArchive(job, spec), pet::PluginError::Ok);
+        const QString landed =
+            QDir(pluginPacksRoot).filePath(QStringLiteral("GatePack"));
+        QVERIFY(QFile::exists(QDir(landed).filePath(QStringLiteral("meta.mko"))));
+        QVERIFY(!QFile::exists(
+            QDir(legacyRoot).filePath(QStringLiteral("GatePack/meta.mko"))));
+    }
+
+    // ── < 1.13 manifest → legacy owner "": the install lands in the
+    // service's ctor install root; the plugin domain stays untouched.
+    {
+        RecordingListener listener;
+        pet::DownloadRequest req;
+        req.url = fileUrl(zipPath);
+        req.destName = QStringLiteral("gate-pack-old.zip");
+        const pet::JobId job = service.start(req, &listener);
+        QVERIFY(job != 0);
+        QTRY_VERIFY_WITH_TIMEOUT(listener.finishedJob == job, 5000);
+
+        const auto ctx = makeContext(QStringLiteral("org.gate.legacy"), 1, 12);
+        pet::IDownloadApi& dl = ctx->downloadApi();
+        QCOMPARE(dl.installArchive(job, spec), pet::PluginError::Ok);
+        QVERIFY(QFile::exists(QDir(legacyRoot).filePath(
+            QStringLiteral("GatePack/meta.mko"))));
+        QVERIFY(QDir(pluginPacksRoot).entryList(
+                    QDir::Dirs | QDir::NoDotAndDotDot).size() == 1);
+    }
+
+    // Sanity: without the "network" capability the adapter still fails
+    // loudly with Capability regardless of the api_version.
+    {
+        RecordingListener listener;
+        pet::DownloadRequest req;
+        req.url = fileUrl(zipPath);
+        req.destName = QStringLiteral("gate-pack-nocap.zip");
+        const pet::JobId job = service.start(req, &listener);
+        QVERIFY(job != 0);
+        QTRY_VERIFY_WITH_TIMEOUT(listener.finishedJob == job, 5000);
+        const auto ctx = std::unique_ptr<core::PluginContextImpl>(
+            new core::PluginContextImpl(
+                QStringLiteral("org.gate.nocap"), &rosterApi, &controlApi,
+                []() { return true; }, nullptr, nullptr,
+                m_tmp.filePath(QStringLiteral("cfg-gate")), &service,
+                QStringList{}, /*voicePackRefresh=*/{},
+                /*parent=*/nullptr, 1, 13));
+        QCOMPARE(ctx->downloadApi().installArchive(job, spec),
+                 pet::PluginError::Capability);
+    }
 }
 
 QTEST_MAIN(InstallPipelineTest)

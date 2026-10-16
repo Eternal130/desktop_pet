@@ -130,6 +130,49 @@ bool writePack(const QString& rendererRoot, const QString& packName,
     return true;
 }
 
+// v1.13: write a pack under a PLUGIN data domain —
+// <pluginDataRoot>/<owner>/VoicePacks/<packName>/meta.mko.
+bool writePluginDomainPack(const QString& pluginDataRoot, const QString& owner,
+                           const QString& packName, const QByteArray& mkoBytes)
+{
+    const QString packDir = QDir(pluginDataRoot).absoluteFilePath(
+        owner + QStringLiteral("/VoicePacks/") + packName);
+    if (!QDir().mkpath(packDir))
+        return false;
+    QFile f(QDir(packDir).absoluteFilePath(QStringLiteral("meta.mko")));
+    if (!f.open(QIODevice::WriteOnly))
+        return false;
+    f.write(mkoBytes);
+    f.close();
+    return true;
+}
+
+// A minimal but valid Bundle with a custom display name (scoped-mount
+// fixtures distinguish domains by name).
+QByteArray buildNamedBundle(const QString& displayName)
+{
+    QByteArray meta;
+    meta += encodeStringField(1, displayName);
+    meta += encodeStringField(2, QStringLiteral("scoped_code"));
+    QByteArray group;
+    group += encodeStringField(1, QStringLiteral("tap_head"));
+    group += encodeVarintField(2, 5);
+    group += encodeStringField(3, QStringLiteral("Tap Head"));
+    QByteArray action;
+    action += encodeVarintField(1, 42);
+    action += encodeStringField(2, QStringLiteral("tap_head"));
+    action += encodeStringField(3, QStringLiteral("motions/tap01.motion3.json"));
+    action += encodeStringField(4, QStringLiteral("audio/tap01.wav"));
+    action += encodeStringField(6, QStringLiteral("Scoped tap"));
+    action += encodeVarintField(7, 300);
+    action += encodeVarintField(8, 500);
+    QByteArray bundle;
+    bundle += encodeMessageField(1, meta);
+    bundle += encodeMessageField(4, group);
+    bundle += encodeMessageField(5, action);
+    return bundle;
+}
+
 } // namespace
 
 class TuningApiImplTest : public QObject
@@ -144,6 +187,7 @@ private slots:
     void testUnknownUuidNotFound();
     void testPendingDeleteIsBusy();
     void testMountResolvesPackIdByDirectoryName();
+    void testMountScopedResolvesUnionDomains();
 };
 
 // ── 1. setters forward ──────────────────────────────────────────────────────
@@ -500,6 +544,113 @@ void TuningApiImplTest::testMountResolvesPackIdByDirectoryName()
     // second NOTIFY — the session's early-return guard).
     QCOMPARE(api.unmountVoicePack(uuid), pet::PluginError::Ok);
     QCOMPARE(mountedSpy.count(), 2);
+}
+
+// ── v1.13: scoped mount resolves against the UNION scan ────────────────────
+//
+// Domain matching (rev2 §3.4): the caller's OWN plugin domain wins a
+// same-name collision, then the host domain; domains other than the
+// caller's are NEVER matched. The session persists voicePackScope (the
+// wave-1 seam); the host channel (callerId "") stays byte-identical to
+// the pre-v1.13 host-only resolution.
+void TuningApiImplTest::testMountScopedResolvesUnionDomains()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    const QString rendererRoot =
+        QDir(base.path()).filePath(QStringLiteral("renderer"));
+    const QString pluginDataRoot =
+        QDir(base.path()).filePath(QStringLiteral("PluginData"));
+    // Host domain pack "collide" + org.a's OWN "collide" + org.b-only pack.
+    QVERIFY(writePack(rendererRoot, QStringLiteral("collide"),
+                      buildNamedBundle(QStringLiteral("Host Collide"))));
+    QVERIFY(writePluginDomainPack(pluginDataRoot, QStringLiteral("org.a"),
+                                  QStringLiteral("collide"),
+                                  buildNamedBundle(QStringLiteral("A Collide"))));
+    QVERIFY(writePluginDomainPack(pluginDataRoot, QStringLiteral("org.b"),
+                                  QStringLiteral("only_b"),
+                                  buildNamedBundle(QStringLiteral("Only B"))));
+
+    WsServer server;
+    PendingRequests pending;
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& cfg) {
+                            PanelStateManager(base.path()).save(cfg);
+                        });
+    core::TuningApiImpl api(&mgr, nullptr);
+    api.setPackScanDirs(rendererRoot,
+                        QDir(base.path()).filePath(QStringLiteral("userpacks")),
+                        pluginDataRoot);
+
+    const QString uuidA = mgr.createInstance(QStringLiteral("ScopedA"));
+    QVERIFY(!uuidA.isEmpty());
+    const QString uuidB = mgr.createInstance(QStringLiteral("ScopedB"));
+    QVERIFY(!uuidB.isEmpty());
+    const QString uuidH = mgr.createInstance(QStringLiteral("HostOnly"));
+    QVERIFY(!uuidH.isEmpty());
+
+    const QString aDir = QDir(pluginDataRoot).absoluteFilePath(
+        QStringLiteral("org.a/VoicePacks/collide"));
+    const QString hostDir = QDir(rendererRoot).absoluteFilePath(
+        QStringLiteral("Resources/VoicePacks/collide"));
+    // A host-domain-ONLY pack (no plugin owns a same-named copy).
+    QVERIFY(writePack(rendererRoot, QStringLiteral("host_only"),
+                      buildNamedBundle(QStringLiteral("Host Only"))));
+    const QString hostOnlyDir = QDir(rendererRoot).absoluteFilePath(
+        QStringLiteral("Resources/VoicePacks/host_only"));
+
+    // 1) Plugin caller + same name in own domain and host domain → the
+    //    OWN domain wins; the session persists voicePackScope = org.a.
+    QCOMPARE(api.mountVoicePackAs(QStringLiteral("org.a"), uuidA,
+                                  QStringLiteral("collide")),
+             pet::PluginError::Ok);
+    QCOMPARE(mgr.instanceAt(0)->mountedVoicePack(), aDir);
+    QCOMPARE(mgr.instanceAt(0)->config().voicePackScope, QStringLiteral("org.a"));
+
+    // 2) Cross-plugin domain is invisible: org.a cannot mount org.b's pack.
+    QCOMPARE(api.mountVoicePackAs(QStringLiteral("org.a"), uuidA,
+                                  QStringLiteral("only_b")),
+             pet::PluginError::NotFound);
+    QCOMPARE(mgr.instanceAt(0)->mountedVoicePack(), aDir); // untouched
+
+    // 3) org.b CAN mount its own (per-(owner, name) keying).
+    QCOMPARE(api.mountVoicePackAs(QStringLiteral("org.b"), uuidB,
+                                  QStringLiteral("only_b")),
+             pet::PluginError::Ok);
+    QCOMPARE(mgr.instanceAt(1)->config().voicePackScope, QStringLiteral("org.b"));
+
+    // 4) Host channel (callerId ""): host-only matching, byte-identical
+    //    legacy — "collide" resolves to the HOST copy and the persisted
+    //    scope stays ""; org.b's pack is invisible.
+    QCOMPARE(api.mountVoicePack(uuidH, QStringLiteral("collide")),
+             pet::PluginError::Ok);
+    QCOMPARE(mgr.instanceAt(2)->mountedVoicePack(), hostDir);
+    QVERIFY(mgr.instanceAt(2)->config().voicePackScope.isEmpty());
+    QCOMPARE(api.mountVoicePack(uuidH, QStringLiteral("only_b")),
+             pet::PluginError::NotFound);
+
+    // 5) Persisted rows carry the scope halves (BEFORE 4b re-mounts A).
+    const auto rowA = InstanceConfigManager(base.path()).load(uuidA);
+    QVERIFY(rowA.has_value());
+    QCOMPARE(rowA->voicePackScope, QStringLiteral("org.a"));
+    const auto rowH = InstanceConfigManager(base.path()).load(uuidH);
+    QVERIFY(rowH.has_value());
+    QVERIFY(rowH->voicePackScope.isEmpty());
+
+    // 4b) DOMAIN-CORRECT stamping (oracle follow-up Should#2): a PLUGIN
+    //     caller whose packId only exists in the HOST domain (pass-2
+    //     fallback) mounts the host copy and persists scope "" — the
+    //     recorded domain mirrors where the pack physically resolved,
+    //     NOT the caller identity.
+    QCOMPARE(api.mountVoicePackAs(QStringLiteral("org.a"), uuidA,
+                                  QStringLiteral("host_only")),
+             pet::PluginError::Ok);
+    QCOMPARE(mgr.instanceAt(0)->mountedVoicePack(), hostOnlyDir);
+    QVERIFY(mgr.instanceAt(0)->config().voicePackScope.isEmpty());
+    // ...and the flipped stamp reaches disk too.
+    const auto rowAAfter = InstanceConfigManager(base.path()).load(uuidA);
+    QVERIFY(rowAAfter.has_value());
+    QVERIFY(rowAAfter->voicePackScope.isEmpty());
 }
 
 QTEST_MAIN(TuningApiImplTest)

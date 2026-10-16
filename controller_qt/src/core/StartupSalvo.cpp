@@ -40,7 +40,8 @@ QStringList StartupSalvo::sendSalvo(const InstanceConfigLike& c) {
     QStringList sent;
     sent.reserve(7);
 
-    sent.append(sendOne(Protocol::buildLoadModel(c.modelName)));
+    sent.append(sendOne(Protocol::buildLoadModel(c.modelName,
+                                                 c.resolvedModelPath)));
     sent.append(sendOne(Protocol::buildSetPosition(c.windowX, c.windowY)));
     sent.append(sendOne(Protocol::buildSetSize(c.windowWidth, c.windowHeight)));
     sent.append(sendOne(Protocol::buildSetOpacity(c.opacity)));

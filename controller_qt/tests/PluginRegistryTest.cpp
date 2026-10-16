@@ -108,6 +108,27 @@ void PluginRegistryTest::testParseRejectsBadIdShape()
         QStringLiteral(R"json({"id":"sample","version":"1.0","api_version":"1.0"})json"),
         &err).has_value());
     QVERIFY(err.contains(QStringLiteral("reverse-domain")));
+
+    // v1.13 hardening (oracle follow-up Should#1): the documented charset
+    // [A-Za-z0-9.-] is now ENFORCED via the shared ConfigDir gate. A
+    // Windows backslash-traversal id ("a.b\..\.." — JSON \\ = one '\')
+    // used to pass because only '/' and spaces were checked, and could
+    // then name a PluginData owner directory.
+    err.clear();
+    QVERIFY(!PluginRegistry::parseManifest(
+        QStringLiteral(R"json({"id":"a.b\\..\\..","version":"1.0","api_version":"1.0"})json"),
+        &err).has_value());
+    QVERIFY(err.contains(QStringLiteral("reverse-domain")));
+    // Space-bearing and dot-only ids die at the same gate.
+    QVERIFY(!PluginRegistry::parseManifest(
+        QStringLiteral(R"json({"id":"org bad.x","version":"1.0","api_version":"1.0"})json"),
+        &err).has_value());
+    QVERIFY(!PluginRegistry::parseManifest(
+        QStringLiteral(R"json({"id":"..","version":"1.0","api_version":"1.0"})json"),
+        &err).has_value());
+    QVERIFY(!PluginRegistry::parseManifest(
+        QStringLiteral(R"json({"id":".","version":"1.0","api_version":"1.0"})json"),
+        &err).has_value());
 }
 
 void PluginRegistryTest::testParseRejectsNonNumericApiVersion()

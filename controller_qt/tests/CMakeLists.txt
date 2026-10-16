@@ -245,10 +245,13 @@ set_tests_properties(ProcessManagerTest PROPERTIES LABELS "REQUIRES_RENDERER")
 #   - Unit tier (3 slots, no renderer): capturing-sender harness asserts the 7
 #     commands fire in order, that set_scale NEVER appears in the stream, and
 #     that every salvo action is in the command catalog fixture.
-#   - Integration tier (1 slot, REQUIRES_RENDERER): WsServer + ProcessManager +
+#   - Integration tier (2 slots, REQUIRES_RENDERER): WsServer + ProcessManager +
 #     StartupSalvo wired against the real renderer; ready → sendSalvo,
 #     model_loaded → sendSetHitAreas, asserts 8 commands captured in order
 #     with no set_scale. Tolerates the known renderer teardown crash (T6/T13).
+#     v1.13 scoped slot: temp PluginData-domain Hiyori copy loaded through the
+#     path-bearing salvo (model_loaded + set_hit_areas round-trip) — hence the
+#     CUBISM_RESOURCES_DIR fixture source below.
 # Recompiles StartupSalvo.cpp + Protocol.cpp + WsServer.cpp + ProcessManager.cpp
 # + PathResolve.cpp + Envelope.cpp directly (same pattern as the other tests —
 # no shared lib yet). Links Qt6::Core + Qt6::Network + Qt6::WebSockets (server
@@ -259,7 +262,8 @@ qt_add_executable(StartupSalvoTest StartupSalvoTest.cpp)
 target_link_libraries(StartupSalvoTest PRIVATE pet_panel_core Qt6::Test)
 target_compile_definitions(StartupSalvoTest PRIVATE
     PROTOCOL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/protocol"
-    BIN_OUTPUT_DIR="${PROJECT_SOURCE_DIR}/../build/bin")
+    BIN_OUTPUT_DIR="${PROJECT_SOURCE_DIR}/../build/bin"
+    CUBISM_RESOURCES_DIR="${PROJECT_SOURCE_DIR}/../third_party/CubismSdkForNative/Samples/Resources")
 
 pet_deploy_qt_test(StartupSalvoTest)
 
@@ -695,6 +699,11 @@ add_test(NAME ResourceStatsCollectorTest COMMAND ResourceStatsCollectorTest)
 # nonexistent dir → empty, empty dir → empty. Missing dir / empty input →
 # empty QStringList (never throws).
 #
+# v1.13 (resource isolation, rev2 §3.2a): two scoped-scan slots — the
+# per-(owner,name) key (same pack name in two plugin domains both
+# returned; host user-wins stays WITHIN host) and the missing-root
+# host-only degradation.
+#
 # Recompiles VoicePackScanner.cpp directly (same pattern as ModelScannerTest).
 # Links Qt6::Core + Qt6::Test + spdlog (VoicePackScanner.cpp includes
 # logging/Logging.hpp which references the SPDLOG_* macros; spdlog is
@@ -710,6 +719,40 @@ target_link_libraries(VoicePackScannerTest PRIVATE pet_panel_core Qt6::Test)
 pet_deploy_qt_test(VoicePackScannerTest)
 
 add_test(NAME VoicePackScannerTest COMMAND VoicePackScannerTest)
+
+# VoicePackControllerTest (v1.13 rev2 §3.2b): the voice-pack page-list
+# filter — plugin-domain packs discovered by the scoped scan are EXCLUDED
+# from the page list (managed by their owning plugin, never offered for
+# host mounting). No prior binary covered rescan's listing (the class was
+# only exercised transitively through app wiring). Hermetic via a custom
+# main that redirects XDG_DATA_HOME at a QTemporaryDir BEFORE the
+# QCoreApplication exists (ConfigDir derives userVoicePacksDir()/
+# pluginDataRoot() from QStandardPaths AppLocalDataLocation); the
+# XDG-dependent slot QSKIPs on Windows. meta.mko fixtures synthesized with
+# the minimal protobuf writer (same as MetaMkoParserTest). Links
+# pet_panel_core (VoicePackController lives there). Custom main —
+# QStandardPaths wants a QCoreApplication.
+qt_add_executable(VoicePackControllerTest VoicePackControllerTest.cpp)
+target_link_libraries(VoicePackControllerTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(VoicePackControllerTest)
+
+add_test(NAME VoicePackControllerTest COMMAND VoicePackControllerTest)
+
+# HitAreaCacheManagerTest (v1.13 resource isolation): the JSON hit-area
+# cache. Four slots: legacy put/get round-trip (bare-name persisted key),
+# scope-keyed isolation (same model name under two plugin domains + host
+# never collide or cross-overwrite), empty-scope == legacy key (the two
+# API shapes interoperate; persisted form keeps the bare name), miss →
+# nullopt (unknown model / unknown scope). Hermetic via the class's
+# injectable basePath (QTemporaryDir). QTEST_APPLESS_MAIN — QFile/
+# QJsonDocument are synchronous.
+qt_add_executable(HitAreaCacheManagerTest HitAreaCacheManagerTest.cpp)
+target_link_libraries(HitAreaCacheManagerTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(HitAreaCacheManagerTest)
+
+add_test(NAME HitAreaCacheManagerTest COMMAND HitAreaCacheManagerTest)
 
 # MetaMkoParserTest (Phase 5 Wave 8 todo 19): meta.mko protobuf Bundle parser.
 # Six slots lock the §5.5 contract: valid Bundle → populated VoicePackInfo
@@ -1031,6 +1074,22 @@ target_link_libraries(ModelApiImplTest PRIVATE pet_panel_core Qt6::Test)
 pet_deploy_qt_test(ModelApiImplTest)
 
 add_test(NAME ModelApiImplTest COMMAND ModelApiImplTest)
+
+# ResourceScopeApiImplTest (v1.13, rev2 §3.3): the shared pet::
+# IResourceScopeApi over the union resource scans. Five slots over
+# QTemporaryDir fixture trees (host renderer tree + temp PluginData
+# domains): scopedModels/scopedPacks owner filtering (incl. the same
+# pack name visible in two domains), removeScoped own-domain delete +
+# traversal/cross-owner/empty rejection + NotFound + ModelApiImpl
+# cross-refresh, refreshScan picking up new/removed dirs, and the
+# per-context proxy's caller stamping (null-shared tolerance).
+# QTEST_APPLESS_MAIN — QDir/QFile are synchronous.
+qt_add_executable(ResourceScopeApiImplTest ResourceScopeApiImplTest.cpp)
+target_link_libraries(ResourceScopeApiImplTest PRIVATE pet_panel_core Qt6::Test)
+
+pet_deploy_qt_test(ResourceScopeApiImplTest)
+
+add_test(NAME ResourceScopeApiImplTest COMMAND ResourceScopeApiImplTest)
 
 # SettingsApiImplTest (S6, v1.3): the real pet::ISettingsApi over the
 # SAME PanelStateManager persistence path the panel settings page uses.

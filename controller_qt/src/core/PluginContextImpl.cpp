@@ -1,5 +1,6 @@
 #include "core/PluginContextImpl.hpp"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QDateTime>
 #include <QFileInfo>
@@ -283,10 +284,15 @@ void UiApiImpl::notifyBubble(const QString& text, int durationMs)
 // ── DownloadApiAdapter (P5) ─────────────────────────────────────────────────
 
 DownloadApiAdapter::DownloadApiAdapter(QString pluginId, bool networkGranted,
-                                       DownloadService* service, QObject* parent)
+                                        int manifestApiMajor,
+                                        int manifestApiMinor,
+                                        DownloadService* service, QObject* parent)
     : QObject(parent),
       m_pluginId(std::move(pluginId)),
       m_networkGranted(networkGranted),
+      m_domainRouting(manifestApiMajor > pet::kApiMajor
+                      || (manifestApiMajor == pet::kApiMajor
+                          && manifestApiMinor >= 13)),
       m_service(service)
 {
 }
@@ -326,6 +332,12 @@ pet::PluginError DownloadApiAdapter::installArchive(pet::JobId job,
                  m_pluginId.toStdString());
         return pet::PluginError::Capability;
     }
+    // v1.13 (rev2 §3.1/§3.5 api_version routing gate): manifest ≥ 1.13 →
+    // the 3-arg owner-scoped overload (installs land in the plugin's OWN
+    // data domain); < 1.13 → owner "" (the legacy host install roots,
+    // byte-identical to the pre-v1.13 behavior).
+    if (m_domainRouting)
+        return m_service->installArchive(job, spec, m_pluginId);
     return m_service->installArchive(job, spec);
 }
 
@@ -355,6 +367,14 @@ InstanceSession* InstanceControlApiImpl::sessionForUuid(const QString& uuid) con
 pet::PluginError InstanceControlApiImpl::create(const pet::InstanceSpec& spec,
                                                 QString* outUuid)
 {
+    // v1.13: the host channel — no scope stamping (host domain).
+    return createAs(QString(), spec, outUuid);
+}
+
+pet::PluginError InstanceControlApiImpl::createAs(const QString& callerId,
+                                                  const pet::InstanceSpec& spec,
+                                                  QString* outUuid)
+{
     if (outUuid != nullptr)
         outUuid->clear();
     if (m_instanceManager == nullptr)
@@ -381,8 +401,13 @@ pet::PluginError InstanceControlApiImpl::create(const pet::InstanceSpec& spec,
     }
     // Same creation path as the panel's own Add flow (persist → row →
     // savePanel). Empty return = persist failure.
-    const QString uuid = m_instanceManager->createInstance(
-        spec.label, spec.avatar, spec.modelName, graphicsBackend);
+    // v1.13: a non-empty callerId stamps the initial InstanceConfig.
+    // modelScope — a plugin-created instance resolves its model in the
+    // plugin's data domain from the first boot (createInstanceScoped;
+    // the SDK InstanceSpec stays frozen — the scope is host-internal
+    // bookkeeping; an empty callerId keeps the legacy path byte-identical).
+    const QString uuid = m_instanceManager->createInstanceScoped(
+        spec.label, spec.avatar, spec.modelName, graphicsBackend, callerId);
     if (uuid.isEmpty()) {
         LOG_ERROR("[plugin-api] instanceControlApi().create('{}') — persist "
                   "failed, no row added", spec.label.toStdString());
@@ -463,6 +488,15 @@ pet::PluginError InstanceControlApiImpl::restart(const QString& uuid)
 pet::PluginError InstanceControlApiImpl::loadModel(const QString& uuid,
                                                    const QString& modelName)
 {
+    // v1.13: the host channel — scope "" (host domain, byte-identical to
+    // the pre-v1.13 switch).
+    return loadModelAs(QString(), uuid, modelName);
+}
+
+pet::PluginError InstanceControlApiImpl::loadModelAs(const QString& callerId,
+                                                     const QString& uuid,
+                                                     const QString& modelName)
+{
     if (modelName.isEmpty()) {
         LOG_WARN("[plugin-api] instanceControlApi().loadModel('{}') with empty "
                  "model name — ERR_INVALID_ARGUMENT", uuid.toStdString());
@@ -478,8 +512,10 @@ pet::PluginError InstanceControlApiImpl::loadModel(const QString& uuid,
     }
     // Offline switch persists the choice (applies on next start); online
     // additionally sends load_model. Failures surface via the
-    // modelLoadFailed observer callback.
-    s->loadModel(modelName);
+    // modelLoadFailed observer callback. v1.13: a non-empty callerId is
+    // the wave-1 scoped switch — strict plugin-domain resolution +
+    // model_scope persistence (the InstanceSession seam).
+    s->loadModel(modelName, callerId);
     return pet::PluginError::Ok;
 }
 
@@ -526,10 +562,12 @@ TuningApiImpl::TuningApiImpl(InstanceManager* instanceManager, QObject* parent)
 }
 
 void TuningApiImpl::setPackScanDirs(const QString& rendererDir,
-                                    const QString& userPacksDir)
+                                    const QString& userPacksDir,
+                                    const QString& pluginDataRoot)
 {
     m_packRendererDir = rendererDir;
     m_packUserDir = userPacksDir;
+    m_packPluginDataRoot = pluginDataRoot; // v1.13 union-scan seam
 }
 
 InstanceSession* TuningApiImpl::sessionForUuid(const QString& uuid) const
@@ -563,24 +601,51 @@ pet::PluginError TuningApiImpl::locateAlive(const QString& uuid,
     return pet::PluginError::Ok;
 }
 
-QString TuningApiImpl::resolvePackDir(const QString& packId) const
+QString TuningApiImpl::resolvePackDir(const QString& callerId,
+                                      const QString& packId,
+                                      QString* matchedOwner) const
 {
     // packId is the DIRECTORY NAME (SDK-wide pack identity). Reverse-lookup
-    // against the host's own dual-source scan (VoicePackScanner returns
-    // ABSOLUTE pack dirs; user packs win collisions — same discovery the
-    // voice-pack page and the install pipeline use). An id that is not a
-    // discovered directory resolves empty → NotFound at the call site: a
-    // caller-supplied PATH never reaches the behavior engine.
+    // against the host's UNION pack scan (v1.13: scanVoicePacksScoped over
+    // the host dual-source merge + every plugin data domain). An id that
+    // is not a discovered directory resolves empty → NotFound at the call
+    // site: a caller-supplied PATH never reaches the behavior engine.
+    // Domain matching (rev2 §3.4): the caller's OWN plugin domain wins a
+    // same-name collision, then the host domain (owner="" — the
+    // dual-source user-wins merge, byte-identical to the pre-v1.13
+    // resolution for callerId ""). Domains other than the caller's are
+    // NEVER matched — cross-plugin packs are invisible.
     // Scan sources: injected test seams when set, production defaults
-    // otherwise (same pair VoicePackApiImpl's standalone scan uses).
+    // otherwise (same pair VoicePackApiImpl's standalone scan uses; the
+    // plugin-data root defaults to ConfigDir::pluginDataRoot()).
     const QString rendererDir = !m_packRendererDir.isEmpty()
         ? m_packRendererDir : defaultRendererDir();
     const QString userDir = !m_packUserDir.isEmpty()
         ? m_packUserDir : ConfigDir::userVoicePacksDir();
-    const QStringList dirs = scanAvailableVoicePacks(rendererDir, userDir);
-    for (const QString& dir : dirs) {
-        if (QFileInfo(dir).fileName() == packId)
-            return dir;
+    const QString pluginRoot = !m_packPluginDataRoot.isEmpty()
+        ? m_packPluginDataRoot : ConfigDir::pluginDataRoot();
+    const QVector<ScannedPack> packs =
+        scanVoicePacksScoped(rendererDir, userDir, pluginRoot);
+    if (matchedOwner != nullptr)
+        matchedOwner->clear(); // miss leaves the out-param empty
+    // Pass 1: the caller's own domain (skipped for the host channel).
+    if (!callerId.isEmpty()) {
+        for (const ScannedPack& p : packs) {
+            if (p.owner == callerId
+                && QFileInfo(p.dirPath).fileName() == packId) {
+                if (matchedOwner != nullptr)
+                    *matchedOwner = callerId;
+                return p.dirPath;
+            }
+        }
+    }
+    // Pass 2: the host domain (owner="").
+    for (const ScannedPack& p : packs) {
+        if (p.owner.isEmpty() && QFileInfo(p.dirPath).fileName() == packId) {
+            if (matchedOwner != nullptr)
+                *matchedOwner = QString(); // host domain → "" scope stamp
+            return p.dirPath;
+        }
     }
     return QString();
 }
@@ -678,6 +743,15 @@ pet::PluginError TuningApiImpl::triggerHitArea(const QString& uuid,
 pet::PluginError TuningApiImpl::mountVoicePack(const QString& uuid,
                                                const QString& packId)
 {
+    // v1.13: the host channel — callerId "" (host-domain-only union
+    // matching, byte-identical to the pre-v1.13 resolution).
+    return mountVoicePackAs(QString(), uuid, packId);
+}
+
+pet::PluginError TuningApiImpl::mountVoicePackAs(const QString& callerId,
+                                                 const QString& uuid,
+                                                 const QString& packId)
+{
     if (packId.isEmpty()) {
         LOG_WARN("[plugin-api] tuningApi().mountVoicePack('{}') with empty "
                  "pack id — ERR_INVALID_ARGUMENT", uuid.toStdString());
@@ -687,7 +761,14 @@ pet::PluginError TuningApiImpl::mountVoicePack(const QString& uuid,
     const pet::PluginError locate = locateAlive(uuid, &s);
     if (locate != pet::PluginError::Ok)
         return locate;
-    const QString dir = resolvePackDir(packId);
+    // v1.13 scope stamping is DOMAIN-correct: the persisted voicePackScope
+    // records the domain the pack ACTUALLY resolved in — the caller's id
+    // only when its own plugin domain won pass 1, and "" when the host
+    // domain won the pass-2 fallback (the session seam then persists "",
+    // i.e. host domain — not the caller's id for a physically host-owned
+    // pack).
+    QString matchedOwner;
+    const QString dir = resolvePackDir(callerId, packId, &matchedOwner);
     if (dir.isEmpty()) {
         LOG_WARN("[plugin-api] tuningApi().mountVoicePack('{}', '{}') — "
                  "pack id not discovered by the host scan, ERR_NOT_FOUND "
@@ -696,9 +777,11 @@ pet::PluginError TuningApiImpl::mountVoicePack(const QString& uuid,
         return pet::PluginError::NotFound;
     }
     // The session parses meta.mko itself; a parse failure leaves the
-    // current mount untouched and reports Generic.
-    return s->mountVoicePack(dir) ? pet::PluginError::Ok
-                                  : pet::PluginError::Generic;
+    // current mount untouched and reports Generic. The scope param rides
+    // the wave-1 seam — the session persists
+    // InstanceConfig.voicePackScope ("" = host, the pre-v1.13 behavior).
+    return s->mountVoicePack(dir, matchedOwner) ? pet::PluginError::Ok
+                                                : pet::PluginError::Generic;
 }
 
 pet::PluginError TuningApiImpl::unmountVoicePack(const QString& uuid)
@@ -748,6 +831,30 @@ pet::PluginError TuningApiImpl::setGraphicsBackend(const QString& uuid,
 
 // ── ModelApiImpl (S5, v1.3) ─────────────────────────────────────────────────
 
+namespace {
+
+// v1.13 shared summary builder (ModelApiImpl::rescan + ResourceScopeApiImpl
+// use ONE parse path — identical WARN-degrade semantics for a missing or
+// corrupt .model3.json: the entry survives with empty detail lists).
+pet::ModelSummary modelSummaryFor(const QString& name,
+                                  const QString& modelJsonPath)
+{
+    pet::ModelSummary summary;
+    summary.name = name;
+    const auto info = parseModelInfo(modelJsonPath);
+    if (info.has_value()) {
+        summary.motionGroups = info->motionGroups.keys();
+        summary.expressions = info->expressions;
+        summary.hitAreas = info->hitAreas;
+    } else {
+        LOG_WARN("model scan: could not parse \"{}\" — empty details",
+                 modelJsonPath.toStdString());
+    }
+    return summary;
+}
+
+} // namespace
+
 ModelApiImpl::ModelApiImpl(QObject* parent)
     : QObject(parent)
 {
@@ -759,6 +866,13 @@ void ModelApiImpl::setRendererDir(const QString& dir)
     rescan();
 }
 
+void ModelApiImpl::setPluginDataRoot(const QString& root)
+{
+    // v1.13 test seam — production leaves this empty (ConfigDir default).
+    m_pluginDataRoot = root;
+    rescan();
+}
+
 void ModelApiImpl::refreshScan()
 {
     rescan();
@@ -766,40 +880,60 @@ void ModelApiImpl::refreshScan()
 
 void ModelApiImpl::rescan()
 {
-    // Ported verbatim from ModelController::rescan (the cache moved here —
-    // ONE scan serves the panel page and the plugin API). Pre-parse at
-    // scan time so availableModels()/modelInfo() stay cache lookups; a
-    // missing/corrupt .model3.json degrades to empty detail lists, the
-    // roster entry survives.
+    // Ported from ModelController::rescan (the cache moved here — ONE scan
+    // serves the panel page and the plugin API). v1.13: the scan is the
+    // UNION (scanModelsScoped over the renderer tree + every plugin data
+    // domain); the pet.model PROJECTION below stays host-domain-only, so
+    // the page + legacy plugins see exactly the pre-v1.13 surface while
+    // resolveModelPath() serves scoped lookups off the union side index.
+    // Pre-parse at scan time so availableModels()/modelInfo() stay cache
+    // lookups; a missing/corrupt .model3.json degrades to empty detail
+    // lists, the roster entry survives.
     m_models.clear();
+    m_union.clear();
     m_modelsDir = m_rendererDir.isEmpty()
         ? QString()
         : QDir(m_rendererDir).absoluteFilePath(
               QStringLiteral("Resources/Models"));
-    const QStringList names = scanAvailableModels(m_rendererDir);
-    for (const QString& name : names) {
-        pet::ModelSummary summary;
-        summary.name = name;
-        const QString model3Json = QDir(m_modelsDir).absoluteFilePath(
-            name + QLatin1Char('/') + name + QStringLiteral(".model3.json"));
-        const auto info = parseModelInfo(model3Json);
-        if (info.has_value()) {
-            summary.motionGroups = info->motionGroups.keys();
-            summary.expressions = info->expressions;
-            summary.hitAreas = info->hitAreas;
-        } else {
-            LOG_WARN("ModelApiImpl: could not parse \"{}\" — empty details",
-                     model3Json.toStdString());
-        }
-        m_models.append(std::move(summary));
+    const QString pluginRoot = !m_pluginDataRoot.isEmpty()
+        ? m_pluginDataRoot : ConfigDir::pluginDataRoot();
+    const QVector<ScannedModel> entries =
+        scanModelsScoped(m_rendererDir, pluginRoot);
+    for (const ScannedModel& e : entries) {
+        Entry entry;
+        entry.name = e.name;
+        entry.owner = e.owner;
+        entry.modelJsonPath = e.modelJsonPath;
+        entry.summary = modelSummaryFor(e.name, e.modelJsonPath);
+        if (e.owner.isEmpty())
+            m_models.append(entry.summary); // host-domain projection
+        m_union.append(std::move(entry));
     }
-    LOG_DEBUG("ModelApiImpl: scan found {} model(s) under \"{}\"",
-              m_models.size(), m_modelsDir.toStdString());
+    LOG_DEBUG("ModelApiImpl: union scan found {} model(s) ({} host) under "
+              "\"{}\" + plugin data root \"{}\"",
+              m_union.size(), m_models.size(), m_modelsDir.toStdString(),
+              pluginRoot.toStdString());
 }
 
 QVector<pet::ModelSummary> ModelApiImpl::availableModels()
 {
     return m_models;
+}
+
+QString ModelApiImpl::resolveModelPath(const QString& name,
+                                        const QString& scope) const
+{
+    // v1.13 strict-domain resolution (the ModelPathResolverFn contract):
+    // scope empty → QString() (host domain — the renderer's own
+    // Resources/ short-name resolution applies downstream, no absolute
+    // path exists); scoped miss → QString() (NEVER a host fallback).
+    if (scope.isEmpty() || name.isEmpty())
+        return QString();
+    for (const Entry& e : m_union) {
+        if (e.owner == scope && e.name == name)
+            return e.modelJsonPath;
+    }
+    return QString();
 }
 
 pet::PluginError ModelApiImpl::modelInfo(const QString& name,
@@ -1451,6 +1585,407 @@ void RuleApiProxy::unregisterRule(const QString& ruleId)
     m_shared->unregisterPluginRule(m_pluginId, ruleId);
 }
 
+// ── InstanceControlApiProxy (v1.13 scope stamping) ──────────────────────────
+
+InstanceControlApiProxy::InstanceControlApiProxy(const QString& pluginId,
+                                                 InstanceControlApiImpl* shared)
+    : m_pluginId(pluginId), m_shared(shared)
+{
+}
+
+pet::PluginError InstanceControlApiProxy::create(const pet::InstanceSpec& spec,
+                                                 QString* outUuid)
+{
+    if (m_shared == nullptr)
+        return pet::PluginError::Generic; // no wiring — never a crash
+    return m_shared->createAs(m_pluginId, spec, outUuid);
+}
+
+pet::PluginError InstanceControlApiProxy::remove(const QString& uuid)
+{
+    return m_shared != nullptr ? m_shared->remove(uuid)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError InstanceControlApiProxy::start(const QString& uuid)
+{
+    return m_shared != nullptr ? m_shared->start(uuid)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError InstanceControlApiProxy::stop(const QString& uuid)
+{
+    return m_shared != nullptr ? m_shared->stop(uuid)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError InstanceControlApiProxy::restart(const QString& uuid)
+{
+    return m_shared != nullptr ? m_shared->restart(uuid)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError InstanceControlApiProxy::loadModel(const QString& uuid,
+                                                    const QString& modelName)
+{
+    if (m_shared == nullptr)
+        return pet::PluginError::Generic; // no wiring — never a crash
+    return m_shared->loadModelAs(m_pluginId, uuid, modelName);
+}
+
+pet::PluginError InstanceControlApiProxy::setAvatar(const QString& uuid,
+                                                    const QString& avatar)
+{
+    return m_shared != nullptr ? m_shared->setAvatar(uuid, avatar)
+                               : pet::PluginError::Generic;
+}
+
+// ── TuningApiProxy (v1.13 mount scope stamping) ─────────────────────────────
+
+TuningApiProxy::TuningApiProxy(const QString& pluginId, TuningApiImpl* shared)
+    : m_pluginId(pluginId), m_shared(shared)
+{
+}
+
+pet::PluginError TuningApiProxy::setOpacity(const QString& uuid, double opacity)
+{
+    return m_shared != nullptr ? m_shared->setOpacity(uuid, opacity)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError TuningApiProxy::setVolume(const QString& uuid, double volume)
+{
+    return m_shared != nullptr ? m_shared->setVolume(uuid, volume)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError TuningApiProxy::setMuted(const QString& uuid, bool muted)
+{
+    return m_shared != nullptr ? m_shared->setMuted(uuid, muted)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError TuningApiProxy::setFps(const QString& uuid, int fps)
+{
+    return m_shared != nullptr ? m_shared->setFps(uuid, fps)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError TuningApiProxy::playMotion(const QString& uuid,
+                                            const QString& group, int index)
+{
+    return m_shared != nullptr ? m_shared->playMotion(uuid, group, index)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError TuningApiProxy::setExpression(const QString& uuid,
+                                               const QString& expressionId)
+{
+    return m_shared != nullptr ? m_shared->setExpression(uuid, expressionId)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError TuningApiProxy::triggerHitArea(const QString& uuid,
+                                                const QString& areaId)
+{
+    return m_shared != nullptr ? m_shared->triggerHitArea(uuid, areaId)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError TuningApiProxy::mountVoicePack(const QString& uuid,
+                                                const QString& packId)
+{
+    if (m_shared == nullptr)
+        return pet::PluginError::Generic; // no wiring — never a crash
+    // The ONE resource-bearing tuning op: stamp the caller so the pack
+    // resolves against (own domain → host domain) and the session
+    // persists voicePackScope = the plugin id.
+    return m_shared->mountVoicePackAs(m_pluginId, uuid, packId);
+}
+
+pet::PluginError TuningApiProxy::unmountVoicePack(const QString& uuid)
+{
+    return m_shared != nullptr ? m_shared->unmountVoicePack(uuid)
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError TuningApiProxy::setGraphicsBackend(const QString& uuid,
+                                                    const QString& backend)
+{
+    return m_shared != nullptr ? m_shared->setGraphicsBackend(uuid, backend)
+                               : pet::PluginError::Generic;
+}
+
+// ── ResourceScopeApiImpl (v1.13, rev2 §3.3) ─────────────────────────────────
+
+ResourceScopeApiImpl::ResourceScopeApiImpl(QObject* parent)
+    : QObject(parent)
+{
+}
+
+void ResourceScopeApiImpl::setRendererDir(const QString& dir)
+{
+    m_rendererDir = dir;
+}
+
+void ResourceScopeApiImpl::setScanDirs(const QString& rendererDir,
+                                       const QString& userPacksDir,
+                                       const QString& pluginDataRoot)
+{
+    m_rendererDir = rendererDir;
+    m_userPacksDir = userPacksDir;
+    m_pluginDataRoot = pluginDataRoot;
+}
+
+QString ResourceScopeApiImpl::rendererDirOrDefault() const
+{
+    // The DownloadService modelsInstallRoot convention (application dir —
+    // build/bin places the controller and renderer exes side-by-side).
+    // Empty without a QCoreApplication (unit tests that never inject):
+    // the scans simply see no host entries.
+    return !m_rendererDir.isEmpty()
+        ? m_rendererDir : QCoreApplication::applicationDirPath();
+}
+
+QString ResourceScopeApiImpl::userPacksDirOrDefault() const
+{
+    return !m_userPacksDir.isEmpty()
+        ? m_userPacksDir : ConfigDir::userVoicePacksDir();
+}
+
+QString ResourceScopeApiImpl::pluginDataRootOrDefault() const
+{
+    return !m_pluginDataRoot.isEmpty()
+        ? m_pluginDataRoot : ConfigDir::pluginDataRoot();
+}
+
+QString ResourceScopeApiImpl::domainModelsDir(const QString& ownerId) const
+{
+    return QDir(pluginDataRootOrDefault()).absoluteFilePath(
+        ownerId + QLatin1Char('/') + QStringLiteral("Models"));
+}
+
+QString ResourceScopeApiImpl::domainPacksDir(const QString& ownerId) const
+{
+    return QDir(pluginDataRootOrDefault()).absoluteFilePath(
+        ownerId + QLatin1Char('/') + QStringLiteral("VoicePacks"));
+}
+
+QVector<pet::ScopedModelInfo> ResourceScopeApiImpl::scopedModels(
+    const QString& ownerId)
+{
+    // HOST channel: no caller identity → the owner check cannot pass
+    // (the host domain is not addressable through this family).
+    return scopedModelsAs(QString(), ownerId);
+}
+
+QVector<pet::ScopedPackInfo> ResourceScopeApiImpl::scopedPacks(
+    const QString& ownerId)
+{
+    return scopedPacksAs(QString(), ownerId);
+}
+
+pet::PluginError ResourceScopeApiImpl::refreshScan()
+{
+    // Reads are lazy (per-call directory traversal — the
+    // VoicePackApiImpl::listPacks cost class), so there is no local cache
+    // to rebuild; the wired ModelApiImpl cache (pet.model + the library
+    // page) rides the same refresh so the two scans stay consistent.
+    if (m_modelApi != nullptr)
+        m_modelApi->refreshScan();
+    return pet::PluginError::Ok;
+}
+
+pet::PluginError ResourceScopeApiImpl::removeScoped(const QString& ownerId,
+                                                    const QString& name,
+                                                    bool isModel)
+{
+    // HOST channel — same owner-check failure as the reads.
+    return removeScopedAs(QString(), ownerId, name, isModel);
+}
+
+QVector<pet::ScopedModelInfo> ResourceScopeApiImpl::scopedModelsAs(
+    const QString& callerId, const QString& ownerId)
+{
+    QVector<pet::ScopedModelInfo> out;
+    // Owner check = the family's ONLY boundary (无能力词; pet.rules
+    // precedent). Empty ownerId is a malformed request; a foreign ownerId
+    // is a boundary violation — both yield an EMPTY vector (read families
+    // never error; the rejection is logged under the caller's context).
+    if (ownerId.isEmpty() || ownerId != callerId) {
+        LOG_WARN("[plugin-api] resourceScopeApi().scopedModels('{}') — "
+                 "owner check failed (owner must equal the caller '{}') — "
+                 "empty result",
+                 ownerId.toStdString(), callerId.toStdString());
+        return out;
+    }
+    const QVector<ScannedModel> entries = scanModelsScoped(
+        rendererDirOrDefault(), pluginDataRootOrDefault());
+    for (const ScannedModel& e : entries) {
+        if (e.owner != ownerId)
+            continue;
+        pet::ScopedModelInfo info;
+        info.name = e.name;
+        info.owner = e.owner;
+        const pet::ModelSummary summary =
+            modelSummaryFor(e.name, e.modelJsonPath);
+        info.motionGroups = summary.motionGroups;
+        info.expressions = summary.expressions;
+        info.hitAreas = summary.hitAreas;
+        out.append(std::move(info));
+    }
+    return out;
+}
+
+QVector<pet::ScopedPackInfo> ResourceScopeApiImpl::scopedPacksAs(
+    const QString& callerId, const QString& ownerId)
+{
+    QVector<pet::ScopedPackInfo> out;
+    if (ownerId.isEmpty() || ownerId != callerId) {
+        LOG_WARN("[plugin-api] resourceScopeApi().scopedPacks('{}') — "
+                 "owner check failed (owner must equal the caller '{}') — "
+                 "empty result",
+                 ownerId.toStdString(), callerId.toStdString());
+        return out;
+    }
+    const QVector<ScannedPack> packs = scanVoicePacksScoped(
+        rendererDirOrDefault(), userPacksDirOrDefault(),
+        pluginDataRootOrDefault());
+    for (const ScannedPack& p : packs) {
+        if (p.owner != ownerId)
+            continue;
+        pet::ScopedPackInfo info;
+        info.id = QFileInfo(p.dirPath).fileName();
+        info.owner = p.owner;
+        info.dirPath = p.dirPath;
+        // meta.mko summary when parseable (the VoicePackController
+        // pattern); absence degrades to bare names. meta.mko carries no
+        // version field — info.version stays empty.
+        const auto parsed = parseMetaMko(p.dirPath);
+        if (parsed.has_value()) {
+            info.displayName = parsed->displayName;
+            info.groupCount = parsed->groups.size();
+        } else {
+            info.displayName = info.id;
+        }
+        out.append(std::move(info));
+    }
+    return out;
+}
+
+pet::PluginError ResourceScopeApiImpl::removeScopedAs(
+    const QString& callerId, const QString& ownerId, const QString& name,
+    bool isModel)
+{
+    // Owner check: identical rule as the reads, but LOUD — removeScoped
+    // reports PluginError. A foreign ownerId is a boundary violation on a
+    // DESTRUCTIVE op; InvalidArgument is the code (the RuleApi cross-owner
+    // precedent — the frozen enum has no PermissionDenied value, and the
+    // argument is invalid FOR THIS CALLER).
+    if (ownerId.isEmpty() || ownerId != callerId) {
+        LOG_WARN("[plugin-api] resourceScopeApi().removeScoped('{}') — "
+                 "owner check failed (owner must equal the caller '{}'), "
+                 "ERR_INVALID_ARGUMENT",
+                 ownerId.toStdString(), callerId.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    // v1.13 hardening (oracle follow-up Should#1): an owner outside the
+    // documented id charset [A-Za-z0-9.-] can never be a real domain —
+    // reject BEFORE any path construction. Defense in depth ON TOP of the
+    // canonicalization containment check below (which stays), closing the
+    // Windows backslash-traversal class at the API edge.
+    if (!ConfigDir::isValidPluginDataOwnerId(ownerId)) {
+        LOG_WARN("[plugin-api] resourceScopeApi().removeScoped('{}') — "
+                 "owner id outside charset [A-Za-z0-9.-], "
+                 "ERR_INVALID_ARGUMENT",
+                 ownerId.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    // Traversal guard: a legal resource name is ONE path segment (the
+    // scan-side identity). '/', '\\' and ".." never reach the filesystem.
+    if (name.isEmpty() || name.contains(QLatin1Char('/'))
+        || name.contains(QLatin1Char('\\'))
+        || name.contains(QStringLiteral(".."))) {
+        LOG_WARN("[plugin-api] resourceScopeApi().removeScoped('{}', '{}') — "
+                 "empty or traversal-bearing name, ERR_INVALID_ARGUMENT",
+                 ownerId.toStdString(), name.toStdString());
+        return pet::PluginError::InvalidArgument;
+    }
+    // Domain target derived from the INJECTED plugin-data root (tests
+    // never touch the real ConfigDir paths; production root IS
+    // ConfigDir::pluginDataRoot()).
+    const QString domainRoot =
+        isModel ? domainModelsDir(ownerId) : domainPacksDir(ownerId);
+    const QString target = QDir(domainRoot).absoluteFilePath(name);
+    // Defense in depth: the canonicalized target must sit INSIDE the
+    // canonical domain root (a symlinked or case-tricky escape dies here
+    // even if the name guards above were ever bypassed).
+    const QString canonTarget = QFileInfo(target).canonicalFilePath();
+    const QString canonRoot = QFileInfo(domainRoot).canonicalFilePath();
+    if (canonRoot.isEmpty() || canonTarget.isEmpty()
+        || !canonTarget.startsWith(canonRoot + QLatin1Char('/'))) {
+        // Missing directory (or an escaped/absent path) → NotFound — the
+        // domain or resource simply is not there.
+        LOG_WARN("[plugin-api] resourceScopeApi().removeScoped('{}', '{}') — "
+                 "not present under the domain root, ERR_NOT_FOUND",
+                 ownerId.toStdString(), name.toStdString());
+        return pet::PluginError::NotFound;
+    }
+    if (!QDir(target).removeRecursively()) {
+        LOG_ERROR("[plugin-api] resourceScopeApi().removeScoped('{}', '{}') — "
+                  "recursive delete failed, ERR_GENERIC",
+                  ownerId.toStdString(), name.toStdString());
+        return pet::PluginError::Generic;
+    }
+    LOG_INFO("[plugin-api] resourceScopeApi().removeScoped removed '{}/{}' "
+             "({})",
+             ownerId.toStdString(), name.toStdString(),
+             isModel ? "model" : "pack");
+    // Keep the shared caches consistent with the new disk state.
+    if (m_modelApi != nullptr)
+        m_modelApi->refreshScan();
+    return pet::PluginError::Ok;
+}
+
+// ── ResourceScopeApiProxy (v1.13 caller stamping) ───────────────────────────
+
+ResourceScopeApiProxy::ResourceScopeApiProxy(const QString& pluginId,
+                                             ResourceScopeApiImpl* shared)
+    : m_pluginId(pluginId), m_shared(shared)
+{
+}
+
+QVector<pet::ScopedModelInfo> ResourceScopeApiProxy::scopedModels(
+    const QString& ownerId)
+{
+    if (m_shared == nullptr)
+        return {}; // no wiring — never a crash
+    return m_shared->scopedModelsAs(m_pluginId, ownerId);
+}
+
+QVector<pet::ScopedPackInfo> ResourceScopeApiProxy::scopedPacks(
+    const QString& ownerId)
+{
+    if (m_shared == nullptr)
+        return {}; // no wiring — never a crash
+    return m_shared->scopedPacksAs(m_pluginId, ownerId);
+}
+
+pet::PluginError ResourceScopeApiProxy::refreshScan()
+{
+    return m_shared != nullptr ? m_shared->refreshScan()
+                               : pet::PluginError::Generic;
+}
+
+pet::PluginError ResourceScopeApiProxy::removeScoped(const QString& ownerId,
+                                                     const QString& name,
+                                                     bool isModel)
+{
+    if (m_shared == nullptr)
+        return pet::PluginError::Generic; // no wiring — never a crash
+    return m_shared->removeScopedAs(m_pluginId, ownerId, name, isModel);
+}
+
 // ── PluginContextImpl ───────────────────────────────────────────────────────
 
 PluginContextImpl::PluginContextImpl(const QString& pluginId,
@@ -1463,7 +1998,9 @@ PluginContextImpl::PluginContextImpl(const QString& pluginId,
                                      DownloadService* downloadService,
                                      const QStringList& capabilities,
                                      std::function<void()> voicePackRefresh,
-                                     QObject* parent)
+                                     QObject* parent,
+                                     int manifestApiMajor,
+                                     int manifestApiMinor)
     : QObject(parent),
       m_pluginId(pluginId),
       m_configRoot(configRoot),
@@ -1473,9 +2010,15 @@ PluginContextImpl::PluginContextImpl(const QString& pluginId,
           capabilities.contains(QString(pet::kCapabilityInstanceLifecycle))),
       m_writeEnabled(std::move(writeEnabledProvider)),
       m_uiApi(pluginId, pageModel, stream, this),
-      m_voicePackApi(std::move(voicePackRefresh), this),
+      m_voicePackApi(std::move(voicePackRefresh), pluginId,
+                     // v1.13: per-context installPath advertisement gate.
+                     manifestApiMajor > pet::kApiMajor
+                         || (manifestApiMajor == pet::kApiMajor
+                             && manifestApiMinor >= 13),
+                     this),
       m_downloadApi(pluginId,
                     capabilities.contains(QStringLiteral("network")),
+                    manifestApiMajor, manifestApiMinor,
                     downloadService, this)
 {
     // v1.3 (S5/S6): tuning/settings capability bits precomputed from the
@@ -1486,6 +2029,17 @@ PluginContextImpl::PluginContextImpl(const QString& pluginId,
         capabilities.contains(QString(pet::kCapabilityInstanceTuning));
     m_settingsWriteGranted =
         capabilities.contains(QString(pet::kCapabilitySettingsWrite));
+    // v1.13 (rev2 §3.1 api_version routing gate): ≥ 1.13 manifests get
+    // domain routing — the per-context scope-stamping proxies wrap the
+    // shared control/tuning impls (install owner + installPath +
+    // model/pack scope stamping). < 1.13 (including the defaulted
+    // 0.0 of direct-construction tests) keeps the RAW impls everywhere:
+    // byte-identical legacy routing.
+    m_domainRouting = manifestApiMajor > pet::kApiMajor
+        || (manifestApiMajor == pet::kApiMajor && manifestApiMinor >= 13);
+    if (m_domainRouting && m_instanceControlApi != nullptr)
+        m_instanceControlProxy = std::make_unique<InstanceControlApiProxy>(
+            m_pluginId, m_instanceControlApi);
 }
 
 QString PluginContextImpl::pluginConfigDir()
@@ -1524,6 +2078,45 @@ void PluginContextImpl::setEventApi(EventApiImpl* eventApi)
         : nullptr;
 }
 
+void PluginContextImpl::setTuningApi(TuningApiImpl* tuningApi)
+{
+    // v1.13: concrete-type seam — the per-context TuningApiProxy needs
+    // the mountVoicePackAs scope-stamping path the pet:: interface does
+    // not carry. Domain routing builds the proxy; legacy contexts keep
+    // the raw impl (the frozen-setter discipline otherwise unchanged).
+    m_tuningApi = tuningApi;
+    m_tuningProxy = (m_domainRouting && tuningApi != nullptr)
+        ? std::make_unique<TuningApiProxy>(m_pluginId, tuningApi)
+        : nullptr;
+}
+
+void PluginContextImpl::setVoicePackApi(pet::IVoicePackApi* voicePackApi)
+{
+    // v1.13: the shared impl is served through the per-context proxy so
+    // installPath() honors THIS context's api_version gate; a null
+    // injection tears the proxy down (the per-context fallback impl —
+    // constructed with the same gate — keeps serving).
+    m_sharedVoicePackApi = voicePackApi;
+    m_voicePackProxy = voicePackApi != nullptr
+        ? std::make_unique<VoicePackApiProxy>(voicePackApi, m_pluginId,
+                                              m_domainRouting)
+        : nullptr;
+}
+
+void PluginContextImpl::setResourceScopeApi(
+    ResourceScopeApiImpl* resourceScopeApi)
+{
+    // v1.13: same post-construction seam discipline as setRuleApi. The
+    // proxy stamps callerId on every op (the owner check inside the impl
+    // is the family's boundary); null → queryApi answers nullptr
+    // ("feature absent").
+    m_resourceScopeApi = resourceScopeApi;
+    m_resourceScopeProxy = resourceScopeApi != nullptr
+        ? std::make_unique<ResourceScopeApiProxy>(m_pluginId,
+                                                  resourceScopeApi)
+        : nullptr;
+}
+
 void PluginContextImpl::setRuleApi(RuleApiImpl* ruleApi)
 {
     // v1.6 (S8f): same post-construction seam discipline as setEventApi.
@@ -1559,8 +2152,14 @@ pet::IExtApi* PluginContextImpl::queryApi(const char* apiId, int minVersion)
         if (minVersion > pet::kInstanceControlApiVersion)
             return nullptr;
         const bool writeEnabled = m_writeEnabled ? m_writeEnabled() : true;
-        if (m_instanceLifecycleGranted && writeEnabled && m_instanceControlApi != nullptr)
-            return m_instanceControlApi;
+        if (m_instanceLifecycleGranted && writeEnabled && m_instanceControlApi != nullptr) {
+            // v1.13: api_version ≥ 1.13 → the per-context scope-stamping
+            // proxy (create/loadModel stamp the plugin's domain); legacy
+            // manifests keep the RAW shared impl (identity preserved).
+            return m_instanceControlProxy != nullptr
+                ? static_cast<pet::IExtApi*>(m_instanceControlProxy.get())
+                : m_instanceControlApi;
+        }
         return &m_instanceControlStub;
     }
 
@@ -1576,8 +2175,13 @@ pet::IExtApi* PluginContextImpl::queryApi(const char* apiId, int minVersion)
         if (minVersion > pet::kTuningApiVersion)
             return nullptr;
         const bool writeEnabled = m_writeEnabled ? m_writeEnabled() : true;
-        if (m_instanceTuningGranted && writeEnabled && m_tuningApi != nullptr)
-            return m_tuningApi;
+        if (m_instanceTuningGranted && writeEnabled && m_tuningApi != nullptr) {
+            // v1.13: api_version ≥ 1.13 → the per-context mount-scope
+            // proxy; legacy manifests keep the RAW shared impl.
+            return m_tuningProxy != nullptr
+                ? static_cast<pet::IExtApi*>(m_tuningProxy.get())
+                : m_tuningApi;
+        }
         return &m_tuningStub;
     }
 
@@ -1591,6 +2195,20 @@ pet::IExtApi* PluginContextImpl::queryApi(const char* apiId, int minVersion)
         if (minVersion > pet::kModelApiVersion)
             return nullptr;
         return m_modelApi; // may be nullptr — feature-absent by contract
+    }
+
+    // ── Family: pet.resource_scope (v1.13) ─────────────────────────────
+    // Resource-scope family: NO capability word and NO write-switch
+    // consult at query time — 属主校验即边界 (the pet.rules precedent):
+    // the per-context proxy stamps callerId on every op and the shared
+    // impl's owner check (ownerId == callerId, both non-empty) is the
+    // only gate a read/remove can hit. Injected → the per-context
+    // ResourceScopeApiProxy; not wired → nullptr ("feature absent" —
+    // there is no capability story to report for this family).
+    if (QLatin1StringView(apiId) == QLatin1StringView(pet::kResourceScopeApiId)) {
+        if (minVersion > pet::kResourceScopeApiVersion)
+            return nullptr;
+        return m_resourceScopeProxy.get(); // may be nullptr — feature-absent by contract
     }
 
     // ── Family: pet.monitor (S7, v1.4) ─────────────────────────────────

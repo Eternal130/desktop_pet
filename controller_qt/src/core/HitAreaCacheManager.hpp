@@ -26,6 +26,16 @@
 //   get(modelName)                    load() + lookup → std::optional<QStringList>
 //                                     (std::nullopt if the model is not cached)
 //   put(modelName, hitAreas)          load() + insert + save() (read-modify-write)
+//   get(modelName, scope)             v1.13 scope-aware lookup (see below)
+//   put(modelName, scope, hitAreas)   v1.13 scope-aware insert (see below)
+//
+// v1.13 (resource isolation): the cache key is (scope, modelName). Scope
+// "" (host domain) keeps the LEGACY bare-name key form — existing host
+// cache files keep working untouched. A non-empty scope (plugin id) maps
+// to the key "<scope>/<name>"; since neither a plugin id nor a model name
+// may contain '/', the scoped form can never collide with a legacy bare
+// name nor with a different scope's entry (same model name under two
+// scopes = two isolated entries).
 //
 // Robustness: corrupt/missing/unreadable files degrade to an empty map with a
 // WARN log — NEVER throws. This mirrors the Java reference's try/catch +
@@ -73,10 +83,29 @@ public:
     // (all event handlers marshal to the main thread via Qt::QueuedConnection).
     void put(const QString& modelName, const QStringList& hitAreas);
 
+    // v1.13 (resource isolation): scope-aware variants. scope "" behaves
+    // EXACTLY like the 1-arg forms (legacy bare-name key — host cache
+    // files keep working). A non-empty scope isolates the entry per plugin
+    // domain: key "<scope>/<modelName>". Same never-throws contract.
+    std::optional<QStringList> get(const QString& modelName,
+                                   const QString& scope) const;
+    void put(const QString& modelName, const QString& scope,
+             const QStringList& hitAreas);
+
 private:
     // Resolve the cache file path: <m_basePath>/hit_area_cache.json, or
     // ConfigDir::configDir() + "/hit_area_cache.json" when m_basePath is empty.
     QString resolveCachePath() const;
+
+    // v1.13: map (scope, modelName) onto the persisted key. Empty scope →
+    // the legacy bare name; non-empty → "<scope>/<name>" (see the header's
+    // collision-free argument).
+    static QString cacheKey(const QString& modelName, const QString& scope)
+    {
+        return scope.isEmpty()
+            ? modelName
+            : scope + QLatin1Char('/') + modelName;
+    }
 
     QString m_basePath;
 };

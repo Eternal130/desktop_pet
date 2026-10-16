@@ -43,6 +43,11 @@ QVariant RosterApiModel::data(const QModelIndex& index, int role) const
     case ModelNameRole: return info.modelName;
     case StatusRole:    return info.status;
     case ConnectedRole: return info.connected;
+    // v1.13: served by the injected host provider (the frozen SDK
+    // snapshot carries no scope field); "" without one (or for an
+    // unknown uuid) — the pre-v1.13 observable, never an error.
+    case PluginScopeRole:
+        return m_scopeProvider ? m_scopeProvider(info.uuid) : QString();
     }
     return {};
 }
@@ -55,6 +60,7 @@ QHash<int, QByteArray> RosterApiModel::roleNames() const
         {ModelNameRole, "modelName"},
         {StatusRole,    "status"},
         {ConnectedRole, "connected"},
+        {PluginScopeRole, "pluginScope"},
     };
 }
 

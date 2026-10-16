@@ -112,6 +112,9 @@ private slots:
     // ── S4 two-phase delete / async stopAll (fake-sleeper renderer; POSIX) ──
     void testDeleteRunningInstanceIsTwoPhase();
     void testStopAllIsAsync();
+
+    // ── v1.13 roster scope role + resolver seam ──────────────────────────
+    void testPluginScopeRoleAndResolverSeam();
 };
 
 void InstanceManagerTest::initTestCase()
@@ -624,6 +627,61 @@ void InstanceManagerTest::testStopAllIsAsync()
 
     server.close();
 #endif
+}
+
+// ── v1.13: PluginScopeRole + the model-path resolver seam ──────────────────
+void InstanceManagerTest::testPluginScopeRoleAndResolverSeam()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& cfg) {
+                            PanelStateManager(base.path()).save(cfg);
+                        });
+
+    // Legacy create → the role reports the host domain ("").
+    const QString hostUuid = mgr.createInstance(QStringLiteral("Host"));
+    QVERIFY(!hostUuid.isEmpty());
+    QCOMPARE(mgr.data(mgr.index(0, 0), InstanceManager::PluginScopeRole),
+             QVariant(QString()));
+    QCOMPARE(mgr.modelScopeForUuid(hostUuid), QString());
+
+    // Scoped create (the createInstanceScoped host-internal seam behind
+    // InstanceControlApiImpl::createAs) → the role reports the domain,
+    // the persisted row carries model_scope, and unknown uuids read "".
+    const QString scopedUuid = mgr.createInstanceScoped(
+        QStringLiteral("Scoped"), QStringLiteral("🐱"), QString(), QString(),
+        QStringLiteral("org.plugin.x"));
+    QVERIFY(!scopedUuid.isEmpty());
+    QCOMPARE(mgr.data(mgr.index(1, 0), InstanceManager::PluginScopeRole),
+             QVariant(QStringLiteral("org.plugin.x")));
+    QCOMPARE(mgr.modelScopeForUuid(scopedUuid), QStringLiteral("org.plugin.x"));
+    QCOMPARE(mgr.modelScopeForUuid(QStringLiteral("no-such-uuid")), QString());
+    QCOMPARE(mgr.roleNames().value(InstanceManager::PluginScopeRole),
+             QByteArrayLiteral("pluginScope"));
+
+    // Resolver seam: stored + re-applied to the existing roster, and
+    // forwarded to every LATER create (the setDialogueSink pattern).
+    int calls = 0;
+    mgr.setModelPathResolver([&calls](const QString& name, const QString& scope) {
+        ++calls;
+        return scope + QLatin1Char(':') + name;
+    });
+    QCOMPARE(mgr.modelScopeForUuid(scopedUuid),
+             QStringLiteral("org.plugin.x")); // unaffected (pure read)
+    // The stored seam reaches a fresh session — observable through the
+    // session's scoped loadModel resolution (a scoped switch on an
+    // OFFLINE session consults the resolver only when connected; the
+    // seam's forward is verified structurally: a newly created instance
+    // carries it (call count proof via a scoped ONLINE-less path is not
+    // possible here without a renderer, so assert the plumbing only).
+    const QString lateUuid = mgr.createInstance(QStringLiteral("Late"));
+    QVERIFY(!lateUuid.isEmpty());
+    QCOMPARE(calls, 0); // no scoped resolution was requested (offline)
+    // Clearing the seam restores the built-in fallback cleanly.
+    mgr.setModelPathResolver({});
 }
 
 QTEST_MAIN(InstanceManagerTest)

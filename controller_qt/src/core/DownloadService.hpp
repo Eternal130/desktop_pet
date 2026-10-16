@@ -72,6 +72,18 @@ public:
     // service or be reset). Used by tests only.
     void setReplyFactory(IReplyFactory* factory);
 
+    // v1.13 test seam: override the plugin-owner root derivation used by
+    // the 3-arg installArchive (both targets at once). Empty (the
+    // default / production) → ConfigDir::pluginModelsDir(owner) /
+    // pluginVoicePacksDir(owner). Tests inject temp dirs so an
+    // owner-scoped install never touches the real <dataDir>/PluginData/.
+    void setPluginOwnerRootsForTest(const QString& modelsRoot,
+                                    const QString& packsRoot)
+    {
+        m_pluginOwnerModelsRoot = modelsRoot;
+        m_pluginOwnerPacksRoot = packsRoot;
+    }
+
     // ── pet::IDownloadApi-compatible surface (adapted by DownloadApiImpl) ──
     // Returns 0 (and a synchronous onError(InvalidArgument)) for malformed
     // requests: non-https/file scheme, destName with path separators, or a
@@ -84,6 +96,20 @@ public:
     // install with zip-slip guard. Kept on this class because the API
     // surface is one service (§B.4 chokepoint).
     pet::PluginError installArchive(pet::JobId job, const pet::InstallSpec& spec);
+
+    // v1.13 (resource isolation, rev2 §3): host-internal owner-scoped
+    // overload — identical contract to the 2-arg form, except a NON-EMPTY
+    // ownerPluginId switches the install root to the plugin's DATA domain
+    // (ConfigDir::pluginModelsDir(owner) / pluginVoicePacksDir(owner),
+    // mkpath'd on demand): the sentinels + replace-move land inside
+    // <dataDir>/PluginData/<owner>/. Sentinel validation, zip-slip gate,
+    // atomic extraction and the post-install signals are UNCHANGED. An
+    // empty ownerPluginId is byte-identical to the 2-arg call (host
+    // domain). pet::InstallSpec itself is untouched — the api_version
+    // ≥1.13 routing GATE lives in wave 2's DownloadApiAdapter, NOT here
+    // (this overload trusts its caller; it is a host-internal seam).
+    pet::PluginError installArchive(pet::JobId job, const pet::InstallSpec& spec,
+                                    const QString& ownerPluginId);
 
     QString installRoot() const { return m_installRoot; }
     int activeJobCount() const;
@@ -130,6 +156,10 @@ private:
     QString m_stagingDir;
     QString m_installRoot;
     QString m_modelsInstallRoot;
+    // v1.13: plugin-owner root overrides (empty → ConfigDir derivation).
+    // See setPluginOwnerRootsForTest.
+    QString m_pluginOwnerModelsRoot;
+    QString m_pluginOwnerPacksRoot;
     std::unique_ptr<IReplyFactory> m_ownedFactory; // production QNAM wrapper
     IReplyFactory* m_factory = nullptr;            // points at owned or injected
     QHash<pet::JobId, Job*> m_jobs;                // owned; removed on completion

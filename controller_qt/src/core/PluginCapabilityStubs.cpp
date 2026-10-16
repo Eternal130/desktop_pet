@@ -287,8 +287,13 @@ pet::PluginError LayoutApiStub::setAutoStart(const QString& uuid, bool enabled)
 
 // ── VoicePackApiImpl (read-only real view; install path is P5) ─────────────
 
-VoicePackApiImpl::VoicePackApiImpl(std::function<void()> refresh, QObject* parent)
-    : QObject(parent), m_refresh(std::move(refresh))
+VoicePackApiImpl::VoicePackApiImpl(std::function<void()> refresh,
+                                   const QString& pluginId,
+                                   bool domainRouting, QObject* parent)
+    : QObject(parent)
+    , m_refresh(std::move(refresh))
+    , m_pluginId(pluginId)
+    , m_domainRouting(domainRouting)
 {
 }
 
@@ -357,6 +362,13 @@ QString VoicePackApiImpl::installPath()
     // Storage-layout revision: installs land in the per-user packs dir
     // (DownloadService installRoot — PanelApplication wiring), never inside
     // the (possibly read-only) install tree.
+    // v1.13 (rev2 §3.5): a per-context instance carrying the api_version
+    // ≥ 1.13 gate + its own plugin id advertises the plugin's OWN
+    // data-domain packs dir instead (owner-scoped DownloadService
+    // installs land there); everything else — including the SHARED host
+    // instance (pluginId "") — keeps the legacy path unchanged.
+    if (m_domainRouting && !m_pluginId.isEmpty())
+        return ConfigDir::pluginVoicePacksDir(m_pluginId);
     return ConfigDir::userVoicePacksDir();
 }
 
@@ -387,6 +399,54 @@ void VoicePackApiImpl::fanoutPacksChanged()
                       "packListChanged() — isolated, fanout continues");
         }
     }
+}
+
+// ── VoicePackApiProxy (v1.13: per-context installPath gate) ────────────────
+
+VoicePackApiProxy::VoicePackApiProxy(pet::IVoicePackApi* shared,
+                                     const QString& pluginId,
+                                     bool domainRouting)
+    : m_shared(shared), m_pluginId(pluginId), m_domainRouting(domainRouting)
+{
+}
+
+QVector<pet::PackInfo> VoicePackApiProxy::listPacks()
+{
+    // One scan, one host-domain projection — the shared impl's list is
+    // the v1.3 single-scan contract; plugin-domain packs are the
+    // pet.resource_scope family's business (rev2 §3.2b).
+    return m_shared != nullptr ? m_shared->listPacks()
+                               : QVector<pet::PackInfo>{};
+}
+
+void VoicePackApiProxy::refreshScan()
+{
+    if (m_shared != nullptr)
+        m_shared->refreshScan();
+}
+
+QString VoicePackApiProxy::installPath()
+{
+    // Per-context api_version gate (the ONE thing the shared impl cannot
+    // compute — it serves every plugin). ≥ 1.13 + own plugin id → the
+    // plugin's data-domain packs dir; < 1.13 (or degraded wiring) → the
+    // legacy per-user packs dir, byte-identical to the pre-v1.13 answer.
+    if (m_shared != nullptr && m_domainRouting && !m_pluginId.isEmpty())
+        return ConfigDir::pluginVoicePacksDir(m_pluginId);
+    return m_shared != nullptr ? m_shared->installPath()
+                               : ConfigDir::userVoicePacksDir();
+}
+
+void VoicePackApiProxy::subscribePackList(pet::IPackListObserver* observer)
+{
+    if (m_shared != nullptr)
+        m_shared->subscribePackList(observer);
+}
+
+void VoicePackApiProxy::unsubscribePackList(pet::IPackListObserver* observer)
+{
+    if (m_shared != nullptr)
+        m_shared->unsubscribePackList(observer);
 }
 
 } // namespace core

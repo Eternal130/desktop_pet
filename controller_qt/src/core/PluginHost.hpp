@@ -28,6 +28,7 @@
 #include "api/ILayoutApi.hpp"
 #include "api/IModelApi.hpp"
 #include "api/IMonitorApi.hpp"
+#include "api/IResourceScopeApi.hpp"
 #include "api/ISettingsApi.hpp"
 #include "api/ITuningApi.hpp"
 #include "api/IVoicePackApi.hpp"
@@ -48,6 +49,7 @@ class ModelApiImpl;
 class MonitorApiImpl;
 class PluginContextImpl;
 class PluginPageModel;
+class ResourceScopeApiImpl;
 class RuleApiImpl;
 class RuleEngineService;
 class SettingsApiImpl;
@@ -82,8 +84,10 @@ public:
     // family is a read and ungated). Same fallback pattern as
     // setInstanceApi: null → initializeAll constructs per-host
     // implementations over the injected InstanceManager / configRoot
-    // (tests, degraded wiring).
-    void setTuningApi(pet::ITuningApi* tuningApi);
+    // (tests, degraded wiring). v1.13: the tuning seam takes the CONCRETE
+    // type — the context's per-plugin scope-stamping proxy needs the
+    // mountVoicePackAs path.
+    void setTuningApi(TuningApiImpl* tuningApi);
     void setModelApi(pet::IModelApi* modelApi);
     void setSettingsApi(pet::ISettingsApi* settingsApi);
     // v1.3 (S6): shared voice-pack read API (observers + the host's
@@ -123,6 +127,15 @@ public:
     // type (not pet::IRuleApi) is deliberate: shutdownAll needs the
     // host-only sweepPluginRules unload sweep.
     void setRuleApi(RuleApiImpl* ruleApi);
+    // v1.13: the SHARED ResourceScopeApiImpl served to plugin contexts
+    // through queryApi("pet.resource_scope") — every context receives a
+    // per-plugin ResourceScopeApiProxy built from it (caller stamping;
+    // the impl's owner check is the family's boundary). Null →
+    // initializeAll constructs a per-host fallback over the DEFAULT
+    // roots (applicationDirPath renderer convention +
+    // ConfigDir::userVoicePacksDir + ConfigDir::pluginDataRoot — the
+    // setInstanceApi fallback pattern; tests / degraded wiring).
+    void setResourceScopeApi(ResourceScopeApiImpl* resourceScopeApi);
     // S2 (v1.2): host-global plugin_write_enabled kill-switch provider
     // (PanelApplication wires it to the panel_config kv row; absent
     // provider = enabled, mirroring the kv default). Consulted LIVE on
@@ -192,7 +205,7 @@ private:
     // (constructed lazily in initializeAll when no shared impl was
     // injected — the setInstanceApi pattern) so a host without the
     // PanelApplication service tree still serves the families.
-    pet::ITuningApi* m_tuningApi = nullptr;
+    TuningApiImpl* m_tuningApi = nullptr;
     pet::IModelApi* m_modelApi = nullptr;
     pet::ISettingsApi* m_settingsApi = nullptr;
     pet::IVoicePackApi* m_voicePackApi = nullptr; // v1.3 shared, not owned
@@ -211,6 +224,12 @@ private:
     RuleApiImpl* m_ruleApi = nullptr;
     RuleEngineService* m_ruleServiceFallback = nullptr; // host-owned, only
     RuleApiImpl* m_ruleApiFallback = nullptr;           // when unwired
+    // v1.13: shared resource-scope implementation, not owned. When null,
+    // initializeAll builds the per-host fallback over the default roots
+    // (created BEFORE any context so registration order keeps it alive
+    // past every context's proxy).
+    ResourceScopeApiImpl* m_resourceScopeApi = nullptr;
+    ResourceScopeApiImpl* m_resourceScopeApiFallback = nullptr; // host-owned
     std::function<bool()> m_writeEnabledProvider;           // S2: live kill-switch
     PluginPageModel* m_pageModel = nullptr;
     NotificationStreamController* m_notificationStream = nullptr;

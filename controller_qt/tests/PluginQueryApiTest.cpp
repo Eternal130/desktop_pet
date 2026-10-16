@@ -28,10 +28,12 @@
 
 #include "api/IPanelPlugin.hpp"
 #include "api/IInstanceControlApi.hpp"
+#include "api/IResourceScopeApi.hpp"
 #include "core/InstanceConfig.hpp"
 #include "core/InstanceManager.hpp"
 #include "core/PanelConfig.hpp"
 #include "core/PanelStateManager.hpp"
+#include "core/ConfigDir.hpp"
 #include "core/PluginContextImpl.hpp"
 #include "core/PluginHost.hpp"
 #include "network/PendingRequests.hpp"
@@ -137,6 +139,7 @@ private slots:
     void testHostFallbackWithoutSharedImpl();
     void testV13FamilyGatingMatrix();
     void testPackListObserverFanout();
+    void testResourceScopeRoute();
 };
 
 // ── Gating matrix (direct PluginContextImpl construction) ──────────────────
@@ -575,6 +578,116 @@ void PluginQueryApiTest::testPackListObserverFanout()
     packApi.fanoutPacksChanged(); // self is gone; a still notified
     QCOMPARE(self.changes, 1);
     QCOMPARE(a.changes, 4);
+}
+
+// ── v1.13: pet.resource_scope route ────────────────────────────────────────
+//
+// Ungated READ-family routing (the pet.model precedent): no capability,
+// no write-switch dependence; injected → a PER-CONTEXT proxy (never the
+// raw shared impl — the proxy stamps callerId); not wired → nullptr
+// ("feature absent"); minVersion above the family version → nullptr.
+void PluginQueryApiTest::testResourceScopeRoute()
+{
+    QTemporaryDir base;
+    QVERIFY(base.isValid());
+    WsServer server;
+    PendingRequests pending;
+    InstanceManager mgr(base.path(), server, pending,
+                        [&base](const PanelConfig& cfg) {
+                            PanelStateManager(base.path()).save(cfg);
+                        });
+    core::InstanceApiImpl rosterApi(&mgr, nullptr);
+    core::InstanceControlApiImpl sharedControl(&mgr, nullptr);
+
+    bool writeSwitch = true;
+    const QStringList noneGranted{QStringLiteral("nothing")};
+    auto makeContext = [&](const QString& id) {
+        auto* ctx = new core::PluginContextImpl(
+            id, &rosterApi, &sharedControl,
+            [&writeSwitch]() { return writeSwitch; },
+            /*pageModel=*/nullptr, /*stream=*/nullptr, base.path(),
+            /*downloadService=*/nullptr, noneGranted,
+            /*voicePackRefresh=*/{}, /*parent=*/nullptr);
+        return std::unique_ptr<core::PluginContextImpl>(ctx);
+    };
+
+    // Not injected → nullptr (feature absent; version floor also nullptr).
+    {
+        const auto ctx = makeContext(QStringLiteral("org.test.rs1"));
+        QCOMPARE(ctx->queryApi(pet::kResourceScopeApiId, 1), nullptr);
+        QCOMPARE(ctx->queryApi(pet::kResourceScopeApiId,
+                               pet::kResourceScopeApiVersion + 1),
+                 nullptr);
+    }
+
+    core::ResourceScopeApiImpl shared;
+    const auto ctxA = makeContext(QStringLiteral("org.test.rsA"));
+    const auto ctxB = makeContext(QStringLiteral("org.test.rsB"));
+    ctxA->setResourceScopeApi(&shared);
+    ctxB->setResourceScopeApi(&shared);
+
+    // Ungated: NO capabilities + write switch OFF → still the proxy.
+    writeSwitch = false;
+    pet::IExtApi* apiA = ctxA->queryApi(pet::kResourceScopeApiId, 1);
+    QVERIFY(apiA != nullptr);
+    QVERIFY(apiA != static_cast<pet::IExtApi*>(&shared)); // proxy, not raw
+    auto* scopeA = dynamic_cast<pet::IResourceScopeApi*>(apiA);
+    QVERIFY(scopeA != nullptr);
+    // Version floor → nullptr even when injected.
+    QCOMPARE(ctxA->queryApi(pet::kResourceScopeApiId,
+                            pet::kResourceScopeApiVersion + 1),
+             nullptr);
+    writeSwitch = true;
+
+    // Per-context proxy identity: two contexts over ONE shared impl get
+    // DISTINCT proxies, each stamping its own caller id (owner check).
+    pet::IExtApi* apiB = ctxB->queryApi(pet::kResourceScopeApiId, 1);
+    QVERIFY(apiB != nullptr);
+    QVERIFY(apiB != apiA);
+    QVERIFY(scopeA->scopedModels(QStringLiteral("org.test.rsA")).isEmpty());
+    QVERIFY(scopeA->scopedModels(QStringLiteral("org.test.rsB")).isEmpty());
+    QCOMPARE(scopeA->removeScoped(QStringLiteral("org.test.rsB"),
+                                  QStringLiteral("x"), /*isModel=*/true),
+             pet::PluginError::InvalidArgument); // foreign owner rejected
+
+    // Null injection tears the proxy down again (feature-absent).
+    ctxB->setResourceScopeApi(nullptr);
+    QCOMPARE(ctxB->queryApi(pet::kResourceScopeApiId, 1), nullptr);
+
+    // ── v1.13 installPath advertisement gate (rev2 §3.5) ─────────────
+    // A SHARED voice-pack impl is served through the per-context proxy:
+    // api ≥ 1.13 advertises the plugin's OWN data-domain packs dir;
+    // api < 1.13 keeps the legacy per-user dir. Pure path computations —
+    // no filesystem is touched.
+    core::VoicePackApiImpl sharedPacks;
+    const auto ctxNew = makeContext(QStringLiteral("org.test.rsNew"));
+    const auto ctxOld = makeContext(QStringLiteral("org.test.rsOld"));
+    ctxNew->setVoicePackApi(&sharedPacks);
+    ctxOld->setVoicePackApi(&sharedPacks);
+    // The makeContext helper builds api 0.0 (< 1.13) — re-stamp the gate
+    // by building a ≥ 1.13 context directly for the domain-routed half.
+    const auto ctxDomain = std::unique_ptr<core::PluginContextImpl>(
+        new core::PluginContextImpl(
+            QStringLiteral("org.test.rsNew"), &rosterApi, &sharedControl,
+            []() { return true; }, nullptr, nullptr, base.path(), nullptr,
+            QStringList{}, {}, nullptr, /*manifestApiMajor=*/1,
+            /*manifestApiMinor=*/13));
+    ctxDomain->setVoicePackApi(&sharedPacks);
+    QCOMPARE(ctxDomain->voicePackApi().installPath(),
+             ConfigDir::pluginVoicePacksDir(QStringLiteral("org.test.rsNew")));
+    QCOMPARE(ctxNew->voicePackApi().installPath(),
+             ConfigDir::userVoicePacksDir());
+    QCOMPARE(ctxOld->voicePackApi().installPath(),
+             ConfigDir::userVoicePacksDir());
+    // Without a shared impl the per-context fallback impl carries the
+    // same gate.
+    const auto ctxDomainFallback = std::unique_ptr<core::PluginContextImpl>(
+        new core::PluginContextImpl(
+            QStringLiteral("org.test.rsNew"), &rosterApi, &sharedControl,
+            []() { return true; }, nullptr, nullptr, base.path(), nullptr,
+            QStringList{}, {}, nullptr, 1, 13));
+    QCOMPARE(ctxDomainFallback->voicePackApi().installPath(),
+             ConfigDir::pluginVoicePacksDir(QStringLiteral("org.test.rsNew")));
 }
 
 QTEST_MAIN(PluginQueryApiTest)

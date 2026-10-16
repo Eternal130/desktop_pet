@@ -7,6 +7,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "core/ConfigDir.hpp"
 #include "core/DownloadService.hpp"
 #include "core/ZipArchive.hpp"
 #include "logging/Logging.hpp"
@@ -64,6 +65,15 @@ QString safeRelativePath(const QString& storedPath)
 pet::PluginError DownloadService::installArchive(pet::JobId job,
                                                  const pet::InstallSpec& spec)
 {
+    // v1.13: host-domain install — the owner-scoped overload with an empty
+    // owner (byte-identical legacy behavior; both roots stay the ctor ones).
+    return installArchive(job, spec, QString());
+}
+
+pet::PluginError DownloadService::installArchive(pet::JobId job,
+                                                 const pet::InstallSpec& spec,
+                                                 const QString& ownerPluginId)
+{
     Job* j = m_jobs.value(job, nullptr);
     const auto reject = [&j](pet::PluginError code, const QString& msg) {
         LOG_ERROR("DownloadService: install rejected — {}", msg.toStdString());
@@ -86,11 +96,44 @@ pet::PluginError DownloadService::installArchive(pet::JobId job,
                                      "(allowed: voicePacks, models)")
                           .arg(spec.targetDir));
 
+    // v1.13 hardening (oracle follow-up Should#1): an owner-scoped install
+    // with an id outside the documented charset [A-Za-z0-9.-] is rejected
+    // BEFORE any root derivation — ConfigDir's accessors already return
+    // empty for such ids, so this turns a silently-odd install root into a
+    // loud InvalidArgument (defense in depth, not a replacement for the
+    // zip-slip gate below).
+    if (!ownerPluginId.isEmpty()
+        && !ConfigDir::isValidPluginDataOwnerId(ownerPluginId)) {
+        return reject(pet::PluginError::InvalidArgument,
+                      QStringLiteral("ownerPluginId '%1' is not a valid "
+                                     "plugin id (charset [A-Za-z0-9.-])")
+                          .arg(ownerPluginId));
+    }
+
     // Target dispatch: each logical target owns its install root + sentinel
     // predicate (below). voicePacks keeps the VoicePackScanner contract;
-    // models uses the ModelScanner discovery contract.
+    // models uses the ModelScanner discovery contract. v1.13: a non-empty
+    // ownerPluginId redirects BOTH target roots into the plugin's DATA
+    // domain (<dataDir>/PluginData/<owner>/{Models,VoicePacks}/ — rev2 §3)
+    // instead of the ctor roots; everything downstream (sentinel check,
+    // zip-slip gate, replace-move, signals) is unchanged.
     const bool isModelsTarget = spec.targetDir == QStringLiteral("models");
-    const QString& targetRoot = isModelsTarget ? m_modelsInstallRoot : m_installRoot;
+    QString targetRoot;
+    if (!ownerPluginId.isEmpty()) {
+        // Test seam first (empty in production) — keeps installs hermetic
+        // under InstallPipelineTest; the production derivation is ConfigDir.
+        if (isModelsTarget) {
+            targetRoot = m_pluginOwnerModelsRoot.isEmpty()
+                ? ConfigDir::pluginModelsDir(ownerPluginId)
+                : m_pluginOwnerModelsRoot;
+        } else {
+            targetRoot = m_pluginOwnerPacksRoot.isEmpty()
+                ? ConfigDir::pluginVoicePacksDir(ownerPluginId)
+                : m_pluginOwnerPacksRoot;
+        }
+    } else {
+        targetRoot = isModelsTarget ? m_modelsInstallRoot : m_installRoot;
+    }
 
     ZipArchive zip(j->stagedPath);
     if (!zip.isOpen())

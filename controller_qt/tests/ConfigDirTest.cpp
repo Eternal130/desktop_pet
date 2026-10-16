@@ -73,6 +73,9 @@ private slots:
     void testMigrateLegacyCopiesTreeAndRenames();
     void testMigrateLegacyNoopWhenTargetPopulated();
     void testMigrateLegacyNoopWhenLegacyMissing();
+    // v1.13 hardening (oracle follow-up Should#1): the shared plugin-id
+    // charset gate + hostile pluginDataOwners() filtering.
+    void testPluginDataDomainIdGuards();
     void testLinuxConfigPathIsByteIdentical();
 };
 
@@ -336,6 +339,56 @@ void ConfigDirTest::testMigrateLegacyNoopWhenLegacyMissing()
     QVERIFY2(!QDir(legacyPath + QStringLiteral("-migrated-backup")).exists(),
              "no backup dir may be created when nothing was migrated");
 #endif
+}
+
+// v1.13 hardening (oracle follow-up Should#1): plugin ids and PluginData
+// domain owners share ONE charset gate [A-Za-z0-9.-]. The accessors must
+// return EMPTY (never a joined path) for traversal-bearing ids, and the
+// owner scan must SKIP hostile directory names so they can never surface
+// as owner ids. The scan's root is injected (the ensureDirectories
+// basePath discipline) — the real data dir is never touched.
+void ConfigDirTest::testPluginDataDomainIdGuards()
+{
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), "temporary directory creation failed");
+
+    const QString root = QDir(dir.path()).filePath(QStringLiteral("PluginData"));
+    QVERIFY(QDir(root).mkpath(QStringLiteral("org.good/Models")));
+    // Hostile owner-dir names: backslash traversal (a literal filename on
+    // POSIX), a space, and a hidden dir. On Windows the backslash name
+    // normalizes away at mkpath — the assertions below still hold (only
+    // org.good can ever be listed).
+    QVERIFY(QDir(root).mkpath(QStringLiteral("a.b\\..\\..")));
+    QVERIFY(QDir(root).mkpath(QStringLiteral("evil name")));
+    QVERIFY(QDir(root).mkpath(QStringLiteral(".hidden")));
+
+    // The owner scan filters every hostile name out.
+    QCOMPARE(ConfigDir::pluginDataOwners(root),
+             QStringList{QStringLiteral("org.good")});
+    // A missing injected root stays an empty list (never an error).
+    QCOMPARE(ConfigDir::pluginDataOwners(
+                 QDir(dir.path()).filePath(QStringLiteral("nope"))),
+             QStringList{});
+
+    // The accessors refuse invalid ids with an EMPTY string — the id is
+    // never concatenated into a path (empty = host domain by contract,
+    // traversal = rejected).
+    QVERIFY(ConfigDir::pluginModelsDir(QStringLiteral("a.b\\..\\..")).isEmpty());
+    QVERIFY(ConfigDir::pluginVoicePacksDir(QStringLiteral("a.b\\..\\..")).isEmpty());
+    QVERIFY(ConfigDir::pluginModelsDir(QStringLiteral("evil name")).isEmpty());
+    QVERIFY(ConfigDir::pluginModelsDir(QString()).isEmpty());
+    QVERIFY(ConfigDir::pluginVoicePacksDir(QString()).isEmpty());
+    QVERIFY(ConfigDir::pluginModelsDir(QStringLiteral("..")).isEmpty());
+    QVERIFY(ConfigDir::pluginVoicePacksDir(QStringLiteral(".")).isEmpty());
+    QVERIFY(ConfigDir::pluginModelsDir(QStringLiteral("org/x")).isEmpty());
+
+    // A valid id still resolves (regression guard on the gate itself).
+    QVERIFY2(ConfigDir::pluginModelsDir(QStringLiteral("org.good"))
+                 .endsWith(QStringLiteral("PluginData/org.good/Models/")),
+             qPrintable(ConfigDir::pluginModelsDir(QStringLiteral("org.good"))));
+    QVERIFY2(ConfigDir::pluginVoicePacksDir(QStringLiteral("org.good"))
+                 .endsWith(QStringLiteral("PluginData/org.good/VoicePacks/")),
+             qPrintable(ConfigDir::pluginVoicePacksDir(QStringLiteral("org.good"))));
 }
 
 void ConfigDirTest::testLinuxConfigPathIsByteIdentical()

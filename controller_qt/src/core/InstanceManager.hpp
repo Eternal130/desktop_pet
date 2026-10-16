@@ -68,6 +68,7 @@ public:
         ConnectedRole,
         UuidRole,
         AvatarRole,
+        PluginScopeRole, // v1.13: InstanceConfig.modelScope ("" = host domain)
     };
     Q_ENUM(Roles)
 
@@ -116,6 +117,38 @@ public:
                                        const QString& avatar = QStringLiteral("🐱"),
                                        const QString& modelName = QString(),
                                        const QString& graphicsBackend = QString());
+
+    // v1.13 (resource isolation, rev2 §3.4): createInstance + initial
+    // InstanceConfig.modelScope stamp. A non-empty modelScope (a plugin
+    // id — InstanceControlApiImpl::createAs passes the calling plugin's
+    // id through the per-context proxy) makes the new instance resolve
+    // its model STRICTLY inside that plugin's data domain from the first
+    // boot; empty keeps the host-domain default. Plain C++ (deliberately
+    // NOT a Q_INVOKABLE — host writes arrive exclusively through the
+    // shared pet::IInstanceControlApi, the setAvatar discipline, so the
+    // api-boundary gate's pattern table stays untouched). createInstance
+    // above delegates here with an empty scope (byte-identical legacy).
+    QString createInstanceScoped(const QString& label,
+                                 const QString& avatar,
+                                 const QString& modelName,
+                                 const QString& graphicsBackend,
+                                 const QString& modelScope);
+
+    // v1.13 roster scope READ: InstanceConfig.modelScope of the session
+    // with this uuid ("" for an unknown uuid — never an error). Feeds
+    // the PluginScopeRole + the RosterApiModel scope provider.
+    QString modelScopeForUuid(const QString& uuid) const;
+
+    // v1.13 model-path resolver seam (wave-2 PanelApplication wiring):
+    // forwards InstanceSession::setModelPathResolver to every session —
+    // existing ones NOW plus every later create/load (the setDialogueSink
+    // store-AND-re-apply pattern). Plain C++ with the raw std::function
+    // shape (the ModelPathResolverFn alias lives in InstanceSession.hpp;
+    // structural identity is enough for the seam). Empty resolver = the
+    // sessions keep the built-in pure directory-scan fallback (rev2
+    // §3.2c).
+    void setModelPathResolver(
+        std::function<QString(const QString&, const QString&)> resolver);
 
     // Delete-protection pattern (blueprint §4.2): requestDelete emits
     // deleteConfirmed(uuid); the UI (todo 7 Sidebar) wires that to a confirm
@@ -259,6 +292,9 @@ private:
     std::function<void(const QString&, const QString&,
                        const QString&, const QString&,
                        int)> m_dialogueSink;
+    // v1.13: model-path resolver seam (setModelPathResolver stores +
+    // re-applies; wireSession forwards it to fresh sessions).
+    std::function<QString(const QString&, const QString&)> m_modelPathResolver;
     DatabaseManager* m_db = nullptr; // shared SQLite backend (main.cpp)
     InstanceConfigManager m_configManager; // member by value; parent=nullptr (no Qt parent)
     PanelConfig m_panelConfig;

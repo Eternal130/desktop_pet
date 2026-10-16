@@ -313,6 +313,13 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
     // mount-point note).
     m_rosterApiModel = new RosterApiModel(m_app.instanceApi(),
                                           m_app.instanceControlApi(), this);
+    // v1.13: the frozen pet::InstanceInfo carries no scope field — the
+    // pluginScope role is served by this host-internal provider over the
+    // manager's live config (READ seam; "" for host-domain rows).
+    m_rosterApiModel->setScopeProvider(
+        [mgr = m_app.instanceManager()](const QString& uuid) {
+            return mgr->modelScopeForUuid(uuid);
+        });
     m_engine.rootContext()->setContextProperty("rosterModel",
                                                m_rosterApiModel);
 

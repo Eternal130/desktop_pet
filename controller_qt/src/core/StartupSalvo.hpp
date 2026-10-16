@@ -42,8 +42,17 @@
 // Minimal config struct consumed by the salvo. The full InstanceConfig (T18)
 // will supply the same fields; this struct deliberately exposes ONLY what the
 // 7 commands need so the salvo's input surface is auditable in isolation.
+//
+// v1.13 (resource isolation, rev2 §3.4): modelScope mirrors
+// InstanceConfig.modelScope ("" = host) for provenance/auditing — the
+// salvo itself stays domain-agnostic and consumes only resolvedModelPath
+// (the ABSOLUTE plugin-domain .model3.json path the SESSION resolved via
+// its model-path seam before calling sendSalvo; empty = host domain →
+// the byte-identical legacy single-key load_model payload).
 struct InstanceConfigLike {
     QString modelName = QStringLiteral("Hiyori");
+    QString modelScope;        // v1.13: "" = host; else owning plugin id
+    QString resolvedModelPath; // v1.13: absolute .model3.json when scoped
     int windowX = 1200;
     int windowY = 600;
     int windowWidth = 400;

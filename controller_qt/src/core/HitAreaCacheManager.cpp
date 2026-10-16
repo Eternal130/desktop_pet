@@ -149,6 +149,27 @@ void HitAreaCacheManager::put(const QString& modelName, const QStringList& hitAr
     save(cache);
 }
 
+std::optional<QStringList> HitAreaCacheManager::get(
+    const QString& modelName, const QString& scope) const
+{
+    // v1.13: identical lookup, scope-aware key. Empty scope IS the legacy
+    // bare name, so this remains correct for pre-v1.13 cache files.
+    const QMap<QString, QStringList> cache = load();
+    const auto it = cache.constFind(cacheKey(modelName, scope));
+    if (it == cache.constEnd()) {
+        return std::nullopt;
+    }
+    return it.value();
+}
+
+void HitAreaCacheManager::put(const QString& modelName, const QString& scope,
+                              const QStringList& hitAreas)
+{
+    QMap<QString, QStringList> cache = load();
+    cache.insert(cacheKey(modelName, scope), hitAreas);
+    save(cache);
+}
+
 QString HitAreaCacheManager::resolveCachePath() const
 {
     // Empty basePath → real ConfigDir::configDir(). Non-empty → <basePath>.

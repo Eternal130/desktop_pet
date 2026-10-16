@@ -211,7 +211,8 @@ bool InstanceSession::setAvatar(const QString& avatar)
 
 // ── Voice-pack mount (todo 21) ───────────────────────────────────────────
 
-bool InstanceSession::mountVoicePack(const QString& packPath)
+bool InstanceSession::mountVoicePack(const QString& packPath,
+                                     const QString& scope)
 {
     if (packPath.isEmpty()) {
         unmountVoicePack();
@@ -231,6 +232,10 @@ bool InstanceSession::mountVoicePack(const QString& packPath)
     // (re-mounting the same pack re-parses but is not a change).
     const bool changed = m_config.voicePack != packPath;
     m_config.voicePack = packPath;
+    // v1.13 (rev2 §3.4): record the pack's resource domain. Bookkeeping
+    // only — the ABSOLUTE packPath semantics above are unchanged; an empty
+    // scope (every pre-v1.13 caller) keeps the host-domain default.
+    m_config.voicePackScope = scope;
     if (!m_configManager.save(m_config)) {
         LOG_ERROR("InstanceSession[{}]: failed to persist voice pack",
                   m_instanceId);
@@ -267,6 +272,9 @@ void InstanceSession::unmountVoicePack()
     m_behaviorEngine.setVoicePack(nullptr);
     m_mountedPack.reset();
     m_config.voicePack.clear();
+    // v1.13: the scope goes with the mount — clearing the pack clears the
+    // owning domain too (back to the host-domain default).
+    m_config.voicePackScope.clear();
     if (!m_configManager.save(m_config)) {
         LOG_ERROR("InstanceSession[{}]: failed to persist voice-pack unmount",
                   m_instanceId);

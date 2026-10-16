@@ -404,7 +404,10 @@ Rectangle {
                                         Text {
                                             // P2-8: long names elide instead
                                             // of pushing the StatusPill out
-                                            // of the card.
+                                            // of the card. The plugin-scope
+                                            // badge (when visible) reserves
+                                            // its own slot the same way —
+                                            // host cards keep today's math.
                                             text: label
                                             color: Theme.textColor
                                             font.pixelSize: 14
@@ -413,11 +416,25 @@ Rectangle {
                                             width: Math.min(
                                                 implicitWidth,
                                                 nameRow.width - namePill.width
-                                                    - nameRow.spacing)
+                                                    - nameRow.spacing
+                                                    - (scopeBadge.visible
+                                                       ? scopeBadge.width
+                                                         + nameRow.spacing
+                                                       : 0))
                                         }
                                         StatusPill {
                                             id: namePill
                                             status: model.status
+                                        }
+                                        // v1.13 "打标记不隐藏": plugin-summoned
+                                        // instances keep their card (fully
+                                        // functional) plus this marker; the
+                                        // tooltip reveals the owning plugin id.
+                                        PluginScopeBadge {
+                                            id: scopeBadge
+                                            pluginId: model.pluginScope
+                                            showText: true
+                                            anchors.verticalCenter: parent.verticalCenter
                                         }
                                     }
                                     Text {

@@ -36,6 +36,24 @@ using DialogueSinkFn = std::function<void(const QString&, const QString&,
                                              const QString&, const QString&,
                                              int)>;
 
+// v1.13 (resource isolation, rev2 §3.4) model-path resolver seam — also
+// declared OUTSIDE the Q_OBJECT class (same moc discipline as
+// DialogueSinkFn). Params: (modelName, scope) → absolute .model3.json
+// path within THAT plugin's data domain, or QString() on miss.
+// Contract:
+//   - scope non-empty → resolve STRICTLY inside the plugin's domain
+//     (<dataDir>/PluginData/<scope>/Models/); a miss returns QString()
+//     and NEVER falls back to the host domain;
+//   - scope empty → QString() (host domain — the renderer's own
+//     Resources/ short-name resolution applies; no absolute path needed).
+// Default (unset): the session falls back to core::resolvePluginModelPath
+// over ConfigDir::pluginDataRoot() — a PURE directory-scan resolution that
+// works with NO plugin host initialized (rev2 §3.2c restart-restore). The
+// injectable seam exists so tests (and wave-2 wiring) can substitute their
+// own resolution without touching the session.
+using ModelPathResolverFn = std::function<QString(const QString&,
+                                                    const QString&)>;
+
 // InstanceSession (Phase 5, todo 2) — the per-instance orchestrator. Owns the
 // COMPLETE runtime tuple for ONE pet instance: its ProcessManager, its own
 // MessageDispatcher + EventRegistry (M2 resolution — NOT shared from main.cpp),
@@ -145,6 +163,12 @@ public:
     QString modelName() const;
     // v1.10: InstanceConfig.graphicsBackend mirror ("opengl" | "vulkan").
     QString graphicsBackend() const;
+    // v1.13 (resource isolation): InstanceConfig.modelScope mirror — the
+    // resource DOMAIN the current model resolves in ("" = host domain).
+    // Plain read accessor (deliberately NOT a Q_PROPERTY — the roster
+    // surface reads it through InstanceManager's PluginScopeRole; no
+    // NOTIFY is needed for a display-only scope tag).
+    QString modelScope() const { return m_config.modelScope; }
     QString status() const;
     bool    connected() const;
     bool    modelLoaded() const;
@@ -201,7 +225,14 @@ public slots:
     void start();
     void stop();
     void restart();
-    void loadModel(const QString& modelName);
+    // v1.13 (rev2 §3.4): optional resource-domain scope for the switch.
+    // Empty (the default — every pre-v1.13 caller and QML invocation) is
+    // byte-identical legacy host-domain behavior. Non-empty = plugin id:
+    // the name is resolved STRICTLY in that plugin's data domain via the
+    // model-path seam; a resolution miss applies the model-load-failure
+    // handling LOCALLY (no command is sent).
+    void loadModel(const QString& modelName,
+                   const QString& scope = QString());
 
     // Inbound-router entry point. WsServer::messageReceived → this → dispatch.
     // Todo 3/11 routes by instance_id; for Phase 5 (single instance) the one
@@ -269,7 +300,12 @@ public slots:
     // contains meta.mko): parse + populate m_behaviorEngine + persist the
     // choice to InstanceConfig.voicePack. Empty/unparseable pack → unmount.
     // Returns true when the engine ended up enabled.
-    Q_INVOKABLE bool mountVoicePack(const QString& packPath);
+    // v1.13 (rev2 §3.4): optional scope records the pack's resource DOMAIN
+    // into InstanceConfig.voicePackScope ("" = host — the default, and the
+    // pre-v1.13 behavior). The absolute-path semantics of packPath are
+    // UNCHANGED — the scope is bookkeeping for the owning domain only.
+    Q_INVOKABLE bool mountVoicePack(const QString& packPath,
+                                    const QString& scope = QString());
 
     // Unmount the voice pack (engine sentinel, hit falls back to
     // InteractionHandler) and persist voicePack = "".
@@ -285,6 +321,18 @@ public slots:
     // no-op (tests without the stream stay clean).
     void setDialogueSink(DialogueSinkFn sink)
     { m_dialogueSink = std::move(sink); }
+
+    // ── Model-path resolver seam (v1.13, rev2 §3.4) ──────────────────────
+    // Injected by wave-2 PanelApplication wiring / tests. Plain C++ setter
+    // — deliberately NOT a Q_INVOKABLE / Q_PROPERTY WRITE (the
+    // api-boundary gate's pattern table stays untouched; same discipline
+    // as setDialogueSink/setEventPublisher). See ModelPathResolverFn above
+    // for the contract. An empty (unset) resolver makes the session fall
+    // back to the PURE directory-scan resolution (rev2 §3.2c) — restart
+    // restore needs no plugin host and no injection to resolve scoped
+    // models.
+    void setModelPathResolver(ModelPathResolverFn resolver)
+    { m_modelPathResolver = std::move(resolver); }
 
     // ── Event publisher seam (S8a/S8b, v1.5) ──────────────────────────────
     // The shared pet::IEventApi this session's WS-event handlers publish
@@ -478,7 +526,29 @@ private:
     // Resolve the .model3.json path for the current model: the renderer ships
     // Resources/Models/<modelName>/<modelName>.model3.json next to its exe
     // (architecture-blueprint.md §3.4). Uses m_rendererDir (stored in start()).
+    // v1.13 (rev2 §3.4a): when the current model was loaded through an
+    // absolute scoped path (m_currentModelJsonPath — the last path actually
+    // put on the wire), THAT path wins; the renderer-dir resolution below is
+    // the host-domain fallback and stays byte-identical to pre-v1.13 when
+    // the member is empty.
     QString resolveModel3JsonPath() const;
+
+    // ── v1.13 scoped-model helpers (resource isolation, rev2 §3.4) ──────
+    // Resolve (modelName, scope) through the injected seam, falling back to
+    // the built-in PURE directory-scan resolution (rev2 §3.2c) when no seam
+    // was injected. Returns QString() for an empty scope (host domain — no
+    // absolute path exists) and on a scoped miss (strict domain resolution:
+    // never the host domain).
+    QString resolveScopedModel(const QString& modelName,
+                               const QString& scope) const;
+
+    // Shared model-load-FAILURE tail (extracted from the renderer-event
+    // path so the scoped resolver-miss path reuses it verbatim): record the
+    // error + bump the failure revision + clear modelLoaded + emit
+    // modelLoadFailed + roll a user-initiated switch back to the
+    // pre-switch (name, scope) + re-persist + publish
+    // pet.model.load_failed onto the bus. NEVER throws.
+    void applyModelLoadFailure(int errorCode, const QString& message);
 
     // ── Phase-5 todo 10 event handlers ───────────────────────────────────────
     // Bodies live in InstanceSessionHandlers.cpp (extracted to keep
@@ -763,8 +833,31 @@ private:
     // records the name, so A→B→C with B's verdict still pending rolls back
     // to A (the last confirmed name), not the intermediate B. Cleared on
     // model_loaded (verdict: confirmed) and on the rollback itself.
+    // v1.13: the pre-switch SCOPE is captured alongside (a rejected scoped
+    // switch must restore the host/other-plugin domain too, not just the
+    // name), and so is the pre-switch m_currentModelJsonPath — restoring
+    // it keeps hit-area resolution pointing at the last CONFIRMED scoped
+    // model after a scoped→scoped rollback (a cleared path would silently
+    // degrade to the renderer-dir host layout).
     QString m_modelNameBeforeSwitch;
+    QString m_modelScopeBeforeSwitch;
+    QString m_modelJsonPathBeforeSwitch;
     bool    m_modelSwitchInFlight = false;
+
+    // ── v1.13 scoped-model state (resource isolation, rev2 §3.4a) ──────
+    // The LAST absolute scoped .model3.json path actually put on the wire
+    // (loadModel with a resolver hit, or the ready-salvo's resolution).
+    // Empty = host domain → resolveModel3JsonPath() uses the renderer-dir
+    // fallback exactly as before. Cleared on a startup-salvo failure;
+    // RESTORED to the pre-switch value on a rejected user switch (scoped→
+    // scoped rollbacks keep hit-area resolution working — see
+    // m_modelJsonPathBeforeSwitch) and emptied whenever a host-domain
+    // load goes out.
+    QString m_currentModelJsonPath;
+
+    // ── v1.13 model-path resolver seam (see ModelPathResolverFn above) ──
+    // Empty = use the built-in directory-scan fallback (rev2 §3.2c).
+    ModelPathResolverFn m_modelPathResolver;
 
     // ── Phase-5+ counters / flags (slots for later todos) ───────────────────
     int  m_idleMotionCount = 0;   // todo 8 (Scheduler) increments

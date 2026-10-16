@@ -4,6 +4,8 @@
 #include <QTimer>
 
 #include <QByteArray>
+#include <QCoreApplication>
+#include <QDir>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QWindow>
@@ -338,8 +340,20 @@ PanelApplication::PanelApplication(QObject* parent)
     // Storage-layout revision: staging + installs live under the per-user
     // DATA dir (<dataDir>/downloads/ → <dataDir>/VoicePacks/), never inside
     // the (possibly read-only) install tree; DownloadService creates both.
+    // Models target root: the SAME rendererDir convention ModelController/
+    // ModelApiImpl use in PanelUiBoot (applicationDirPath — build places
+    // the controller and renderer exes side-by-side in build/bin, so
+    // Resources/Models hangs off the app dir). Deliberately NOT PathResolve
+    // ::defaultRendererDir(): its ../build/bin fallback could diverge from
+    // the tree the model library actually scans. Writability assumption:
+    // portable layout (build/bin is user-writable); a user-data models dir
+    // + dual-source scan is the documented future alternative.
+    const QString modelsInstallRoot =
+        QDir(QCoreApplication::applicationDirPath())
+            .absoluteFilePath(QStringLiteral("Resources/Models"));
     m_downloadService = new core::DownloadService(
-        ConfigDir::downloadsDir(), ConfigDir::userVoicePacksDir(), this);
+        ConfigDir::downloadsDir(), ConfigDir::userVoicePacksDir(),
+        modelsInstallRoot, this);
     m_pluginHost = new core::PluginHost(m_pluginRegistry, this);
     m_pluginHost->setInstanceManager(m_instanceManager);
     m_pluginHost->setInstanceApi(m_instanceApi);

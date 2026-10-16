@@ -13,21 +13,26 @@
 
 // installArchive (P5, §B.4 pipeline tail): finished-job zip → temp dir
 // (per-file QSaveFile atomic writes) → zip-slip validation BEFORE any byte
-// is written (zero-落盘 guarantee for malicious archives) → move to
-// Resources/VoicePacks/<name>/ (VoicePackScanner sentinel layout) →
-// packInstalled signal (→ VoicePackController::rescan, wired in
-// PanelUiBoot). Continuation TU of DownloadService (same class, split for
-// the 250-LOC discipline like the InstanceSession* family).
+// is written (zero-落盘 guarantee for malicious archives) → per-target
+// dispatch: "voicePacks" moves to <installRoot>/<name>/ with the
+// VoicePackScanner sentinel layout (<pack>/meta.mko) → packInstalled
+// signal; "models" moves to <modelsInstallRoot>/<Name>/ with the
+// ModelScanner sentinel layout (<Name>/<Name>.model3.json) → modelInstalled
+// signal (→ VoicePackController::rescan / ModelController::rescan, wired
+// in PanelUiBoot). Continuation TU of DownloadService (same class, split
+// for the 250-LOC discipline like the InstanceSession* family).
 
 namespace core {
 
 namespace {
 
-// P5 allow-list: the only logical install destination (§B.3 InstallSpec).
+// P5 allow-list: the ONLY logical install destinations (§B.3 InstallSpec).
+// "voicePacks" → user voice-pack root; "models" → renderer Resources/Models.
 // Broadening = an explicit design decision, not an accident.
 bool isAllowedTarget(const QString& targetDir)
 {
-    return targetDir == QStringLiteral("voicePacks");
+    return targetDir == QStringLiteral("voicePacks") ||
+           targetDir == QStringLiteral("models");
 }
 
 // zip-slip gate (§B.4): cleanPath normalization + containment. Returns an
@@ -78,7 +83,14 @@ pet::PluginError DownloadService::installArchive(pet::JobId job,
     if (!isAllowedTarget(spec.targetDir))
         return reject(pet::PluginError::InvalidArgument,
                       QStringLiteral("targetDir '%1' is not allow-listed "
-                                     "(P5: voicePacks only)").arg(spec.targetDir));
+                                     "(allowed: voicePacks, models)")
+                          .arg(spec.targetDir));
+
+    // Target dispatch: each logical target owns its install root + sentinel
+    // predicate (below). voicePacks keeps the VoicePackScanner contract;
+    // models uses the ModelScanner discovery contract.
+    const bool isModelsTarget = spec.targetDir == QStringLiteral("models");
+    const QString& targetRoot = isModelsTarget ? m_modelsInstallRoot : m_installRoot;
 
     ZipArchive zip(j->stagedPath);
     if (!zip.isOpen())
@@ -102,8 +114,10 @@ pet::PluginError DownloadService::installArchive(pet::JobId job,
                           QStringLiteral("unsafe entry '%1': %2").arg(e.path, reason));
     }
 
-    // ── Sentinel layout check: exactly one top-level dir containing
-    // meta.mko (VoicePackScanner's discovery contract) ───────────────────
+    // ── Sentinel layout check: exactly one top-level dir matching the
+    // TARGET's discovery contract — voicePacks: <pack>/meta.mko
+    // (VoicePackScanner); models: <Name>/<Name>.model3.json (ModelScanner)
+    // ────────────────────────────────────────────────────────────────────
     QSet<QString> topLevelDirs;
     for (const ZipEntry& e : entries) {
         const QStringList parts = QDir::cleanPath(e.path).split(QLatin1Char('/'));
@@ -114,10 +128,14 @@ pet::PluginError DownloadService::installArchive(pet::JobId job,
     if (topLevelDirs.size() != 1)
         return reject(pet::PluginError::InvalidArgument,
                       QStringLiteral("archive must contain exactly ONE top-level "
-                                     "pack directory (found %1)")
+                                     "directory (found %1)")
                           .arg(topLevelDirs.size()));
-    const QString packName = *topLevelDirs.begin();
-    const QString sentinel = packName + QStringLiteral("/meta.mko");
+    const QString itemName = *topLevelDirs.begin();
+    const QString sentinel =
+        isModelsTarget
+            ? itemName + QLatin1Char('/') + itemName +
+                  QStringLiteral(".model3.json")
+            : itemName + QStringLiteral("/meta.mko");
     bool hasSentinel = false;
     for (const ZipEntry& e : entries) {
         if (QDir::cleanPath(e.path) == sentinel)
@@ -125,7 +143,12 @@ pet::PluginError DownloadService::installArchive(pet::JobId job,
     }
     if (!hasSentinel)
         return reject(pet::PluginError::InvalidArgument,
-                      QStringLiteral("missing voice-pack sentinel '%1'").arg(sentinel));
+                      isModelsTarget
+                          ? QStringLiteral("missing model sentinel '%1' (expected "
+                                           "<Name>/<Name>.model3.json)")
+                                .arg(sentinel)
+                          : QStringLiteral("missing voice-pack sentinel '%1'")
+                                .arg(sentinel));
 
     // ── Pass 2: extract to a temp dir, per-file QSaveFile atomic writes ──
     QTemporaryDir extractTmp;
@@ -152,21 +175,30 @@ pet::PluginError DownloadService::installArchive(pet::JobId job,
         }
     }
 
-    // ── Final move: <installRoot>/<packName>/ (replace existing, warned) ─
-    const QString src = QDir(extractTmp.path()).filePath(packName);
-    const QString dst = QDir(m_installRoot).filePath(packName);
+    // ── Final move: <targetRoot>/<itemName>/ (replace existing, warned;
+    // same replace semantics for BOTH targets) ──────────────────────────
+    const QString src = QDir(extractTmp.path()).filePath(itemName);
+    const QString dst = QDir(targetRoot).filePath(itemName);
     if (QFileInfo::exists(dst)) {
-        LOG_WARN("DownloadService: pack '{}' already installed — replacing",
-                 packName.toStdString());
+        LOG_WARN("DownloadService: {} '{}' already installed — replacing",
+                 (isModelsTarget ? "model" : "voice pack"),
+                 itemName.toStdString());
         QDir(dst).removeRecursively();
     }
-    if (!QDir().mkpath(m_installRoot) || !QDir().rename(src, dst))
+    if (!QDir().mkpath(targetRoot) || !QDir().rename(src, dst))
         return reject(pet::PluginError::Generic,
-                      QStringLiteral("cannot move pack into '%1'").arg(m_installRoot));
+                      QStringLiteral("cannot move %1 into '%2'")
+                          .arg(isModelsTarget ? QStringLiteral("model")
+                                              : QStringLiteral("pack"),
+                               targetRoot));
 
-    LOG_INFO("DownloadService: installed voice pack '{}' → '{}'",
-             packName.toStdString(), dst.toStdString());
-    emit packInstalled(packName);
+    LOG_INFO("DownloadService: installed {} '{}' → '{}'",
+             (isModelsTarget ? "model" : "voice pack"), itemName.toStdString(),
+             dst.toStdString());
+    if (isModelsTarget)
+        emit modelInstalled(itemName);
+    else
+        emit packInstalled(itemName);
     if (j->listener != nullptr) {
         try {
             j->listener->onFinished(j->id, dst);

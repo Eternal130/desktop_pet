@@ -447,6 +447,19 @@ PanelUiBoot::PanelUiBoot(QQmlApplicationEngine& engine, PanelApplication& app,
                                   packName.toStdString());
                          m_voicePackController->rescan();
                      });
+    // Models twin of the wiring above (targetDir "models"): a finished
+    // model install re-scans the model library. ModelController::rescan is
+    // the revision-counter refresh entry — it forwards to the SHARED
+    // core::ModelApiImpl::refreshScan (one cache; the plugin pet.model
+    // family reads the same fresh scan) and bumps the revision the QML
+    // bindings re-evaluate on.
+    QObject::connect(m_app.downloadService(), &core::DownloadService::modelInstalled,
+                     m_modelController,
+                     [this](const QString& modelName) {
+                         LOG_INFO("model library re-scanned after install of '{}'",
+                                  modelName.toStdString());
+                         m_modelController->rescan();
+                     });
     m_engine.rootContext()->setContextProperty("pluginPages",
                                                m_pluginPageModel);
     m_engine.rootContext()->setContextProperty("pluginManager",

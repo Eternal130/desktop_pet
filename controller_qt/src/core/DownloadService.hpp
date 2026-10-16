@@ -7,8 +7,10 @@
 //
 // Pipeline (§B.4): url → streamed .part staging + on-the-fly sha256 →
 // validation → (install step, P5 commit 2) → unzip with zip-slip guard →
-// per-file atomic writes → move to Resources/VoicePacks/<name>/ → sentinel
-// → packInstalled signal (PanelUiBoot wires VoicePackController::rescan).
+// per-file atomic writes → move to the TARGET's install root (voicePacks →
+// <installRoot>/<name>/, models → <modelsInstallRoot>/<name>/) → per-target
+// sentinel → packInstalled / modelInstalled signal (PanelUiBoot wires
+// VoicePackController::rescan / ModelController::rescan).
 //
 // Contract:
 //   - never-throws; every failure is a listener onError (or a synchronous
@@ -56,9 +58,13 @@ public:
     };
 
     // stagingDir: where .part files land (default wiring: <configDir>/downloads).
-    // installRoot: the concrete Resources/VoicePacks directory for installs
-    // (default wiring: PathResolve-derived; tests inject temp dirs).
+    // installRoot: voice-pack install root, used for targetDir "voicePacks"
+    // (default wiring: the user data dir's VoicePacks/; tests inject temp
+    // dirs). modelsInstallRoot: model install root, used for targetDir
+    // "models" (default wiring: <rendererDir>/Resources/Models — the
+    // ModelScanner discovery root). installArchive dispatches per target.
     explicit DownloadService(const QString& stagingDir, const QString& installRoot,
+                             const QString& modelsInstallRoot,
                              QObject* parent = nullptr);
     ~DownloadService() override;
 
@@ -90,6 +96,11 @@ signals:
     // to VoicePackController::rescan (§B.4 sentinel → refreshScan chain).
     void packInstalled(const QString& packName);
 
+    // Models twin of packInstalled (targetDir "models"); PanelUiBoot wires
+    // this to ModelController::rescan, which refreshes the SHARED
+    // ModelApiImpl cache the plugin pet.model family also reads.
+    void modelInstalled(const QString& modelName);
+
 private:
     friend struct DownloadServiceDetail; // TU-internal transfer/install hooks
 
@@ -118,6 +129,7 @@ private:
 
     QString m_stagingDir;
     QString m_installRoot;
+    QString m_modelsInstallRoot;
     std::unique_ptr<IReplyFactory> m_ownedFactory; // production QNAM wrapper
     IReplyFactory* m_factory = nullptr;            // points at owned or injected
     QHash<pet::JobId, Job*> m_jobs;                // owned; removed on completion

@@ -46,13 +46,15 @@ QString normalizedScheme(const QUrl& url)
 } // namespace
 
 DownloadService::DownloadService(const QString& stagingDir, const QString& installRoot,
-                                 QObject* parent)
-    : QObject(parent), m_stagingDir(stagingDir), m_installRoot(installRoot)
+                                 const QString& modelsInstallRoot, QObject* parent)
+    : QObject(parent), m_stagingDir(stagingDir), m_installRoot(installRoot),
+      m_modelsInstallRoot(modelsInstallRoot)
 {
     m_ownedFactory = std::make_unique<QnamReplyFactory>();
     m_factory = m_ownedFactory.get();
     QDir().mkpath(m_stagingDir);
     QDir().mkpath(m_installRoot);
+    QDir().mkpath(m_modelsInstallRoot);
 }
 
 DownloadService::~DownloadService()

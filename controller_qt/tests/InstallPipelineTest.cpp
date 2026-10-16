@@ -1,9 +1,10 @@
 // InstallPipelineTest (P5, §B.4 tail): archive install — happy pack (VoicePackScanner
-// sentinel discovery e2e), zip-slip malicious archives (zero on-disk traces),
-// bad-sha download refused, cancel-then-install refused, non-pack layouts,
-// disallowed targetDir, reinstall-replaces. Fixtures are built in-process
-// with miniz (mz_zip_writer) — full control over stored entry names,
-// including the hostile ones a real-world writer would normalize away.
+// sentinel discovery e2e), happy model (ModelScanner sentinel discovery e2e),
+// zip-slip malicious archives (zero on-disk traces), bad-sha download refused,
+// cancel-then-install refused, non-pack layouts, wrong-sentinel-for-target,
+// disallowed targetDir, reinstall-replaces (both targets). Fixtures are built
+// in-process with miniz (mz_zip_writer) — full control over stored entry
+// names, including the hostile ones a real-world writer would normalize away.
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -16,9 +17,11 @@
 #include <algorithm>
 
 #include "core/DownloadService.hpp"
+#include "core/ModelScanner.hpp"
 #include "core/VoicePackScanner.hpp"
 
 using core::DownloadService;
+using core::scanAvailableModels;
 using core::scanAvailableVoicePacks;
 
 namespace {
@@ -139,6 +142,23 @@ bool buildGoodPackZip(const QString& zipPath, const QString& packName)
                  QByteArray("\x01vorbis-fixture"));
 }
 
+// A minimal valid model archive: <Name>/<Name>.model3.json + one placeholder
+// texture (ModelScanner's qualification contract — discovery only checks the
+// sentinel file's existence, so the JSON body is a plausible stub).
+bool buildGoodModelZip(const QString& zipPath, const QString& modelName)
+{
+    ZipBuilder z(zipPath);
+    const QByteArray model3 =
+        QByteArray("{\"Version\":3,\"FileReferences\":{\"Textures\":[\"") +
+        modelName.toUtf8() + QByteArray("/texture_00.png\"]}}");
+    return z.addDir(modelName + QStringLiteral("/")) &&
+           z.add(modelName + QStringLiteral("/") + modelName +
+                     QStringLiteral(".model3.json"),
+                 model3) &&
+           z.add(modelName + QStringLiteral("/texture_00.png"),
+                 QByteArray("\x89PNG-fixture"));
+}
+
 // Counts every regular file under dir (recursively) — the "zero traces"
 // assertion helper for zip-slip.
 int fileCountUnder(const QString& dir)
@@ -163,13 +183,16 @@ class InstallPipelineTest : public QObject
 
 private slots:
     void testDownloadInstallDiscoverE2E();
+    void testModelInstallE2E();
     void testZipSlipAbsoluteAndParentAndDrive();
     void testZipSlipLeavesZeroTraces();
     void testBadSha256BlocksInstall();
     void testCancelledJobCannotInstall();
     void testNonPackArchiveRejected();
+    void testWrongSentinelForTarget();
     void testDisallowedTargetDirRejected();
     void testReinstallReplacesExistingPack();
+    void testReinstallReplacesExistingModel();
 
 private:
     QTemporaryDir m_tmp;
@@ -192,7 +215,8 @@ void InstallPipelineTest::testDownloadInstallDiscoverE2E()
     // scanner derives from the base dir (VoicePackScanner convention).
     const QString rendererBase = m_tmp.filePath(QStringLiteral("renderer"));
     DownloadService service(m_tmp.filePath(QStringLiteral("dl")),
-                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")));
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
     RecordingListener listener;
     pet::DownloadRequest req;
     req.url = fileUrl(zipPath);
@@ -218,6 +242,47 @@ void InstallPipelineTest::testDownloadInstallDiscoverE2E()
              qPrintable(QStringLiteral("VoicePackScanner did not discover the "
                                        "installed pack; got: %1")
                             .arg(packs.join(QStringLiteral(", ")))));
+}
+
+void InstallPipelineTest::testModelInstallE2E()
+{
+    // Models-target chain: file:// download → installArchive("models") →
+    // ModelScanner discovers the new model via the <Name>/<Name>.model3.json
+    // sentinel. The models root is injected same-root as the scanner
+    // (<rendererBase>/Resources/Models — the production wiring contract).
+    const QString zipPath = m_tmp.filePath(QStringLiteral("haru.zip"));
+    QVERIFY2(buildGoodModelZip(zipPath, QStringLiteral("Haru")),
+             "fixture build failed");
+    const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-model"));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl-model")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
+    int modelSignals = 0;
+    QObject::connect(&service, &DownloadService::modelInstalled,
+                     [&modelSignals](const QString&) { ++modelSignals; });
+    RecordingListener listener;
+    pet::DownloadRequest req;
+    req.url = fileUrl(zipPath);
+    req.destName = QStringLiteral("haru.zip");
+    const pet::JobId job = service.start(req, &listener);
+    QVERIFY(job != 0);
+    QTRY_VERIFY_WITH_TIMEOUT(listener.finishedJob == job, 5000);
+
+    pet::InstallSpec spec;
+    spec.targetDir = QStringLiteral("models");
+    QCOMPARE(service.installArchive(job, spec), pet::PluginError::Ok);
+    QCOMPARE(modelSignals, 1);
+    QTRY_COMPARE(listener.finishedPath,
+                 QDir(rendererBase).filePath(QStringLiteral("Resources/Models/Haru")));
+    QVERIFY(QFile::exists(QDir(listener.finishedPath).filePath(
+        QStringLiteral("Haru.model3.json"))));
+
+    // e2e discovery: the scanner (takes the renderer BASE dir) lists it.
+    const QStringList models = scanAvailableModels(rendererBase);
+    QVERIFY2(models.contains(QStringLiteral("Haru")),
+             qPrintable(QStringLiteral("ModelScanner did not discover the "
+                                       "installed model; got: %1")
+                            .arg(models.join(QStringLiteral(", ")))));
 }
 
 void InstallPipelineTest::testZipSlipAbsoluteAndParentAndDrive()
@@ -248,7 +313,8 @@ void InstallPipelineTest::testZipSlipAbsoluteAndParentAndDrive()
         const QString rendererBase = m_tmp.filePath(
             QStringLiteral("rb-") + QLatin1String(c.label));
         DownloadService service(m_tmp.filePath(QStringLiteral("dl-") + QLatin1String(c.label)),
-                                QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")));
+                                QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                                QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
         RecordingListener listener;
         pet::DownloadRequest req;
         req.url = fileUrl(zipPath);
@@ -285,7 +351,8 @@ void InstallPipelineTest::testZipSlipLeavesZeroTraces()
     }
     const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-mixed"));
     const QString installRoot = QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks"));
-    DownloadService service(m_tmp.filePath(QStringLiteral("dl-mixed")), installRoot);
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl-mixed")), installRoot,
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
     RecordingListener listener;
     pet::DownloadRequest req;
     req.url = fileUrl(zipPath);
@@ -309,7 +376,8 @@ void InstallPipelineTest::testBadSha256BlocksInstall()
     QVERIFY(buildGoodPackZip(zipPath, QStringLiteral("CorruptPack")));
     const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-corrupt"));
     DownloadService service(m_tmp.filePath(QStringLiteral("dl-corrupt")),
-                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")));
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
     RecordingListener listener;
     pet::DownloadRequest req;
     req.url = fileUrl(zipPath);
@@ -362,7 +430,8 @@ void InstallPipelineTest::testCancelledJobCannotInstall()
 {
     const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-cancel"));
     DownloadService service(m_tmp.filePath(QStringLiteral("dl-cancel")),
-                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")));
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
     StallFactory factory;
     service.setReplyFactory(&factory);
     RecordingListener listener;
@@ -397,7 +466,8 @@ void InstallPipelineTest::testNonPackArchiveRejected()
     }
     const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-notapack"));
     DownloadService service(m_tmp.filePath(QStringLiteral("dl-notapack")),
-                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")));
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
     RecordingListener listener;
     pet::DownloadRequest req;
     req.url = fileUrl(zipPath);
@@ -413,13 +483,71 @@ void InstallPipelineTest::testNonPackArchiveRejected()
     QCOMPARE(fileCountUnder(rendererBase), 0);
 }
 
+void InstallPipelineTest::testWrongSentinelForTarget()
+{
+    // Sentinel predicates are per-target: a voice-pack archive (meta.mko)
+    // is NOT a model, and a model archive (model3.json) is NOT a voice
+    // pack. Both cross-target installs are InvalidArgument with ZERO
+    // residue in the mismatched destination.
+    // Case A: pack zip (meta.mko) → "models".
+    {
+        const QString zipPath = m_tmp.filePath(QStringLiteral("pack-as-model.zip"));
+        QVERIFY(buildGoodPackZip(zipPath, QStringLiteral("MisPack")));
+        const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-xa"));
+        const QString modelsRoot =
+            QDir(rendererBase).filePath(QStringLiteral("Resources/Models"));
+        DownloadService service(m_tmp.filePath(QStringLiteral("dl-xa")),
+                                QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                                modelsRoot);
+        RecordingListener listener;
+        pet::DownloadRequest req;
+        req.url = fileUrl(zipPath);
+        req.destName = QStringLiteral("pack-as-model.zip");
+        const pet::JobId job = service.start(req, &listener);
+        QTRY_VERIFY_WITH_TIMEOUT(listener.finishedJob == job, 5000);
+
+        listener = {};
+        pet::InstallSpec spec;
+        spec.targetDir = QStringLiteral("models");
+        QCOMPARE(service.installArchive(job, spec), pet::PluginError::InvalidArgument);
+        QVERIFY(listener.errorMessage.contains(QStringLiteral("model sentinel")));
+        QCOMPARE(fileCountUnder(modelsRoot), 0);
+        QVERIFY(!QDir(modelsRoot).exists(QStringLiteral("MisPack")));
+    }
+    // Case B: model zip (model3.json) → "voicePacks".
+    {
+        const QString zipPath = m_tmp.filePath(QStringLiteral("model-as-pack.zip"));
+        QVERIFY(buildGoodModelZip(zipPath, QStringLiteral("MisModel")));
+        const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-xb"));
+        const QString voiceRoot =
+            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks"));
+        DownloadService service(m_tmp.filePath(QStringLiteral("dl-xb")), voiceRoot,
+                                QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
+        RecordingListener listener;
+        pet::DownloadRequest req;
+        req.url = fileUrl(zipPath);
+        req.destName = QStringLiteral("model-as-pack.zip");
+        const pet::JobId job = service.start(req, &listener);
+        QTRY_VERIFY_WITH_TIMEOUT(listener.finishedJob == job, 5000);
+
+        listener = {};
+        pet::InstallSpec spec;
+        spec.targetDir = QStringLiteral("voicePacks");
+        QCOMPARE(service.installArchive(job, spec), pet::PluginError::InvalidArgument);
+        QVERIFY(listener.errorMessage.contains(QStringLiteral("voice-pack sentinel")));
+        QCOMPARE(fileCountUnder(voiceRoot), 0);
+        QVERIFY(!QDir(voiceRoot).exists(QStringLiteral("MisModel")));
+    }
+}
+
 void InstallPipelineTest::testDisallowedTargetDirRejected()
 {
     const QString zipPath = m_tmp.filePath(QStringLiteral("good2.zip"));
     QVERIFY(buildGoodPackZip(zipPath, QStringLiteral("Pack2")));
     const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-target"));
     DownloadService service(m_tmp.filePath(QStringLiteral("dl-target")),
-                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")));
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
     RecordingListener listener;
     pet::DownloadRequest req;
     req.url = fileUrl(zipPath);
@@ -427,8 +555,9 @@ void InstallPipelineTest::testDisallowedTargetDirRejected()
     const pet::JobId job = service.start(req, &listener);
     QTRY_VERIFY_WITH_TIMEOUT(listener.finishedJob == job, 5000);
 
-    // The P5 allow-list: only "voicePacks". Anything else — even a benign
-    // path-like value — is an explicit InvalidArgument, never a guess.
+    // The allow-list: exactly two logical targets ("voicePacks" |
+    // "models"). Anything else — even a benign path-like value — is an
+    // explicit InvalidArgument, never a guess.
     for (const char* bad : {"plugins", "../escape", "assets", ""}) {
         listener = {};
         pet::InstallSpec spec;
@@ -444,7 +573,8 @@ void InstallPipelineTest::testReinstallReplacesExistingPack()
     QVERIFY(buildGoodPackZip(zipPath, QStringLiteral("Pack3")));
     const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-reinstall"));
     DownloadService service(m_tmp.filePath(QStringLiteral("dl-reinstall")),
-                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")));
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/Models")));
     RecordingListener listener;
     pet::DownloadRequest req;
     req.url = fileUrl(zipPath);
@@ -467,6 +597,42 @@ void InstallPipelineTest::testReinstallReplacesExistingPack()
     QVERIFY(listener.finishedJob == job);
     QVERIFY(!QFile::exists(QDir(installDir).filePath(QStringLiteral("stale.txt"))));
     QVERIFY(QFile::exists(QDir(installDir).filePath(QStringLiteral("meta.mko"))));
+}
+
+void InstallPipelineTest::testReinstallReplacesExistingModel()
+{
+    // Same WARN + removeRecursively replace semantics as packs — the
+    // models target is not special-cased.
+    const QString zipPath = m_tmp.filePath(QStringLiteral("haru2.zip"));
+    QVERIFY(buildGoodModelZip(zipPath, QStringLiteral("Haru2")));
+    const QString rendererBase = m_tmp.filePath(QStringLiteral("rb-model-reinstall"));
+    const QString modelsRoot =
+        QDir(rendererBase).filePath(QStringLiteral("Resources/Models"));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl-model-reinstall")),
+                            QDir(rendererBase).filePath(QStringLiteral("Resources/VoicePacks")),
+                            modelsRoot);
+    RecordingListener listener;
+    pet::DownloadRequest req;
+    req.url = fileUrl(zipPath);
+    req.destName = QStringLiteral("haru2.zip");
+    const pet::JobId job = service.start(req, &listener);
+    QTRY_VERIFY_WITH_TIMEOUT(listener.finishedJob == job, 5000);
+
+    pet::InstallSpec spec;
+    spec.targetDir = QStringLiteral("models");
+    QCOMPARE(service.installArchive(job, spec), pet::PluginError::Ok);
+    // A stale marker proves the SECOND install replaced the tree.
+    const QString installDir = QDir(modelsRoot).filePath(QStringLiteral("Haru2"));
+    QFile stale(QDir(installDir).filePath(QStringLiteral("stale.txt")));
+    QVERIFY(stale.open(QIODevice::WriteOnly));
+    stale.write("stale");
+    stale.close();
+    listener = {};
+    QCOMPARE(service.installArchive(job, spec), pet::PluginError::Ok);
+    QVERIFY(listener.finishedJob == job);
+    QVERIFY(!QFile::exists(QDir(installDir).filePath(QStringLiteral("stale.txt"))));
+    QVERIFY(QFile::exists(QDir(installDir).filePath(
+        QStringLiteral("Haru2.model3.json"))));
 }
 
 QTEST_MAIN(InstallPipelineTest)

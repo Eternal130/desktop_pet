@@ -297,6 +297,7 @@ MVP 阶段不使用配置文件，所有参数硬编码在源码中：
 
 - 配置目录 = `QStandardPaths::AppConfigLocation`（应用名 `desktop-pet`、组织名为空，路径保持扁平无多余层级）。
 - 数据目录 = `QStandardPaths::AppLocalDataLocation`，存放下载暂存（`downloads/`）与用户安装的语音包（`VoicePacks/`）。语音包发现为双来源：内置 `<安装目录>\Resources\VoicePacks\` + 用户目录，同名时**用户包优先**。
+- 模型安装落点（下载安装 `targetDir` 白名单含 `voicePacks` 与 `models` 两个逻辑目标）：`models` 目标安装到 `<应用程序目录>/Resources/Models/<模型名>/`，与模型库页面 / `pet.model` API 的扫描根一致，哨兵契约为压缩包内 `<模型名>/<模型名>.model3.json`（恰好一个顶层目录）。当前假设便携布局（`build/bin` 可写）；"用户数据目录 + 双来源扫描"为未来备选方案。
 - 安装器本身亦为按用户安装（`%LOCALAPPDATA%\DesktopPet`，无需 UAC 提权），与上述布局配套。
 
 ```

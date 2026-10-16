@@ -182,7 +182,8 @@ void DownloadServiceTest::testFileDownloadHappyPathWithSha256()
     const QString sha = QString::fromLatin1(
         QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex());
 
-    DownloadService service(m_tmp.filePath(QStringLiteral("dl")), m_tmp.filePath(QStringLiteral("vp")));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl")), m_tmp.filePath(QStringLiteral("vp")),
+                            m_tmp.filePath(QStringLiteral("md")));
     RecordingListener listener;
     pet::DownloadRequest req;
     req.url = QUrl::fromLocalFile(src).toString();
@@ -207,7 +208,8 @@ void DownloadServiceTest::testSha256MismatchRejected()
     const QString src = writeFileHelper(m_tmp.path(), QStringLiteral("evil.zip"), payload);
     const QString wrongSha = QString(64, QLatin1Char('0'));
 
-    DownloadService service(m_tmp.filePath(QStringLiteral("dl2")), m_tmp.filePath(QStringLiteral("vp2")));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl2")), m_tmp.filePath(QStringLiteral("vp2")),
+                            m_tmp.filePath(QStringLiteral("md2")));
     RecordingListener listener;
     pet::DownloadRequest req;
     req.url = QUrl::fromLocalFile(src).toString();
@@ -226,7 +228,8 @@ void DownloadServiceTest::testSha256MismatchRejected()
 
 void DownloadServiceTest::testCancelMidFlight()
 {
-    DownloadService service(m_tmp.filePath(QStringLiteral("dl3")), m_tmp.filePath(QStringLiteral("vp3")));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl3")), m_tmp.filePath(QStringLiteral("vp3")),
+                            m_tmp.filePath(QStringLiteral("md3")));
     ManualFactory factory;
     service.setReplyFactory(&factory);
 
@@ -250,7 +253,8 @@ void DownloadServiceTest::testCancelMidFlight()
 
 void DownloadServiceTest::testInjectedNetworkError()
 {
-    DownloadService service(m_tmp.filePath(QStringLiteral("dl4")), m_tmp.filePath(QStringLiteral("vp4")));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl4")), m_tmp.filePath(QStringLiteral("vp4")),
+                            m_tmp.filePath(QStringLiteral("md4")));
     FailingFactory factory;
     service.setReplyFactory(&factory);
 
@@ -269,7 +273,8 @@ void DownloadServiceTest::testInjectedNetworkError()
 
 void DownloadServiceTest::testMalformedRequestsRejected()
 {
-    DownloadService service(m_tmp.filePath(QStringLiteral("dl5")), m_tmp.filePath(QStringLiteral("vp5")));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl5")), m_tmp.filePath(QStringLiteral("vp5")),
+                            m_tmp.filePath(QStringLiteral("md5")));
     RecordingListener listener;
 
     pet::DownloadRequest badScheme;
@@ -304,7 +309,8 @@ void DownloadServiceTest::testConcurrentJobs()
     const QString srcB = writeFileHelper(m_tmp.path(), QStringLiteral("b.bin"), b);
     const QString srcC = writeFileHelper(m_tmp.path(), QStringLiteral("c.bin"), c);
 
-    DownloadService service(m_tmp.filePath(QStringLiteral("dl6")), m_tmp.filePath(QStringLiteral("vp6")));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl6")), m_tmp.filePath(QStringLiteral("vp6")),
+                            m_tmp.filePath(QStringLiteral("md6")));
     RecordingListener la, lb, lc;
     auto makeReq = [](const QString& src, const char* name) {
         pet::DownloadRequest r;
@@ -329,7 +335,8 @@ void DownloadServiceTest::testThrowingListenerIsIsolated()
     const QByteArray payload("tiny");
     const QString src = writeFileHelper(m_tmp.path(), QStringLiteral("tiny.bin"), payload);
 
-    DownloadService service(m_tmp.filePath(QStringLiteral("dl7")), m_tmp.filePath(QStringLiteral("vp7")));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl7")), m_tmp.filePath(QStringLiteral("vp7")),
+                            m_tmp.filePath(QStringLiteral("md7")));
     ThrowingListener thrower;
     pet::DownloadRequest req;
     req.url = QUrl::fromLocalFile(src).toString();
@@ -344,7 +351,8 @@ void DownloadServiceTest::testThrowingListenerIsIsolated()
 
 void DownloadServiceTest::testNonexistentFileUrlFailsGracefully()
 {
-    DownloadService service(m_tmp.filePath(QStringLiteral("dl8")), m_tmp.filePath(QStringLiteral("vp8")));
+    DownloadService service(m_tmp.filePath(QStringLiteral("dl8")), m_tmp.filePath(QStringLiteral("vp8")),
+                            m_tmp.filePath(QStringLiteral("md8")));
     RecordingListener listener;
     pet::DownloadRequest req;
     req.url = QUrl::fromLocalFile(m_tmp.filePath(QStringLiteral("does-not-exist.bin"))).toString();

@@ -59,9 +59,10 @@ public:
     virtual void cancel(JobId job) = 0;
 
     // Validate (sha256) → unpack (zip-slip guarded, per-file atomic) →
-    // move into spec.targetDir (allow-listed logical destination). Runs
-    // only for jobs that finished successfully. Result via the listener's
-    // onFinished/onError with the SAME job id.
+    // move into spec.targetDir (allow-listed logical destination:
+    // "voicePacks" → the user voice-pack root, "models" → the renderer's
+    // Resources/Models). Runs only for jobs that finished successfully.
+    // Result via the listener's onFinished/onError with the SAME job id.
     virtual PluginError installArchive(JobId job, const InstallSpec& spec) = 0;
 };
 

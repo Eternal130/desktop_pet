@@ -269,6 +269,8 @@ target_sources(${APP_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/EventEmitter.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/CommandHandlers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/network/CommandHandlers.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/LoadModelRequest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/network/LoadModelRequest.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/WindowManager.cpp
@@ -426,6 +428,9 @@ if(BUILD_TESTS)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/MessageHandlerTest.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/EventEmitterTest.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/AudioManagerTest.cpp
+      # Pure payload-validation helper behind load_model's v1.13 optional
+      # "path" field (structural-only, no Framework/GL deps).
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/LoadModelRequestTest.cpp
       # Pure cadence/estimation helpers behind motion_progress + stats fps
       # (header-only classes, no Framework/GL deps).
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/MotionProgressTest.cpp
@@ -437,6 +442,7 @@ if(BUILD_TESTS)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/network/Protocol.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/network/MessageHandler.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/network/EventEmitter.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/network/LoadModelRequest.cpp
       # AudioManager + miniaudio implementation (MINIAUDIO_IMPLEMENTATION TU;
       # also compiles miniaudio_libvorbis.c, hence the vorbisfile link below).
       ${CMAKE_CURRENT_SOURCE_DIR}/src/AudioManager.cpp

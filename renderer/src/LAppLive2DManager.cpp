@@ -15,6 +15,7 @@
 #include "LAppDelegate.hpp"
 #include "LAppModel.hpp"
 #include "network/EventEmitter.hpp"
+#include "network/LoadModelRequest.hpp"
 
 #ifdef USE_VULKAN
 #include <Rendering/Vulkan/CubismDeviceInfo_Vulkan.hpp>
@@ -65,7 +66,17 @@ LAppLive2DManager::LAppLive2DManager()
     _viewMatrix = new CubismMatrix44();
 
     const std::string& model = LAppDelegate::GetInstance()->GetStartupModel();
-    ChangeScene(model.empty() ? "Hiyori" : model.c_str());
+    if (!model.empty() && Network::isAbsoluteModel3JsonPath(model))
+    {
+        // v1.13 plugin-scoped models: --model may carry an absolute
+        // .model3.json path (the controller resolves scope before spawning).
+        // Name mode stays byte-identical — names can never be absolute.
+        LoadModelFromPath(model);
+    }
+    else
+    {
+        ChangeScene(model.empty() ? "Hiyori" : model.c_str());
+    }
 }
 
 LAppLive2DManager::~LAppLive2DManager()
@@ -118,6 +129,60 @@ void LAppLive2DManager::LoadModel(const csmChar* modelName)
     {
         LAppPal::PrintLogLn("[APP]auto-populated %d hit areas from model", static_cast<int>(_hitAreaNames.size()));
     }
+}
+
+bool LAppLive2DManager::LoadModelFromPath(const std::string& absJsonPath)
+{
+    if (absJsonPath.empty() || !LAppPal::FileExists(absJsonPath))
+    {
+        LAppPal::PrintLogLn("[APP]LoadModelFromPath: model json not found: %s", absJsonPath.c_str());
+        return false;
+    }
+
+    // Split into dir + fileName the same way LoadModel feeds LoadAssets
+    // (dir keeps its trailing separator; fileName is the .model3.json name).
+    const size_t pos = absJsonPath.find_last_of("/\\");
+    const std::string dir = (pos == std::string::npos)
+        ? std::string()
+        : absJsonPath.substr(0, pos + 1);
+    const std::string fileName = (pos == std::string::npos)
+        ? absJsonPath
+        : absJsonPath.substr(pos + 1);
+
+    csmString modelPath(dir.c_str());
+    csmString modelJsonName(fileName.c_str());
+
+#ifdef USE_VULKAN
+    {
+        auto* vkBackend = static_cast<VulkanBackend*>(
+            LAppDelegate::GetInstance()->GetGraphicsBackend());
+        vkDeviceWaitIdle(vkBackend->GetDevice());
+    }
+#endif
+
+    ReleaseAllModel();
+
+    _models.PushBack(new LAppModel());
+#ifdef USE_VULKAN
+    {
+        auto* vkBackend = static_cast<VulkanBackend*>(
+            LAppDelegate::GetInstance()->GetGraphicsBackend());
+        _models[0]->LoadAssets(
+            vkBackend->GetDevice(),
+            vkBackend->GetImageFormat(),
+            modelPath.GetRawString(),
+            modelJsonName.GetRawString());
+    }
+#else
+    _models[0]->LoadAssets(modelPath.GetRawString(), modelJsonName.GetRawString());
+#endif
+
+    _hitAreaNames = _models[0]->GetHitAreaNames();
+    if (DebugLogEnable)
+    {
+        LAppPal::PrintLogLn("[APP]auto-populated %d hit areas from model", static_cast<int>(_hitAreaNames.size()));
+    }
+    return true;
 }
 
 void LAppLive2DManager::ReleaseAllModel()

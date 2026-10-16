@@ -1,6 +1,7 @@
 #include "network/CommandHandlers.hpp"
 #include "network/Protocol.hpp"
 #include "network/EventEmitter.hpp"
+#include "network/LoadModelRequest.hpp"
 #include "LAppDelegate.hpp"
 #include "LAppLive2DManager.hpp"
 #include "LAppModel.hpp"
@@ -35,14 +36,6 @@ static void OnMotionFinishedStatic(Csm::ACubismMotion* motion) {
     }
 }
 
-static bool isValidModelName(const std::string& name) {
-    if (name.empty() || name.size() > 256) return false;
-    if (name.find("..") != std::string::npos) return false;
-    if (name.find('/') != std::string::npos || name.find('\\') != std::string::npos) return false;
-    if (name.front() == '~') return false;
-    return true;
-}
-
 static bool isSafeFilePath(const std::string& path) {
     if (path.empty() || path.size() > 512) return false;
     if (path.find("..") != std::string::npos) return false;
@@ -57,42 +50,50 @@ void RegisterCommandHandlers(MessageHandler& handler, LAppDelegate* delegate) {
     });
 
     handler.registerCommand("load_model", [delegate](const Envelope& cmd, auto sendResponse) {
-         std::string modelPath = cmd.payload.value("model_path", "");
-         if (modelPath.empty()) {
-             sendResponse(createResponse(cmd.id, "load_model", false, 1001, "model_path is required"));
+         // v1.13 plugin-scoped models: payload "model_path" = logical name
+         // (always required non-empty — the model_id echo the controller's
+         // rollback matching uses), optional "path" = absolute .model3.json
+         // loaded directly, skipping Resources/<name> resolution.
+         // Contract + validation live in network/LoadModelRequest.hpp.
+         const LoadModelRequest req = parseLoadModelRequest(cmd.payload);
+         auto fail = [&](const std::string& message) {
+             sendResponse(createResponse(cmd.id, "load_model", false, 1001, message));
              auto* emitter = delegate->GetEventEmitter();
              if (emitter) {
-                 emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", "model_path is required"}});
+                 emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", message}, {"model_id", req.name}});
              }
+         };
+
+         if (!req.valid) {
+             fail(req.error);
              return;
          }
-         if (!isValidModelName(modelPath)) {
-             sendResponse(createResponse(cmd.id, "load_model", false, 1001, "model_path contains invalid characters"));
-             auto* emitter = delegate->GetEventEmitter();
-             if (emitter) {
-                 emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", "model_path contains invalid characters"}});
-             }
-             return;
-         }
-         // Build path matching LoadModel() internals:
-         std::string execPath = LAppDelegate::GetInstance()->GetExecuteAbsolutePath();
-         std::string fullModelJson = execPath + LAppDefine::ResourcesPath + modelPath + "/" + modelPath + ".model3.json";
-         bool pathExists = LAppPal::FileExists(fullModelJson);
-         if (!pathExists) {
-             sendResponse(createResponse(cmd.id, "load_model", false, 1001, "Model path not found: " + modelPath));
-             auto* emitter = delegate->GetEventEmitter();
-             if (emitter) {
-                 emitter->emit("model_load_failed", {{"error_code", 1001}, {"error_message", "Model path not found: " + modelPath}});
-             }
-             return;
-         }
+
          LAppLive2DManager* manager = LAppLive2DManager::GetInstance();
-         manager->ChangeScene(modelPath.c_str());
+         if (req.pathMode) {
+             // Existence check lives here (handler), not in the structural
+             // parser — same pattern as the legacy name-mode precheck below.
+             if (!LAppPal::FileExists(req.absPath)) {
+                 fail("Model path not found: " + req.absPath);
+                 return;
+             }
+             manager->LoadModelFromPath(req.absPath);
+         } else {
+             // Build path matching LoadModel() internals:
+             std::string execPath = LAppDelegate::GetInstance()->GetExecuteAbsolutePath();
+             std::string fullModelJson = execPath + LAppDefine::ResourcesPath + req.name + "/" + req.name + ".model3.json";
+             bool pathExists = LAppPal::FileExists(fullModelJson);
+             if (!pathExists) {
+                 fail("Model path not found: " + req.name);
+                 return;
+             }
+             manager->ChangeScene(req.name.c_str());
+         }
          sendResponse(createResponse(cmd.id, "load_model", true));
          auto* emitter = delegate->GetEventEmitter();
          if (emitter) {
              nlohmann::json modelPayload;
-             modelPayload["model_id"] = modelPath;
+             modelPayload["model_id"] = req.name;
              modelPayload["motions"] = nlohmann::json::array();
              modelPayload["expressions"] = nlohmann::json::array();
 

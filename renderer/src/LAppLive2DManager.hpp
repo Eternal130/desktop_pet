@@ -89,6 +89,16 @@ public:
     void ChangeScene(const Csm::csmChar* modelName);
 
     /**
+     * @brief   Load a model3.json by absolute path (v1.13 plugin-scoped models)
+     *          Skips Resources/<name> resolution and loads the given path
+     *          directly. Split (dir + fileName) and load sequence mirror
+     *          LoadModel().
+     * @param[in]   absJsonPath   absolute path to a .model3.json file
+     * @return      true when the file exists and the load ran
+     */
+    bool LoadModelFromPath(const std::string& absJsonPath);
+
+    /**
      * @brief   モデル個数を得る
      * @return  所持モデル個数
      */
